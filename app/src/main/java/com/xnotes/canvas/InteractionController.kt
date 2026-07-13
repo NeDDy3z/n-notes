@@ -806,8 +806,10 @@ class InteractionController(
         strokePageIndex = pageIndex
         mode = PointerMode.DRAW
         // Shape snap: only solid ink pens (not the highlighter or its straight-line mode) arm the
-        // "hold still → shape" timer — and never while the ruler is up (you're drawing straight lines).
-        dwellEligible = detectShapes && drawTool.isStroke && drawTool != Tool.HIGHLIGHTER && !straight && !ruler.visible
+        // "hold still → shape" timer — and never while the ruler is up (you're drawing straight lines),
+        // nor under the wand, whose strokes are ephemeral and must never commit a shape to the page.
+        dwellEligible = detectShapes && drawTool.isStroke && drawTool != Tool.HIGHLIGHTER && !straight &&
+            !ruler.visible && !wandMode
         if (dwellEligible) {
             dwellAnchor = downViewport
             armDwell()
