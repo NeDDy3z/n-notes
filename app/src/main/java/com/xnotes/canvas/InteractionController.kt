@@ -789,6 +789,12 @@ class InteractionController(
         val straight = drawTool == Tool.HIGHLIGHTER && cfg.straightLine
         val stroke = Stroke(drawTool, cfg, speedScale = speedScale, straight = straight)
         strokeStartTimeMs = timeMs
+        // Pen back down: re-solidify the held batch, so a long stroke can't outlive the previous fade.
+        if (wandMode && drawTool.isStroke) {
+            stopFade()
+            fadeAlpha = 1.0
+            scheduleFade()
+        }
         // Ruler magnet: reset per-stroke engagement, then snap the first sample if it lands in the zone.
         snapEngaged = false
         snapRunStartEdge = null
@@ -2296,6 +2302,11 @@ class InteractionController(
     private fun startFade() {
         fadeTimerRunnable = null
         if (fadingStrokes.isEmpty()) return
+        // Still drawing: the batch only fades once the pen has been up for the whole hold.
+        if (liveStroke != null) {
+            scheduleFade()
+            return
+        }
         fading = true
         fadeAlpha = 1.0
         fadeStartMs = System.nanoTime() / 1_000_000L
