@@ -274,6 +274,38 @@ class StrokeEngineTest {
         assertTrue("mid-stroke dip survives", g.halfWidths.minOrNull()!! < 1.2)
     }
 
+    @Test fun calligraphyDotTakesTheBroadFace() {
+        // A finished dot-sized stroke (4 px, under DOT_MAX_LEN) can never confirm a thick heading,
+        // so it takes the nib's broad face whole: every half-width is the thick 3 · (1 + ds), not
+        // the near-invisible thin extreme the confirm window would otherwise pin it to.
+        val pts = listOf(Sample(0.0, 0.0, 1.0), Sample(2.0, 0.0, 1.0), Sample(4.0, 0.0, 1.0))
+        val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6, smooth = false)
+        for (h in g.halfWidths) assertEquals(3.0 * 1.6, h, 1e-9)
+    }
+
+    @Test fun calligraphyDotStaysThinWhileThePenIsDown() {
+        // The same dot-sized stroke mid-draw (finished = false) keeps the confirmed-thin width, so
+        // the live preview never opens thick at pen-down and snaps back once the stroke grows.
+        val pts = listOf(Sample(0.0, 0.0, 1.0), Sample(2.0, 0.0, 1.0), Sample(4.0, 0.0, 1.0))
+        val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6, smooth = false, finished = false)
+        for (h in g.halfWidths) assertEquals(3.0 * 0.4, h, 1e-9)
+    }
+
+    @Test fun calligraphySingleSampleDotTakesTheBroadFace() {
+        // A single-sample calligraphy tap is the extreme dot: its one swept disc takes the broad
+        // face too, instead of the mid (ty = 0) width.
+        val g = StrokeEngine.build(listOf(Sample(0.0, 0.0, 1.0)), 6.0, false, 1.0, 0.6)
+        assertEquals(3.0 * 1.6, g.halfWidths[0], 1e-9)
+    }
+
+    @Test fun calligraphyShortTickPastTheDotLengthStaysThin() {
+        // Just past DOT_MAX_LEN the dot rule no longer applies: a 6 px tick is still shorter than
+        // the confirm window, so it keeps the unconfirmed thin width as before.
+        val pts = listOf(Sample(0.0, 0.0, 1.0), Sample(0.0, 3.0, 1.0), Sample(0.0, 6.0, 1.0))
+        val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6, smooth = false)
+        for (h in g.halfWidths) assertEquals(3.0 * 0.4, h, 1e-9)
+    }
+
     @Test fun calligraphyWidthGlidesAcrossADirectionChange() {
         // The nib width is low-passed, so when an L-stroke turns from a long rightward run
         // (thick horizontal regime) into a long upward run (thin vertical regime), the width

@@ -40,6 +40,12 @@ object StrokeEngine {
      *  real downstroke still swells almost at once. */
     const val DIR_CONFIRM_LEN = 8.0
 
+    /** Calligraphy pen: a *finished* stroke whose whole arc is at most this many content px is a
+     *  dot, and takes the nib's broad face outright — the thin face would leave a tap nearly
+     *  invisible (a dot can never travel far enough to confirm a thick heading). Judged only once
+     *  the pen has lifted ([build]'s `finished`), so the live preview never opens thick. */
+    const val DOT_MAX_LEN = 5.0
+
     /** Speed pen: dp/ms at/below which the line stays full width, and the speed
      *  at/above which it reaches its thinnest (0 and ≈3.75 in/s of hand travel).
      *  Measuring in dp — not page pixels — makes the effect independent of both zoom
@@ -275,6 +281,7 @@ object StrokeEngine {
         speedScale: Double = 1.0,
         smooth: Boolean = true,
         holdEnds: Boolean = false,
+        finished: Boolean = true,
     ): StrokeGeometry {
         val n = samples.size
         if (n == 0) return StrokeGeometry.EMPTY
@@ -294,9 +301,10 @@ object StrokeEngine {
 
         fun hw(i: Int, ty: Double) = halfWidth(baseWidth, pressureEnabled, m, ds, sp[i], ty)
 
-        // 3. Single sample -> a filled dot: one swept disc at the pure-pressure half-width.
+        // 3. Single sample -> a filled dot: one swept disc at the pure-pressure half-width. A
+        //    finished calligraphy tap takes the nib's broad face so the dot stays visible.
         if (n == 1) {
-            val h = hw(0, 0.0)
+            val h = hw(0, if (finished && ds > 0.0) 1.0 else 0.0)
             return StrokeGeometry(emptyList(), centers, listOf(h))
         }
 
@@ -325,9 +333,14 @@ object StrokeEngine {
         // the confirmed transition gliding instead of stepping. The line still thins the instant the
         // stroke turns toward the nib edge. Orientation still follows the true tangent; only the
         // width magnitude is held back. A no-op when ds = 0.
-        val dirY = if (ds > 0.0)
-            ema(confirmThickening(tangents.map { it.y }, centers, DIR_CONFIRM_LEN), DIR_ALPHA)
-        else null
+        // Exception: a finished dot-sized stroke (DOT_MAX_LEN) can never confirm a heading, so it
+        // takes the broad face whole rather than collapsing to the near-invisible thin extreme.
+        val dirY = if (ds > 0.0) {
+            var arc = 0.0
+            for (i in 1 until n) arc += (centers[i] - centers[i - 1]).length()
+            if (finished && arc <= DOT_MAX_LEN) List(n) { 1.0 }
+            else ema(confirmThickening(tangents.map { it.y }, centers, DIR_CONFIRM_LEN), DIR_ALPHA)
+        } else null
 
         // 5–7. Half-widths, normals, and the two ribbon edges.
         val left = ArrayList<Pt>(n)

@@ -788,6 +788,8 @@ class InteractionController(
         }
         val straight = drawTool == Tool.HIGHLIGHTER && cfg.straightLine
         val stroke = Stroke(drawTool, cfg, speedScale = speedScale, straight = straight)
+        // Live until pen-up, so lift-time rules (the calligraphy dot swell) can't fire mid-draw.
+        stroke.finished = false
         strokeStartTimeMs = timeMs
         // Pen back down: re-solidify the held batch, so a long stroke can't outlive the previous fade.
         if (wandMode && drawTool.isStroke) {
@@ -885,6 +887,9 @@ class InteractionController(
         val pi = strokePageIndex
         val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
         if (stroke != null && pi != null && !stroke.isEmpty) {
+            // The pen is up: rebuild with lift-time rules on (a dot-sized calligraphy stroke
+            // takes the nib's broad face) before the stroke is committed or held for fading.
+            stroke.finished = true
             when {
                 // A bare tap whose only job was to dismiss the selection: drop the dot it would leave.
                 strokeDismissedSelection && up.distanceTo(drawDownViewport) <= TAP_SLOP -> Unit

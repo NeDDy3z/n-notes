@@ -41,6 +41,16 @@ class Stroke(
     private var cachedRawBounds: Rect? = null
     private var cachedBounds: Rect? = null
 
+    /** False only while the pen is still down on this stroke: lift-time rules (the calligraphy
+     *  dot swell, [StrokeEngine.DOT_MAX_LEN]) are held off so the live preview can't open thick
+     *  at every pen-down. Loaded, cloned and eraser-split strokes are complete. */
+    var finished = true
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     /** Ink colour with the tool's alpha scale applied (the highlighter uses its configurable
      *  [ToolConfig.highlighterAlpha]; every other tool is opaque, scale 1.0). */
     val renderColor get() = config.rgba.scaleAlpha(
@@ -64,6 +74,7 @@ class Stroke(
             speedScale,
             smooth = !straight,
             holdEnds = tool == Tool.PEN || tool == Tool.HIGHLIGHTER,
+            finished = finished,
         ).also { cachedGeometry = it }
     }
 
