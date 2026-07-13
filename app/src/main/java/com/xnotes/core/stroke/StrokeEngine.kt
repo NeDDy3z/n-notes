@@ -46,6 +46,10 @@ object StrokeEngine {
      *  the pen has lifted ([build]'s `finished`), so the live preview never opens thick. */
     const val DOT_MAX_LEN = 5.0
 
+    /** Calligraphy pen: the direction-y a dot is built at. Past the broad face's 1.0 on purpose,
+     *  so a dot lands slightly bigger than the thickest line and reads as a deliberate mark. */
+    const val DOT_DIR_Y = 1.5
+
     /** Speed pen: dp/ms at/below which the line stays full width, and the speed
      *  at/above which it reaches its thinnest (0 and ≈3.75 in/s of hand travel).
      *  Measuring in dp — not page pixels — makes the effect independent of both zoom
@@ -302,9 +306,9 @@ object StrokeEngine {
         fun hw(i: Int, ty: Double) = halfWidth(baseWidth, pressureEnabled, m, ds, sp[i], ty)
 
         // 3. Single sample -> a filled dot: one swept disc at the pure-pressure half-width. A
-        //    finished calligraphy tap takes the nib's broad face so the dot stays visible.
+        //    finished calligraphy tap takes the dot width (past the broad face) so it stays visible.
         if (n == 1) {
-            val h = hw(0, if (finished && ds > 0.0) 1.0 else 0.0)
+            val h = hw(0, if (finished && ds > 0.0) DOT_DIR_Y else 0.0)
             return StrokeGeometry(emptyList(), centers, listOf(h))
         }
 
@@ -334,11 +338,12 @@ object StrokeEngine {
         // stroke turns toward the nib edge. Orientation still follows the true tangent; only the
         // width magnitude is held back. A no-op when ds = 0.
         // Exception: a finished dot-sized stroke (DOT_MAX_LEN) can never confirm a heading, so it
-        // takes the broad face whole rather than collapsing to the near-invisible thin extreme.
+        // takes the dot width (DOT_DIR_Y, past the broad face) whole rather than collapsing to the
+        // near-invisible thin extreme.
         val dirY = if (ds > 0.0) {
             var arc = 0.0
             for (i in 1 until n) arc += (centers[i] - centers[i - 1]).length()
-            if (finished && arc <= DOT_MAX_LEN) List(n) { 1.0 }
+            if (finished && arc <= DOT_MAX_LEN) List(n) { DOT_DIR_Y }
             else ema(confirmThickening(tangents.map { it.y }, centers, DIR_CONFIRM_LEN), DIR_ALPHA)
         } else null
 

@@ -274,13 +274,14 @@ class StrokeEngineTest {
         assertTrue("mid-stroke dip survives", g.halfWidths.minOrNull()!! < 1.2)
     }
 
-    @Test fun calligraphyDotTakesTheBroadFace() {
+    @Test fun calligraphyDotTakesTheDotWidth() {
         // A finished dot-sized stroke (4 px, under DOT_MAX_LEN) can never confirm a thick heading,
-        // so it takes the nib's broad face whole: every half-width is the thick 3 · (1 + ds), not
-        // the near-invisible thin extreme the confirm window would otherwise pin it to.
+        // so it takes the dot width whole: every half-width is 3 · (1 + ds · DOT_DIR_Y), slightly
+        // past the broad face, not the near-invisible thin extreme the confirm window would
+        // otherwise pin it to.
         val pts = listOf(Sample(0.0, 0.0, 1.0), Sample(2.0, 0.0, 1.0), Sample(4.0, 0.0, 1.0))
         val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6, smooth = false)
-        for (h in g.halfWidths) assertEquals(3.0 * 1.6, h, 1e-9)
+        for (h in g.halfWidths) assertEquals(3.0 * 1.9, h, 1e-9)
     }
 
     @Test fun calligraphyDotStaysThinWhileThePenIsDown() {
@@ -291,11 +292,11 @@ class StrokeEngineTest {
         for (h in g.halfWidths) assertEquals(3.0 * 0.4, h, 1e-9)
     }
 
-    @Test fun calligraphySingleSampleDotTakesTheBroadFace() {
-        // A single-sample calligraphy tap is the extreme dot: its one swept disc takes the broad
-        // face too, instead of the mid (ty = 0) width.
+    @Test fun calligraphySingleSampleDotTakesTheDotWidth() {
+        // A single-sample calligraphy tap is the extreme dot: its one swept disc takes the dot
+        // width too, instead of the mid (ty = 0) width.
         val g = StrokeEngine.build(listOf(Sample(0.0, 0.0, 1.0)), 6.0, false, 1.0, 0.6)
-        assertEquals(3.0 * 1.6, g.halfWidths[0], 1e-9)
+        assertEquals(3.0 * 1.9, g.halfWidths[0], 1e-9)
     }
 
     @Test fun calligraphyShortTickPastTheDotLengthStaysThin() {
