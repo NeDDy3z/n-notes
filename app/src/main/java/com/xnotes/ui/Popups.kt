@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -176,6 +178,8 @@ fun ToolConfigPopup(editor: Editor, tool: Tool, onDismiss: () -> Unit) {
  * below (page → document → the global page-colour preference / a built-in default); the global
  * default itself is unchanged here (it lives in Preferences). Like [ToolConfigPopup], the popup holds
  * the edited style locally and pushes each change to the [Editor] (which persists, but never undoes).
+ * The All Pages tab also offers making its style the default stamped onto new notes, plus a Reset
+ * back to all-Default.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -184,9 +188,14 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
     var docStyle by remember { mutableStateOf(editor.documentStyle) }
     var pageStyle by remember { mutableStateOf(editor.currentPageStyle) }
     val style = if (tab == 0) docStyle else pageStyle
+    // "Default for new notes" shows once the All Pages style differs from the saved new-note
+    // default, and stays for the rest of the popup session (so it doesn't vanish when checked).
+    var showNewNoteRow by remember { mutableStateOf(editor.documentStyle != editor.newNoteStyle) }
     fun apply(next: PageStyle) {
-        if (tab == 0) { docStyle = next; editor.setDocumentStyle(next) }
-        else { pageStyle = next; editor.setCurrentPageStyle(next) }
+        if (tab == 0) {
+            docStyle = next; editor.setDocumentStyle(next)
+            if (next != editor.newNoteStyle) showNewNoteRow = true
+        } else { pageStyle = next; editor.setCurrentPageStyle(next) }
     }
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
@@ -268,6 +277,30 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
                 },
                 valueRange = 0f..100f,
             )
+
+            if (tab == 0) {
+                Spacer(Modifier.size(8.dp))
+                if (showNewNoteRow) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Checkbox(
+                            checked = !editor.newNoteStyle.isEmpty && docStyle == editor.newNoteStyle,
+                            onCheckedChange = { on ->
+                                editor.saveNewNoteStyle(if (on) docStyle else PageStyle())
+                            },
+                        )
+                        Text(
+                            "Default for new notes",
+                            color = LocalPalette.current.text.toComposeColor(),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Spacer(Modifier.size(4.dp))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ModeChip("Reset", false) { apply(PageStyle()) }
+                }
+            }
         }
     }
 }

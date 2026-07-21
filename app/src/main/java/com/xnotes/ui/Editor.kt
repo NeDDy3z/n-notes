@@ -167,7 +167,8 @@ class Editor(context: Context) {
     private var openPdfTemp: java.io.File? = null
 
     val state = CanvasState(
-        Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation),
+        Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation)
+            .also { it.style = settings.newNoteStyle },
         AndroidSurfaceFactory(),
         buildPalette(settings.prefs),
     )
@@ -1473,6 +1474,18 @@ class Editor(context: Context) {
     val currentPageStyle: PageStyle
         get() = state.document.pages.getOrNull(state.currentPageIndex())?.style ?: PageStyle()
 
+    /** The saved All Pages style stamped onto newly created notes (empty ⇒ app built-ins). */
+    var newNoteStyle by mutableStateOf(settings.newNoteStyle)
+        private set
+
+    /** Save (or, passing an empty style, forget) the All Pages style new notes start with. */
+    fun saveNewNoteStyle(style: PageStyle) {
+        if (newNoteStyle == style) return
+        newNoteStyle = style
+        settings = settings.copy(newNoteStyle = style)
+        settingsRepo.save(settings)
+    }
+
     /** Replace the document-wide ("All Pages") style override. */
     fun setDocumentStyle(style: PageStyle) {
         val prev = state.document.style
@@ -1997,6 +2010,7 @@ class Editor(context: Context) {
     fun createBlankNoteFile(treeUri: String, parentDocId: String, rawName: String): String? {
         val name = uniqueNoteName(treeUri, parentDocId, rawName)
         val blank = Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation)
+            .also { it.style = settings.newNoteStyle }
         return createNoteFile(treeUri, parentDocId, name) { codec.write(blank, it) }
     }
 
@@ -2005,6 +2019,7 @@ class Editor(context: Context) {
     fun createPdfNoteFile(treeUri: String, parentDocId: String, rawName: String, pdfFile: java.io.File): String? {
         val source = com.xnotes.platform.PdfSource.create(appContext, pdfFile) ?: return null
         val doc = com.xnotes.platform.PdfImporter.import(source, state.document.dpi) // doc.pdfFile = pdfFile
+        doc.style = settings.newNoteStyle
         val name = uniqueNoteName(treeUri, parentDocId, rawName)
         val uri = createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
         source.close()
@@ -3747,7 +3762,7 @@ class Editor(context: Context) {
             Document.DEFAULT_NEW_PAGES,
             settings.prefs.defaultPageSize,
             settings.prefs.defaultPageOrientation,
-        )
+        ).also { it.style = settings.newNoteStyle }
         rebuildPdfSource() // close the outgoing note's PDF source (a blank note has none)
         adoptOpenPdf(state.document) // and reclaim its temp PDF file now it's released
         history.clear()

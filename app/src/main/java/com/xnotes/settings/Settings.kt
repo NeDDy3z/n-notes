@@ -1,5 +1,7 @@
 package com.xnotes.settings
 
+import com.xnotes.core.model.PagePattern
+import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
@@ -73,6 +75,8 @@ data class Settings(
     val explorerSortDescending: Boolean = true,
     val renderScale: Double = 1.0,
     val presentation: PresentationSettings = PresentationSettings(),
+    /** All Pages style stamped onto every newly created note; empty ⇒ none saved. */
+    val newNoteStyle: PageStyle = PageStyle(),
     val prefs: Preferences = Preferences(),
     /** One-shot flag: the first-run stylus check (which may auto-enable finger-draw) has run. */
     val fingerDrawAutoChecked: Boolean = false,
@@ -103,6 +107,7 @@ data class Settings(
             .put("explorer_sort_descending", explorerSortDescending)
             .put("render_scale", renderScale)
             .put("presentation", presentation.toJson())
+            .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .put("prefs", prefs.toJson())
             .put("view_defaults", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaults))
             .put("finger_draw_auto_checked", fingerDrawAutoChecked)
@@ -140,6 +145,7 @@ data class Settings(
                 explorerSortDescending = o.optBoolean("explorer_sort_descending", true),
                 renderScale = o.optDouble("render_scale", 1.0),
                 presentation = PresentationSettings.fromJson(o.optJSONObject("presentation")),
+                newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
                 fingerDrawAutoChecked = o.optBoolean("finger_draw_auto_checked", false),
             )
@@ -156,6 +162,25 @@ data class Settings(
         }
 
         private fun rgbaArr(c: Rgba) = JSONArray().put(c.r).put(c.g).put(c.b).put(c.a)
+
+        private fun rgba(a: JSONArray?): Rgba? =
+            a?.let { Rgba.fromList((0 until it.length()).map { i -> it.optInt(i, 0) }) }
+
+        private fun pageStyleJson(s: PageStyle) = JSONObject()
+            .apply { s.pageColor?.let { put("page_color", rgbaArr(it)) } }
+            .apply { s.pattern?.let { put("pattern", it.id) } }
+            .apply { s.patternColor?.let { put("pattern_color", rgbaArr(it)) } }
+            .apply { s.spacing?.let { put("spacing", it) } }
+
+        private fun pageStyle(o: JSONObject?): PageStyle {
+            if (o == null) return PageStyle()
+            return PageStyle(
+                pageColor = rgba(o.optJSONArray("page_color")),
+                pattern = PagePattern.fromId(o.optString("pattern", "")),
+                patternColor = rgba(o.optJSONArray("pattern_color")),
+                spacing = if (o.has("spacing")) o.optDouble("spacing") else null,
+            )
+        }
 
         private fun rgbaList(arr: JSONArray?): List<Rgba> {
             if (arr == null) return emptyList()

@@ -117,6 +117,31 @@ class SettingsTest {
         assertNull(Settings.fromJson(JSONObject()).prefs.pageColor)
     }
 
+    @Test fun newNoteStyleEmptyByDefaultAndUnwritten() {
+        val s = Settings.fromJson(JSONObject())
+        assertTrue(s.newNoteStyle.isEmpty)
+        assertFalse(s.toJson().has("new_note_style"))
+    }
+
+    @Test fun newNoteStyleRoundTrips() {
+        val style = com.xnotes.core.model.PageStyle(
+            pageColor = Rgba(255, 250, 230),
+            pattern = com.xnotes.core.model.PagePattern.GRID,
+            patternColor = Rgba(100, 120, 140, 80),
+            spacing = 48.0,
+        )
+        val back = Settings.fromJson(Settings(newNoteStyle = style).toJson())
+        assertEquals(style, back.newNoteStyle)
+    }
+
+    @Test fun newNoteStylePartialFieldsStayNull() {
+        val style = com.xnotes.core.model.PageStyle(pattern = com.xnotes.core.model.PagePattern.LINES)
+        val back = Settings.fromJson(Settings(newNoteStyle = style).toJson())
+        assertEquals(style, back.newNoteStyle)
+        assertNull(back.newNoteStyle.pageColor)
+        assertNull(back.newNoteStyle.spacing)
+    }
+
     @Test fun fingerDrawAutoCheckedDefaultsFalse() {
         assertFalse(Settings.fromJson(JSONObject()).fingerDrawAutoChecked)
     }
