@@ -9,6 +9,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -368,7 +369,7 @@ private fun ChannelField(label: String, value: Int, modifier: Modifier = Modifie
  * no clean hook for. [value] drives the field when it isn't focused; edits flow out through [onText].
  */
 @Composable
-private fun NativeField(
+internal fun NativeField(
     value: String,
     onText: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -376,6 +377,8 @@ private fun NativeField(
     maxLen: Int = 6,
     hexOnly: Boolean = false,
     endAlign: Boolean = false,
+    autoFocus: Boolean = false,
+    onDone: (() -> Unit)? = null,
 ) {
     val textColor = LocalPalette.current.text.toArgb()
     AndroidView(
@@ -411,13 +414,19 @@ private fun NativeField(
                 filters = filterList.toTypedArray()
                 onImeBack = { clearFocus() }
                 setOnEditorActionListener { _, actionId, _ ->
-                    if (actionId == EditorInfo.IME_ACTION_DONE) { clearFocus(); true } else false
+                    if (actionId == EditorInfo.IME_ACTION_DONE) { onDone?.invoke(); clearFocus(); true } else false
                 }
                 addTextChangedListener(object : TextWatcher {
                     override fun afterTextChanged(s: Editable?) { if (hasFocus()) onText(s?.toString().orEmpty()) }
                     override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                     override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 })
+                if (autoFocus) post {
+                    requestFocus()
+                    selectAll()
+                    val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showSoftInput(this, 0)
+                }
             }
         },
         update = { et ->
@@ -443,7 +452,7 @@ private class PickerEditText(context: Context) : EditText(context) {
 }
 
 @Composable
-private fun FieldFrame(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
+internal fun FieldFrame(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
     val palette = LocalPalette.current
     Row(
         modifier

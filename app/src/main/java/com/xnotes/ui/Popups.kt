@@ -391,6 +391,43 @@ private fun FilterSpinRow(label: String, value: Int, min: Int, max: Int, onChang
     }
 }
 
+/** Page-nav popup: type a page number (1-based) and jump to it; Done/GO both commit. */
+@Composable
+fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("${editor.pageIndex + 1}") }
+    fun go() {
+        val n = text.toIntOrNull() ?: return
+        editor.goToPage(n - 1)
+        onDismiss()
+    }
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle("GO TO PAGE")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FieldFrame(Modifier.width(72.dp)) {
+                    NativeField(
+                        value = text,
+                        onText = { text = it },
+                        modifier = Modifier.weight(1f),
+                        numeric = true,
+                        maxLen = 5,
+                        endAlign = true,
+                        autoFocus = true,
+                        onDone = { go() },
+                    )
+                }
+                Text(
+                    "/ ${editor.pageCount}",
+                    color = LocalPalette.current.textDim.toComposeColor(),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                )
+                ModeChip("GO", selected = true) { go() }
+            }
+        }
+    }
+}
+
 /** Eraser configuration popup: a STROKE/AREA mode picker and a SIZE slider (the eraser radius). */
 @Composable
 fun EraserConfigPopup(editor: Editor, onDismiss: () -> Unit) {

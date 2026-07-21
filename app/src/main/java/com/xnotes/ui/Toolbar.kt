@@ -171,7 +171,16 @@ private fun ToolbarItemView(
 
         ToolbarItem.PAGE_NAV -> {
             ToolbarIcon(XnotesIcons.prev, "Previous page") { editor.prevPage() }
-            Label("${editor.pageIndex + 1} / ${editor.pageCount}")
+            var jumpOpen by remember { mutableStateOf(false) }
+            Box {
+                Label(
+                    "${editor.pageIndex + 1} / ${editor.pageCount}",
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { jumpOpen = true },
+                )
+                if (jumpOpen) PageJumpPopup(editor) { jumpOpen = false }
+            }
             ToolbarIcon(XnotesIcons.next, "Next page") { editor.nextPage() }
         }
         ToolbarItem.PAGE_MENU -> PageMenu(editor)
