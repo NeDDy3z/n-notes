@@ -78,6 +78,29 @@ class RulerTest {
         assertNull(r.hitButton(Pt(100.0, 200.0), r.buttonRadiusPx()))
     }
 
+    @Test fun snapToAxesPullsNearbyAngles() {
+        val snap = Math.toRadians(Ruler.AXIS_SNAP_DEG)
+        assertEquals(0.0, Ruler.snapToAxes(snap * 0.9), 1e-9)
+        assertEquals(0.0, Ruler.snapToAxes(-snap * 0.9), 1e-9)
+        assertEquals(PI / 2, Ruler.snapToAxes(PI / 2 - snap * 0.5), 1e-9)
+        assertEquals(PI, Ruler.snapToAxes(PI + snap * 0.9), 1e-9)
+        assertEquals(-PI / 2, Ruler.snapToAxes(-PI / 2 + snap * 0.9), 1e-9)
+    }
+
+    @Test fun snapToAxesLeavesFarAnglesAlone() {
+        val off = Math.toRadians(10.0)
+        assertEquals(off, Ruler.snapToAxes(off), 1e-9)
+        assertEquals(PI / 4, Ruler.snapToAxes(PI / 4), 1e-9)          // 45 never snaps
+        assertEquals(PI / 2 + off, Ruler.snapToAxes(PI / 2 + off), 1e-9)
+    }
+
+    @Test fun snapToAxesHandlesUnwoundAngles() {
+        // Multi-turn angles from the two-finger rotate accumulate past 2*PI.
+        val snap = Math.toRadians(Ruler.AXIS_SNAP_DEG)
+        assertEquals(5 * PI / 2, Ruler.snapToAxes(5 * PI / 2 + snap * 0.5), 1e-9)
+        assertEquals(-3 * PI, Ruler.snapToAxes(-3 * PI - snap * 0.5), 1e-9)
+    }
+
     @Test fun pxToCm() {
         // 150 px at 150 dpi = 1 inch = 2.54 cm.
         assertEquals(2.54, RulerMath.contentPxToCm(150.0, 150), 1e-9)

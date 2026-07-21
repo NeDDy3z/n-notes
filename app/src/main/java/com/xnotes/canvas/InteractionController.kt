@@ -2635,7 +2635,7 @@ class InteractionController(
             ruler.center = rulerXformStartCenter + ((a + b) * 0.5 - rulerXformStartCentroid)
         }
         if (!ruler.lockAngle) {
-            ruler.angleRad = rulerXformStartRuler + (atan2(b.y - a.y, b.x - a.x) - rulerXformStartFingerAngle)
+            ruler.angleRad = Ruler.snapToAxes(rulerXformStartRuler + (atan2(b.y - a.y, b.x - a.x) - rulerXformStartFingerAngle))
         }
         requestRender()
     }
@@ -2649,7 +2649,7 @@ class InteractionController(
         val idx = e.findPointerIndex(drawingPointerId).coerceAtLeast(0)
         val v = (Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble()) - ruler.center) * rulerRotateSign
         if (v.length() < 1e-3) return
-        ruler.angleRad = atan2(v.y, v.x)
+        ruler.angleRad = Ruler.snapToAxes(atan2(v.y, v.x))
         requestRender()
     }
 

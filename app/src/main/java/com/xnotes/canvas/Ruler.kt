@@ -102,6 +102,21 @@ class Ruler {
         angleRad = 0.0
         initialized = true
     }
+
+    companion object {
+        /** Magnetic pull of the horizontal/vertical orientations, in degrees. */
+        const val AXIS_SNAP_DEG = 4.0
+
+        /**
+         * Snap [raw] (radians, any winding) to the nearest horizontal/vertical orientation
+         * (0/90/180/270) when within [AXIS_SNAP_DEG]; otherwise return it unchanged.
+         */
+        fun snapToAxes(raw: Double): Double {
+            val quarter = Math.PI / 2.0
+            val nearest = Math.round(raw / quarter) * quarter
+            return if (abs(raw - nearest) <= Math.toRadians(AXIS_SNAP_DEG)) nearest else raw
+        }
+    }
 }
 
 /** Pure unit conversions for the ruler's graduations and length readout. */
