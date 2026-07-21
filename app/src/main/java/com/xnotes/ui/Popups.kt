@@ -190,6 +190,7 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
     val style = if (tab == 0) docStyle else pageStyle
     // "Default for new notes" shows once the All Pages style differs from the saved new-note
     // default, and stays for the rest of the popup session (so it doesn't vanish when checked).
+    // An all-Default style hides it regardless (e.g. after Reset): there is nothing to save.
     var showNewNoteRow by remember { mutableStateOf(editor.documentStyle != editor.newNoteStyle) }
     fun apply(next: PageStyle) {
         if (tab == 0) {
@@ -280,7 +281,7 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
 
             if (tab == 0) {
                 Spacer(Modifier.size(8.dp))
-                if (showNewNoteRow) {
+                if (showNewNoteRow && !docStyle.isEmpty) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Checkbox(
                             checked = !editor.newNoteStyle.isEmpty && docStyle == editor.newNoteStyle,
