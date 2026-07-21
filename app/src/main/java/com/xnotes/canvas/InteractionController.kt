@@ -48,6 +48,7 @@ import com.xnotes.core.pal.TextMeasurer
 import com.xnotes.core.stroke.RecognizedShape
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.ShapeRecognizer
+import com.xnotes.core.stroke.StrokeSimplify
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
@@ -902,6 +903,7 @@ class InteractionController(
                     scheduleFade()
                 }
                 else -> {
+                    simplifyForCommit(stroke)
                     val page = state.document.pages[pi]
                     page.items.add(stroke)
                     state.appendToCache(page, stroke)
@@ -925,6 +927,20 @@ class InteractionController(
             refreshSelectionMenu()
         }
         requestRender()
+    }
+
+    /** Pen-up sample reduction: like the capture gate, the tolerance is screen-space — viewport
+     *  px at the draw zoom (÷ zoom → content px), capped so zoomed-out ink keeps content fidelity.
+     *  The stroke's just-built geometry supplies the half-width channel, so pressure/speed width
+     *  variation survives the reduction. */
+    private fun simplifyForCommit(stroke: Stroke) {
+        if (stroke.straight) return
+        val eps = (SIMPLIFY_EPS / state.zoom).coerceAtMost(SIMPLIFY_EPS)
+        val slim = StrokeSimplify.simplify(stroke.samples, stroke.geometry().halfWidths, eps)
+        if (slim.size == stroke.samples.size) return
+        stroke.samples.clear()
+        stroke.samples.addAll(slim)
+        stroke.invalidate()
     }
 
     private fun armDwell() {
@@ -2837,6 +2853,10 @@ class InteractionController(
 
     companion object {
         const val MIN_SAMPLE_DIST = 1.0
+
+        /** Pen-up reduction tolerance, viewport px at the draw zoom (see [simplifyForCommit]). */
+        const val SIMPLIFY_EPS = 0.2
+
         const val MOVE_EPS = 0.01
 
         /** Stylus side-button bits, widened past the S-Pen primary so pens on the secondary/tertiary lines count too. */

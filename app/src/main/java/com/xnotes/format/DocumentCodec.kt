@@ -20,6 +20,7 @@ import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.ImageCodec
 import com.xnotes.core.pal.TextMeasurer
 import com.xnotes.core.stroke.Sample
+import com.xnotes.core.stroke.StrokeSimplify
 import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
@@ -81,6 +82,7 @@ class DocumentCodec(
         j.beginObject()
         j.name("format").value(FORMAT)
         j.name("version").value(VERSION)
+        j.name("writer").value(WRITER)
         j.name("dpi").value(doc.dpi)
         j.name("has_pdf").value(doc.pdfFile != null)
         j.name("bookmarks").beginArray()
@@ -334,6 +336,23 @@ class DocumentCodec(
                 if (item == null) dropped++ else page.items.add(spec.index - dropped, item)
             }
         }
+
+        // Ink written before pen-up sample reduction shipped (writer < 43, or no writer field at
+        // all) carries far more samples than the ribbon needs; compact it once at load. In-memory
+        // only — the file shrinks whenever the user next edits and saves.
+        if (m.writer < SIMPLIFIED_SINCE) {
+            for (page in doc.pages) {
+                for (item in page.items) {
+                    if (item !is Stroke || item.straight) continue
+                    val slim = StrokeSimplify.simplify(item.samples, item.geometry().halfWidths, StrokeSimplify.LEGACY_EPS)
+                    if (slim.size != item.samples.size) {
+                        item.samples.clear()
+                        item.samples.addAll(slim)
+                    }
+                    item.invalidate() // also frees the geometry built for the width channel
+                }
+            }
+        }
         return doc
     }
 
@@ -341,6 +360,7 @@ class DocumentCodec(
 
     private class ParsedManifest {
         var formatOk = false
+        var writer = 0
         var dpi = PageSize.DEFAULT_DPI
         var hasPdf = false
         var style = PageStyle()
@@ -368,6 +388,7 @@ class DocumentCodec(
                     if (stringOr(p, "") != FORMAT) throw XNoteFormatException(NOT_XNOTE)
                     m.formatOk = true
                 }
+                "writer" -> m.writer = intOr(p, 0)
                 "dpi" -> m.dpi = intOr(p, PageSize.DEFAULT_DPI)
                 "has_pdf" -> m.hasPdf = boolOr(p, false)
                 "style" -> m.style = parseStyle(p)
@@ -805,6 +826,15 @@ class DocumentCodec(
     companion object {
         const val FORMAT = "xnote"
         const val VERSION = 1
+
+        /** The com.xnotes versionCode stamped into manifests this build writes ("writer"), kept
+         *  in step with the release that carries it. Old readers ignore the unknown key. */
+        const val WRITER = 43
+
+        /** Writers at/after this versionCode reduce ink samples at pen-up; ink from older
+         *  writers (or files with no "writer" at all) is compacted once at load instead. */
+        private const val SIMPLIFIED_SINCE = 43
+
         private const val NOT_XNOTE = "Not an xnotes document"
     }
 }

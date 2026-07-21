@@ -275,6 +275,44 @@ class DocumentCodecTest {
         assertEquals(Sample(1.0, 2.0, 0.5), stroke.samples[0])
     }
 
+    @Test fun legacyFileInkCompactsOnLoad() {
+        // No "writer" field = written before pen-up sample reduction shipped: dense ink is
+        // compacted once at load. 100 collinear samples 0.2 px apart carry nothing the ribbon
+        // needs beyond the ends and the EMA gap cap.
+        val samples = (0 until 100).joinToString(",") { "[${it * 0.2},5,1]" }
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use {
+            it.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+            it.write(
+                ("{\"format\":\"xnote\",\"version\":1,\"pages\":[{\"width\":100,\"height\":100,\"items\":[" +
+                    "{\"kind\":\"stroke\",\"tool\":\"pen\",\"samples\":[$samples]}]}]}").toByteArray(),
+            )
+            it.closeEntry()
+        }
+        val doc = codec.read(ByteArrayInputStream(out.toByteArray()))
+        val stroke = doc.pages[0].items[0] as Stroke
+        assertTrue("dense legacy ink should compact", stroke.samples.size < 30)
+        assertEquals(Sample(0.0, 5.0, 1.0), stroke.samples.first())
+        assertEquals(19.8, stroke.samples.last().x, 1e-9)
+    }
+
+    @Test fun currentWriterInkIsNotRecompacted() {
+        // A file this codec wrote carries writer=43, so its (already pen-up-reduced) ink must
+        // load back sample-for-sample.
+        val doc = Document(dpi = 150)
+        val page = Page(100.0, 100.0)
+        page.items.add(
+            Stroke(
+                Tool.PEN,
+                ToolConfig(),
+                (0 until 100).mapTo(mutableListOf()) { Sample(it * 0.2, 5.0, 1.0) },
+            ),
+        )
+        doc.pages.add(page)
+        val back = roundTrip(doc).pages[0].items[0] as Stroke
+        assertEquals(100, back.samples.size)
+    }
+
     @Test fun imageKeepsItsZOrderSlot() {
         // Image files stream out of the zip after the manifest, so image items are
         // inserted late; they must still land between the items they were drawn between.
@@ -369,7 +407,7 @@ class DocumentCodecTest {
             }
         }
         assertEquals(
-            "{\"format\":\"xnote\",\"version\":1,\"dpi\":150,\"has_pdf\":false," +
+            "{\"format\":\"xnote\",\"version\":1,\"writer\":43,\"dpi\":150,\"has_pdf\":false," +
                 "\"bookmarks\":[{\"page\":0,\"label\":\"Intro\"}]," +
                 "\"pages\":[{\"width\":100,\"height\":200,\"pdf_page\":null,\"items\":[" +
                 "{\"kind\":\"stroke\",\"tool\":\"speed\",\"config\":{\"base_width\":3.5," +
