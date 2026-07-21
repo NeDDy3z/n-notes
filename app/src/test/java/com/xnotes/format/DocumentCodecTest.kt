@@ -338,9 +338,9 @@ class DocumentCodecTest {
     }
 
     @Test fun manifestBytesMatchTheHistoricalForm() {
-        // The streaming writer must emit byte-for-byte what the org.json DOM produced on
-        // Android (key order, integral doubles as longs, escaped slashes), so a note
-        // re-saved by this version is identical to one saved by the last.
+        // The streaming writer must emit the form the org.json DOM produced on Android
+        // (key order, integral doubles as longs, escaped slashes); the only departure is
+        // that sample values serialize rounded (x/y 2dp, pressure 3dp).
         val doc = Document(dpi = 150)
         doc.style = PageStyle(pattern = PagePattern.LINES, spacing = 48.0)
         doc.bookmarks.add(Bookmark(0, "Intro"))
@@ -349,7 +349,7 @@ class DocumentCodecTest {
             Stroke(
                 Tool.SPEED,
                 ToolConfig(baseWidth = 3.5, pressureEnabled = false, pressureMinFactor = 0.4, directionStrength = 0.0, rgba = Rgba(1, 2, 3, 255), speedStrength = 0.8),
-                mutableListOf(Sample(1.5, 2.0, 1.0, 0.0), Sample(3.0, 4.25, 0.5, 16.0)),
+                mutableListOf(Sample(1.5, 2.0, 1.0, 0.0), Sample(3.0, 4.25, 0.5, 16.0), Sample(1.23456789, 2.3459999, 0.87654321, 33.0)),
                 2.5,
             ),
         )
@@ -375,7 +375,7 @@ class DocumentCodecTest {
                 "{\"kind\":\"stroke\",\"tool\":\"speed\",\"config\":{\"base_width\":3.5," +
                 "\"pressure_enabled\":false,\"pressure_min_factor\":0.4,\"direction_strength\":0," +
                 "\"rgba\":[1,2,3,255],\"speed_strength\":0.8}," +
-                "\"samples\":[[1.5,2,1,0],[3,4.25,0.5,16]],\"speed_scale\":2.5}," +
+                "\"samples\":[[1.5,2,1,0],[3,4.25,0.5,16],[1.23,2.35,0.877,33]],\"speed_scale\":2.5}," +
                 "{\"kind\":\"text\",\"pos\":[10,20],\"width\":250,\"text\":\"a\\/b\\n\\\"c\\\"\"," +
                 "\"rgba\":[9,8,7,255],\"point_size\":13}," +
                 "{\"kind\":\"shape\",\"shape\":\"line\",\"start\":[0,0],\"end\":[50,30]," +
@@ -387,6 +387,26 @@ class DocumentCodecTest {
         // And the escaped slash must come back out as a plain one.
         val back = codec.read(ByteArrayInputStream(out.toByteArray()))
         assertEquals("a/b\n\"c\"", (back.pages[0].items[1] as TextItem).text)
+    }
+
+    @Test fun samplesRoundTripAtWritePrecision() {
+        // Samples serialize rounded to 0.01 px / 0.001 pressure; the read-back must land
+        // exactly on the rounded values (and a re-save of those is then byte-stable).
+        val doc = Document(dpi = 150)
+        val page = Page(100.0, 100.0)
+        page.items.add(
+            Stroke(
+                Tool.PEN,
+                ToolConfig(),
+                mutableListOf(Sample(369.6723697692391, 33.3059117626799, 0.031501833349466324)),
+            ),
+        )
+        doc.pages.add(page)
+
+        val back = (roundTrip(doc).pages[0].items[0] as Stroke).samples[0]
+        assertEquals(369.67, back.x, 0.0)
+        assertEquals(33.31, back.y, 0.0)
+        assertEquals(0.032, back.pressure, 0.0)
     }
 
     @Test fun pageStyleRoundTrips() {

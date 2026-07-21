@@ -156,9 +156,12 @@ class DocumentCodec(
         // Strength matters only to the highlighter; baked per-stroke so a note reopens unchanged.
         if (s.tool == Tool.HIGHLIGHTER) j.name("highlighter_alpha").value(s.config.highlighterAlpha)
         j.endObject()
+        // Samples are ~97% of a dense manifest's bytes, so they serialize rounded: 0.01
+        // content px (2dp) and 0.001 pressure (3dp) are far below anything visible, and a
+        // 500 Hz note shrinks ~2.3x. Rounding is idempotent, so re-saves stay byte-stable.
         j.name("samples").beginArray()
         for (sm in s.samples) {
-            j.beginArray().value(sm.x).value(sm.y).value(sm.pressure)
+            j.beginArray().value(round2(sm.x)).value(round2(sm.y)).value(round3(sm.pressure))
             if (withTime) j.value(sm.t)
             j.endArray()
         }
@@ -227,6 +230,10 @@ class DocumentCodec(
     private fun writeRgba(j: JsonWrite, c: Rgba) {
         j.beginArray().value(c.r).value(c.g).value(c.b).value(c.a).endArray()
     }
+
+    private fun round2(v: Double): Double = if (v.isFinite()) Math.round(v * 100.0) / 100.0 else v
+
+    private fun round3(v: Double): Double = if (v.isFinite()) Math.round(v * 1000.0) / 1000.0 else v
 
     /** A page/document style, written only when something is overridden (forgiving: fields are optional). */
     private fun writeStyle(j: JsonWrite, s: PageStyle) {
