@@ -39,10 +39,14 @@ class MaterialPaletteTest {
         assertEquals(Rgba(255, 255, 255, 255), m.surfaceContainerLowest)
         val p = Palette.materialLight(m)
         assertEquals(m.surfaceContainerLowest, p.paper)
-        assertTrue(luminance(p.paper) > luminance(p.panel))
+        assertTrue(luminance(p.paper) > luminance(p.menuBg))
+        assertTrue(luminance(p.menuBg) > luminance(p.panel))
         assertTrue(luminance(p.panel) > luminance(p.bg))
-        assertTrue(luminance(p.bg) > luminance(p.surfaceHi))
+        assertTrue(luminance(p.bg) > luminance(p.surface))
+        assertTrue(luminance(p.surface) > luminance(p.surfaceHi))
         assertTrue(luminance(p.text) < 0.3)
+        // The backstage background must sit visibly below white paper, not wash out.
+        assertTrue(luminance(p.menuBg) < 0.95)
     }
 
     @Test fun seededDarkSurfacesStayDarkWithPastelPrimary() {

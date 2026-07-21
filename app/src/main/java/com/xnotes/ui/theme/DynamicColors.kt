@@ -20,6 +20,7 @@ fun dynamicMaterialColors(context: Context, dark: Boolean): MaterialColors? {
         primary = rgba(s.primary),
         onPrimary = rgba(s.onPrimary),
         surface = rgba(s.surface),
+        surfaceDim = rgba(s.surfaceDim),
         surfaceContainerLowest = rgba(s.surfaceContainerLowest),
         surfaceContainerLow = rgba(s.surfaceContainerLow),
         surfaceContainer = rgba(s.surfaceContainer),

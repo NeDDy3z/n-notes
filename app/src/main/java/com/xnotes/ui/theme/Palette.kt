@@ -105,9 +105,11 @@ data class Palette(
             else -> materialDark(m)
         }
 
+        /** Light sits a few tone steps below white so panels and the backstage keep visible
+         *  depth against white paper instead of washing out near the top of the ladder. */
         fun materialLight(m: MaterialColors): Palette = Palette(
-            bg = m.surfaceContainer,
-            panel = m.surfaceContainerLow,
+            bg = m.surfaceContainerHighest,
+            panel = m.surfaceContainerHigh,
             paper = m.surfaceContainerLowest,
             paperBorder = m.outline,
             accent = m.primary,
@@ -115,9 +117,9 @@ data class Palette(
             border = m.outlineVariant,
             text = m.onSurface,
             textDim = m.onSurfaceVariant,
-            surface = m.surfaceContainerHigh,
-            surfaceHi = m.surfaceContainerHighest,
-            menuBg = m.surface,
+            surface = m.surfaceDim,
+            surfaceHi = ColorMath.darken(m.surfaceDim, 0.06),
+            menuBg = m.surfaceContainer,
             isDark = false,
             isMaterial = true,
         )
@@ -182,6 +184,13 @@ object ColorMath {
     fun lighten(c: Rgba, amount: Double): Rgba {
         val a = amount.coerceIn(0.0, 1.0)
         fun mix(v: Int) = (v + (255 - v) * a).toInt().coerceIn(0, 255)
+        return Rgba(mix(c.r), mix(c.g), mix(c.b), c.a)
+    }
+
+    /** Darken toward black by [amount] (0..1). */
+    fun darken(c: Rgba, amount: Double): Rgba {
+        val a = amount.coerceIn(0.0, 1.0)
+        fun mix(v: Int) = (v * (1 - a)).toInt().coerceIn(0, 255)
         return Rgba(mix(c.r), mix(c.g), mix(c.b), c.a)
     }
 
