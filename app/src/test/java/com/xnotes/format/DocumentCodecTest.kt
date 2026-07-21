@@ -337,6 +337,58 @@ class DocumentCodecTest {
         assertEquals(Rgba(4, 5, 6, 32), poly.fillRgba)
     }
 
+    @Test fun manifestBytesMatchTheHistoricalForm() {
+        // The streaming writer must emit byte-for-byte what the org.json DOM produced on
+        // Android (key order, integral doubles as longs, escaped slashes), so a note
+        // re-saved by this version is identical to one saved by the last.
+        val doc = Document(dpi = 150)
+        doc.style = PageStyle(pattern = PagePattern.LINES, spacing = 48.0)
+        doc.bookmarks.add(Bookmark(0, "Intro"))
+        val page = Page(100.0, 200.0)
+        page.items.add(
+            Stroke(
+                Tool.SPEED,
+                ToolConfig(baseWidth = 3.5, pressureEnabled = false, pressureMinFactor = 0.4, directionStrength = 0.0, rgba = Rgba(1, 2, 3, 255), speedStrength = 0.8),
+                mutableListOf(Sample(1.5, 2.0, 1.0, 0.0), Sample(3.0, 4.25, 0.5, 16.0)),
+                2.5,
+            ),
+        )
+        page.items.add(TextItem(Pt(10.0, 20.0), width = 250.0, text = "a/b\n\"c\"", rgba = Rgba(9, 8, 7, 255), pointSize = 13.0, measurer = FakeTextMeasurer()))
+        page.items.add(ShapeItem(ShapeKind.LINE, Pt(0.0, 0.0), Pt(50.0, 30.0), Rgba(5, 6, 7, 255), 2.0, null))
+        doc.pages.add(page)
+
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        var manifest: String? = null
+        ZipInputStream(ByteArrayInputStream(out.toByteArray())).use { zis ->
+            var e = zis.nextEntry
+            while (e != null) {
+                if (e.name == "manifest.json") manifest = String(zis.readBytes(), Charsets.UTF_8)
+                zis.closeEntry()
+                e = zis.nextEntry
+            }
+        }
+        assertEquals(
+            "{\"format\":\"xnote\",\"version\":1,\"dpi\":150,\"has_pdf\":false," +
+                "\"bookmarks\":[{\"page\":0,\"label\":\"Intro\"}]," +
+                "\"pages\":[{\"width\":100,\"height\":200,\"pdf_page\":null,\"items\":[" +
+                "{\"kind\":\"stroke\",\"tool\":\"speed\",\"config\":{\"base_width\":3.5," +
+                "\"pressure_enabled\":false,\"pressure_min_factor\":0.4,\"direction_strength\":0," +
+                "\"rgba\":[1,2,3,255],\"speed_strength\":0.8}," +
+                "\"samples\":[[1.5,2,1,0],[3,4.25,0.5,16]],\"speed_scale\":2.5}," +
+                "{\"kind\":\"text\",\"pos\":[10,20],\"width\":250,\"text\":\"a\\/b\\n\\\"c\\\"\"," +
+                "\"rgba\":[9,8,7,255],\"point_size\":13}," +
+                "{\"kind\":\"shape\",\"shape\":\"line\",\"start\":[0,0],\"end\":[50,30]," +
+                "\"stroke_rgba\":[5,6,7,255],\"stroke_width\":2,\"fill_rgba\":null}]}]," +
+                "\"style\":{\"pattern\":\"lines\",\"spacing\":48}}",
+            manifest,
+        )
+
+        // And the escaped slash must come back out as a plain one.
+        val back = codec.read(ByteArrayInputStream(out.toByteArray()))
+        assertEquals("a/b\n\"c\"", (back.pages[0].items[1] as TextItem).text)
+    }
+
     @Test fun pageStyleRoundTrips() {
         val doc = Document(dpi = 150)
         doc.style = PageStyle(pattern = PagePattern.LINES, spacing = 48.0) // document-wide ("all pages")

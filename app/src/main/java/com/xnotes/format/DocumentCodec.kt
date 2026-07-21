@@ -24,8 +24,6 @@ import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -57,50 +55,14 @@ class DocumentCodec(
 
     fun write(doc: Document, out: OutputStream, isCancelled: () -> Boolean = { false }) {
         val assets = ArrayList<Pair<String, File>>()
-        var imageIndex = 0
-
-        val pagesArr = JSONArray()
-        for (page in doc.pages) {
-            val itemsArr = JSONArray()
-            for (item in page.items) {
-                val obj = when (item) {
-                    is Stroke -> strokeToJson(item)
-                    is ImageItem -> {
-                        val name = "assets/image-%03d.png".format(imageIndex++)
-                        assets.add(name to item.image.file)
-                        imageToJson(item, name)
-                    }
-                    is TextItem -> textToJson(item)
-                    is ShapeItem -> shapeToJson(item)
-                    else -> null // unrecognized kind: not written
-                }
-                if (obj != null) itemsArr.put(obj)
-            }
-            val pageObj = JSONObject()
-                .put("width", page.width)
-                .put("height", page.height)
-                .put("pdf_page", page.pdfPage ?: JSONObject.NULL)
-                .put("items", itemsArr)
-            pageStyleToJson(page.style)?.let { pageObj.put("style", it) }
-            pagesArr.put(pageObj)
-        }
-
-        val bookmarksArr = JSONArray()
-        for (b in doc.bookmarks) {
-            bookmarksArr.put(JSONObject().put("page", b.page).put("label", b.label))
-        }
-
-        val manifest = JSONObject()
-            .put("format", FORMAT)
-            .put("version", VERSION)
-            .put("dpi", doc.dpi)
-            .put("has_pdf", doc.pdfFile != null)
-            .put("bookmarks", bookmarksArr)
-            .put("pages", pagesArr)
-        pageStyleToJson(doc.style)?.let { manifest.put("style", it) }
-
         ZipOutputStream(out).use { zos ->
-            zos.putDeflated("manifest.json", manifest.toString().toByteArray(Charsets.UTF_8))
+            // The manifest streams straight into the deflater: a dense note's JSON is never
+            // materialized as an org.json DOM, a String, or a byte[] (three copies per save).
+            zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
+            val w = java.io.BufferedWriter(java.io.OutputStreamWriter(zos, Charsets.UTF_8), 32 * 1024)
+            writeManifest(JsonWrite(w), doc, assets)
+            w.flush()
+            zos.closeEntry()
             // The flow lives in its own ODF entry, written only when non-empty so notes
             // without typed text stay byte-identical and old readers see nothing new.
             if (!doc.flow.isEmpty) zos.putDeflated(FlowXml.ENTRY_NAME, FlowXml.write(doc.flow))
@@ -111,6 +73,176 @@ class DocumentCodec(
             // materialized as a byte[]. [isCancelled] lets a long copy abort (e.g. import cancel).
             doc.pdfFile?.let { zos.putStored("assets/source.pdf", it, isCancelled) }
         }
+    }
+
+    // --- model -> streaming json ---
+
+    private fun writeManifest(j: JsonWrite, doc: Document, assets: MutableList<Pair<String, File>>) {
+        j.beginObject()
+        j.name("format").value(FORMAT)
+        j.name("version").value(VERSION)
+        j.name("dpi").value(doc.dpi)
+        j.name("has_pdf").value(doc.pdfFile != null)
+        j.name("bookmarks").beginArray()
+        for (b in doc.bookmarks) {
+            j.beginObject()
+            j.name("page").value(b.page)
+            j.name("label").value(b.label)
+            j.endObject()
+        }
+        j.endArray()
+        j.name("pages").beginArray()
+        for (page in doc.pages) writePage(j, page, assets)
+        j.endArray()
+        writeStyle(j, doc.style)
+        j.endObject()
+    }
+
+    private fun writePage(j: JsonWrite, page: Page, assets: MutableList<Pair<String, File>>) {
+        j.beginObject()
+        j.name("width").value(page.width)
+        j.name("height").value(page.height)
+        j.name("pdf_page")
+        page.pdfPage?.let { j.value(it) } ?: j.nullValue()
+        j.name("items").beginArray()
+        for (item in page.items) {
+            when (item) {
+                is Stroke -> writeStroke(j, item)
+                is ImageItem -> {
+                    val name = "assets/image-%03d.png".format(assets.size)
+                    assets.add(name to item.image.file)
+                    writeImage(j, item, name)
+                }
+                is TextItem -> writeText(j, item)
+                is ShapeItem -> writeShape(j, item)
+                else -> {} // unrecognized kind: not written
+            }
+        }
+        j.endArray()
+        writeStyle(j, page.style)
+        j.endObject()
+    }
+
+    private fun writeStroke(j: JsonWrite, s: Stroke) {
+        // Per-sample time is only meaningful to the speed pen, so it's written as an
+        // optional 4th element only then — every other stroke serializes unchanged.
+        val withTime = s.config.speedStrength > 0.0
+        j.beginObject()
+        j.name("kind").value(Stroke.KIND)
+        j.name("tool").value(s.tool.id)
+        j.name("config").beginObject()
+        j.name("base_width").value(s.config.baseWidth)
+        j.name("pressure_enabled").value(s.config.pressureEnabled)
+        j.name("pressure_min_factor").value(s.config.pressureMinFactor)
+        j.name("direction_strength").value(s.config.directionStrength)
+        j.name("rgba")
+        writeRgba(j, s.config.rgba)
+        // New style fields are written only when set, so a plain pen/calligraphy
+        // stroke's config is byte-for-byte what older versions wrote.
+        if (s.config.speedStrength != 0.0) j.name("speed_strength").value(s.config.speedStrength)
+        if (s.config.taperEnabled) {
+            j.name("taper_enabled").value(true)
+            j.name("taper_min_factor").value(s.config.taperMinFactor)
+        }
+        if (s.config.neon) {
+            j.name("neon").value(true)
+            j.name("neon_strength").value(s.config.neonStrength)
+        }
+        // Dash runs matter only to the dashed pen, so a plain stroke's config is unchanged.
+        if (s.tool == Tool.DASHED) {
+            j.name("dash_length").value(s.config.dashLength)
+            j.name("dash_gap").value(s.config.dashGap)
+        }
+        // Strength matters only to the highlighter; baked per-stroke so a note reopens unchanged.
+        if (s.tool == Tool.HIGHLIGHTER) j.name("highlighter_alpha").value(s.config.highlighterAlpha)
+        j.endObject()
+        j.name("samples").beginArray()
+        for (sm in s.samples) {
+            j.beginArray().value(sm.x).value(sm.y).value(sm.pressure)
+            if (withTime) j.value(sm.t)
+            j.endArray()
+        }
+        j.endArray()
+        // The speed pen's gesture-speed scale (zoom ÷ density at pen-down) reconstructs its
+        // width on reload; written alongside the per-sample times, only for that tool.
+        if (withTime) j.name("speed_scale").value(s.speedScale)
+        // Straight-line strokes must reload un-smoothed, else the EMA pulls their far end inward.
+        if (s.straight) j.name("straight").value(true)
+        j.endObject()
+    }
+
+    private fun writeImage(j: JsonWrite, item: ImageItem, assetName: String) {
+        j.beginObject()
+        j.name("kind").value(ImageItem.KIND)
+        j.name("asset").value(assetName)
+        j.name("rect").beginArray().value(item.rect.x).value(item.rect.y).value(item.rect.w).value(item.rect.h).endArray()
+        j.name("src_w").value(item.image.width)
+        j.name("src_h").value(item.image.height)
+        // Additive field: written only when rotated, so older readers stay compatible.
+        if (item.orientation != 0) j.name("orientation").value(item.orientation)
+        j.endObject()
+    }
+
+    private fun writeText(j: JsonWrite, t: TextItem) {
+        j.beginObject()
+        j.name("kind").value(TextItem.KIND)
+        j.name("pos").beginArray().value(t.pos.x).value(t.pos.y).endArray()
+        j.name("width").value(t.width)
+        j.name("text").value(t.text)
+        j.name("rgba")
+        writeRgba(j, t.rgba)
+        j.name("point_size").value(t.pointSize)
+        // Additive fields: written only when set, so older readers stay compatible
+        // and notes that use neither serialize exactly as before.
+        if (t.height > 0.0) j.name("height").value(t.height)
+        if (t.face != TextItem.DEFAULT_FACE) j.name("font_face").value(t.face.id)
+        j.endObject()
+    }
+
+    private fun writeShape(j: JsonWrite, s: ShapeItem) {
+        j.beginObject()
+        j.name("kind").value(ShapeItem.KIND)
+        j.name("shape").value(s.shape.id)
+        j.name("start").beginArray().value(s.start.x).value(s.start.y).endArray()
+        j.name("end").beginArray().value(s.end.x).value(s.end.y).endArray()
+        j.name("stroke_rgba")
+        writeRgba(j, s.strokeRgba)
+        j.name("stroke_width").value(s.strokeWidth)
+        j.name("fill_rgba")
+        s.fillRgba?.let { writeRgba(j, it) } ?: j.nullValue()
+        // Polygon/polyline carry their vertices (absolute content px); other kinds omit them.
+        s.vertices()?.let { verts ->
+            j.name("points").beginArray()
+            for (p in verts) j.beginArray().value(p.x).value(p.y).endArray()
+            j.endArray()
+        }
+        // Glow is additive: a plain shape serializes exactly as before.
+        if (s.neon) {
+            j.name("neon").value(true)
+            j.name("neon_strength").value(s.neonStrength)
+        }
+        j.endObject()
+    }
+
+    private fun writeRgba(j: JsonWrite, c: Rgba) {
+        j.beginArray().value(c.r).value(c.g).value(c.b).value(c.a).endArray()
+    }
+
+    /** A page/document style, written only when something is overridden (forgiving: fields are optional). */
+    private fun writeStyle(j: JsonWrite, s: PageStyle) {
+        if (s.isEmpty) return
+        j.name("style").beginObject()
+        s.pageColor?.let {
+            j.name("page_color")
+            writeRgba(j, it)
+        }
+        s.pattern?.let { j.name("pattern").value(it.id) }
+        s.patternColor?.let {
+            j.name("pattern_color")
+            writeRgba(j, it)
+        }
+        s.spacing?.let { j.name("spacing").value(it) }
+        j.endObject()
     }
 
     /**
@@ -196,105 +328,6 @@ class DocumentCodec(
             }
         }
         return doc
-    }
-
-    // --- item -> json ---
-
-    private fun strokeToJson(s: Stroke): JSONObject {
-        // Per-sample time is only meaningful to the speed pen, so it's written as an
-        // optional 4th element only then — every other stroke serializes unchanged.
-        val withTime = s.config.speedStrength > 0.0
-        val samples = JSONArray()
-        for (sm in s.samples) {
-            val a = JSONArray().put(sm.x).put(sm.y).put(sm.pressure)
-            if (withTime) a.put(sm.t)
-            samples.put(a)
-        }
-        val config = JSONObject()
-            .put("base_width", s.config.baseWidth)
-            .put("pressure_enabled", s.config.pressureEnabled)
-            .put("pressure_min_factor", s.config.pressureMinFactor)
-            .put("direction_strength", s.config.directionStrength)
-            .put("rgba", rgbaToJson(s.config.rgba))
-        // New style fields are written only when set, so a plain pen/calligraphy
-        // stroke's config is byte-for-byte what older versions wrote.
-        if (s.config.speedStrength != 0.0) config.put("speed_strength", s.config.speedStrength)
-        if (s.config.taperEnabled) {
-            config.put("taper_enabled", true)
-            config.put("taper_min_factor", s.config.taperMinFactor)
-        }
-        if (s.config.neon) {
-            config.put("neon", true)
-            config.put("neon_strength", s.config.neonStrength)
-        }
-        // Dash runs matter only to the dashed pen, so a plain stroke's config is unchanged.
-        if (s.tool == Tool.DASHED) {
-            config.put("dash_length", s.config.dashLength)
-            config.put("dash_gap", s.config.dashGap)
-        }
-        // Strength matters only to the highlighter; baked per-stroke so a note reopens unchanged.
-        if (s.tool == Tool.HIGHLIGHTER) config.put("highlighter_alpha", s.config.highlighterAlpha)
-        val obj = JSONObject()
-            .put("kind", Stroke.KIND)
-            .put("tool", s.tool.id)
-            .put("config", config)
-            .put("samples", samples)
-        // The speed pen's gesture-speed scale (zoom ÷ density at pen-down) reconstructs its
-        // width on reload; written alongside the per-sample times, only for that tool.
-        if (withTime) obj.put("speed_scale", s.speedScale)
-        // Straight-line strokes must reload un-smoothed, else the EMA pulls their far end inward.
-        if (s.straight) obj.put("straight", true)
-        return obj
-    }
-
-    private fun imageToJson(item: ImageItem, assetName: String): JSONObject {
-        val o = JSONObject()
-            .put("kind", ImageItem.KIND)
-            .put("asset", assetName)
-            .put("rect", JSONArray().put(item.rect.x).put(item.rect.y).put(item.rect.w).put(item.rect.h))
-            .put("src_w", item.image.width)
-            .put("src_h", item.image.height)
-        // Additive field: written only when rotated, so older readers stay compatible.
-        if (item.orientation != 0) o.put("orientation", item.orientation)
-        return o
-    }
-
-    private fun textToJson(t: TextItem): JSONObject {
-        val o = JSONObject()
-            .put("kind", TextItem.KIND)
-            .put("pos", JSONArray().put(t.pos.x).put(t.pos.y))
-            .put("width", t.width)
-            .put("text", t.text)
-            .put("rgba", rgbaToJson(t.rgba))
-            .put("point_size", t.pointSize)
-        // Additive fields: written only when set, so older readers stay compatible
-        // and notes that use neither serialize exactly as before.
-        if (t.height > 0.0) o.put("height", t.height)
-        if (t.face != TextItem.DEFAULT_FACE) o.put("font_face", t.face.id)
-        return o
-    }
-
-    private fun shapeToJson(s: ShapeItem): JSONObject {
-        val obj = JSONObject()
-            .put("kind", ShapeItem.KIND)
-            .put("shape", s.shape.id)
-            .put("start", JSONArray().put(s.start.x).put(s.start.y))
-            .put("end", JSONArray().put(s.end.x).put(s.end.y))
-            .put("stroke_rgba", rgbaToJson(s.strokeRgba))
-            .put("stroke_width", s.strokeWidth)
-            .put("fill_rgba", s.fillRgba?.let { rgbaToJson(it) } ?: JSONObject.NULL)
-        // Polygon/polyline carry their vertices (absolute content px); other kinds omit them.
-        s.vertices()?.let { verts ->
-            val arr = JSONArray()
-            for (p in verts) arr.put(JSONArray().put(p.x).put(p.y))
-            obj.put("points", arr)
-        }
-        // Glow is additive: a plain shape serializes exactly as before.
-        if (s.neon) {
-            obj.put("neon", true)
-            obj.put("neon_strength", s.neonStrength)
-        }
-        return obj
     }
 
     // --- streaming json -> model ---
@@ -760,21 +793,6 @@ class DocumentCodec(
         while (p.hasNext()) ptOrNull(p)?.let { out.add(it) }
         p.endArray()
         return if (out.size >= 2) out else null
-    }
-
-    // --- json write helpers ---
-
-    private fun rgbaToJson(c: Rgba): JSONArray = JSONArray().put(c.r).put(c.g).put(c.b).put(c.a)
-
-    /** A page/document style, written only when something is overridden (forgiving: fields are optional). */
-    private fun pageStyleToJson(s: PageStyle): JSONObject? {
-        if (s.isEmpty) return null
-        val o = JSONObject()
-        s.pageColor?.let { o.put("page_color", rgbaToJson(it)) }
-        s.pattern?.let { o.put("pattern", it.id) }
-        s.patternColor?.let { o.put("pattern_color", rgbaToJson(it)) }
-        s.spacing?.let { o.put("spacing", it) }
-        return o
     }
 
     companion object {
