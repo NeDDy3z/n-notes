@@ -76,6 +76,9 @@ class DebugOverlay {
 
     private fun memStat(key: String): Long = memInfo.getMemoryStat(key)?.toLongOrNull() ?: 0L
 
+    private fun fmtBytes(bytes: Long): String =
+        if (bytes < 1024 * 1024) "%.0f KB".format(bytes / 1024.0) else "%.2f MB".format(bytes / MB)
+
     fun draw(r: AndroidRenderer, state: CanvasState) {
         if (!enabled) return
         sampleMemory(System.nanoTime())
@@ -103,6 +106,11 @@ class DebugOverlay {
                 add("open      ${state.lastOpenTotalMs} ms")
                 add("open read ${state.lastOpenReadMs} ms")
             }
+            if (state.openFileBytes >= 0) {
+                add("compact    ${if (state.lastOpenCompacted) "yes" else "no"}")
+                add("file orig  ${fmtBytes(state.openFileBytes)}")
+            }
+            if (state.lastSaveBytes >= 0) add("file live  ${fmtBytes(state.lastSaveBytes)}")
         }
 
         val lineH = AndroidText.lineHeight(FONT)

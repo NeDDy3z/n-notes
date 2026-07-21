@@ -341,6 +341,7 @@ class DocumentCodec(
         // all) carries far more samples than the ribbon needs; compact it once at load. In-memory
         // only — the file shrinks whenever the user next edits and saves.
         if (m.writer < SIMPLIFIED_SINCE) {
+            doc.compactedOnLoad = true
             for (page in doc.pages) {
                 for (item in page.items) {
                     if (item !is Stroke || item.straight) continue

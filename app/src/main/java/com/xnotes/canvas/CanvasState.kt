@@ -1483,6 +1483,14 @@ class CanvasState(
     var lastOpenReadMs = -1L
     var lastOpenTotalMs = -1L
 
+    /** Whether the open compacted legacy ink (pre-writer-43 file), for the debug overlay. */
+    var lastOpenCompacted = false
+
+    /** The opened file's on-disk size at open time (static) and the size of the most recent
+     *  save/autosave (live); -1 until a file-backed note is open. For the debug overlay. */
+    var openFileBytes = -1L
+    var lastSaveBytes = -1L
+
     /** Autosave status for the debug overlay, set by the editor: "idle", "pending", "in progress",
      *  "done" or "failed". */
     var autosaveStatus = "idle"

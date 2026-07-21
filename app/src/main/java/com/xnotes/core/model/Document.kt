@@ -30,6 +30,9 @@ class Document(
     /** The document-wide flowing rich text (empty until typed into; persisted only when non-empty). */
     val flow: TextFlow = TextFlow(),
 ) {
+    /** Transient: set by the codec when legacy ink was compacted at load (debug overlay readout). */
+    var compactedOnLoad = false
+
     /** Derived: the storage display name (or path) base name without extension, or "Untitled". */
     val title: String
         get() = displayName?.let { Paths.stem(it) }

@@ -22,6 +22,7 @@ import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -291,6 +292,7 @@ class DocumentCodecTest {
         }
         val doc = codec.read(ByteArrayInputStream(out.toByteArray()))
         val stroke = doc.pages[0].items[0] as Stroke
+        assertTrue(doc.compactedOnLoad)
         assertTrue("dense legacy ink should compact", stroke.samples.size < 30)
         assertEquals(Sample(0.0, 5.0, 1.0), stroke.samples.first())
         assertEquals(19.8, stroke.samples.last().x, 1e-9)
@@ -309,8 +311,9 @@ class DocumentCodecTest {
             ),
         )
         doc.pages.add(page)
-        val back = roundTrip(doc).pages[0].items[0] as Stroke
-        assertEquals(100, back.samples.size)
+        val loaded = roundTrip(doc)
+        assertFalse(loaded.compactedOnLoad)
+        assertEquals(100, (loaded.pages[0].items[0] as Stroke).samples.size)
     }
 
     @Test fun imageKeepsItsZOrderSlot() {

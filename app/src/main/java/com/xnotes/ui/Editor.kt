@@ -1611,7 +1611,9 @@ class Editor(context: Context) {
         var readMs = -1L
         try {
             val readStart = System.nanoTime()
+            var fileBytes = -1L
             val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                fileBytes = fileSizeOf(uri)
                 appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { codec.read(it, pdfDir, imageDir) }
             }
             readMs = (System.nanoTime() - readStart) / 1_000_000
@@ -1621,6 +1623,8 @@ class Editor(context: Context) {
             doc.displayName = name
             doc.dirty = false
             replaceDocument(doc)
+            state.openFileBytes = fileBytes
+            state.lastSaveBytes = fileBytes // the on-disk size, until the first autosave rewrites it
             maybeBindAutosave(uri) // resume autosaving if this note lives in the granted folder
             noteOpen = true // push the editor on top of backstage (only on a successful open)
         } catch (e: XNoteFormatException) {
@@ -2251,12 +2255,22 @@ class Editor(context: Context) {
                 val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
                     ?: return@runCatching false
                 out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it) } }
+                state.lastSaveBytes = tmp.length() // live file size for the debug overlay
                 true
             } finally {
                 tmp.delete()
             }
         }.getOrDefault(false)
     }
+
+    /** The on-disk size of the SAF document at [uri] in bytes, or -1 when the provider won't say. */
+    private fun fileSizeOf(uri: String): Long = runCatching {
+        appContext.contentResolver.query(
+            android.net.Uri.parse(uri),
+            arrayOf(android.provider.OpenableColumns.SIZE),
+            null, null, null,
+        )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L } ?: -1L
+    }.getOrDefault(-1L)
 
     private fun scheduleAutosave() {
         val uri = autosaveUri ?: return
@@ -2703,6 +2717,10 @@ class Editor(context: Context) {
         flowText.endSession() // flushes the typing burst so the autosave below carries it
         flushAutosave() // save the outgoing note if it was autosaving to the folder
         autosaveUri = null
+        // File readouts belong to the outgoing note; a file-backed open re-sets them after the swap.
+        state.lastOpenCompacted = doc.compactedOnLoad
+        state.openFileBytes = -1L
+        state.lastSaveBytes = -1L
         controller.commitTextEdit()
         controller.clearSelection()
         controller.resetGestureState() // drop the outgoing note's fling/elastic so it can't bleed in
