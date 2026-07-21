@@ -114,8 +114,8 @@ data class Palette(
             paperBorder = m.outline,
             accent = m.primary,
             accentDim = ColorMath.dim(m.primary),
-            // Raw outlineVariant reads too hard against the chrome; sink it halfway in.
-            border = ColorMath.mix(m.outlineVariant, m.surfaceContainer, 0.5),
+            // Raw outlineVariant reads too hard against the chrome; sink it a third of the way in.
+            border = ColorMath.mix(m.outlineVariant, m.surfaceContainer, 0.35),
             text = m.onSurface,
             textDim = m.onSurfaceVariant,
             surface = m.surfaceDim,
@@ -132,8 +132,8 @@ data class Palette(
             paperBorder = m.outlineVariant,
             accent = m.primary,
             accentDim = ColorMath.dim(m.primary),
-            // Raw outlineVariant reads too hard against the chrome; sink it halfway in.
-            border = ColorMath.mix(m.outlineVariant, m.surfaceContainerLowest, 0.5),
+            // Raw outlineVariant reads too hard against the chrome; sink it a third of the way in.
+            border = ColorMath.mix(m.outlineVariant, m.surfaceContainerLowest, 0.35),
             text = m.onSurface,
             textDim = m.onSurfaceVariant,
             surface = m.surfaceContainerHigh,
