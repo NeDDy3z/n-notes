@@ -160,6 +160,40 @@ class SettingsTest {
         assertFalse(Preferences().toJson().has("start_fullscreen"))
     }
 
+    @Test fun paletteStyleDefaultsPerMode() {
+        val p = Preferences.fromJson(JSONObject())
+        assertEquals("classic", p.darkPaletteStyle)
+        assertEquals("material", p.lightPaletteStyle)
+        assertEquals("classic", p.oledPaletteStyle)
+        assertEquals("classic", p.paletteStyle)
+        assertEquals("material", p.copy(uiAppearance = "light").paletteStyle)
+    }
+
+    @Test fun paletteStyleRoundTrips() {
+        val back = Preferences.fromJson(
+            Preferences(darkPaletteStyle = "material", lightPaletteStyle = "classic").toJson(),
+        )
+        assertEquals("material", back.darkPaletteStyle)
+        assertEquals("classic", back.lightPaletteStyle)
+        assertEquals("classic", back.oledPaletteStyle)
+    }
+
+    @Test fun paletteStyleMalformedFallsBackPerMode() {
+        val o = JSONObject()
+            .put("dark_palette_style", "neon")
+            .put("light_palette_style", "neon")
+        val p = Preferences.fromJson(o)
+        assertEquals("classic", p.darkPaletteStyle)
+        assertEquals("material", p.lightPaletteStyle)
+    }
+
+    @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {
+        val p = Preferences(uiAppearance = "oled").withPaletteStyle("material")
+        assertEquals("material", p.oledPaletteStyle)
+        assertEquals("classic", p.darkPaletteStyle)
+        assertEquals("material", p.lightPaletteStyle)
+    }
+
     @Test fun startFullscreenRoundTrips() {
         assertEquals(false, Preferences.fromJson(Preferences(startFullscreen = false).toJson()).startFullscreen)
         assertEquals(true, Preferences.fromJson(Preferences(startFullscreen = true).toJson()).startFullscreen)

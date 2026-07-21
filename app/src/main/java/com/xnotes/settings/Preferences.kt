@@ -12,6 +12,10 @@ import org.json.JSONObject
 data class Preferences(
     val uiAppearance: String = "dark", // "dark" | "light" | "oled"
     val accentColor: Rgba = DEFAULT_ACCENT,
+    /** Chrome palette per appearance mode: "classic" (accent-derived) | "material" (Material You). */
+    val darkPaletteStyle: String = "classic",
+    val lightPaletteStyle: String = "material",
+    val oledPaletteStyle: String = "classic",
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
     val pageTemplatePdf: String? = null,
@@ -62,9 +66,28 @@ data class Preferences(
 ) {
     val isDark: Boolean get() = uiAppearance != "light"
 
+    /** The palette style of the active appearance mode. */
+    val paletteStyle: String get() = paletteStyleFor(uiAppearance)
+
+    fun paletteStyleFor(appearance: String): String = when (appearance) {
+        "light" -> lightPaletteStyle
+        "oled" -> oledPaletteStyle
+        else -> darkPaletteStyle
+    }
+
+    /** Set the palette style of the active appearance mode, leaving the other modes alone. */
+    fun withPaletteStyle(style: String): Preferences = when (uiAppearance) {
+        "light" -> copy(lightPaletteStyle = style)
+        "oled" -> copy(oledPaletteStyle = style)
+        else -> copy(darkPaletteStyle = style)
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("ui_appearance", uiAppearance)
         .put("accent_color", Rgba.toHex(accentColor))
+        .put("dark_palette_style", darkPaletteStyle)
+        .put("light_palette_style", lightPaletteStyle)
+        .put("oled_palette_style", oledPaletteStyle)
         .put("hide_window_decoration", hideWindowDecoration)
         .put("page_color", pageColor?.let { Rgba.toHex(it) } ?: JSONObject.NULL)
         .put("page_template_pdf", pageTemplatePdf ?: JSONObject.NULL)
@@ -108,9 +131,14 @@ data class Preferences(
             val zoomLockPan = o.optString("zoom_lock_pan", "single").let { if (it == "double" || it == "none") it else "single" }
             val tapActions = setOf("none", "undo", "redo", "toggle_pan", "toggle_eraser", "toggle_previous")
             fun tapAction(key: String) = o.optString(key, "none").let { if (it in tapActions) it else "none" }
+            fun paletteStyle(key: String, default: String) =
+                o.optString(key, default).let { if (it == "classic" || it == "material") it else default }
             return Preferences(
                 uiAppearance = appearance,
                 accentColor = Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT,
+                darkPaletteStyle = paletteStyle("dark_palette_style", "classic"),
+                lightPaletteStyle = paletteStyle("light_palette_style", "material"),
+                oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },
