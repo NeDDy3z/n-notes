@@ -16,6 +16,8 @@ data class Preferences(
     val darkPaletteStyle: String = "classic",
     val lightPaletteStyle: String = "material",
     val oledPaletteStyle: String = "classic",
+    /** Material palette seed colour; null (default) follows the system dynamic colours. */
+    val materialSeed: Rgba? = null,
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
     val pageTemplatePdf: String? = null,
@@ -110,6 +112,7 @@ data class Preferences(
         .put("max_zoom_percent", maxZoomPercent)
         .put("max_cache_resolution", maxCacheResolution)
         .apply {
+            materialSeed?.let { put("material_seed", Rgba.toHex(it)) }
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
             codeThemeName?.let { put("code_theme_name", it) }
@@ -139,6 +142,7 @@ data class Preferences(
                 darkPaletteStyle = paletteStyle("dark_palette_style", "classic"),
                 lightPaletteStyle = paletteStyle("light_palette_style", "material"),
                 oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
+                materialSeed = Rgba.fromHex(o.optString("material_seed")),
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },

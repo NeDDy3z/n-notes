@@ -1231,7 +1231,8 @@ class Editor(context: Context) {
      *  when the active appearance mode picked the material style, else the classic accent chrome. */
     private fun buildPalette(p: Preferences): Palette {
         if (p.paletteStyle == "material") {
-            val m = dynamicMaterialColors(appContext, dark = p.isDark)
+            val m = p.materialSeed?.let { MaterialColors.seeded(it, dark = p.isDark) }
+                ?: dynamicMaterialColors(appContext, dark = p.isDark)
                 ?: MaterialColors.seeded(p.accentColor, dark = p.isDark)
             return Palette.material(p.uiAppearance, m)
         }

@@ -187,6 +187,18 @@ class SettingsTest {
         assertEquals("material", p.lightPaletteStyle)
     }
 
+    @Test fun materialSeedNullByDefaultAndUnwritten() {
+        assertNull(Preferences.fromJson(JSONObject()).materialSeed)
+        assertFalse(Preferences().toJson().has("material_seed"))
+    }
+
+    @Test fun materialSeedRoundTrips() {
+        val back = Preferences.fromJson(Preferences(materialSeed = Rgba(33, 150, 243)).toJson())
+        assertEquals(Rgba(33, 150, 243, 255), back.materialSeed)
+        val cleared = Preferences.fromJson(back.copy(materialSeed = null).toJson())
+        assertNull(cleared.materialSeed)
+    }
+
     @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {
         val p = Preferences(uiAppearance = "oled").withPaletteStyle("material")
         assertEquals("material", p.oledPaletteStyle)

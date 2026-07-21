@@ -67,6 +67,17 @@ import kotlinx.coroutines.delay
 private val accentPresets = listOf(
     Rgba(0, 230, 118), Rgba(255, 138, 30), Rgba(255, 77, 77), Rgba(255, 210, 30),
 )
+/** The classic Material accents (500 series), offered as seeds for the material palette. */
+private val materialSeedPresets = listOf(
+    Rgba(244, 67, 54),   // red
+    Rgba(233, 30, 99),   // pink
+    Rgba(156, 39, 176),  // purple
+    Rgba(63, 81, 181),   // indigo
+    Rgba(33, 150, 243),  // blue
+    Rgba(0, 150, 136),   // teal
+    Rgba(76, 175, 80),   // green
+    Rgba(255, 193, 7),   // amber
+)
 internal val pageColorPresets = listOf(
     Rgba(22, 22, 22), Rgba(13, 13, 13), Rgba(255, 255, 255), Rgba(247, 243, 233), Rgba(232, 232, 232),
 )
@@ -169,15 +180,27 @@ fun PreferencesPane(
                 Chip("Material You", prefs.paletteStyle == "material") { update(prefs.withPaletteStyle("material")) }
             }
             FieldLabel("Accent colour")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                accentPresets.forEach { c ->
-                    ColorDot(c.toComposeColor(), prefs.accentColor == c) { update(prefs.copy(accentColor = c)) }
+            if (prefs.paletteStyle == "material") {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DynamicSeedDot(prefs.materialSeed == null) { update(prefs.copy(materialSeed = null)) }
+                    materialSeedPresets.forEach { c ->
+                        ColorDot(c.toComposeColor(), prefs.materialSeed == c) { update(prefs.copy(materialSeed = c)) }
+                    }
                 }
-                ColorPickerDot(
-                    prefs.accentColor,
-                    custom = prefs.accentColor !in accentPresets,
-                    onPick = { update(prefs.copy(accentColor = it)) },
-                ) { onDismiss, onPick -> AccentColorGridPopup(onDismiss, onPick) }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    accentPresets.forEach { c ->
+                        ColorDot(c.toComposeColor(), prefs.accentColor == c) { update(prefs.copy(accentColor = c)) }
+                    }
+                    ColorPickerDot(
+                        prefs.accentColor,
+                        custom = prefs.accentColor !in accentPresets,
+                        onPick = { update(prefs.copy(accentColor = it)) },
+                    ) { onDismiss, onPick -> AccentColorGridPopup(onDismiss, onPick) }
+                }
             }
             CheckRow("Start in fullscreen", editor.fullscreen) { editor.setFullscreenPref(it) }
 
@@ -487,6 +510,30 @@ internal fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit) {
             .padding(4.dp)
             .clip(CircleShape)
             .background(color)
+            .border(1.dp, palette.border.toComposeColor(), CircleShape)
+            .clickable(onClick = onClick),
+    )
+}
+
+/** A soft material sweep stands in for whatever colours the system derives from the wallpaper. */
+private val materialSweepBrush = Brush.sweepGradient(
+    listOf(
+        Color(0xFF2196F3), Color(0xFF9C27B0), Color(0xFFF44336),
+        Color(0xFFFFC107), Color(0xFF4CAF50), Color(0xFF2196F3),
+    ),
+)
+
+/** The dynamic (wallpaper-following) material seed choice, first in the seed row. */
+@Composable
+private fun DynamicSeedDot(selected: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier
+            .size(30.dp)
+            .then(if (selected) Modifier.border(2.dp, palette.accent.toComposeColor(), CircleShape) else Modifier)
+            .padding(4.dp)
+            .clip(CircleShape)
+            .background(materialSweepBrush)
             .border(1.dp, palette.border.toComposeColor(), CircleShape)
             .clickable(onClick = onClick),
     )
