@@ -189,7 +189,16 @@ private fun ToolbarItemView(
 
         ToolbarItem.ZOOM -> {
             ToolbarIcon(XnotesIcons.zoomOut, "Zoom out", enabled = !editor.zoomLocked) { editor.zoomOut() }
-            Label("${editor.zoomPercent}%")
+            var zoomMenuOpen by remember { mutableStateOf(false) }
+            Box {
+                Label(
+                    "${editor.zoomPercent}%",
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { zoomMenuOpen = true },
+                )
+                if (zoomMenuOpen) ZoomMenuPopup(editor) { zoomMenuOpen = false }
+            }
             ToolbarIcon(XnotesIcons.zoomIn, "Zoom in", enabled = !editor.zoomLocked) { editor.zoomIn() }
         }
         ToolbarItem.FIT -> FitMenu(editor)

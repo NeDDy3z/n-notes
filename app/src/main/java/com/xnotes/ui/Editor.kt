@@ -1222,6 +1222,10 @@ class Editor(context: Context) {
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
         state.maxCachePx = p.maxCacheResolution.toDouble()
+        state.minZoom = if (p.minZoomEnabled) p.minZoomPercent / 100.0 else CanvasState.MIN_ZOOM
+        state.maxZoom = (if (p.maxZoomEnabled) p.maxZoomPercent / 100.0 else CanvasState.MAX_ZOOM)
+            .coerceAtLeast(state.minZoom)
+        state.clampZoomToLimits()
         state.relayout()
     }
 
@@ -1245,8 +1249,8 @@ class Editor(context: Context) {
         state.invalidateAllCaches()
         if (marginChanged) {
             state.fitWidth() // re-fit so the new side margin takes effect immediately
-            refreshView()
         }
+        refreshView() // margin re-fits and zoom-limit clamps must surface in the toolbar readouts
         settingsRepo.save(settings)
         prefsVersion++
         view.requestRender()

@@ -41,6 +41,12 @@ data class Preferences(
     val stylusButtonTap: String = "none",
     /** Horizontal margin (px) on each side of the page column; 0 ⇒ fit-width fills the screen. */
     val sideMargin: Double = 16.0,
+    /** User zoom floor: when enabled, no zoom path goes below [minZoomPercent]%. */
+    val minZoomEnabled: Boolean = false,
+    val minZoomPercent: Int = 50,
+    /** User zoom ceiling: when enabled, no zoom path goes above [maxZoomPercent]%. */
+    val maxZoomEnabled: Boolean = false,
+    val maxZoomPercent: Int = 400,
     /** Long-edge cap (px) for the on-screen page cache; higher holds more of the page ready at deep zoom. */
     val maxCacheResolution: Int = 2048,
     /** Open in fullscreen; null ⇒ auto (on unless the display has a camera cutout). */
@@ -75,6 +81,10 @@ data class Preferences(
         .put("stylus_double_tap", stylusDoubleTap)
         .put("stylus_button_tap", stylusButtonTap)
         .put("side_margin", sideMargin)
+        .put("min_zoom_enabled", minZoomEnabled)
+        .put("min_zoom_percent", minZoomPercent)
+        .put("max_zoom_enabled", maxZoomEnabled)
+        .put("max_zoom_percent", maxZoomPercent)
         .put("max_cache_resolution", maxCacheResolution)
         .apply {
             startFullscreen?.let { put("start_fullscreen", it) }
@@ -86,6 +96,10 @@ data class Preferences(
 
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118, 255)
+
+        /** Settable range of the min/max zoom limits, in percent (within the hard zoom bounds). */
+        const val ZOOM_LIMIT_MIN_PCT = 20
+        const val ZOOM_LIMIT_MAX_PCT = 1600
 
         fun fromJson(o: JSONObject?): Preferences {
             if (o == null) return Preferences()
@@ -113,6 +127,10 @@ data class Preferences(
                 stylusDoubleTap = tapAction("stylus_double_tap"),
                 stylusButtonTap = tapAction("stylus_button_tap"),
                 sideMargin = o.optDouble("side_margin", 16.0).coerceIn(0.0, 80.0),
+                minZoomEnabled = o.optBoolean("min_zoom_enabled", false),
+                minZoomPercent = o.optInt("min_zoom_percent", 50).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
+                maxZoomEnabled = o.optBoolean("max_zoom_enabled", false),
+                maxZoomPercent = o.optInt("max_zoom_percent", 400).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
                 maxCacheResolution = o.optInt("max_cache_resolution", 2048).coerceIn(1024, 4096),
                 startFullscreen = if (o.has("start_fullscreen")) o.getBoolean("start_fullscreen") else null,
                 codeThemePath = o.optString("code_theme_path").ifEmpty { null },

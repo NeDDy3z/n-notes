@@ -48,6 +48,7 @@ import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConversions
 import com.xnotes.platform.FontCatalog
+import com.xnotes.settings.Preferences
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -425,6 +426,82 @@ fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
                 ModeChip("GO", selected = true) { go() }
             }
         }
+    }
+}
+
+/** Zoom menu: optional MIN/MAX zoom limits. While a limit is on, every zoom path (pinch,
+ *  buttons, keyboard, fit) clamps to it; its spin field greys out when the toggle is off. */
+@Composable
+fun ZoomMenuPopup(editor: Editor, onDismiss: () -> Unit) {
+    val base = remember { editor.preferences }
+    var minOn by remember { mutableStateOf(base.minZoomEnabled) }
+    var minPct by remember { mutableStateOf(base.minZoomPercent) }
+    var maxOn by remember { mutableStateOf(base.maxZoomEnabled) }
+    var maxPct by remember { mutableStateOf(base.maxZoomPercent) }
+
+    fun emit() = editor.applyPreferences(
+        editor.preferences.copy(
+            minZoomEnabled = minOn, minZoomPercent = minPct,
+            maxZoomEnabled = maxOn, maxZoomPercent = maxPct,
+        ),
+    )
+
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(280.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle("ZOOM")
+            ZoomLimitRow(
+                "MIN ZOOM", minOn, minPct,
+                onToggle = {
+                    minOn = it
+                    if (minOn && maxOn && minPct > maxPct) minPct = maxPct
+                    emit()
+                },
+                onValue = {
+                    minPct = it.coerceIn(Preferences.ZOOM_LIMIT_MIN_PCT, Preferences.ZOOM_LIMIT_MAX_PCT)
+                        .coerceAtMost(if (maxOn) maxPct else Preferences.ZOOM_LIMIT_MAX_PCT)
+                    emit()
+                },
+            )
+            ZoomLimitRow(
+                "MAX ZOOM", maxOn, maxPct,
+                onToggle = {
+                    maxOn = it
+                    if (maxOn && minOn && maxPct < minPct) maxPct = minPct
+                    emit()
+                },
+                onValue = {
+                    maxPct = it.coerceIn(Preferences.ZOOM_LIMIT_MIN_PCT, Preferences.ZOOM_LIMIT_MAX_PCT)
+                        .coerceAtLeast(if (minOn) minPct else Preferences.ZOOM_LIMIT_MIN_PCT)
+                    emit()
+                },
+            )
+        }
+    }
+}
+
+/** One zoom-limit row: label, a percent spinfield (stepping by 10, greyed while off), a toggle. */
+@Composable
+private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: (Boolean) -> Unit, onValue: (Int) -> Unit) {
+    val palette = LocalPalette.current
+    val color = (if (enabled) palette.text else palette.textDim).toComposeColor()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = color, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(76.dp))
+        Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value - 10) }, contentAlignment = Alignment.Center) {
+            Text("−", color = color, fontSize = 18.sp)
+        }
+        Text(
+            "$value%",
+            color = color,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(52.dp),
+        )
+        Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value + 10) }, contentAlignment = Alignment.Center) {
+            Text("+", color = color, fontSize = 18.sp)
+        }
+        Spacer(Modifier.weight(1f))
+        Switch(checked = enabled, onCheckedChange = onToggle)
     }
 }
 

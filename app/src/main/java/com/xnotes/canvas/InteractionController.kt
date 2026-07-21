@@ -2470,7 +2470,7 @@ class InteractionController(
         val mid = (a + b) * 0.5
         trackVelocity(mid.x, mid.y)
         // Zoom lock: pan only (keep the initial zoom).
-        val raw = (pinchInitZoom * (dist / pinchInitDist)).coerceIn(CanvasState.MIN_ZOOM, CanvasState.MAX_ZOOM)
+        val raw = (pinchInitZoom * (dist / pinchInitDist)).coerceIn(state.minZoom, state.maxZoom)
         val wasFit = state.fitWidthActive || state.fitHeightActive
         // Magnetic fit: the live zoom sticks to fit-width — and, paginated, fit-height — while
         // within the band (pinch past it to break free). The lock hint surfaces the moment a

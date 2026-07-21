@@ -78,6 +78,10 @@ class CanvasState(
     var viewportH: Int = 0
     var renderScale: Double = 1.0
 
+    /** User-set zoom limits (preferences); every zoom path clamps into [minZoom]..[maxZoom]. */
+    var minZoom: Double = MIN_ZOOM
+    var maxZoom: Double = MAX_ZOOM
+
     /**
      * Long-edge cap (content px) for the on-screen page caches; zoom past it renders the visible
      * region live (the sharp viewport) instead of caching the whole page. User-set in preferences.
@@ -691,7 +695,7 @@ class CanvasState(
 
     fun setZoomAnchored(focusViewport: Pt, newZoom: Double) {
         if (zoomLocked) return
-        val z = newZoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        val z = newZoom.coerceIn(minZoom, maxZoom)
         if (abs(z - zoom) < 1e-9) return
         fitWidthActive = false // an explicit zoom step leaves the fit magnets
         fitHeightActive = false
@@ -708,6 +712,26 @@ class CanvasState(
         setZoomAnchored(Pt(viewportW / 2.0, viewportH / 2.0), zoom * factor)
     }
 
+    /** Pull the live zoom back inside [minZoom]..[maxZoom] after the limits changed, anchored at
+     *  the viewport centre. Deliberately ignores the zoom lock: a limit edit must always win. */
+    fun clampZoomToLimits() {
+        val z = zoom.coerceIn(minZoom, maxZoom)
+        if (abs(z - zoom) < 1e-9) return
+        if (viewportW == 0 || viewportH == 0) {
+            zoom = z // not laid out yet; the initial view will place the scroll
+            return
+        }
+        val focus = Pt(viewportW / 2.0, viewportH / 2.0)
+        val anchor = viewportToContent(focus)
+        zoom = z
+        fitWidthActive = false
+        fitHeightActive = false
+        scrollX = anchor.x * z - focus.x
+        scrollY = anchor.y * z - focus.y
+        invalidateCachesForZoom()
+        clampScroll()
+    }
+
     fun fitWidth() {
         if (zoomLocked || contentW <= 0.0 || viewportW == 0) return
         val cur = currentPageIndex()
@@ -722,7 +746,7 @@ class CanvasState(
         val pages = document.pages
         if (zoomLocked || pages.isEmpty() || viewportH == 0) return
         val cur = currentPageIndex()
-        zoom = ((viewportH - 60.0) / displayH(pages[cur])).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        zoom = ((viewportH - 60.0) / displayH(pages[cur])).coerceIn(minZoom, maxZoom)
         fitWidthActive = false
         fitHeightActive = false
         invalidateCachesForZoom()
@@ -734,7 +758,7 @@ class CanvasState(
         if (zoomLocked || pages.isEmpty() || viewportW == 0 || viewportH == 0) return
         val cur = currentPageIndex()
         val page = pages[cur]
-        zoom = min((viewportW - 60.0) / displayW(page), (viewportH - 60.0) / displayH(page)).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        zoom = min((viewportW - 60.0) / displayW(page), (viewportH - 60.0) / displayH(page)).coerceIn(minZoom, maxZoom)
         fitWidthActive = false
         fitHeightActive = false
         invalidateCachesForZoom()
@@ -751,10 +775,10 @@ class CanvasState(
             val rows = rowRanges()
             if (rows.isEmpty()) return 0.0
             val w = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).w + 2 * sideMargin
-            return if (w <= 0.0) 0.0 else (viewportW / w).coerceIn(MIN_ZOOM, MAX_ZOOM)
+            return if (w <= 0.0) 0.0 else (viewportW / w).coerceIn(minZoom, maxZoom)
         }
         if (contentW <= 0.0) return 0.0
-        return (viewportW / contentW).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        return (viewportW / contentW).coerceIn(minZoom, maxZoom)
     }
 
     /** The zoom at which the current paginated row (plus the vertical margins) exactly fills
@@ -764,7 +788,7 @@ class CanvasState(
         val rows = rowRanges()
         if (rows.isEmpty()) return 0.0
         val h = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).h + 2 * MARGIN
-        return if (h <= 0.0) 0.0 else (viewportH / h).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        return if (h <= 0.0) 0.0 else (viewportH / h).coerceIn(minZoom, maxZoom)
     }
 
     /**
@@ -824,7 +848,7 @@ class CanvasState(
      * document must land at its own view rather than inherit the previous one's.
      */
     fun setView(newZoom: Double, sx: Double, sy: Double) {
-        zoom = newZoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        zoom = newZoom.coerceIn(minZoom, maxZoom)
         scrollX = sx
         scrollY = sy
         syncCurrentRowToScroll() // paginated: land on the restored row before the clamp
