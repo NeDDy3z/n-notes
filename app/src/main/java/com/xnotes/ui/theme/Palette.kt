@@ -21,6 +21,8 @@ data class Palette(
     val surfaceHi: Rgba,
     val menuBg: Rgba,
     val isDark: Boolean,
+    /** True when the chrome is built from a Material 3 scheme (rounded card corners etc.). */
+    val isMaterial: Boolean = false,
 ) {
     /** The accent lightened ~28% (hover highlights). */
     val accentLight: Rgba get() = ColorMath.lighten(accent, 0.28)
@@ -94,6 +96,60 @@ data class Palette(
             "light" -> light(accent)
             "oled" -> oled(accent)
             else -> dark(accent)
+        }
+
+        /** Build the full chrome from a Material 3 scheme's tonal surfaces. */
+        fun material(appearance: String, m: MaterialColors): Palette = when (appearance) {
+            "light" -> materialLight(m)
+            "oled" -> materialOled(m)
+            else -> materialDark(m)
+        }
+
+        fun materialLight(m: MaterialColors): Palette = Palette(
+            bg = m.surfaceContainer,
+            panel = m.surfaceContainerLow,
+            paper = m.surfaceContainerLowest,
+            paperBorder = m.outline,
+            accent = m.primary,
+            accentDim = ColorMath.dim(m.primary),
+            border = m.outlineVariant,
+            text = m.onSurface,
+            textDim = m.onSurfaceVariant,
+            surface = m.surfaceContainerHigh,
+            surfaceHi = m.surfaceContainerHighest,
+            menuBg = m.surface,
+            isDark = false,
+            isMaterial = true,
+        )
+
+        fun materialDark(m: MaterialColors): Palette = Palette(
+            bg = m.surfaceContainerLowest,
+            panel = m.surface,
+            paper = m.surfaceContainer,
+            paperBorder = m.outlineVariant,
+            accent = m.primary,
+            accentDim = ColorMath.dim(m.primary),
+            border = m.outlineVariant,
+            text = m.onSurface,
+            textDim = m.onSurfaceVariant,
+            surface = m.surfaceContainerHigh,
+            surfaceHi = m.surfaceContainerHighest,
+            menuBg = m.surfaceContainerLow,
+            isDark = true,
+            isMaterial = true,
+        )
+
+        /** Material OLED: the big surfaces drop to pure black, small lifts step down one slot. */
+        fun materialOled(m: MaterialColors): Palette {
+            val black = hex(0x000000)
+            return materialDark(m).copy(
+                bg = black,
+                panel = black,
+                paper = black,
+                menuBg = black,
+                surface = m.surfaceContainerLow,
+                surfaceHi = m.surfaceContainer,
+            )
         }
 
         private fun hex(rgb: Int): Rgba =
