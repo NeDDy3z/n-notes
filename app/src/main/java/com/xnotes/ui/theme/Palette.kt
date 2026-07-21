@@ -114,7 +114,8 @@ data class Palette(
             paperBorder = m.outline,
             accent = m.primary,
             accentDim = ColorMath.dim(m.primary),
-            border = m.outlineVariant,
+            // Raw outlineVariant reads too hard against the chrome; sink it halfway in.
+            border = ColorMath.mix(m.outlineVariant, m.surfaceContainer, 0.5),
             text = m.onSurface,
             textDim = m.onSurfaceVariant,
             surface = m.surfaceDim,
@@ -131,7 +132,8 @@ data class Palette(
             paperBorder = m.outlineVariant,
             accent = m.primary,
             accentDim = ColorMath.dim(m.primary),
-            border = m.outlineVariant,
+            // Raw outlineVariant reads too hard against the chrome; sink it halfway in.
+            border = ColorMath.mix(m.outlineVariant, m.surfaceContainerLowest, 0.5),
             text = m.onSurface,
             textDim = m.onSurfaceVariant,
             surface = m.surfaceContainerHigh,
@@ -192,6 +194,13 @@ object ColorMath {
         val a = amount.coerceIn(0.0, 1.0)
         fun mix(v: Int) = (v * (1 - a)).toInt().coerceIn(0, 255)
         return Rgba(mix(c.r), mix(c.g), mix(c.b), c.a)
+    }
+
+    /** Linear mix of [a] toward [b] by [t] (0..1). */
+    fun mix(a: Rgba, b: Rgba, t: Double): Rgba {
+        val k = t.coerceIn(0.0, 1.0)
+        fun ch(x: Int, y: Int) = (x + (y - x) * k).toInt().coerceIn(0, 255)
+        return Rgba(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a))
     }
 
     fun rgbToHsv(c: Rgba): DoubleArray {

@@ -69,6 +69,21 @@ class MaterialPaletteTest {
         assertTrue(luminance(p.surface) > 0.0)
     }
 
+    @Test fun materialBordersSitCloserToTheChromeThanOutlineVariant() {
+        val light = MaterialColors.seeded(seed, dark = false)
+        val lp = Palette.materialLight(light)
+        assertTrue(
+            kotlin.math.abs(luminance(lp.border) - luminance(lp.menuBg)) <
+                kotlin.math.abs(luminance(light.outlineVariant) - luminance(lp.menuBg)),
+        )
+        val dark = MaterialColors.seeded(seed, dark = true)
+        val dp = Palette.materialDark(dark)
+        assertTrue(
+            kotlin.math.abs(luminance(dp.border) - luminance(dp.bg)) <
+                kotlin.math.abs(luminance(dark.outlineVariant) - luminance(dp.bg)),
+        )
+    }
+
     @Test fun seededIsDeterministic() {
         assertEquals(MaterialColors.seeded(seed, true), MaterialColors.seeded(seed, true))
         assertEquals(MaterialColors.seeded(seed, false), MaterialColors.seeded(seed, false))
