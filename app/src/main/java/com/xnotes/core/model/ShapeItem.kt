@@ -10,14 +10,16 @@ import com.xnotes.core.tools.ShapeKind
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * An editable geometric shape (spec 02 §5.4): open (line/arrow, two endpoints)
  * or closed (rectangle/ellipse/triangle, drawn inside the normalized AABB of
  * start/end). Polygon/polyline additionally carry a vertex list in [points].
- * Closed shapes are stroked and optionally filled. Shapes are deliberately-placed
- * objects — immune to the object eraser.
+ * Closed shapes are stroked and optionally filled. Shapes erase like ink: whole
+ * on contact in STROKE mode, and cut into outline fragments by the AREA eraser.
  */
 class ShapeItem(
     var shape: ShapeKind,
@@ -251,6 +253,110 @@ class ShapeItem(
             }
             ShapeKind.POLYLINE, ShapeKind.CURVE -> nearPolyOutline(absPoints(), p, tol, closed = false)
         }
+    }
+
+    /**
+     * AREA-erase: the outline parts that survive an eraser circle (page-local [cx], [cy],
+     * [radius]), cut cleanly at the circle boundary — the same contract as [Stroke.erasedBy]:
+     *  - `null`      — untouched (keep the original)
+     *  - empty list  — remove the whole shape
+     *  - fragments   — the surviving outline runs, as polyline shapes keeping this style
+     * A filled shape erases whole on any hit: a cut outline cannot hold its fill.
+     */
+    fun erasedBy(cx: Double, cy: Double, radius: Double): List<ShapeItem>? {
+        val c = Pt(cx, cy)
+        if (bounds().distanceTo(c) > radius) return null
+        if (fillRgba != null) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
+        val verts = when (shape) {
+            // The arrow clips by its shaft, like its hit tests; a cut arrow loses its head.
+            ShapeKind.LINE, ShapeKind.ARROW -> listOf(start, end)
+            else -> currentOutline()
+        }
+        if (verts.size < 2) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
+        val closed = shape.isClosed
+        val pts = if (closed) verts + verts.first() else verts
+
+        var touched = false
+        val runs = mutableListOf<MutableList<Pt>>()
+        var current = mutableListOf<Pt>()
+        fun flush() {
+            if (current.size >= 2 && polylineLength(current) > 1e-6) runs.add(current)
+            current = mutableListOf()
+        }
+        for (i in 0 until pts.size - 1) {
+            val a = pts[i]
+            val b = pts[i + 1]
+            val outside = outsideSpans(a, b, c, radius)
+            if (outside.size == 1 && outside[0].first == 0.0 && outside[0].second == 1.0) {
+                if (current.isEmpty()) current.add(a)
+                current.add(b)
+                continue
+            }
+            touched = true
+            if (outside.isEmpty()) { // the whole segment sits inside the circle
+                flush()
+                continue
+            }
+            for ((ta, tb) in outside) {
+                if (ta == 0.0) {
+                    if (current.isEmpty()) current.add(a)
+                } else {
+                    flush()
+                    current.add(lerp(a, b, ta))
+                }
+                current.add(if (tb == 1.0) b else lerp(a, b, tb))
+                if (tb < 1.0) flush()
+            }
+        }
+        flush()
+        if (!touched) return null
+
+        // A closed outline cut away from the seam vertex leaves the seam intact in two runs;
+        // join them so the survivor is one continuous polyline instead of splitting at v0.
+        if (closed && runs.size >= 2) {
+            val first = runs.first()
+            val last = runs.last()
+            if (first.first().distanceTo(pts.first()) < 1e-9 && last.last().distanceTo(pts.first()) < 1e-9) {
+                runs.removeAt(runs.size - 1)
+                runs[0] = (last + first.drop(1)).toMutableList()
+            }
+        }
+        return runs.map {
+            poly(
+                ShapeKind.POLYLINE, it, strokeRgba, strokeWidth, null, neon, neonStrength,
+                dashed, dashLength, dashGap,
+            )
+        }
+    }
+
+    /** Sub-intervals of the segment [a]→[b] (as fractions) lying outside the circle at [c]. */
+    private fun outsideSpans(a: Pt, b: Pt, c: Pt, r: Double): List<Pair<Double, Double>> {
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val fx = a.x - c.x
+        val fy = a.y - c.y
+        val qa = dx * dx + dy * dy
+        if (qa < 1e-12) return if (fx * fx + fy * fy > r * r) listOf(0.0 to 1.0) else emptyList()
+        val qb = 2.0 * (fx * dx + fy * dy)
+        val qc = fx * fx + fy * fy - r * r
+        val disc = qb * qb - 4.0 * qa * qc
+        if (disc <= 0.0) return listOf(0.0 to 1.0) // misses (or grazes) the segment's line
+        val sq = sqrt(disc)
+        val t1 = (-qb - sq) / (2.0 * qa)
+        val t2 = (-qb + sq) / (2.0 * qa)
+        if (t2 <= 0.0 || t1 >= 1.0) return listOf(0.0 to 1.0) // chord lies beyond the segment span
+        val spans = mutableListOf<Pair<Double, Double>>()
+        if (t1 > 0.0) spans.add(0.0 to min(t1, 1.0))
+        if (t2 < 1.0) spans.add(max(t2, 0.0) to 1.0)
+        return spans
+    }
+
+    private fun lerp(a: Pt, b: Pt, t: Double) = Pt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+
+    private fun polylineLength(pts: List<Pt>): Double {
+        var len = 0.0
+        for (i in 0 until pts.size - 1) len += pts[i].distanceTo(pts[i + 1])
+        return len
     }
 
     override fun geometry(): GeoHandle = ShapeHandle(start, end)

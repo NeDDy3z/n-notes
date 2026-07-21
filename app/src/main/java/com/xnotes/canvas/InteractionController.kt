@@ -1078,22 +1078,26 @@ class InteractionController(
         return dirty
     }
 
-    /** AREA mode: replace each touched stroke with the fragments that survive the eraser circle,
-     *  spliced in at the original's z-position. Shapes, text and images are left untouched. Returns
+    /** AREA mode: replace each touched stroke or shape with the fragments that survive the eraser
+     *  circle, spliced in at the original's z-position. Text and images are left untouched. Returns
      *  the repaint region, or null if nothing changed. */
     private fun eraseAreaFromPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
         var dirty: Rect? = null
         var i = 0
         while (i < page.items.size) {
-            val stroke = page.items[i] as? Stroke
-            val frags = stroke?.erasedBy(cx, cy, radius)
-            if (stroke == null || frags == null) {
+            val item = page.items[i]
+            val frags: List<CanvasItem>? = when (item) {
+                is Stroke -> item.erasedBy(cx, cy, radius)
+                is ShapeItem -> item.erasedBy(cx, cy, radius)
+                else -> null
+            }
+            if (frags == null) {
                 i++
                 continue
             }
             // Snapshot the page's items on first contact this gesture, before mutating it.
             if (!eraseSnapshots.containsKey(page)) eraseSnapshots[page] = page.items.toList()
-            val b = stroke.paintBounds()
+            val b = item.paintBounds()
             dirty = dirty?.union(b) ?: b
             page.items.removeAt(i)
             page.items.addAll(i, frags)
