@@ -96,36 +96,43 @@ interface Renderer {
      * page pixels — the neon halo. When [inner] is true the blur is confined to the
      * shape's interior (edges fade *inward* to transparent, nothing spills outside) —
      * used for the white-hot core so the ink colour stays crisp at the tube's rim.
+     * [pts] is a packed interleaved x,y polygon (stroke geometry is stored packed).
      * A renderer with no blur primitive (or export target) falls back to a crisp
      * fill, so the ink stays visible.
      */
-    fun fillPolygonGlow(points: List<Pt>, color: Rgba, rule: FillRule, blurRadius: Double, inner: Boolean = false) =
-        fillPolygon(points, color, rule)
+    fun fillPolygonGlow(pts: FloatArray, color: Rgba, rule: FillRule, blurRadius: Double, inner: Boolean = false) =
+        fillPolygon(unpackPts(pts), color, rule)
 
     fun fillCircleGlow(center: Pt, radius: Double, color: Rgba, blurRadius: Double, inner: Boolean = false) =
         fillCircle(center, radius, color)
 
     /**
-     * Fill an ink ribbon as a circular brush disc swept along [centers] with per-point [radii]: a
-     * disc at every centre, plus the [Geometry.ribbonQuad] bridging each consecutive pair, all in
-     * [color]. Because the nib is a disc, round caps and joins fall out for free on every pen, and
-     * because every piece is convex and merely filled (never one self-overlapping outline) a sharp
-     * turn can't leave a winding-cancelled gap. The default fills each piece on its own — correct
-     * for an opaque single-colour ribbon since the overlaps just repaint the same colour; an
-     * anti-aliasing backend should override to union them into one path so shared edges don't seam.
+     * Fill an ink ribbon as a circular brush disc swept along [centers] (packed interleaved x,y)
+     * with per-point [radii]: a disc at every centre, plus the [Geometry.ribbonQuad] bridging each
+     * consecutive pair, all in [color]. Because the nib is a disc, round caps and joins fall out
+     * for free on every pen, and because every piece is convex and merely filled (never one
+     * self-overlapping outline) a sharp turn can't leave a winding-cancelled gap. The default
+     * fills each piece on its own — correct for an opaque single-colour ribbon since the overlaps
+     * just repaint the same colour; an anti-aliasing backend should override to union them into
+     * one path so shared edges don't seam.
      */
-    fun fillDiskRibbon(centers: List<Pt>, radii: List<Double>, color: Rgba) {
-        val n = minOf(centers.size, radii.size)
+    fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, color: Rgba) {
+        val n = minOf(centers.size / 2, radii.size)
+        fun pt(i: Int) = Pt(centers[2 * i].toDouble(), centers[2 * i + 1].toDouble())
         for (i in 0 until n - 1) {
-            val q = Geometry.ribbonQuad(centers[i], radii[i], centers[i + 1], radii[i + 1])
+            val q = Geometry.ribbonQuad(pt(i), radii[i].toDouble(), pt(i + 1), radii[i + 1].toDouble())
             if (q.size >= 3) fillPolygon(q, color, FillRule.NONZERO)
         }
-        for (i in 0 until n) if (radii[i] > 0.0) fillCircle(centers[i], radii[i], color)
+        for (i in 0 until n) if (radii[i] > 0f) fillCircle(pt(i), radii[i].toDouble(), color)
     }
 
     // --- outlines (cosmetic for chrome, page-space for shapes) ---
     fun strokeRect(rect: Rect, pen: Pen)
     fun strokePolyline(points: List<Pt>, pen: Pen)
+
+    /** [strokePolyline] over a packed interleaved x,y polyline (the dashed pen's centerline). */
+    fun strokePolyline(pts: FloatArray, pen: Pen) = strokePolyline(unpackPts(pts), pen)
+
     fun strokePolygon(points: List<Pt>, pen: Pen)
     fun strokeEllipse(center: Pt, rx: Double, ry: Double, pen: Pen)
 
@@ -170,3 +177,7 @@ interface Renderer {
         }
     }
 }
+
+/** Packed interleaved x,y → [Pt] list, for the default (non-hot) packed-primitive fallbacks. */
+private fun unpackPts(pts: FloatArray): List<Pt> =
+    List(pts.size / 2) { Pt(pts[2 * it].toDouble(), pts[2 * it + 1].toDouble()) }

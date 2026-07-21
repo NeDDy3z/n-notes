@@ -8,7 +8,6 @@ import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.RectF
 import android.os.Build
-import com.xnotes.core.geometry.Geometry
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.ImageData
@@ -139,22 +138,51 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     // The whole swept-disc ribbon as one path: every disc and bridging quad is wound the same way
     // under WINDING, so overlaps union into solid ink (anti-aliased only along the true outer
     // silhouette, no interior seams, no winding-cancelled gap at a sharp turn). One draw call keeps
-    // the repainted-every-frame live stroke cheap.
-    override fun fillDiskRibbon(centers: List<Pt>, radii: List<Double>, color: Rgba) {
-        val n = minOf(centers.size, radii.size)
+    // the repainted-every-frame live stroke cheap. Built straight from the packed float geometry
+    // (the [Geometry.ribbonQuad] math inlined) so a dense page allocates nothing per point.
+    override fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, color: Rgba) {
+        val n = minOf(centers.size / 2, radii.size)
         if (n == 0) return
         fillPaint.color = color.toArgb()
         val path = Path().apply { fillType = Path.FillType.WINDING }
         for (i in 0 until n - 1) {
-            val q = Geometry.ribbonQuad(centers[i], radii[i], centers[i + 1], radii[i + 1])
-            if (q.size < 3) continue
-            path.moveTo(q[0].x.toFloat(), q[0].y.toFloat())
-            for (k in 1 until q.size) path.lineTo(q[k].x.toFloat(), q[k].y.toFloat())
+            val x0 = centers[2 * i]
+            val y0 = centers[2 * i + 1]
+            val x1 = centers[2 * i + 2]
+            val y1 = centers[2 * i + 3]
+            val dx = x1 - x0
+            val dy = y1 - y0
+            val len = kotlin.math.hypot(dx, dy)
+            if (len < 1e-9f) continue
+            val nx = -dy / len
+            val ny = dx / len
+            val r0 = radii[i]
+            val r1 = radii[i + 1]
+            val ax = x0 + nx * r0
+            val ay = y0 + ny * r0
+            val bx = x1 + nx * r1
+            val by = y1 + ny * r1
+            val cx = x1 - nx * r1
+            val cy = y1 - ny * r1
+            val ex = x0 - nx * r0
+            val ey = y0 - ny * r0
+            // Consistent (positive-area) winding so overlapping quads union rather than cancel.
+            if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) >= 0f) {
+                path.moveTo(ax, ay)
+                path.lineTo(bx, by)
+                path.lineTo(cx, cy)
+                path.lineTo(ex, ey)
+            } else {
+                path.moveTo(ex, ey)
+                path.lineTo(cx, cy)
+                path.lineTo(bx, by)
+                path.lineTo(ax, ay)
+            }
             path.close()
         }
         for (i in 0 until n) {
             val r = radii[i]
-            if (r > 0.0) path.addCircle(centers[i].x.toFloat(), centers[i].y.toFloat(), r.toFloat(), Path.Direction.CW)
+            if (r > 0f) path.addCircle(centers[2 * i], centers[2 * i + 1], r, Path.Direction.CW)
         }
         canvas.drawPath(path, fillPaint)
     }
@@ -163,12 +191,17 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     // so the halo tracks the ink (exactly like a non-cosmetic pen width). INNER blur
     // keeps the soft fill inside the shape (the white core); NORMAL spreads it both
     // ways (the outer halo).
-    override fun fillPolygonGlow(points: List<Pt>, color: Rgba, rule: FillRule, blurRadius: Double, inner: Boolean) {
-        if (points.size < 3) return
-        if (blurRadius <= 0.0) return fillPolygon(points, color, rule)
+    override fun fillPolygonGlow(pts: FloatArray, color: Rgba, rule: FillRule, blurRadius: Double, inner: Boolean) {
+        if (pts.size < 6) return
+        val path = buildPath(pts, close = true, rule)
+        if (blurRadius <= 0.0) {
+            fillPaint.color = color.toArgb()
+            canvas.drawPath(path, fillPaint)
+            return
+        }
         glowPaint.color = color.toArgb()
         glowPaint.maskFilter = BlurMaskFilter(blurRadius.toFloat().coerceAtLeast(0.1f), blurStyle(inner))
-        canvas.drawPath(buildPath(points, close = true, rule), glowPaint)
+        canvas.drawPath(path, glowPaint)
         glowPaint.maskFilter = null
     }
 
@@ -201,6 +234,12 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         if (points.size < 2) return
         applyPen(pen)
         canvas.drawPath(buildPath(points, close = false, FillRule.NONZERO), strokePaint)
+    }
+
+    override fun strokePolyline(pts: FloatArray, pen: Pen) {
+        if (pts.size < 4) return
+        applyPen(pen)
+        canvas.drawPath(buildPath(pts, close = false, FillRule.NONZERO), strokePaint)
     }
 
     override fun strokePolygon(points: List<Pt>, pen: Pen) {
@@ -312,6 +351,15 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         path.fillType = if (rule == FillRule.EVEN_ODD) Path.FillType.EVEN_ODD else Path.FillType.WINDING
         path.moveTo(points[0].x.toFloat(), points[0].y.toFloat())
         for (i in 1 until points.size) path.lineTo(points[i].x.toFloat(), points[i].y.toFloat())
+        if (close) path.close()
+        return path
+    }
+
+    private fun buildPath(pts: FloatArray, close: Boolean, rule: FillRule): Path {
+        val path = Path()
+        path.fillType = if (rule == FillRule.EVEN_ODD) Path.FillType.EVEN_ODD else Path.FillType.WINDING
+        path.moveTo(pts[0], pts[1])
+        for (i in 1 until pts.size / 2) path.lineTo(pts[2 * i], pts[2 * i + 1])
         if (close) path.close()
         return path
     }

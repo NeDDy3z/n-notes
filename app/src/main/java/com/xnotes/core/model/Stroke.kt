@@ -150,7 +150,7 @@ class Stroke(
      * px so they scale with zoom like the ink. A single tap (no line) is drawn as a dot.
      */
     private fun paintDashed(r: Renderer, g: StrokeGeometry, color: Rgba) {
-        if (g.centerline.size >= 2) {
+        if (g.pointCount >= 2) {
             r.strokePolyline(
                 g.centerline,
                 Pen(
@@ -207,17 +207,18 @@ class Stroke(
 
         // 4) Solid white-hot core (no blur, so thin lines still read pure white): the same swept
         //    disc at a fraction of the width, so it rounds with the body on every pen.
-        r.fillDiskRibbon(g.centerline, g.halfWidths.map { it * NEON_CORE_FRAC }, Rgba(255, 255, 255, 255))
+        val core = FloatArray(g.halfWidths.size) { (g.halfWidths[it] * NEON_CORE_FRAC).toFloat() }
+        r.fillDiskRibbon(g.centerline, core, Rgba(255, 255, 255, 255))
     }
 
     /** One bloom pass: the blurred ribbon body plus its two rounded ends, composited once at [alpha]. */
     private fun paintBloom(r: Renderer, g: StrokeGeometry, color: Rgba, radius: Double, alpha: Double) {
         r.saveLayerAlpha(paintBounds(), alpha)
-        if (g.outline.size >= 3) r.fillPolygonGlow(g.outline, color, FillRule.NONZERO, radius)
-        val cl = g.centerline
-        if (cl.isNotEmpty()) {
-            if (g.halfWidths.first() > 0.0) r.fillCircleGlow(cl.first(), g.halfWidths.first(), color, radius)
-            if (cl.size > 1 && g.halfWidths.last() > 0.0) r.fillCircleGlow(cl.last(), g.halfWidths.last(), color, radius)
+        if (g.outlineCount >= 3) r.fillPolygonGlow(g.outline, color, FillRule.NONZERO, radius)
+        val n = g.pointCount
+        if (n > 0) {
+            if (g.hw(0) > 0.0) r.fillCircleGlow(Pt(g.cx(0), g.cy(0)), g.hw(0), color, radius)
+            if (n > 1 && g.hw(n - 1) > 0.0) r.fillCircleGlow(Pt(g.cx(n - 1), g.cy(n - 1)), g.hw(n - 1), color, radius)
         }
         r.restore()
     }
@@ -236,7 +237,7 @@ class Stroke(
     override fun bounds(): Rect {
         cachedBounds?.let { return it }
         val g = geometry()
-        if (g.centerline.isEmpty()) {
+        if (g.pointCount == 0) {
             val b = if (samples.isEmpty()) Rect(0.0, 0.0, 0.0, 0.0) else rawBounds()
             return b.also { cachedBounds = it }
         }
@@ -247,13 +248,14 @@ class Stroke(
         var minY = Double.POSITIVE_INFINITY
         var maxX = Double.NEGATIVE_INFINITY
         var maxY = Double.NEGATIVE_INFINITY
-        for (i in g.centerline.indices) {
-            val c = g.centerline[i]
-            val h = g.halfWidths.getOrElse(i) { 0.0 }
-            if (c.x - h < minX) minX = c.x - h
-            if (c.x + h > maxX) maxX = c.x + h
-            if (c.y - h < minY) minY = c.y - h
-            if (c.y + h > maxY) maxY = c.y + h
+        for (i in 0 until g.pointCount) {
+            val cx = g.cx(i)
+            val cy = g.cy(i)
+            val h = g.hw(i)
+            if (cx - h < minX) minX = cx - h
+            if (cx + h > maxX) maxX = cx + h
+            if (cy - h < minY) minY = cy - h
+            if (cy + h > maxY) maxY = cy + h
         }
         return Rect(minX, minY, maxX - minX, maxY - minY).also { cachedBounds = it }
     }
@@ -300,11 +302,14 @@ class Stroke(
      *  inside the ribbon body. */
     override fun contains(p: Pt): Boolean {
         val g = geometry()
-        for (i in g.centerline.indices) {
-            val h = g.halfWidths.getOrElse(i) { 0.0 }
-            if (h > 0.0 && p.distanceTo(g.centerline[i]) <= h) return true
+        for (i in 0 until g.pointCount) {
+            val h = g.hw(i)
+            if (h <= 0.0) continue
+            val dx = p.x - g.cx(i)
+            val dy = p.y - g.cy(i)
+            if (dx * dx + dy * dy <= h * h) return true
         }
-        return g.outline.size >= 3 && Geometry.pointInPolygon(g.outline, p)
+        return g.outlineCount >= 3 && Geometry.pointInPolygon(g.outline, p)
     }
 
     /** Mean of the sample positions. */

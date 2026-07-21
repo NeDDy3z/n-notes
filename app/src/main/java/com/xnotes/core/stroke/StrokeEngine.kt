@@ -1,7 +1,7 @@
 package com.xnotes.core.stroke
 
-import com.xnotes.core.geometry.Pt
 import kotlin.math.exp
+import kotlin.math.hypot
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
@@ -9,6 +9,7 @@ import kotlin.math.min
 /**
  * Turns raw stylus samples into a smooth, variable-width ink ribbon (spec 03).
  * Pure, deterministic and unit-tested against the spec's conformance vectors.
+ * All math runs in doubles; only the packed [StrokeGeometry] output is floats.
  */
 object StrokeEngine {
     /** EMA low-pass smoothing factor (1.0 = passthrough, ->0 = heavy lag). */
@@ -88,33 +89,35 @@ object StrokeEngine {
     val TAPER_CURVE_K = 2.0 * ln((1.0 - TAPER_TAIL) / TAPER_TAIL)
 
     /** Holds the pen/highlighter's first/last [CAP_HOLD_SAMPLES] samples up to the settled pressure
-     *  just inside each end, so a light pen-down/up can't shrink the swept end disc thinner than the
-     *  line. Only raises width, never lowers it, so the heavier middle and any deliberate mid-stroke
-     *  pressure dip are untouched. The window halves on very short strokes so head and tail can't
-     *  cross. A light lift-off is the same signal as a pinch, so these pens end full and round
-     *  rather than easing to a thin tip. */
-    private fun holdEndPressure(p: List<Double>): List<Double> {
+     *  just inside each end (in place), so a light pen-down/up can't shrink the swept end disc
+     *  thinner than the line. Only raises width, never lowers it, so the heavier middle and any
+     *  deliberate mid-stroke pressure dip are untouched. The window halves on very short strokes so
+     *  head and tail can't cross. A light lift-off is the same signal as a pinch, so these pens end
+     *  full and round rather than easing to a thin tip. */
+    private fun holdEndPressure(p: DoubleArray) {
         val n = p.size
         val w = min(CAP_HOLD_SAMPLES, (n - 1) / 2)
-        if (w < 1) return p
-        val out = p.toDoubleArray()
+        if (w < 1) return
         val headFloor = p[w]
-        for (i in 0 until w) if (out[i] < headFloor) out[i] = headFloor
+        for (i in 0 until w) if (p[i] < headFloor) p[i] = headFloor
         val tailFloor = p[n - 1 - w]
-        for (i in n - w until n) if (out[i] < tailFloor) out[i] = tailFloor
-        return out.asList()
+        for (i in n - w until n) if (p[i] < tailFloor) p[i] = tailFloor
     }
 
     /** One-pole IIR low-pass (exponential moving average). */
-    fun ema(values: List<Double>, alpha: Double = ALPHA): List<Double> {
-        if (values.isEmpty()) return emptyList()
+    fun ema(values: DoubleArray, alpha: Double = ALPHA): DoubleArray {
+        if (values.isEmpty()) return values
         val out = DoubleArray(values.size)
         out[0] = values[0]
         for (i in 1 until values.size) {
             out[i] = alpha * values[i] + (1 - alpha) * out[i - 1]
         }
-        return out.asList()
+        return out
     }
+
+    /** [ema] over a boxed list — the spec-vector form; [build] runs on the array one. */
+    fun ema(values: List<Double>, alpha: Double = ALPHA): List<Double> =
+        ema(values.toDoubleArray(), alpha).asList()
 
     /**
      * Half-width at a point (spec 03 step 5), given smoothed [pressure] and the
@@ -170,18 +173,21 @@ object StrokeEngine {
      * collapsing the window onto themselves and ballooning the width. Returns all-`1.0` when off
      * or the samples carry no usable timing.
      */
-    fun speedFactors(samples: List<Sample>, speedStrength: Double, speedScale: Double): List<Double> {
+    fun speedFactors(samples: List<Sample>, speedStrength: Double, speedScale: Double): DoubleArray {
         val n = samples.size
-        if (speedStrength <= 0.0 || n < 2) return List(n) { 1.0 }
+        val out = DoubleArray(n) { 1.0 }
+        if (speedStrength <= 0.0 || n < 2) return out
         val t0 = samples.first().t
         val tN = samples.last().t
-        if (tN - t0 <= 0.0) return List(n) { 1.0 }
+        if (tN - t0 <= 0.0) return out
         val cum = DoubleArray(n)
-        for (i in 1 until n) cum[i] = cum[i - 1] + (samples[i].pos - samples[i - 1].pos).length()
+        for (i in 1 until n) {
+            cum[i] = cum[i - 1] + hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y)
+        }
         val half = SPEED_WINDOW_MS
         var lo = 0
         var hi = 0
-        return (0 until n).map { i ->
+        for (i in 0 until n) {
             // Centre a fixed-duration window on this sample's time; if it runs past either end of
             // the stroke, slide it inward so the span stays ~2·half rather than shrinking to a point.
             var a = samples[i].t - half
@@ -197,8 +203,9 @@ object StrokeEngine {
             if (h <= l) { if (h < n - 1) h++ else l-- }
             val dist = (cum[h] - cum[l]) * speedScale
             val dt = max(samples[h].t - samples[l].t, MIN_DT)
-            1.0 - speedStrength * smoothstep(SPEED_LO, SPEED_HI, dist / dt)
+            out[i] = 1.0 - speedStrength * smoothstep(SPEED_LO, SPEED_HI, dist / dt)
         }
+        return out
     }
 
     /**
@@ -207,19 +214,21 @@ object StrokeEngine {
      * the tip (a sharp point when that is 0). Longer strokes just stretch the same profile. Returns
      * all-`1.0` when [taperEnabled] is false or the stroke is too short ([TAPER_MIN_LEN]).
      */
-    fun taperFactors(centers: List<Pt>, taperEnabled: Boolean, taperMinFactor: Double): List<Double> {
-        val n = centers.size
-        if (!taperEnabled || n < 2) return List(n) { 1.0 }
+    fun taperFactors(cx: DoubleArray, cy: DoubleArray, taperEnabled: Boolean, taperMinFactor: Double): DoubleArray {
+        val n = cx.size
+        val out = DoubleArray(n) { 1.0 }
+        if (!taperEnabled || n < 2) return out
         val cum = DoubleArray(n)
-        for (i in 1 until n) cum[i] = cum[i - 1] + (centers[i] - centers[i - 1]).length()
+        for (i in 1 until n) cum[i] = cum[i - 1] + hypot(cx[i] - cx[i - 1], cy[i] - cy[i - 1])
         val total = cum[n - 1]
-        if (total < TAPER_MIN_LEN) return List(n) { 1.0 }
-        return (0 until n).map { i ->
+        if (total < TAPER_MIN_LEN) return out
+        for (i in 0 until n) {
             // Fractional arc position: 1 at the head, easing to 0 at the tip. The whole stroke is
             // the taper; the tip bottoms out at taperMinFactor of full instead of a sharp point.
             val edge = (total - cum[i]) / total
-            taperMinFactor + (1.0 - taperMinFactor) * logisticEase(edge, TAPER_CURVE_K)
+            out[i] = taperMinFactor + (1.0 - taperMinFactor) * logisticEase(edge, TAPER_CURVE_K)
         }
+        return out
     }
 
     /** Confirms a calligraphy nib's thick (high direction-y) runs with a morphological opening over
@@ -231,11 +240,11 @@ object StrokeEngine {
      *  pen-down counts as the thin extreme, so a stroke that *starts* broad is confirmed exactly like
      *  one that turns broad mid-way. A drop is never delayed, so the line still thins the instant the
      *  stroke turns toward the nib edge. */
-    private fun confirmThickening(ty: List<Double>, centers: List<Pt>, window: Double): List<Double> {
+    private fun confirmThickening(ty: DoubleArray, cx: DoubleArray, cy: DoubleArray, window: Double): DoubleArray {
         val n = ty.size
         if (n < 2) return ty
         val cum = DoubleArray(n)
-        for (i in 1 until n) cum[i] = cum[i - 1] + (centers[i] - centers[i - 1]).length()
+        for (i in 1 until n) cum[i] = cum[i - 1] + hypot(cx[i] - cx[i - 1], cy[i] - cy[i - 1])
         // Erosion: the trailing-window minimum, so a thick value survives only where it has held for
         // the whole window back. Before pen-down (the window underruns the start) the path counts as
         // the thin extreme (-1), so a thick pen-down must also hold for the window before it wins.
@@ -260,12 +269,13 @@ object StrokeEngine {
         // before it at that first confirmed value (the opening's minimum over the window). A run
         // that held the broad heading the whole way lifts the floor to thick; a jitter leaves it
         // thin; a mid/thin start keeps its own width.
-        val confirm = cum.indexOfFirst { it >= window }
+        var confirm = -1
+        for (i in 0 until n) if (cum[i] >= window) { confirm = i; break }
         if (confirm > 0) {
             val floor = eroded[confirm]
             for (i in 0 until confirm) if (out[i] < floor) out[i] = floor
         }
-        return out.asList()
+        return out
     }
 
     /**
@@ -290,18 +300,26 @@ object StrokeEngine {
         val n = samples.size
         if (n == 0) return StrokeGeometry.EMPTY
 
+        val rawX = DoubleArray(n)
+        val rawY = DoubleArray(n)
+        val rawP = DoubleArray(n)
+        for (i in 0 until n) {
+            val s = samples[i]
+            rawX[i] = s.x
+            rawY[i] = s.y
+            rawP[i] = s.pressure
+        }
+
         // 2. Smooth each channel independently. Straight-line strokes skip the position low-pass
         //    so the ribbon spans the raw samples exactly (EMA would pull a 2-point line's far end
         //    toward the midpoint, leaving it short of the pointer).
-        val sx = if (smooth) ema(samples.map { it.x }) else samples.map { it.x }
-        val sy = if (smooth) ema(samples.map { it.y }) else samples.map { it.y }
+        val sx = if (smooth) ema(rawX) else rawX
+        val sy = if (smooth) ema(rawY) else rawY
         // The pens that hold their ends (pen, highlighter) land and lift light, so the swept end
         // disc would shrink to a thin tip; hold the body width out to each end so it meets the line
         // at full width. The other ribbon pens take their ends at the raw pressure.
-        val sp = ema(samples.map { it.pressure }).let {
-            if (holdEnds && pressureEnabled) holdEndPressure(it) else it
-        }
-        val centers = (0 until n).map { Pt(sx[it], sy[it]) }
+        val sp = ema(rawP)
+        if (holdEnds && pressureEnabled) holdEndPressure(sp)
 
         fun hw(i: Int, ty: Double) = halfWidth(baseWidth, pressureEnabled, m, ds, sp[i], ty)
 
@@ -309,26 +327,41 @@ object StrokeEngine {
         //    finished calligraphy tap takes the dot width (past the broad face) so it stays visible.
         if (n == 1) {
             val h = hw(0, if (finished && ds > 0.0) DOT_DIR_Y else 0.0)
-            return StrokeGeometry(emptyList(), centers, listOf(h))
+            return StrokeGeometry(
+                FloatArray(0),
+                floatArrayOf(sx[0].toFloat(), sy[0].toFloat()),
+                floatArrayOf(h.toFloat()),
+            )
         }
 
         // 4. Per-point unit tangent via finite differences.
-        var lastGood = Pt(1.0, 0.0)
-        val tangents = ArrayList<Pt>(n)
+        var lastTx = 1.0
+        var lastTy = 0.0
+        val tx = DoubleArray(n)
+        val ty = DoubleArray(n)
         for (i in 0 until n) {
-            val diff = when (i) {
-                0 -> centers[1] - centers[0]
-                n - 1 -> centers[i] - centers[i - 1]
-                else -> centers[i + 1] - centers[i - 1]
+            val dx: Double
+            val dy: Double
+            when (i) {
+                0 -> { dx = sx[1] - sx[0]; dy = sy[1] - sy[0] }
+                n - 1 -> { dx = sx[i] - sx[i - 1]; dy = sy[i] - sy[i - 1] }
+                else -> { dx = sx[i + 1] - sx[i - 1]; dy = sy[i + 1] - sy[i - 1] }
             }
-            val len = diff.length()
-            val t = if (len < MIN_TANGENT_LEN) lastGood else (diff / len).also { lastGood = it }
-            tangents.add(t)
+            val len = hypot(dx, dy)
+            if (len < MIN_TANGENT_LEN) {
+                tx[i] = lastTx
+                ty[i] = lastTy
+            } else {
+                tx[i] = dx / len
+                ty[i] = dy / len
+                lastTx = tx[i]
+                lastTy = ty[i]
+            }
         }
 
         // Optional width multipliers: speed thins fast travel, taper points the ends.
         val sf = speedFactors(samples, speedStrength, speedScale)
-        val tf = taperFactors(centers, taperEnabled, taperMinFactor)
+        val tf = taperFactors(sx, sy, taperEnabled, taperMinFactor)
 
         // Calligraphy: the tangent-y that sets nib width, with the broad (thick) face held back
         // until the stroke commits to that heading. confirmThickening opens the signal over
@@ -342,35 +375,31 @@ object StrokeEngine {
         // near-invisible thin extreme.
         val dirY = if (ds > 0.0) {
             var arc = 0.0
-            for (i in 1 until n) arc += (centers[i] - centers[i - 1]).length()
-            if (finished && arc <= DOT_MAX_LEN) List(n) { DOT_DIR_Y }
-            else ema(confirmThickening(tangents.map { it.y }, centers, DIR_CONFIRM_LEN), DIR_ALPHA)
+            for (i in 1 until n) arc += hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
+            if (finished && arc <= DOT_MAX_LEN) DoubleArray(n) { DOT_DIR_Y }
+            else ema(confirmThickening(ty, sx, sy, DIR_CONFIRM_LEN), DIR_ALPHA)
         } else null
 
-        // 5–7. Half-widths, normals, and the two ribbon edges.
-        val left = ArrayList<Pt>(n)
-        val right = ArrayList<Pt>(n)
-        val halfWidths = ArrayList<Double>(n)
+        // 5–8. Half-widths, normals, and the two ribbon edges, packed straight into the output:
+        // the outline is the left edge in order plus the right edge reversed (one closed polygon).
+        // No separate end caps: the swept brush disc at each sample (the head and tail included)
+        // already rounds every end and join, so [holdEnds] only shapes the end half-widths.
+        val centerline = FloatArray(2 * n)
+        val halfWidths = FloatArray(n)
+        val outline = FloatArray(4 * n)
         for (i in 0 until n) {
-            val t = tangents[i]
-            val h = hw(i, dirY?.get(i) ?: t.y) * sf[i] * tf[i]
-            halfWidths.add(h)
-            val normal = Pt(-t.y, t.x) // tangent rotated 90°, already unit length
-            left.add(centers[i] - normal * h)
-            right.add(centers[i] + normal * h)
+            val h = hw(i, dirY?.get(i) ?: ty[i]) * sf[i] * tf[i]
+            halfWidths[i] = h.toFloat()
+            centerline[2 * i] = sx[i].toFloat()
+            centerline[2 * i + 1] = sy[i].toFloat()
+            val nx = -ty[i] // tangent rotated 90°, already unit length
+            val ny = tx[i]
+            outline[2 * i] = (sx[i] - nx * h).toFloat()
+            outline[2 * i + 1] = (sy[i] - ny * h).toFloat()
+            val j = 2 * n - 1 - i
+            outline[2 * j] = (sx[i] + nx * h).toFloat()
+            outline[2 * j + 1] = (sy[i] + ny * h).toFloat()
         }
-
-        // 8. Outline = left in order + right reversed (single closed polygon).
-        val outline = ArrayList<Pt>(2 * n)
-        outline.addAll(left)
-        for (i in right.indices.reversed()) outline.add(right[i])
-
-        // 9. No separate end caps: the swept brush disc at each sample (the head and tail included)
-        //    already rounds every end and join, so [holdEnds] only shapes the end half-widths.
-        return StrokeGeometry(
-            outline = if (outline.size >= 3) outline else emptyList(),
-            centerline = centers,
-            halfWidths = halfWidths,
-        )
+        return StrokeGeometry(outline, centerline, halfWidths)
     }
 }

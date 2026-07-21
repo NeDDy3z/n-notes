@@ -25,6 +25,25 @@ object Geometry {
         return inside
     }
 
+    /** [pointInPolygon] over a packed interleaved x,y ring (the stroke ribbon outline). */
+    fun pointInPolygon(polygon: FloatArray, p: Pt): Boolean {
+        val n = polygon.size / 2
+        if (n < 3) return false
+        var inside = false
+        var j = n - 1
+        for (i in 0 until n) {
+            val ax = polygon[2 * i].toDouble()
+            val ay = polygon[2 * i + 1].toDouble()
+            val bx = polygon[2 * j].toDouble()
+            val by = polygon[2 * j + 1].toDouble()
+            val crosses = (ay > p.y) != (by > p.y) &&
+                p.x < (bx - ax) * (p.y - ay) / (by - ay) + ax
+            if (crosses) inside = !inside
+            j = i
+        }
+        return inside
+    }
+
     /** Shortest distance from point [p] to the segment [a]–[b]. */
     fun distancePointToSegment(p: Pt, a: Pt, b: Pt): Double {
         val abx = b.x - a.x
