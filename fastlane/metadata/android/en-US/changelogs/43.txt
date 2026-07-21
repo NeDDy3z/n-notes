@@ -1,0 +1,3 @@
+- Shrink note files with compacted ink storage
+- Save and load large notes faster
+- Reduce memory use while editing
