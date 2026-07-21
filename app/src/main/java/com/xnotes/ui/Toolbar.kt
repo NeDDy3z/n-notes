@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -429,6 +428,9 @@ private fun StampsMenu(editor: Editor, onAddStamps: () -> Unit, onDismiss: () ->
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             )
         } else {
+            // Both dimensions must be fixed: the menu measures its content by intrinsics, which a
+            // lazy grid cannot answer (it crashes) — a fixed size short-circuits the query.
+            val rows = ((editor.stamps.size + 2) / 3).coerceAtMost(3)
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -436,7 +438,7 @@ private fun StampsMenu(editor: Editor, onAddStamps: () -> Unit, onDismiss: () ->
                 modifier = Modifier
                     .padding(horizontal = 10.dp, vertical = 4.dp)
                     .width(72.dp * 3 + 6.dp * 2)
-                    .heightIn(max = 72.dp * 3 + 6.dp * 2),
+                    .height(72.dp * rows + 6.dp * (rows - 1)),
             ) {
                 items(editor.stamps, key = { it.name }) { file ->
                     StampTile(
