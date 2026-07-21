@@ -154,10 +154,20 @@ class PdfBoxRenderer(
     }
 
     // Inserted images embed as XObjects: decode the source (capped for file size/memory), apply the
-    // stored quarter turn to the pixels, then place it like any other bitmap.
+    // stored quarter turn to the pixels, then place it like any other bitmap. A vector (SVG) source
+    // has no native pixels, so it rasterizes at the placed size supersampled for print instead of at
+    // the cap; the decode box is pre-swapped for quarter turns (dest already carries the turned box).
     override fun drawImage(image: ImageData, dest: Rect, orientation: Int) {
         if (dest.w <= 0.0 || dest.h <= 0.0) return
-        var bmp = ImageDecoder.decodeSampledFile(image.file.path, EXPORT_CAP_PX, EXPORT_CAP_PX) ?: return
+        val turned = orientation % 180 != 0
+        val (reqW, reqH) = if (ImageDecoder.isVector(image.file.path)) {
+            val w = (dest.w * abs(sx) * VECTOR_EXPORT_SCALE).toInt().coerceIn(1, EXPORT_CAP_PX)
+            val h = (dest.h * abs(sy) * VECTOR_EXPORT_SCALE).toInt().coerceIn(1, EXPORT_CAP_PX)
+            if (turned) h to w else w to h
+        } else {
+            EXPORT_CAP_PX to EXPORT_CAP_PX
+        }
+        var bmp = ImageDecoder.decodeSampledFile(image.file.path, reqW, reqH) ?: return
         val o = ((orientation % 360) + 360) % 360
         if (o != 0) {
             val m = android.graphics.Matrix().apply { postRotate(o.toFloat()) }
@@ -254,5 +264,8 @@ class PdfBoxRenderer(
     companion object {
         /** Long-edge cap (px) for an exported image XObject: keeps detail without ballooning the PDF. */
         private const val EXPORT_CAP_PX = 4096
+
+        // Vector images rasterize at 4 px per PDF point (288 dpi), a print-quality density.
+        private const val VECTOR_EXPORT_SCALE = 4.0
     }
 }
