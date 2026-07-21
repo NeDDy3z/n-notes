@@ -226,6 +226,12 @@ class DocumentCodec(
             j.name("neon").value(true)
             j.name("neon_strength").value(s.neonStrength)
         }
+        // Dash is additive too: written only on dashed shapes.
+        if (s.dashed) {
+            j.name("dashed").value(true)
+            j.name("dash_length").value(s.dashLength)
+            j.name("dash_gap").value(s.dashGap)
+        }
         j.endObject()
     }
 
@@ -496,6 +502,9 @@ class DocumentCodec(
         var points: List<Pt>? = null
         var neon = false
         var neonStrength = 0.6
+        var dashed = false
+        var dashLength = 10.0
+        var dashGap = 8.0
     }
 
     /** Stroke config fields as written; null = absent, so defaults resolve exactly as before. */
@@ -549,6 +558,9 @@ class DocumentCodec(
                 "points" -> s.points = pointsOrNull(p)
                 "neon" -> s.neon = boolOr(p, false)
                 "neon_strength" -> s.neonStrength = doubleOr(p, 0.6)
+                "dashed" -> s.dashed = boolOr(p, false)
+                "dash_length" -> s.dashLength = doubleOr(p, 10.0)
+                "dash_gap" -> s.dashGap = doubleOr(p, 8.0)
                 else -> p.skipValue()
             }
         }
@@ -607,7 +619,10 @@ class DocumentCodec(
         val kind = ShapeKind.fromId(s.shape)
         val strokeRgba = s.strokeRgba ?: Rgba(0, 230, 118, 255)
         s.points?.let { verts ->
-            return ShapeItem.poly(kind, verts, strokeRgba, s.strokeWidth, s.fillRgba, s.neon, s.neonStrength)
+            return ShapeItem.poly(
+                kind, verts, strokeRgba, s.strokeWidth, s.fillRgba, s.neon, s.neonStrength,
+                s.dashed, s.dashLength, s.dashGap,
+            )
         }
         return ShapeItem(
             shape = kind,
@@ -618,6 +633,9 @@ class DocumentCodec(
             fillRgba = s.fillRgba,
             neon = s.neon,
             neonStrength = s.neonStrength,
+            dashed = s.dashed,
+            dashLength = s.dashLength,
+            dashGap = s.dashGap,
         )
     }
 

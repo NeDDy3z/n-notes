@@ -483,7 +483,7 @@ fun SelectConfigPopup(editor: Editor, onDismiss: () -> Unit) {
     }
 }
 
-/** Shape-tool configuration popup (spec 10 §3 / 04 §6): kind picker, WIDTH, FILL. */
+/** Shape-tool configuration popup (spec 10 §3 / 04 §6): kind picker, WIDTH, FILL, DASHED, NEON. */
 @Composable
 fun ShapeConfigPopup(editor: Editor, onDismiss: () -> Unit) {
     var kind by remember { mutableStateOf(editor.shapeConfig.shape) }
@@ -491,9 +491,15 @@ fun ShapeConfigPopup(editor: Editor, onDismiss: () -> Unit) {
     var fill by remember { mutableStateOf(editor.shapeConfig.fill) }
     var glow by remember { mutableStateOf(editor.shapeConfig.neon) }
     var glowIntensity by remember { mutableStateOf(ToolConversions.neonStrengthToIntensity(editor.shapeConfig.neonStrength).toFloat()) }
+    var dashed by remember { mutableStateOf(editor.shapeConfig.dashed) }
+    var dashLen by remember { mutableStateOf(editor.shapeConfig.dashLength.toFloat()) }
+    var gapLen by remember { mutableStateOf(editor.shapeConfig.dashGap.toFloat()) }
 
     fun emit() = editor.updateShapeConfig(
-        ShapeConfig(kind, width.toDouble(), fill, glow, ToolConversions.intensityToNeonStrength(glowIntensity.toDouble())),
+        ShapeConfig(
+            kind, width.toDouble(), fill, glow, ToolConversions.intensityToNeonStrength(glowIntensity.toDouble()),
+            dashed, dashLen.toDouble(), gapLen.toDouble(),
+        ),
     )
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
@@ -506,6 +512,11 @@ fun ShapeConfigPopup(editor: Editor, onDismiss: () -> Unit) {
             }
             SliderRow("WIDTH", width, 1f..20f) { width = it; emit() }
             ToggleRow("FILL", fill) { fill = it; emit() }
+            ToggleRow("DASHED", dashed) { dashed = it; emit() }
+            if (dashed) {
+                SliderRow("DASH", dashLen, 2f..40f) { dashLen = it; emit() }
+                SliderRow("GAP", gapLen, 2f..40f) { gapLen = it; emit() }
+            }
             ToggleRow("NEON", glow) { glow = it; emit() }
             if (glow) {
                 SliderRow("INTENSITY", glowIntensity, 0f..100f) { glowIntensity = it; emit() }

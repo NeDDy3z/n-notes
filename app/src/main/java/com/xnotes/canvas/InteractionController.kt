@@ -971,10 +971,14 @@ class InteractionController(
         val page = state.document.pages.getOrNull(pageIndex) ?: return
         val strokeWidth = stroke.config.baseWidth * SHAPE_PEN_PARITY
         val color = stroke.config.rgba // the as-drawn ink colour (not renderColor's alpha-scaled one)
+        val dashed = stroke.tool == Tool.DASHED // a dashed pen snaps to a dashed shape
         val verts = rec.vertices
         val shape = if (verts != null) {
-            // Polygon/polyline: keep the recognized corners (neon carried like the other kinds).
-            ShapeItem.poly(rec.kind, verts, color, strokeWidth, null, stroke.config.neon, stroke.config.neonStrength)
+            // Polygon/polyline: keep the recognized corners (neon/dash carried like the other kinds).
+            ShapeItem.poly(
+                rec.kind, verts, color, strokeWidth, null, stroke.config.neon, stroke.config.neonStrength,
+                dashed, stroke.config.dashLength, stroke.config.dashGap,
+            )
         } else {
             ShapeItem(
                 shape = rec.kind,
@@ -985,6 +989,9 @@ class InteractionController(
                 fillRgba = null,
                 neon = stroke.config.neon, // a neon pen snaps to a neon shape (highlighter never snaps)
                 neonStrength = stroke.config.neonStrength,
+                dashed = dashed,
+                dashLength = stroke.config.dashLength,
+                dashGap = stroke.config.dashGap,
             )
         }
         page.items.add(shape)
@@ -1529,7 +1536,11 @@ class InteractionController(
         val startLocal = state.toPageSpace(pageIndex, content)
         val kind = shapeConfig.shape
         val fill = if (shapeConfig.fill && kind.isClosed) inkColor.scaleAlpha(ShapeConfig.FILL_ALPHA) else null
-        pendingShape = ShapeItem(kind, startLocal, startLocal, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY, fill, shapeConfig.neon, shapeConfig.neonStrength)
+        pendingShape = ShapeItem(
+            kind, startLocal, startLocal, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY, fill,
+            shapeConfig.neon, shapeConfig.neonStrength,
+            dashed = shapeConfig.dashed, dashLength = shapeConfig.dashLength, dashGap = shapeConfig.dashGap,
+        )
         shapePageIndex = pageIndex
         mode = PointerMode.SHAPE
         requestRender()

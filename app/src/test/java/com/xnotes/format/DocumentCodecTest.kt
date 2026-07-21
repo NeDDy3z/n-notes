@@ -378,6 +378,37 @@ class DocumentCodecTest {
         assertEquals(Rgba(4, 5, 6, 32), poly.fillRgba)
     }
 
+    @Test fun dashedShapeRoundTrip() {
+        val doc = Document(dpi = 150)
+        val page = Page(200.0, 200.0)
+        page.items.add(
+            ShapeItem(
+                ShapeKind.RECTANGLE, Pt(0.0, 0.0), Pt(50.0, 30.0), Rgba(1, 2, 3, 255), 2.0, null,
+                dashed = true, dashLength = 14.0, dashGap = 6.0,
+            ),
+        )
+        page.items.add(
+            ShapeItem.poly(
+                ShapeKind.POLYLINE, listOf(Pt(0.0, 0.0), Pt(10.0, 0.0), Pt(5.0, 8.0)), Rgba(9, 8, 7, 255),
+                1.0, null, false, 0.6, dashed = true, dashLength = 3.0, dashGap = 2.0,
+            ),
+        )
+        page.items.add(ShapeItem(ShapeKind.LINE, Pt(0.0, 0.0), Pt(50.0, 30.0), Rgba(1, 2, 3, 255), 2.0, null))
+        doc.pages.add(page)
+
+        val items = roundTrip(doc).pages[0].items
+        val rect = items[0] as ShapeItem
+        assertTrue(rect.dashed)
+        assertEquals(14.0, rect.dashLength, 1e-9)
+        assertEquals(6.0, rect.dashGap, 1e-9)
+        val poly = items[1] as ShapeItem
+        assertTrue(poly.dashed)
+        assertEquals(3.0, poly.dashLength, 1e-9)
+        assertEquals(2.0, poly.dashGap, 1e-9)
+        val line = items[2] as ShapeItem
+        assertFalse(line.dashed)
+    }
+
     @Test fun manifestBytesMatchTheHistoricalForm() {
         // The streaming writer must emit the form the org.json DOM produced on Android
         // (key order, integral doubles as longs, escaped slashes); the only departure is

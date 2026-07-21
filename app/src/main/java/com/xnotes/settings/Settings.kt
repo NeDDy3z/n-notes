@@ -216,6 +216,7 @@ data class Settings(
         private fun shapeConfigJson(c: ShapeConfig) = JSONObject()
             .put("shape", c.shape.id).put("stroke_width", c.strokeWidth).put("fill", c.fill)
             .put("neon", c.neon).put("neon_strength", c.neonStrength)
+            .put("dashed", c.dashed).put("dash_length", c.dashLength).put("dash_gap", c.dashGap)
 
         private fun shapeConfig(o: JSONObject) = ShapeConfig(
             shape = ShapeKind.fromId(o.optString("shape", "rectangle")),
@@ -223,6 +224,9 @@ data class Settings(
             fill = o.optBoolean("fill", false),
             neon = o.optBoolean("neon", false),
             neonStrength = o.optDouble("neon_strength", 0.6),
+            dashed = o.optBoolean("dashed", false),
+            dashLength = o.optDouble("dash_length", 10.0),
+            dashGap = o.optDouble("dash_gap", 8.0),
         )
 
         private fun toolbarLayoutJson(layout: ToolbarLayout): JSONObject {

@@ -37,6 +37,10 @@ data class ShapeConfig(
     val neon: Boolean = false,
     /** Glow intensity in [0, 1] (halo size + brightness); used only when [neon]. */
     val neonStrength: Double = 0.6,
+    /** Dashed outline: dash/gap run lengths in content px; used only when [dashed]. */
+    val dashed: Boolean = false,
+    val dashLength: Double = 10.0,
+    val dashGap: Double = 8.0,
 ) {
     companion object {
         /** Reduced opacity applied to the ink colour when a closed shape is filled. */

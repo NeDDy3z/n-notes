@@ -12,7 +12,8 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
     is Stroke -> Stroke(tool, config, samples.toMutableList(), speedScale, straight)
     is ImageItem -> ImageItem(image, rect, orientation)
     is TextItem -> TextItem(pos, width, height, text, rgba, pointSize, face, measurer)
-    is ShapeItem -> ShapeItem(shape, start, end, strokeRgba, strokeWidth, fillRgba, neon, neonStrength, points?.toList())
+    is ShapeItem ->
+        ShapeItem(shape, start, end, strokeRgba, strokeWidth, fillRgba, neon, neonStrength, points?.toList(), dashed, dashLength, dashGap)
     else -> this
 }
 

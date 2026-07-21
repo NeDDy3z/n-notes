@@ -35,6 +35,10 @@ class ShapeItem(
      * unit box so they scale with [start]/[end] for free; null for every other kind.
      */
     var points: List<Pt>? = null,
+    /** Stroke the outline dashed (dash/gap run lengths in content px). */
+    var dashed: Boolean = false,
+    var dashLength: Double = 10.0,
+    var dashGap: Double = 8.0,
 ) : CanvasItem, Resizable {
 
     override val kind = KIND
@@ -53,7 +57,8 @@ class ShapeItem(
     /** Absolute (content-space) vertices for polygon/polyline kinds; null for the rest. */
     fun vertices(): List<Pt>? = if (points == null) null else absPoints()
 
-    private fun pen() = Pen(color = strokeRgba, width = strokeWidth, cosmetic = false)
+    private fun pen() =
+        Pen(color = strokeRgba, width = strokeWidth, cosmetic = false, dashed = dashed, dashOn = dashLength, dashGap = dashGap)
 
     /** Triangle vertices: apex at top-edge midpoint, base along the bottom edge. */
     private fun triangleVertices(): List<Pt> {
@@ -118,10 +123,11 @@ class ShapeItem(
         }
     }
 
-    /** Stroke the open ">" arrowhead with [pen], mirroring the shaft so the head and shaft share one tube. */
+    /** Stroke the open ">" arrowhead with [pen], mirroring the shaft so the head and shaft share one tube.
+     *  The chevron is always solid: a dash break on the short barbs would maim the point. */
     private fun drawArrowHead(r: Renderer, pen: Pen) {
         val head = arrowHead()
-        if (head.size == 3) r.strokePolyline(head, pen)
+        if (head.size == 3) r.strokePolyline(head, pen.copy(dashed = false))
     }
 
     /**
@@ -151,7 +157,7 @@ class ShapeItem(
 
         // 1) Outer halo (ink colour), bounded in its own glow-alpha layer.
         r.saveLayerAlpha(paintBounds(), glowAlpha)
-        val haloPen = Pen(color = color, width = strokeWidth, cosmetic = false, glowRadius = glowR)
+        val haloPen = pen().copy(color = color, glowRadius = glowR)
         drawOutline(r, haloPen)
         if (shape == ShapeKind.ARROW) drawArrowHead(r, haloPen)
         r.restore()
@@ -161,7 +167,7 @@ class ShapeItem(
         if (shape == ShapeKind.ARROW) drawArrowHead(r, pen())
 
         // 3) White-hot core — a thinner white line down the centre of the shaft and the chevron.
-        val corePen = Pen(color = white, width = coreW, cosmetic = false)
+        val corePen = pen().copy(color = white, width = coreW)
         drawOutline(r, corePen)
         if (shape == ShapeKind.ARROW) drawArrowHead(r, corePen)
     }
@@ -313,11 +319,14 @@ class ShapeItem(
             fillRgba: Rgba? = null,
             neon: Boolean = false,
             neonStrength: Double = 0.6,
+            dashed: Boolean = false,
+            dashLength: Double = 10.0,
+            dashGap: Double = 8.0,
         ): ShapeItem {
             val box = Rect.bounding(vertices)
             return ShapeItem(
                 shape, box.topLeft, Pt(box.right, box.bottom), strokeRgba, strokeWidth,
-                fillRgba, neon, neonStrength, normalize(vertices, box),
+                fillRgba, neon, neonStrength, normalize(vertices, box), dashed, dashLength, dashGap,
             )
         }
 
