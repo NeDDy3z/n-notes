@@ -84,6 +84,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -1206,6 +1207,18 @@ private fun EntryMenu(
     }
 }
 
+/** Slanted parallel lines that shade a colour-coded card without hiding what's on it. */
+private fun Modifier.colorHatch(color: Color): Modifier = drawBehind {
+    val step = 7.dp.toPx()
+    val stroke = 1.dp.toPx()
+    val faint = color.copy(alpha = 0.28f)
+    var x = -size.height
+    while (x < size.width) {
+        drawLine(faint, Offset(x, size.height), Offset(x + size.height, 0f), stroke)
+        x += step
+    }
+}
+
 /** Material chrome rounds the backstage cards; the classic accent chrome keeps them squared. */
 private fun cardShape(palette: Palette): Shape =
     if (palette.isMaterial) RoundedCornerShape(12.dp) else RectangleShape
@@ -1312,6 +1325,7 @@ private fun FolderChip(
             // bordered transparent box. No tap ripple — the colour invert is the only cue.
             .clip(shape)
             .background(if (active) accent else Color.Transparent)
+            .then(if (!active && codeColor != null) Modifier.colorHatch(codeColor) else Modifier)
             .border(1.dp, if (active) accent else (codeColor ?: palette.border.toComposeColor()), shape)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -1418,10 +1432,12 @@ private fun FileTile(
             }
         }
         // Label strip inside the outline; selected fills accent with the text flipped to bg.
+        // A colour code hatches the strip only, never the thumbnail above it.
         Column(
             Modifier
                 .fillMaxWidth()
                 .background(if (selected) accent else Color.Transparent)
+                .then(if (!selected && codeColor != null) Modifier.colorHatch(codeColor) else Modifier)
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
             Text(
