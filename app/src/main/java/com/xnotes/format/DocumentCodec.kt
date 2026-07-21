@@ -25,6 +25,7 @@ import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
+import com.xnotes.core.util.Svg
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -111,7 +112,10 @@ class DocumentCodec(
             when (item) {
                 is Stroke -> writeStroke(j, item)
                 is ImageItem -> {
-                    val name = "assets/image-%03d.png".format(assets.size)
+                    // Readers match assets by manifest name (any extension); .svg keeps the
+                    // bundle honest and older readers skip the item they can't decode.
+                    val ext = if (Svg.isSvgFile(item.image.file)) "svg" else "png"
+                    val name = "assets/image-%03d.%s".format(assets.size, ext)
                     assets.add(name to item.image.file)
                     writeImage(j, item, name)
                 }

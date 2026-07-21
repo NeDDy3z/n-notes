@@ -113,6 +113,30 @@ class DocumentCodecTest {
         assertTrue(names.contains("assets/image-000.png"))
     }
 
+    @Test fun svgImageIsStoredWithSvgExtensionAndRoundTrips() {
+        val markup = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"/>"
+        val doc = Document.blank(count = 1)
+        doc.pages[0].items.add(ImageItem(ImageData(imageFile(markup.toByteArray()), 10, 10), Rect(0.0, 0.0, 10.0, 10.0)))
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+
+        val names = mutableListOf<String>()
+        ZipInputStream(ByteArrayInputStream(out.toByteArray())).use { zis ->
+            var e = zis.nextEntry
+            while (e != null) {
+                names += e.name
+                zis.closeEntry()
+                e = zis.nextEntry
+            }
+        }
+        assertTrue(names.contains("assets/image-000.svg"))
+
+        val imageDir = Files.createTempDirectory("xnotes-img").toFile()
+        val back = codec.read(ByteArrayInputStream(out.toByteArray()), imageDir = imageDir)
+        val item = back.pages[0].items[0] as ImageItem
+        assertEquals(markup, item.image.file.readText())
+    }
+
     @Test fun rejectsNonXnote() {
         val out = ByteArrayOutputStream()
         java.util.zip.ZipOutputStream(out).use {
