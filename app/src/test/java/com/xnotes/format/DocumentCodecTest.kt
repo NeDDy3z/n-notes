@@ -257,6 +257,86 @@ class DocumentCodecTest {
         assertNull(doc.pdfFile)
     }
 
+    @Test fun itemKeyOrderDoesNotMatter() {
+        // The streaming parser must not depend on "kind" (or any key) coming first.
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use {
+            it.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+            it.write(
+                ("{\"pages\":[{\"items\":[" +
+                    "{\"samples\":[[1,2,0.5]],\"tool\":\"pen\",\"kind\":\"stroke\"}]," +
+                    "\"width\":100,\"height\":100}],\"format\":\"xnote\"}").toByteArray(),
+            )
+            it.closeEntry()
+        }
+        val doc = codec.read(ByteArrayInputStream(out.toByteArray()))
+        val stroke = doc.pages[0].items[0] as Stroke
+        assertEquals(Tool.PEN, stroke.tool)
+        assertEquals(Sample(1.0, 2.0, 0.5), stroke.samples[0])
+    }
+
+    @Test fun imageKeepsItsZOrderSlot() {
+        // Image files stream out of the zip after the manifest, so image items are
+        // inserted late; they must still land between the items they were drawn between.
+        val doc = Document(dpi = 150)
+        val page = Page(200.0, 200.0)
+        page.items.add(Stroke(Tool.PEN, ToolConfig(), mutableListOf(Sample(1.0, 1.0, 1.0))))
+        page.items.add(ImageItem(ImageData(imageFile(), 8, 8), Rect(0.0, 0.0, 8.0, 8.0)))
+        page.items.add(TextItem(Pt(5.0, 5.0), text = "top", measurer = FakeTextMeasurer()))
+        doc.pages.add(page)
+
+        val items = roundTrip(doc).pages[0].items
+        assertTrue(items[0] is Stroke)
+        assertTrue(items[1] is ImageItem)
+        assertTrue(items[2] is TextItem)
+    }
+
+    @Test fun stringEscapesAndExponentNumbersParse() {
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use {
+            it.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+            it.write(
+                ("{\"format\":\"xnote\",\"pages\":[{\"width\":100,\"height\":100,\"items\":[" +
+                    "{\"kind\":\"text\",\"pos\":[1,2],\"text\":\"a\\\"b\\\\c\\n\\u00e9\\ud83d\\ude00\"}," +
+                    "{\"kind\":\"stroke\",\"samples\":[[1.5e2,-2E-1,1]]}]}]}").toByteArray(),
+            )
+            it.closeEntry()
+        }
+        val doc = codec.read(ByteArrayInputStream(out.toByteArray()))
+        assertEquals("a\"b\\c\né😀", (doc.pages[0].items[0] as TextItem).text)
+        val s = (doc.pages[0].items[1] as Stroke).samples[0]
+        assertEquals(150.0, s.x, 1e-9)
+        assertEquals(-0.2, s.y, 1e-9)
+    }
+
+    @Test fun malformedManifestJsonRejectsAsNonXnote() {
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use {
+            it.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+            it.write("{\"format\":\"xnote\",\"pages\":[{".toByteArray())
+            it.closeEntry()
+        }
+        assertThrows(XNoteFormatException::class.java) {
+            codec.read(ByteArrayInputStream(out.toByteArray()))
+        }
+    }
+
+    @Test fun nullFillAndShapePointsRoundTrip() {
+        val doc = Document(dpi = 150)
+        val page = Page(200.0, 200.0)
+        page.items.add(ShapeItem(ShapeKind.LINE, Pt(0.0, 0.0), Pt(50.0, 30.0), Rgba(1, 2, 3, 255), 2.0, null))
+        page.items.add(ShapeItem.poly(ShapeKind.POLYGON, listOf(Pt(0.0, 0.0), Pt(10.0, 0.0), Pt(5.0, 8.0)), Rgba(9, 8, 7, 255), 1.0, Rgba(4, 5, 6, 32), false, 0.6))
+        doc.pages.add(page)
+
+        val items = roundTrip(doc).pages[0].items
+        val line = items[0] as ShapeItem
+        assertNull(line.fillRgba)
+        val poly = items[1] as ShapeItem
+        assertEquals(ShapeKind.POLYGON, poly.shape)
+        assertEquals(3, poly.vertices()!!.size)
+        assertEquals(Rgba(4, 5, 6, 32), poly.fillRgba)
+    }
+
     @Test fun pageStyleRoundTrips() {
         val doc = Document(dpi = 150)
         doc.style = PageStyle(pattern = PagePattern.LINES, spacing = 48.0) // document-wide ("all pages")

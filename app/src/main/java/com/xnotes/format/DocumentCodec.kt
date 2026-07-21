@@ -25,12 +25,12 @@ import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
 import org.json.JSONArray
-import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.OutputStream
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
@@ -120,7 +120,8 @@ class DocumentCodec(
      * that asset is skipped, which is what validation-only reads want.
      */
     fun read(input: InputStream, pdfDir: File? = null, imageDir: File? = null): Document {
-        val entries = HashMap<String, ByteArray>()
+        var manifest: ParsedManifest? = null
+        var flowBytes: ByteArray? = null
         val imageFiles = HashMap<String, File>()
         var pdfFile: File? = null
         ZipInputStream(input).use { zis ->
@@ -128,7 +129,18 @@ class DocumentCodec(
             while (entry != null) {
                 if (!entry.isDirectory) {
                     val name = entry.name
-                    if (name == "assets/source.pdf") {
+                    if (name == "manifest.json") {
+                        // Parsed straight off the zip stream: a dense note's manifest is never
+                        // materialized as bytes, a String, or an org.json DOM (which held a boxed
+                        // wrapper per number and made big notes cost minutes and ~3x their heap).
+                        if (manifest == null) {
+                            manifest = try {
+                                parseManifest(JsonPull(InputStreamReader(zis, Charsets.UTF_8)))
+                            } catch (_: JsonPullException) {
+                                throw XNoteFormatException(NOT_XNOTE)
+                            }
+                        }
+                    } else if (name == "assets/source.pdf") {
                         // Never slurp the PDF into memory: stream it to disk (or skip it).
                         if (pdfDir != null) {
                             val f = File.createTempFile("src", ".pdf", pdfDir)
@@ -143,66 +155,46 @@ class DocumentCodec(
                             FileOutputStream(f).use { zis.copyTo(it) }
                             imageFiles[name] = f
                         }
-                    } else {
-                        entries[name] = zis.readBytes()
+                    } else if (name == FlowXml.ENTRY_NAME) {
+                        flowBytes = zis.readBytes()
                     }
+                    // Anything else is an asset from a newer version: skipped, never buffered.
                 }
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
         }
 
-        val manifestBytes = entries["manifest.json"] ?: throw XNoteFormatException(NOT_XNOTE)
-        val manifest = try {
-            JSONObject(String(manifestBytes, Charsets.UTF_8))
-        } catch (_: JSONException) {
-            throw XNoteFormatException(NOT_XNOTE)
-        }
-        if (manifest.optString("format") != FORMAT) throw XNoteFormatException(NOT_XNOTE)
+        val m = manifest ?: throw XNoteFormatException(NOT_XNOTE)
+        if (!m.formatOk) throw XNoteFormatException(NOT_XNOTE)
 
-        val dpi = manifest.optInt("dpi", PageSize.DEFAULT_DPI)
-        val doc = Document(dpi = dpi)
-        doc.style = parsePageStyle(manifest.optJSONObject("style"))
+        val doc = Document(dpi = m.dpi)
+        doc.style = m.style
 
-        if (manifest.optBoolean("has_pdf", false)) {
+        if (m.hasPdf) {
             doc.pdfFile = pdfFile
         } else {
             pdfFile?.delete() // a stray PDF with no manifest flag: don't leak the temp file
         }
 
-        manifest.optJSONArray("bookmarks")?.let { bm ->
-            for (i in 0 until bm.length()) {
-                val o = bm.optJSONObject(i) ?: continue
-                doc.bookmarks.add(Bookmark(o.optInt("page", 0), o.optString("label", "")))
-            }
-        }
+        doc.bookmarks.addAll(m.bookmarks)
+        flowBytes?.let { FlowXml.readInto(doc.flow, it) }
 
-        entries[FlowXml.ENTRY_NAME]?.let { FlowXml.readInto(doc.flow, it) }
-
-        val pagesArr = manifest.optJSONArray("pages")
-        if (pagesArr == null || pagesArr.length() == 0) {
-            doc.pages.add(Page.blank(PageSize.A4, Orientation.PORTRAIT, dpi))
+        if (m.pages.isEmpty()) {
+            doc.pages.add(Page.blank(PageSize.A4, Orientation.PORTRAIT, m.dpi))
             return doc
         }
+        doc.pages.addAll(m.pages)
 
-        val (fallbackW, fallbackH) = PageSize.A4.pixels(Orientation.PORTRAIT, dpi)
-        for (i in 0 until pagesArr.length()) {
-            val po = pagesArr.optJSONObject(i) ?: continue
-            val page = Page(
-                width = po.optDouble("width", fallbackW),
-                height = po.optDouble("height", fallbackH),
-                pdfPage = if (po.isNull("pdf_page")) null else po.optInt("pdf_page"),
-            )
-            page.style = parsePageStyle(po.optJSONObject("style"))
-            po.optJSONArray("items")?.let { items ->
-                for (j in 0 until items.length()) {
-                    val io = items.optJSONObject(j) ?: continue
-                    parseItem(io, entries, imageFiles)?.let { page.items.add(it) }
-                }
+        // Image entries stream out of the zip after the manifest, so image items materialize only
+        // now that their files exist; the recorded index restores each one's z-order slot.
+        for ((page, specs) in m.pageImages) {
+            var dropped = 0
+            for (spec in specs) {
+                val item = materializeImage(spec, imageFiles)
+                if (item == null) dropped++ else page.items.add(spec.index - dropped, item)
             }
-            doc.pages.add(page)
         }
-        if (doc.pages.isEmpty()) doc.pages.add(Page.blank(PageSize.A4, Orientation.PORTRAIT, dpi))
         return doc
     }
 
@@ -305,117 +297,474 @@ class DocumentCodec(
         return obj
     }
 
-    // --- json -> item ---
+    // --- streaming json -> model ---
 
-    private fun parseItem(o: JSONObject, entries: Map<String, ByteArray>, imageFiles: Map<String, File>): CanvasItem? =
-        when (o.optString("kind")) {
-            Stroke.KIND -> parseStroke(o)
-            ImageItem.KIND -> parseImage(o, imageFiles)
-            TextItem.KIND -> parseText(o)
-            ShapeItem.KIND -> parseShape(o)
-            else -> null
-        }
-
-    private fun parseStroke(o: JSONObject): Stroke {
-        val tool = Tool.fromId(o.optString("tool")) ?: Tool.PEN
-        val c = o.optJSONObject("config")
-        val def = ToolConfig()
-        val config = ToolConfig(
-            baseWidth = c?.optDouble("base_width", def.baseWidth) ?: def.baseWidth,
-            pressureEnabled = c?.optBoolean("pressure_enabled", def.pressureEnabled) ?: def.pressureEnabled,
-            pressureMinFactor = c?.optDouble("pressure_min_factor", def.pressureMinFactor) ?: def.pressureMinFactor,
-            directionStrength = c?.optDouble("direction_strength", def.directionStrength) ?: def.directionStrength,
-            rgba = readRgba(c?.optJSONArray("rgba")) ?: def.rgba,
-            speedStrength = c?.optDouble("speed_strength", def.speedStrength) ?: def.speedStrength,
-            taperEnabled = c?.let { it.optBoolean("taper_enabled", it.optDouble("taper_length", 0.0) > 0.0) } ?: def.taperEnabled,
-            // Absent on legacy taper strokes -> the current default tip, so old tapers reload
-            // tapered rather than as a sharp point.
-            taperMinFactor = c?.optDouble("taper_min_factor", ToolDefaults.DEFAULT_TAPER_TIP) ?: ToolDefaults.DEFAULT_TAPER_TIP,
-            neon = c?.optBoolean("neon", def.neon) ?: def.neon,
-            neonStrength = c?.optDouble("neon_strength", def.neonStrength) ?: def.neonStrength,
-            dashLength = c?.optDouble("dash_length", def.dashLength) ?: def.dashLength,
-            dashGap = c?.optDouble("dash_gap", def.dashGap) ?: def.dashGap,
-            // Absent on legacy highlighter strokes -> the historical 0.35, so they reload unchanged.
-            highlighterAlpha = c?.optDouble("highlighter_alpha", def.highlighterAlpha) ?: def.highlighterAlpha,
-        )
-        val samples = ArrayList<Sample>()
-        o.optJSONArray("samples")?.let { arr ->
-            for (i in 0 until arr.length()) {
-                val s = arr.optJSONArray(i) ?: continue
-                // 4th element (relative ms) is present only for speed-pen strokes; absent ⇒ 0.
-                samples.add(Sample(s.optDouble(0, 0.0), s.optDouble(1, 0.0), s.optDouble(2, 1.0), s.optDouble(3, 0.0)))
-            }
-        }
-        return Stroke(tool, config, samples, o.optDouble("speed_scale", 1.0), o.optBoolean("straight", false))
+    private class ParsedManifest {
+        var formatOk = false
+        var dpi = PageSize.DEFAULT_DPI
+        var hasPdf = false
+        var style = PageStyle()
+        val bookmarks = ArrayList<Bookmark>()
+        val pages = ArrayList<Page>()
+        val pageImages = ArrayList<Pair<Page, List<PendingImage>>>()
     }
 
-    private fun parseImage(o: JSONObject, imageFiles: Map<String, File>): ImageItem? {
-        val asset = o.optString("asset").ifEmpty { return null }
-        val file = imageFiles[asset] ?: return null
-        var w = o.optInt("src_w", 0)
-        var h = o.optInt("src_h", 0)
+    /** An image item parsed before its asset entry has streamed out of the zip. */
+    private class PendingImage(
+        val index: Int,
+        val asset: String,
+        val rect: Rect?,
+        val srcW: Int,
+        val srcH: Int,
+        val orientation: Int,
+    )
+
+    private fun parseManifest(p: JsonPull): ParsedManifest {
+        val m = ParsedManifest()
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "format" -> {
+                    if (stringOr(p, "") != FORMAT) throw XNoteFormatException(NOT_XNOTE)
+                    m.formatOk = true
+                }
+                "dpi" -> m.dpi = intOr(p, PageSize.DEFAULT_DPI)
+                "has_pdf" -> m.hasPdf = boolOr(p, false)
+                "style" -> m.style = parseStyle(p)
+                "bookmarks" -> parseBookmarks(p, m.bookmarks)
+                "pages" -> parsePages(p, m)
+                else -> p.skipValue()
+            }
+        }
+        p.endObject()
+        return m
+    }
+
+    private fun parseBookmarks(p: JsonPull, out: MutableList<Bookmark>) {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) return p.skipValue()
+        p.beginArray()
+        while (p.hasNext()) {
+            if (p.peek() != JsonPull.Token.BEGIN_OBJECT) {
+                p.skipValue()
+                continue
+            }
+            var page = 0
+            var label = ""
+            p.beginObject()
+            while (p.hasNext()) {
+                when (p.nextName()) {
+                    "page" -> page = intOr(p, 0)
+                    "label" -> label = stringOr(p, "")
+                    else -> p.skipValue()
+                }
+            }
+            p.endObject()
+            out.add(Bookmark(page, label))
+        }
+        p.endArray()
+    }
+
+    private fun parsePages(p: JsonPull, m: ParsedManifest) {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) return p.skipValue()
+        val (fallbackW, fallbackH) = PageSize.A4.pixels(Orientation.PORTRAIT, m.dpi)
+        p.beginArray()
+        while (p.hasNext()) {
+            if (p.peek() != JsonPull.Token.BEGIN_OBJECT) {
+                p.skipValue()
+                continue
+            }
+            var width = fallbackW
+            var height = fallbackH
+            var pdfPage: Int? = null
+            var style = PageStyle()
+            val items = mutableListOf<CanvasItem>()
+            val pending = ArrayList<PendingImage>()
+            p.beginObject()
+            while (p.hasNext()) {
+                when (p.nextName()) {
+                    "width" -> width = doubleOr(p, fallbackW)
+                    "height" -> height = doubleOr(p, fallbackH)
+                    "pdf_page" -> pdfPage = intOrNull(p)
+                    "style" -> style = parseStyle(p)
+                    "items" -> parseItems(p, items, pending)
+                    else -> p.skipValue()
+                }
+            }
+            p.endObject()
+            val page = Page(width = width, height = height, items = items, pdfPage = pdfPage, style = style)
+            m.pages.add(page)
+            if (pending.isNotEmpty()) m.pageImages.add(page to pending)
+        }
+        p.endArray()
+    }
+
+    private fun parseItems(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<PendingImage>) {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) return p.skipValue()
+        p.beginArray()
+        while (p.hasNext()) parseItem(p, items, pending)
+        p.endArray()
+    }
+
+    /** Union of every kind's fields, so an item parses in one pass whatever its key order. */
+    private class ItemScratch {
+        var kind: String? = null
+        var tool: String? = null
+        var config: ConfigScratch? = null
+        var samples: MutableList<Sample>? = null
+        var speedScale = 1.0
+        var straight = false
+        var asset: String? = null
+        var rect: Rect? = null
+        var srcW = 0
+        var srcH = 0
+        var orientation = 0
+        var pos: Pt? = null
+        var width = TextItem.DEFAULT_WIDTH
+        var height = 0.0
+        var text = ""
+        var rgba: Rgba? = null
+        var pointSize = TextItem.DEFAULT_POINT_SIZE
+        var fontFace = ""
+        var shape: String? = null
+        var start: Pt? = null
+        var end: Pt? = null
+        var strokeRgba: Rgba? = null
+        var strokeWidth = 3.0
+        var fillRgba: Rgba? = null
+        var points: List<Pt>? = null
+        var neon = false
+        var neonStrength = 0.6
+    }
+
+    /** Stroke config fields as written; null = absent, so defaults resolve exactly as before. */
+    private class ConfigScratch {
+        var baseWidth: Double? = null
+        var pressureEnabled: Boolean? = null
+        var pressureMinFactor: Double? = null
+        var directionStrength: Double? = null
+        var rgba: Rgba? = null
+        var speedStrength: Double? = null
+        var taperEnabled: Boolean? = null
+        var taperLength: Double? = null
+        var taperMinFactor: Double? = null
+        var neon: Boolean? = null
+        var neonStrength: Double? = null
+        var dashLength: Double? = null
+        var dashGap: Double? = null
+        var highlighterAlpha: Double? = null
+    }
+
+    private fun parseItem(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<PendingImage>) {
+        if (p.peek() != JsonPull.Token.BEGIN_OBJECT) return p.skipValue()
+        val s = ItemScratch()
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "kind" -> s.kind = stringOr(p, "")
+                "tool" -> s.tool = stringOr(p, "")
+                "config" -> s.config = parseConfig(p)
+                "samples" -> s.samples = parseSamples(p)
+                "speed_scale" -> s.speedScale = doubleOr(p, 1.0)
+                "straight" -> s.straight = boolOr(p, false)
+                "asset" -> s.asset = stringOr(p, "")
+                "rect" -> s.rect = rectOrNull(p)
+                "src_w" -> s.srcW = intOr(p, 0)
+                "src_h" -> s.srcH = intOr(p, 0)
+                "orientation" -> s.orientation = intOr(p, 0)
+                "pos" -> s.pos = ptOrNull(p)
+                "width" -> s.width = doubleOr(p, TextItem.DEFAULT_WIDTH)
+                "height" -> s.height = doubleOr(p, 0.0)
+                "text" -> s.text = stringOr(p, "")
+                "rgba" -> s.rgba = rgbaOrNull(p)
+                "point_size" -> s.pointSize = doubleOr(p, TextItem.DEFAULT_POINT_SIZE)
+                "font_face" -> s.fontFace = stringOr(p, "")
+                "shape" -> s.shape = stringOr(p, "")
+                "start" -> s.start = ptOrNull(p)
+                "end" -> s.end = ptOrNull(p)
+                "stroke_rgba" -> s.strokeRgba = rgbaOrNull(p)
+                "stroke_width" -> s.strokeWidth = doubleOr(p, 3.0)
+                "fill_rgba" -> s.fillRgba = rgbaOrNull(p)
+                "points" -> s.points = pointsOrNull(p)
+                "neon" -> s.neon = boolOr(p, false)
+                "neon_strength" -> s.neonStrength = doubleOr(p, 0.6)
+                else -> p.skipValue()
+            }
+        }
+        p.endObject()
+        when (s.kind) {
+            Stroke.KIND -> items.add(buildStroke(s))
+            ImageItem.KIND -> {
+                val asset = s.asset
+                if (!asset.isNullOrEmpty()) {
+                    pending.add(PendingImage(items.size + pending.size, asset, s.rect, s.srcW, s.srcH, s.orientation))
+                }
+            }
+            TextItem.KIND -> items.add(
+                TextItem(
+                    pos = s.pos ?: Pt.ZERO,
+                    width = s.width,
+                    height = s.height,
+                    text = s.text,
+                    rgba = s.rgba ?: TextItem.DEFAULT_COLOR,
+                    pointSize = s.pointSize,
+                    face = FontFace.fromId(s.fontFace),
+                    measurer = textMeasurer,
+                ),
+            )
+            ShapeItem.KIND -> items.add(buildShape(s))
+            else -> {} // unrecognized kind: skipped (forgiving)
+        }
+    }
+
+    private fun buildStroke(s: ItemScratch): Stroke {
+        val tool = Tool.fromId(s.tool) ?: Tool.PEN
+        val c = s.config
+        val def = ToolConfig()
+        val config = ToolConfig(
+            baseWidth = c?.baseWidth ?: def.baseWidth,
+            pressureEnabled = c?.pressureEnabled ?: def.pressureEnabled,
+            pressureMinFactor = c?.pressureMinFactor ?: def.pressureMinFactor,
+            directionStrength = c?.directionStrength ?: def.directionStrength,
+            rgba = c?.rgba ?: def.rgba,
+            speedStrength = c?.speedStrength ?: def.speedStrength,
+            taperEnabled = c?.let { it.taperEnabled ?: ((it.taperLength ?: 0.0) > 0.0) } ?: def.taperEnabled,
+            // Absent on legacy taper strokes -> the current default tip, so old tapers reload
+            // tapered rather than as a sharp point.
+            taperMinFactor = c?.taperMinFactor ?: ToolDefaults.DEFAULT_TAPER_TIP,
+            neon = c?.neon ?: def.neon,
+            neonStrength = c?.neonStrength ?: def.neonStrength,
+            dashLength = c?.dashLength ?: def.dashLength,
+            dashGap = c?.dashGap ?: def.dashGap,
+            // Absent on legacy highlighter strokes -> the historical 0.35, so they reload unchanged.
+            highlighterAlpha = c?.highlighterAlpha ?: def.highlighterAlpha,
+        )
+        return Stroke(tool, config, s.samples ?: mutableListOf(), s.speedScale, s.straight)
+    }
+
+    private fun buildShape(s: ItemScratch): ShapeItem {
+        val kind = ShapeKind.fromId(s.shape)
+        val strokeRgba = s.strokeRgba ?: Rgba(0, 230, 118, 255)
+        s.points?.let { verts ->
+            return ShapeItem.poly(kind, verts, strokeRgba, s.strokeWidth, s.fillRgba, s.neon, s.neonStrength)
+        }
+        return ShapeItem(
+            shape = kind,
+            start = s.start ?: Pt.ZERO,
+            end = s.end ?: Pt.ZERO,
+            strokeRgba = strokeRgba,
+            strokeWidth = s.strokeWidth,
+            fillRgba = s.fillRgba,
+            neon = s.neon,
+            neonStrength = s.neonStrength,
+        )
+    }
+
+    private fun parseConfig(p: JsonPull): ConfigScratch? {
+        if (p.peek() != JsonPull.Token.BEGIN_OBJECT) {
+            p.skipValue()
+            return null
+        }
+        val c = ConfigScratch()
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "base_width" -> c.baseWidth = doubleOrNull(p)
+                "pressure_enabled" -> c.pressureEnabled = boolOrNull(p)
+                "pressure_min_factor" -> c.pressureMinFactor = doubleOrNull(p)
+                "direction_strength" -> c.directionStrength = doubleOrNull(p)
+                "rgba" -> c.rgba = rgbaOrNull(p)
+                "speed_strength" -> c.speedStrength = doubleOrNull(p)
+                "taper_enabled" -> c.taperEnabled = boolOrNull(p)
+                "taper_length" -> c.taperLength = doubleOrNull(p)
+                "taper_min_factor" -> c.taperMinFactor = doubleOrNull(p)
+                "neon" -> c.neon = boolOrNull(p)
+                "neon_strength" -> c.neonStrength = doubleOrNull(p)
+                "dash_length" -> c.dashLength = doubleOrNull(p)
+                "dash_gap" -> c.dashGap = doubleOrNull(p)
+                "highlighter_alpha" -> c.highlighterAlpha = doubleOrNull(p)
+                else -> p.skipValue()
+            }
+        }
+        p.endObject()
+        return c
+    }
+
+    private fun parseSamples(p: JsonPull): MutableList<Sample>? {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return null
+        }
+        val out = ArrayList<Sample>()
+        p.beginArray()
+        while (p.hasNext()) {
+            if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+                p.skipValue()
+                continue
+            }
+            p.beginArray()
+            val x = if (p.hasNext()) doubleOr(p, 0.0) else 0.0
+            val y = if (p.hasNext()) doubleOr(p, 0.0) else 0.0
+            val pressure = if (p.hasNext()) doubleOr(p, 1.0) else 1.0
+            // 4th element (relative ms) is present only for speed-pen strokes; absent ⇒ 0.
+            val t = if (p.hasNext()) doubleOr(p, 0.0) else 0.0
+            while (p.hasNext()) p.skipValue()
+            p.endArray()
+            out.add(Sample(x, y, pressure, t))
+        }
+        p.endArray()
+        return out
+    }
+
+    private fun parseStyle(p: JsonPull): PageStyle {
+        if (p.peek() != JsonPull.Token.BEGIN_OBJECT) {
+            p.skipValue()
+            return PageStyle()
+        }
+        var pageColor: Rgba? = null
+        var pattern: PagePattern? = null
+        var patternColor: Rgba? = null
+        var spacing: Double? = null
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "page_color" -> pageColor = rgbaOrNull(p)
+                "pattern" -> pattern = PagePattern.fromId(stringOrNull(p))
+                "pattern_color" -> patternColor = rgbaOrNull(p)
+                "spacing" -> spacing = doubleOrNull(p)
+                else -> p.skipValue()
+            }
+        }
+        p.endObject()
+        return PageStyle(pageColor = pageColor, pattern = pattern, patternColor = patternColor, spacing = spacing)
+    }
+
+    private fun materializeImage(spec: PendingImage, imageFiles: Map<String, File>): ImageItem? {
+        val file = imageFiles[spec.asset] ?: return null
+        var w = spec.srcW
+        var h = spec.srcH
         if (w <= 0 || h <= 0) {
             // Legacy notes (and any without stored dims): read the native size without decoding pixels.
             val probed = imageCodec.probeFile(file.path) ?: return null
             w = probed.width
             h = probed.height
         }
-        val rect = readRect(o.optJSONArray("rect")) ?: Rect(0.0, 0.0, w.toDouble(), h.toDouble())
-        return ImageItem(ImageData(file, w, h), rect, o.optInt("orientation", 0))
+        val rect = spec.rect ?: Rect(0.0, 0.0, w.toDouble(), h.toDouble())
+        return ImageItem(ImageData(file, w, h), rect, spec.orientation)
     }
 
-    private fun parseText(o: JSONObject): TextItem {
-        val pos = readPt(o.optJSONArray("pos")) ?: Pt.ZERO
-        return TextItem(
-            pos = pos,
-            width = o.optDouble("width", TextItem.DEFAULT_WIDTH),
-            height = o.optDouble("height", 0.0),
-            text = o.optString("text", ""),
-            rgba = readRgba(o.optJSONArray("rgba")) ?: TextItem.DEFAULT_COLOR,
-            pointSize = o.optDouble("point_size", TextItem.DEFAULT_POINT_SIZE),
-            face = FontFace.fromId(o.optString("font_face", "")),
-            measurer = textMeasurer,
-        )
-    }
+    // --- streaming value helpers (mirroring org.json's forgiving opt* coercions) ---
 
-    private fun parseShape(o: JSONObject): ShapeItem {
-        val kind = ShapeKind.fromId(o.optString("shape"))
-        val strokeRgba = readRgba(o.optJSONArray("stroke_rgba")) ?: Rgba(0, 230, 118, 255)
-        val strokeWidth = o.optDouble("stroke_width", 3.0)
-        val fillRgba = if (o.isNull("fill_rgba")) null else readRgba(o.optJSONArray("fill_rgba"))
-        val neon = o.optBoolean("neon", false)
-        val neonStrength = o.optDouble("neon_strength", 0.6)
-        readPoints(o.optJSONArray("points"))?.let { verts ->
-            return ShapeItem.poly(kind, verts, strokeRgba, strokeWidth, fillRgba, neon, neonStrength)
+    private fun doubleOr(p: JsonPull, def: Double): Double = doubleOrNull(p) ?: def
+
+    private fun doubleOrNull(p: JsonPull): Double? = when (p.peek()) {
+        JsonPull.Token.NUMBER -> p.nextDouble()
+        JsonPull.Token.STRING -> p.nextString().toDoubleOrNull()
+        else -> {
+            p.skipValue()
+            null
         }
-        return ShapeItem(
-            shape = kind,
-            start = readPt(o.optJSONArray("start")) ?: Pt.ZERO,
-            end = readPt(o.optJSONArray("end")) ?: Pt.ZERO,
-            strokeRgba = strokeRgba,
-            strokeWidth = strokeWidth,
-            fillRgba = fillRgba,
-            neon = neon,
-            neonStrength = neonStrength,
-        )
     }
 
-    private fun readPoints(arr: JSONArray?): List<Pt>? {
-        if (arr == null || arr.length() < 2) return null
-        val out = ArrayList<Pt>(arr.length())
-        for (i in 0 until arr.length()) out.add(readPt(arr.optJSONArray(i)) ?: continue)
+    private fun intOr(p: JsonPull, def: Int): Int = intOrNull(p) ?: def
+
+    private fun intOrNull(p: JsonPull): Int? = when (p.peek()) {
+        JsonPull.Token.NUMBER -> p.nextInt()
+        JsonPull.Token.STRING -> p.nextString().let { it.toIntOrNull() ?: it.toDoubleOrNull()?.toInt() }
+        else -> {
+            p.skipValue()
+            null
+        }
+    }
+
+    private fun boolOr(p: JsonPull, def: Boolean): Boolean = boolOrNull(p) ?: def
+
+    private fun boolOrNull(p: JsonPull): Boolean? = when (p.peek()) {
+        JsonPull.Token.BOOLEAN -> p.nextBoolean()
+        JsonPull.Token.STRING -> when (p.nextString().lowercase()) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+        else -> {
+            p.skipValue()
+            null
+        }
+    }
+
+    private fun stringOr(p: JsonPull, def: String): String = stringOrNull(p) ?: def
+
+    private fun stringOrNull(p: JsonPull): String? = when (p.peek()) {
+        JsonPull.Token.STRING -> p.nextString()
+        else -> {
+            p.skipValue()
+            null
+        }
+    }
+
+    private fun rgbaOrNull(p: JsonPull): Rgba? {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return null
+        }
+        val channels = ArrayList<Int>(4)
+        p.beginArray()
+        while (p.hasNext()) channels.add(intOr(p, 0))
+        p.endArray()
+        return Rgba.fromList(channels)
+    }
+
+    private fun ptOrNull(p: JsonPull): Pt? {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return null
+        }
+        var count = 0
+        var x = 0.0
+        var y = 0.0
+        p.beginArray()
+        while (p.hasNext()) {
+            when (count) {
+                0 -> x = doubleOr(p, 0.0)
+                1 -> y = doubleOr(p, 0.0)
+                else -> p.skipValue()
+            }
+            count++
+        }
+        p.endArray()
+        return if (count >= 2) Pt(x, y) else null
+    }
+
+    private fun rectOrNull(p: JsonPull): Rect? {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return null
+        }
+        val v = DoubleArray(4)
+        var count = 0
+        p.beginArray()
+        while (p.hasNext()) {
+            if (count < 4) v[count] = doubleOr(p, 0.0) else p.skipValue()
+            count++
+        }
+        p.endArray()
+        return if (count >= 4) Rect(v[0], v[1], v[2], v[3]) else null
+    }
+
+    private fun pointsOrNull(p: JsonPull): List<Pt>? {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return null
+        }
+        val out = ArrayList<Pt>()
+        p.beginArray()
+        while (p.hasNext()) ptOrNull(p)?.let { out.add(it) }
+        p.endArray()
         return if (out.size >= 2) out else null
     }
 
-    // --- json helpers ---
+    // --- json write helpers ---
 
     private fun rgbaToJson(c: Rgba): JSONArray = JSONArray().put(c.r).put(c.g).put(c.b).put(c.a)
-
-    private fun readRgba(arr: JSONArray?): Rgba? {
-        if (arr == null || arr.length() < 3) return null
-        val list = (0 until arr.length()).map { arr.optInt(it, 0) }
-        return Rgba.fromList(list)
-    }
 
     /** A page/document style, written only when something is overridden (forgiving: fields are optional). */
     private fun pageStyleToJson(s: PageStyle): JSONObject? {
@@ -426,26 +775,6 @@ class DocumentCodec(
         s.patternColor?.let { o.put("pattern_color", rgbaToJson(it)) }
         s.spacing?.let { o.put("spacing", it) }
         return o
-    }
-
-    private fun parsePageStyle(o: JSONObject?): PageStyle {
-        if (o == null) return PageStyle()
-        return PageStyle(
-            pageColor = readRgba(o.optJSONArray("page_color")),
-            pattern = PagePattern.fromId(if (o.isNull("pattern")) null else o.optString("pattern")),
-            patternColor = readRgba(o.optJSONArray("pattern_color")),
-            spacing = if (o.has("spacing") && !o.isNull("spacing")) o.optDouble("spacing") else null,
-        )
-    }
-
-    private fun readPt(arr: JSONArray?): Pt? {
-        if (arr == null || arr.length() < 2) return null
-        return Pt(arr.optDouble(0, 0.0), arr.optDouble(1, 0.0))
-    }
-
-    private fun readRect(arr: JSONArray?): Rect? {
-        if (arr == null || arr.length() < 4) return null
-        return Rect(arr.optDouble(0, 0.0), arr.optDouble(1, 0.0), arr.optDouble(2, 0.0), arr.optDouble(3, 0.0))
     }
 
     companion object {
