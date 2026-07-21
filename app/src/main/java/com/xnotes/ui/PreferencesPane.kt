@@ -163,6 +163,16 @@ fun PreferencesPane(
                 Chip("Light", prefs.uiAppearance == "light") { update(prefs.copy(uiAppearance = "light")) }
                 Chip("OLED", prefs.uiAppearance == "oled") { update(prefs.copy(uiAppearance = "oled")) }
             }
+            FieldLabel("Colour palette")
+            Text(
+                "Material You follows the system colours on Android 12+, and is derived from the accent colour on older devices. Remembered per UI theme.",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 12.sp,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Classic accent", prefs.paletteStyle == "classic") { update(prefs.withPaletteStyle("classic")) }
+                Chip("Material You", prefs.paletteStyle == "material") { update(prefs.withPaletteStyle("material")) }
+            }
             FieldLabel("Accent colour")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 accentPresets.forEach { c ->
