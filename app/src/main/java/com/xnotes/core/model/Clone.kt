@@ -38,3 +38,31 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
     // The flow must be cloned too or the autosave snapshot would race live edits.
     flow = flow.deepCopy(),
 )
+
+/**
+ * [Document.deepCopy] sliced for the main thread: pages copy one per dispatch ([yield] between
+ * them), so snapshotting a dense note for autosave can't block pen input for one long stretch.
+ * The caller owns consistency: it must abort (cancel, or discard via a revision check) when the
+ * document is edited mid-copy, since pages copied before and after an edit could disagree.
+ */
+suspend fun Document.deepCopyYielding(measurer: TextMeasurer): Document {
+    val pagesCopy = mutableListOf<Page>()
+    var i = 0
+    while (i < pages.size) {
+        val page = pages.getOrNull(i) ?: break // list shrank mid-copy; the revision check discards this
+        pagesCopy.add(page.deepCopy(measurer))
+        i++
+        kotlinx.coroutines.yield()
+    }
+    return Document(
+        pages = pagesCopy,
+        dpi = dpi,
+        path = path,
+        displayName = displayName,
+        dirty = dirty,
+        pdfFile = pdfFile,
+        bookmarks = bookmarks.mapTo(mutableListOf()) { Bookmark(it.page, it.label) },
+        style = style,
+        flow = flow.deepCopy(),
+    )
+}

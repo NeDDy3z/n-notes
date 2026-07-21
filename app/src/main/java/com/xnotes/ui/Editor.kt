@@ -39,6 +39,7 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.model.deepCopy
+import com.xnotes.core.model.deepCopyYielding
 import com.xnotes.core.model.paintPagePattern
 import com.xnotes.core.model.resolvedPageColor
 import com.xnotes.core.model.resolvedPattern
@@ -2263,8 +2264,9 @@ class Editor(context: Context) {
         state.autosaveStatus = "pending" // debounce running; drives the debug overlay
         autosaveJob = autosaveScope.launch {
             kotlinx.coroutines.delay(1200L) // debounce: write after a short idle
-            // Snapshot on the main thread so the off-thread write never iterates the live (mutating) model.
-            val snapshot = state.document.deepCopy(textMeasurer)
+            // Snapshot on the main thread so the off-thread write never iterates the live
+            // (mutating) model — but page-by-page, so a dense note can't hitch pen input.
+            val snapshot = snapshotDocument() ?: return@launch
             state.autosaveStatus = "in progress"
             val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 writeNoteSafely(uri, snapshot)
@@ -2275,6 +2277,24 @@ class Editor(context: Context) {
             }
             state.autosaveStatus = if (ok) "done" else "failed"
         }
+    }
+
+    /**
+     * The autosave snapshot, copied one page per main-loop slice ([deepCopyYielding]) so pen input
+     * stays smooth while a dense note snapshots. Any content edit mid-copy bumps [contentVersion]
+     * and reschedules the autosave (cancelling this job at a yield); the version check discards a
+     * copy that an edit tore anyway, retrying, and after repeated churn falls back to the atomic
+     * copy so the job always terminates. Returns null when a different note replaced this one.
+     */
+    private suspend fun snapshotDocument(): Document? {
+        val doc = state.document
+        repeat(3) {
+            val version = contentVersion
+            val snapshot = doc.deepCopyYielding(textMeasurer)
+            if (state.document !== doc) return null
+            if (contentVersion == version) return snapshot
+        }
+        return doc.deepCopy(textMeasurer)
     }
 
     /** Write the current note to its autosave file now (synchronous, main thread); a no-op when not autosaving. */
