@@ -93,6 +93,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -129,6 +130,7 @@ import com.xnotes.settings.ExplorerSortKey
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
+import com.xnotes.ui.theme.Palette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1204,6 +1206,14 @@ private fun EntryMenu(
     }
 }
 
+/** Material chrome rounds the backstage cards; the classic accent chrome keeps them squared. */
+private fun cardShape(palette: Palette): Shape =
+    if (palette.isMaterial) RoundedCornerShape(12.dp) else RectangleShape
+
+/** Slightly tighter rounding for the compact folder chips. */
+private fun chipShape(palette: Palette): Shape =
+    if (palette.isMaterial) RoundedCornerShape(8.dp) else RectangleShape
+
 /** Step each deeper card down-and-right by this much so the stack reads as a tidy pile. */
 private val DRAG_STACK_STEP = 8.dp
 
@@ -1235,7 +1245,8 @@ private fun DragPreview(editor: Editor, items: List<BrowseEntry>, sizePx: IntSiz
 private fun StackedNoteCard(editor: Editor, entry: BrowseEntry, modifier: Modifier) {
     val palette = LocalPalette.current
     val thumb = editor.cachedNoteTile(entry.documentUri)
-    Column(modifier.background(palette.bg.toComposeColor()).border(1.dp, palette.accent.toComposeColor(), RectangleShape)) {
+    val shape = cardShape(palette)
+    Column(modifier.clip(shape).background(palette.bg.toComposeColor()).border(1.dp, palette.accent.toComposeColor(), shape)) {
         Box(Modifier.fillMaxWidth().weight(1f).background(palette.paper.toComposeColor())) {
             if (thumb != null) {
                 Image(thumb, null, contentScale = ContentScale.Crop, alignment = Alignment.TopCenter, modifier = Modifier.matchParentSize())
@@ -1291,6 +1302,7 @@ private fun FolderChip(
     DisposableEffect(Unit) { onDispose { onBounds(null) } }
     // A hovering drag fills the chip exactly like a selection, so the drop target reads the same.
     val active = selected || isDropTarget
+    val shape = chipShape(palette)
     Row(
         Modifier
             .fillMaxWidth()
@@ -1298,8 +1310,9 @@ private fun FolderChip(
             .onGloballyPositioned { onBounds(it.boundsInWindow()) }
             // accent-fill toggle: active fills solid accent with content flipped to bg, otherwise a thin
             // bordered transparent box. No tap ripple — the colour invert is the only cue.
+            .clip(shape)
             .background(if (active) accent else Color.Transparent)
-            .border(1.dp, if (active) accent else (codeColor ?: palette.border.toComposeColor()), RectangleShape)
+            .border(1.dp, if (active) accent else (codeColor ?: palette.border.toComposeColor()), shape)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -1361,14 +1374,16 @@ private fun FileTile(
     val accent = palette.accent.toComposeColor()
     val onAccent = palette.bg.toComposeColor()
     val codeColor = entry.color?.let { codeOutline(it, palette.isDark).toComposeColor() }
+    val shape = cardShape(palette)
     Column(
         Modifier
             // Square the whole card; the thumbnail shrinks vertically to leave room for the label strip.
             .aspectRatio(1f)
             .alpha(if (dimmed) 0.4f else 1f)
-            // accent-fill family: one squared outline wraps the thumbnail and the label strip. border
-            // draws over its children, so it stays crisp on top of the full-bleed thumbnail.
-            .border(1.dp, if (selected) accent else (codeColor ?: palette.border.toComposeColor()), RectangleShape)
+            // accent-fill family: one outline wraps the thumbnail and the label strip. border draws
+            // over its children, so it stays crisp on top of the full-bleed thumbnail.
+            .clip(shape)
+            .border(1.dp, if (selected) accent else (codeColor ?: palette.border.toComposeColor()), shape)
             // No tap ripple — the accent border + fill is the only selection cue. The tile owns only tap
             // (open / toggle in select mode); long-press to select and the drag-to-move gesture both live
             // on the grid container, so they survive this tile scrolling out from under the finger.
@@ -1518,10 +1533,12 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
     }
     val accent = palette.accent.toComposeColor()
     val onAccent = palette.bg.toComposeColor()
+    val shape = cardShape(palette)
     Column(
         modifier
+            .clip(shape)
             .background(if (pressed) accent else Color.Transparent)
-            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), RectangleShape)
+            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), shape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 22.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
