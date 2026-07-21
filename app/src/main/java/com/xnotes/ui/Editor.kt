@@ -745,11 +745,24 @@ class Editor(context: Context) {
     }
 
     fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt) {
-        val uri = clipboardImageUri() ?: run { message = "The clipboard has no image to paste."; return }
+        val uri = clipboardImageUri() ?: run {
+            clipboardSvgBytes()?.let { insertImageAt(it, content) }
+                ?: run { message = "The clipboard has no image to paste." }
+            return
+        }
         runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
             .getOrNull()
             ?.let { insertImageAt(it, content) }
             ?: run { message = "The clipboard has no image to paste." }
+    }
+
+    /** SVG markup sitting on the clipboard as plain text (copied source), as insertable bytes. */
+    private fun clipboardSvgBytes(): ByteArray? {
+        val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return null
+        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString() ?: return null
+        val t = text.trimStart('\uFEFF').trimStart()
+        val looksSvg = t.startsWith("<svg") || ((t.startsWith("<?xml") || t.startsWith("<!")) && t.contains("<svg"))
+        return if (looksSvg) text.toByteArray() else null
     }
 
     private fun clipboardImageUri(): android.net.Uri? {
@@ -1080,7 +1093,8 @@ class Editor(context: Context) {
         val clipboard = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
         val uri = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
         if (uri == null) {
-            message = "The clipboard has no image to paste."
+            clipboardSvgBytes()?.let { insertImage(it) }
+                ?: run { message = "The clipboard has no image to paste." }
             return
         }
         runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
