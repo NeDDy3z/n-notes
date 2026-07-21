@@ -336,6 +336,14 @@ private fun EditorScreen(
         pendingInsertContent = null
     }
 
+    // Images picked for the stamp library (multi-select), stored on disk by the editor.
+    val addStampsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        uris.forEach { uri ->
+            runCatching { resolver.openInputStream(uri)?.use { s -> editor.addStamp(s.readBytes()) } }
+                .onFailure { editor.message = "Could not read the image." }
+        }
+    }
+
     // A user Helix code theme (.toml), parsed + stored by the editor.
     val importCodeThemeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -612,6 +620,7 @@ private fun EditorScreen(
                         onToggleFullscreen = onToggleFullscreen,
                         onOpenBackstage = { backstageView = com.xnotes.ui.BackstageView.HOME; guarded { editor.goHome() } },
                         onInsertImage = { pendingInsertContent = null; insertImageLauncher.launch(arrayOf("image/*")) },
+                        onAddStamps = { addStampsLauncher.launch(arrayOf("image/*")) },
                         onPresent = { showPresentation = true },
                     )
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {

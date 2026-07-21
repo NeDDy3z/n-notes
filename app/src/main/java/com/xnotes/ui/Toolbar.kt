@@ -1,18 +1,27 @@
 package com.xnotes.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,7 +45,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,9 +58,12 @@ import androidx.compose.ui.unit.sp
 import com.xnotes.R
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolbarItem
+import com.xnotes.platform.ImageDecoder
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun Toolbar(
@@ -54,6 +71,7 @@ fun Toolbar(
     onToggleFullscreen: () -> Unit,
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit,
+    onAddStamps: () -> Unit,
     onPresent: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -104,6 +122,7 @@ fun Toolbar(
                     onRename = { renaming = true },
                     onOpenBackstage = onOpenBackstage,
                     onInsertImage = onInsertImage,
+                    onAddStamps = onAddStamps,
                     onPresent = onPresent,
                     onToggleFullscreen = onToggleFullscreen,
                 )
@@ -136,6 +155,7 @@ private fun ToolbarItemView(
     onRename: () -> Unit,
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit,
+    onAddStamps: () -> Unit,
     onPresent: () -> Unit,
     onToggleFullscreen: () -> Unit,
 ) {
@@ -164,7 +184,7 @@ private fun ToolbarItemView(
         ToolbarItem.RULER ->
             ToolbarIcon(XnotesIcons.ruler, "Ruler", active = editor.rulerVisible) { editor.toggleRuler() }
 
-        ToolbarItem.IMAGE -> ImageMenu(editor, onInsertImage)
+        ToolbarItem.IMAGE -> ImageMenu(editor, onInsertImage, onAddStamps)
 
         ToolbarItem.UNDO -> ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
         ToolbarItem.REDO -> ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
@@ -373,13 +393,94 @@ private fun Separator() {
 }
 
 @Composable
-private fun ImageMenu(editor: Editor, onInsertImage: () -> Unit) {
+private fun ImageMenu(editor: Editor, onInsertImage: () -> Unit, onAddStamps: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var stampsOpen by remember { mutableStateOf(false) }
     Box {
         ToolbarIcon(XnotesIcons.image, "Image") { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(text = { Text("Paste image") }, onClick = { editor.pasteImage(); expanded = false })
             DropdownMenuItem(text = { Text("Insert image…") }, onClick = { onInsertImage(); expanded = false })
+            DropdownMenuItem(text = { Text("Stamps") }, onClick = { expanded = false; stampsOpen = true })
+        }
+        if (stampsOpen) StampsMenu(editor, onAddStamps) { stampsOpen = false }
+    }
+}
+
+/**
+ * The stamp library popup: a grid of saved images that insert with one tap, so a
+ * recurring image never needs the gallery round trip. Stamps live on disk (see
+ * [Editor.stamps]); each tile decodes its own small preview off the main thread.
+ */
+@Composable
+private fun StampsMenu(editor: Editor, onAddStamps: () -> Unit, onDismiss: () -> Unit) {
+    val palette = LocalPalette.current
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text("Add stamps…") },
+            leadingIcon = { Icon(XnotesIcons.plus, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            onClick = onAddStamps,
+        )
+        if (editor.stamps.isEmpty()) {
+            Text(
+                "No stamps yet.",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .width(72.dp * 3 + 6.dp * 2)
+                    .heightIn(max = 72.dp * 3 + 6.dp * 2),
+            ) {
+                items(editor.stamps, key = { it.name }) { file ->
+                    StampTile(
+                        file = file,
+                        onInsert = { editor.insertStamp(file); onDismiss() },
+                        onRemove = { editor.removeStamp(file) },
+                    )
+                }
+            }
+            Text(
+                "Tap to insert, hold to remove",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun StampTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -> Unit) {
+    val palette = LocalPalette.current
+    val thumbPx = with(LocalDensity.current) { 72.dp.roundToPx() }
+    val thumb by produceState<ImageBitmap?>(null, file) {
+        value = withContext(Dispatchers.IO) {
+            ImageDecoder.decodeSampledFile(file.path, thumbPx, thumbPx)?.asImageBitmap()
+        }
+    }
+    Box(
+        modifier = Modifier
+            .size(72.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+            .combinedClickable(onClick = onInsert, onLongClick = onRemove),
+        contentAlignment = Alignment.Center,
+    ) {
+        thumb?.let {
+            Image(
+                bitmap = it,
+                contentDescription = "Stamp",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(3.dp),
+            )
         }
     }
 }

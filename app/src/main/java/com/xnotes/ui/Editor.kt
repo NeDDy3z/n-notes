@@ -152,6 +152,16 @@ class Editor(context: Context) {
      *  reclaimable cacheDir) and is purged on launch to drop temps orphaned by a crash. */
     private val saveTmpDir = java.io.File(appContext.filesDir, "savetmp").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
 
+    /** The stamp library: encoded image files kept under filesDir across sessions (never purged).
+     *  Only [java.io.File] handles are held in memory; thumbnails and inserts decode from disk. */
+    private val stampDir = java.io.File(appContext.filesDir, "stamps").apply { mkdirs() }
+
+    /** Stamp files, oldest first (names embed the add time so a plain name sort is stable). */
+    var stamps: List<java.io.File> by mutableStateOf(listStamps())
+        private set
+
+    private fun listStamps(): List<java.io.File> = stampDir.listFiles()?.sortedBy { it.name }.orEmpty()
+
     /** The temp PDF file backing the currently open document, tracked so it's deleted when the note
      *  is swapped out (transient docs used for export/thumbnails manage their own files locally). */
     private var openPdfTemp: java.io.File? = null
@@ -1089,6 +1099,37 @@ class Editor(context: Context) {
         state.document.dirty = true
         refreshContent()
         view.requestRender()
+    }
+
+    /** Save an encoded image into the on-disk stamp library (validated by a probe decode). */
+    fun addStamp(bytes: ByteArray) {
+        val file = runCatching {
+            java.io.File.createTempFile("stamp-${System.currentTimeMillis()}-", null, stampDir)
+                .apply { writeBytes(bytes) }
+        }.getOrNull()
+        val size = file?.let { imageCodec.probeFile(it.path) }
+        if (file == null || size == null || size.width <= 0 || size.height <= 0) {
+            file?.delete()
+            message = "Could not read the image."
+            return
+        }
+        stamps = listStamps()
+    }
+
+    fun removeStamp(file: java.io.File) {
+        file.delete()
+        stamps = listStamps()
+    }
+
+    /** Insert a stamp as a fresh copy, so the note never references the library file itself. */
+    fun insertStamp(file: java.io.File) {
+        val bytes = runCatching { file.takeIf { it.isFile }?.readBytes() }.getOrNull()
+        if (bytes == null) {
+            message = "Could not read the stamp."
+            stamps = listStamps()
+            return
+        }
+        insertImage(bytes)
     }
 
     fun pasteImage() {
