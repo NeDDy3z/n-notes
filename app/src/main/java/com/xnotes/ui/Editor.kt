@@ -71,7 +71,9 @@ import com.xnotes.platform.AndroidTextMeasurer
 import com.xnotes.settings.ExplorerSortKey
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.SettingsRepository
+import com.xnotes.ui.theme.MaterialColors
 import com.xnotes.ui.theme.Palette
+import com.xnotes.ui.theme.dynamicMaterialColors
 import java.io.InputStream
 import java.io.OutputStream
 import kotlin.math.roundToInt
@@ -157,7 +159,7 @@ class Editor(context: Context) {
     val state = CanvasState(
         Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation),
         AndroidSurfaceFactory(),
-        Palette.forAppearance(settings.prefs.uiAppearance, settings.prefs.accentColor),
+        buildPalette(settings.prefs),
     )
     val history = History()
     val view = CanvasView(context).also { it.state = state }
@@ -1225,8 +1227,19 @@ class Editor(context: Context) {
         applyPagePrefsToState(settings.prefs)
     }
 
+    /** The chrome palette for [p]: Material You (system scheme, accent-seeded below Android 12)
+     *  when the active appearance mode picked the material style, else the classic accent chrome. */
+    private fun buildPalette(p: Preferences): Palette {
+        if (p.paletteStyle == "material") {
+            val m = dynamicMaterialColors(appContext, dark = p.isDark)
+                ?: MaterialColors.seeded(p.accentColor, dark = p.isDark)
+            return Palette.material(p.uiAppearance, m)
+        }
+        return Palette.forAppearance(p.uiAppearance, p.accentColor)
+    }
+
     private fun applyPagePrefsToState(p: Preferences) {
-        palette = Palette.forAppearance(p.uiAppearance, p.accentColor)
+        palette = buildPalette(p)
         state.palette = palette
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
         controller.fingerDraws = p.fingerDraws
