@@ -1209,8 +1209,8 @@ private fun EntryMenu(
 
 /** Slanted parallel lines that shade a colour-coded card without hiding what's on it. */
 private fun Modifier.colorHatch(color: Color): Modifier = drawBehind {
-    val step = 7.dp.toPx()
-    val stroke = 1.dp.toPx()
+    val step = 10.dp.toPx()
+    val stroke = 1.5.dp.toPx()
     val faint = color.copy(alpha = 0.28f)
     var x = -size.height
     while (x < size.width) {
