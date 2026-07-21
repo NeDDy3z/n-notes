@@ -182,6 +182,28 @@ private fun SwatchesTab(recents: List<Rgba>, current: Rgba, onPick: (Rgba) -> Un
     }
 }
 
+/** The full hue×shade matrix plus the greyscale row at fixed cell size, for menus outside the picker. */
+@Composable
+internal fun FullSwatchGrid(onPick: (Rgba) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        SWATCH_SHADES.forEach { (s, v) ->
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                SWATCH_HUES.forEach { h ->
+                    val c = ColorMath.hsvToRgb(h, s, v)
+                    SwatchCell(c, false, Modifier.size(CELL.dp)) { onPick(c) }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            (0..12).forEach { i ->
+                val g = ((1.0 - i / 12.0) * 255).roundToInt()
+                val c = Rgba(g, g, g)
+                SwatchCell(c, false, Modifier.size(CELL.dp)) { onPick(c) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SwatchCell(color: Rgba, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val palette = LocalPalette.current

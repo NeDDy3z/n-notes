@@ -610,14 +610,12 @@ private fun AccentColorGridPopup(onDismiss: () -> Unit, onPick: (Rgba) -> Unit) 
 
 /**
  * The colour-code picker shown inside a note/folder's overflow menu: a None row to clear the colour,
- * then the full saturated grid (the same swatches as the accent picker). [onPick] is called with null
- * for None. Rendered directly inside the menu's own dropdown column.
+ * then the picker's full matrix (pale tints through near-black plus the greyscale row). [onPick] is
+ * called with null for None. Rendered directly inside the menu's own dropdown column.
  */
 @Composable
 internal fun ColorCodeMenuContent(onPick: (Rgba?) -> Unit) {
     val palette = LocalPalette.current
-    val hues = (0 until 12).map { it * 360.0 / 12.0 }
-    val shades = listOf(1.0 to 1.0, 1.0 to 0.82, 0.78 to 1.0)
     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             Modifier.clip(RoundedCornerShape(4.dp)).clickable { onPick(null) }.padding(vertical = 2.dp),
@@ -629,11 +627,7 @@ internal fun ColorCodeMenuContent(onPick: (Rgba?) -> Unit) {
             )
             Text("None", color = palette.text.toComposeColor(), fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
         }
-        shades.forEach { (s, v) ->
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                hues.forEach { h -> Swatch(ColorMath.hsvToRgb(h, s, v), onPick) }
-            }
-        }
+        FullSwatchGrid { onPick(it) }
     }
 }
 
