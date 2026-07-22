@@ -496,7 +496,8 @@ class InteractionController(
         if (keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_PRIMARY &&
             keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_SECONDARY &&
             keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_TERTIARY &&
-            keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_TAIL
+            keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_TAIL &&
+            keyCode != VENDOR_HELD_BUTTON_KEYCODE
         ) {
             return false
         }
@@ -2873,6 +2874,10 @@ class InteractionController(
         const val SIMPLIFY_EPS = 0.2
 
         const val MOVE_EPS = 0.01
+
+        /** Vendor key some pens send for a genuinely held side button (OnePlus Pad Go 2 Stylo,
+         *  which reports a real down/up pair with auto-repeat rather than a momentary click). */
+        const val VENDOR_HELD_BUTTON_KEYCODE = KeyEvent.KEYCODE_F21
 
         /** Stylus side-button bits, widened past the S-Pen primary so pens on the secondary/tertiary lines count too. */
         val STYLUS_BUTTON_MASK =
