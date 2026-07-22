@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -90,6 +91,14 @@ internal fun deviceHasDisplayCutout(context: Context): Boolean {
     return display?.cutout != null
 }
 
+/** The standard touch action an old One UI S-Pen-button code stands in for, or -1 for anything else. */
+private fun standardPenAction(action: Int): Int = when (action) {
+    211 -> MotionEvent.ACTION_DOWN
+    212 -> MotionEvent.ACTION_UP
+    213 -> MotionEvent.ACTION_MOVE
+    else -> -1
+}
+
 class MainActivity : ComponentActivity() {
 
     // The editor owns the fullscreen state (persisted preference, default depends on the display
@@ -145,6 +154,24 @@ class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (editor?.onStylusButtonKey(event) == true) return true
         return super.dispatchKeyEvent(event)
+    }
+
+    // Older Samsung builds (seen on a Tab S6 Lite, Android 13; gone by Android 15) tag a stylus
+    // stroke made with the S-Pen button held with proprietary action codes instead of DOWN/MOVE/UP,
+    // so the view tree never opens a touch target and the whole stroke is dropped. Rewrite them
+    // here, the last point they are intact, and dispatch normally. A no-op on every other device.
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        val standard = standardPenAction(ev.actionMasked)
+        if (standard < 0 || ev.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
+            return super.dispatchTouchEvent(ev)
+        }
+        val rewritten = MotionEvent.obtain(ev)
+        rewritten.action = standard
+        try {
+            return super.dispatchTouchEvent(rewritten)
+        } finally {
+            rewritten.recycle()
+        }
     }
 
     // A PDF arriving while we're already running: singleTask reuses this instance via onNewIntent.
