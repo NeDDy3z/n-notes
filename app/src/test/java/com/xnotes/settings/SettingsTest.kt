@@ -187,29 +187,31 @@ class SettingsTest {
 
     @Test fun paletteStyleDefaultsPerMode() {
         val p = Preferences.fromJson(JSONObject())
-        assertEquals("classic", p.darkPaletteStyle)
+        assertEquals("material", p.darkPaletteStyle)
         assertEquals("material", p.lightPaletteStyle)
         assertEquals("classic", p.oledPaletteStyle)
-        assertEquals("classic", p.paletteStyle)
-        assertEquals("material", p.copy(uiAppearance = "light").paletteStyle)
+        assertEquals("material", p.paletteStyle)
+        assertEquals("classic", p.copy(uiAppearance = "oled").paletteStyle)
     }
 
     @Test fun paletteStyleRoundTrips() {
         val back = Preferences.fromJson(
-            Preferences(darkPaletteStyle = "material", lightPaletteStyle = "classic").toJson(),
+            Preferences(darkPaletteStyle = "classic", lightPaletteStyle = "classic", oledPaletteStyle = "material").toJson(),
         )
-        assertEquals("material", back.darkPaletteStyle)
+        assertEquals("classic", back.darkPaletteStyle)
         assertEquals("classic", back.lightPaletteStyle)
-        assertEquals("classic", back.oledPaletteStyle)
+        assertEquals("material", back.oledPaletteStyle)
     }
 
     @Test fun paletteStyleMalformedFallsBackPerMode() {
         val o = JSONObject()
             .put("dark_palette_style", "neon")
             .put("light_palette_style", "neon")
+            .put("oled_palette_style", "neon")
         val p = Preferences.fromJson(o)
-        assertEquals("classic", p.darkPaletteStyle)
+        assertEquals("material", p.darkPaletteStyle)
         assertEquals("material", p.lightPaletteStyle)
+        assertEquals("classic", p.oledPaletteStyle)
     }
 
     @Test fun materialSeedNullByDefaultAndUnwritten() {
@@ -225,10 +227,11 @@ class SettingsTest {
     }
 
     @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {
-        val p = Preferences(uiAppearance = "oled").withPaletteStyle("material")
+        val p = Preferences(uiAppearance = "oled", darkPaletteStyle = "classic", lightPaletteStyle = "classic")
+            .withPaletteStyle("material")
         assertEquals("material", p.oledPaletteStyle)
         assertEquals("classic", p.darkPaletteStyle)
-        assertEquals("material", p.lightPaletteStyle)
+        assertEquals("classic", p.lightPaletteStyle)
     }
 
     @Test fun startFullscreenRoundTrips() {

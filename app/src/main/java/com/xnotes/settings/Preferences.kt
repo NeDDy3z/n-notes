@@ -13,7 +13,7 @@ data class Preferences(
     val uiAppearance: String = "dark", // "dark" | "light" | "oled"
     val accentColor: Rgba = DEFAULT_ACCENT,
     /** Chrome palette per appearance mode: "classic" (accent-derived) | "material" (Material You). */
-    val darkPaletteStyle: String = "classic",
+    val darkPaletteStyle: String = "material",
     val lightPaletteStyle: String = "material",
     val oledPaletteStyle: String = "classic",
     /** Material palette seed colour; null (default) follows the system dynamic colours. */
@@ -139,7 +139,7 @@ data class Preferences(
             return Preferences(
                 uiAppearance = appearance,
                 accentColor = Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT,
-                darkPaletteStyle = paletteStyle("dark_palette_style", "classic"),
+                darkPaletteStyle = paletteStyle("dark_palette_style", "material"),
                 lightPaletteStyle = paletteStyle("light_palette_style", "material"),
                 oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
                 materialSeed = Rgba.fromHex(o.optString("material_seed")),
