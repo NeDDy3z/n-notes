@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -282,7 +283,8 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
             if (tab == 0) {
                 Spacer(Modifier.size(8.dp))
                 if (showNewNoteRow && !docStyle.isEmpty) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
                         Checkbox(
                             checked = !editor.newNoteStyle.isEmpty && docStyle == editor.newNoteStyle,
                             onCheckedChange = { on ->
