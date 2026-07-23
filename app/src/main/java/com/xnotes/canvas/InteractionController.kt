@@ -2173,7 +2173,9 @@ class InteractionController(
         }
         // While the bottom elastic is stretched, finger motion works the elastic first (rubber-band)
         // rather than the scroll, so pulling back relaxes the stretch before the document scrolls.
-        if (state.overscrollY > 0.0) {
+        // Stretching it further needs the document end on screen: right after a pull adds a page
+        // the end sits a full page below, so a quick swipe toward it must scroll, not re-arm.
+        if (state.overscrollY > 0.0 && (dy < 0.0 || state.isDocumentEndVisible())) {
             val relaxed = (state.overscrollY + dy * OVERSCROLL_RESIST).coerceAtLeast(0.0)
             val consumed = (relaxed - state.overscrollY) / OVERSCROLL_RESIST
             state.overscrollY = relaxed.coerceAtMost(OVERSCROLL_MAX)
@@ -2376,7 +2378,12 @@ class InteractionController(
     /** Finger lifted while the bottom elastic was stretched: add a page if pulled far enough, then spring back. */
     private fun releaseOverscroll() {
         stopFling()
-        if (state.overscrollY >= OVERSCROLL_TRIGGER) onAddPageAtEnd()
+        if (state.overscrollY >= OVERSCROLL_TRIGGER) {
+            onAddPageAtEnd()
+            // The stretch is spent: sink it below the trigger so a re-grab mid-spring
+            // cannot release it as a second add.
+            state.overscrollY = OVERSCROLL_TRIGGER - 1.0
+        }
         overscrollArmed = false
         if (!overscrollSettling) {
             overscrollSettling = true
