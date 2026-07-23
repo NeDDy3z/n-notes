@@ -3406,10 +3406,11 @@ class Editor(context: Context) {
     fun flowSetCharHighlight(c: Rgba?) = flowSetChar { it.copy(highlight = c) }
     fun flowSetCharFace(f: FontFace?) = flowSetChar { it.copy(face = f) }
 
-    /** Step every selected run's size by [delta] points from its own current size. */
+    /** Step the bar's shown size by [delta] and apply that one size across the selection. */
     fun flowAdjustSize(delta: Double) {
-        val fallback = flowDefaultSizePt()
-        flowSetChar { it.copy(sizePt = ((it.sizePt ?: fallback) + delta).coerceIn(6.0, 96.0)) }
+        val shown = flowCaretStyle().sizePt ?: flowDefaultSizePt()
+        val target = (shown + delta).coerceIn(6.0, 96.0)
+        flowSetChar { it.copy(sizePt = target) }
     }
 
     /** Apply a paragraph-property change over the selection as one undo step. */
