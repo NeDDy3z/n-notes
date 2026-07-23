@@ -59,7 +59,7 @@ enum class ExplorerSortKey(val id: String) {
 
 /** All persistent non-document state (spec 09 §2). */
 data class Settings(
-    /** Global View-menu defaults (its Global tab); per-note [com.xnotes.canvas.ViewOverrides] shadow them. */
+    /** Global View-menu defaults; per-note [com.xnotes.canvas.ViewOverrides] shadow them. */
     val viewDefaults: com.xnotes.canvas.ViewSettings = com.xnotes.canvas.ViewSettings(),
     val tools: Map<Tool, ToolConfig> = emptyMap(),
     val shapeConfig: ShapeConfig = ShapeConfig(),

@@ -24,8 +24,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.canvas.ViewOverrides
+import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
@@ -319,60 +319,38 @@ private fun StyleCaption(text: String) {
 }
 
 /**
- * The toolbar's View menu, in two tabs: GLOBAL edits the app-wide default view settings
- * (persisted with the app settings), THIS DOC edits the open note's overrides of those
- * defaults — stored app-side like zoom/scroll, never in the file itself. The This Doc tab
- * always shows the note's effective (resolved) values; a control changed there shadows
- * the global default for this note only.
+ * The toolbar's View menu: one set of controls always showing the open note's effective
+ * (resolved) view settings; a change writes that field's per-note override — stored
+ * app-side like zoom/scroll, never in the file itself. Like [StylesPopup], the current
+ * values can be saved as the global defaults every note without overrides follows
+ * ("Default for all notes"), and Reset drops the note's overrides back onto them.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
-    var tab by remember { mutableStateOf(1) } // open on This Doc — the everyday target
-    val global = tab == 0
     val defaults = editor.viewDefaults
     val overrides = editor.viewOverrides
-    val vs = if (global) defaults else editor.viewSettings
+    val vs = editor.viewSettings
+    // Same session-sticky rule as the styles popup's "Default for new notes" row.
+    var showDefaultRow by remember { mutableStateOf(editor.viewSettings != editor.viewDefaults) }
 
-    // While the Global tab is open the canvas previews the pure defaults on this document;
-    // switching back (or closing the menu however it closes) re-applies the note's own view.
-    LaunchedEffect(global) { editor.setGlobalViewPreview(global) }
-    DisposableEffect(Unit) { onDispose { editor.setGlobalViewPreview(false) } }
-
-    fun setMode(v: ViewingMode) =
-        if (global) editor.updateViewDefaults(defaults.copy(mode = v)) else editor.updateViewOverrides(overrides.copy(mode = v))
-    fun setVerticalScroll(v: Boolean) =
-        if (global) editor.updateViewDefaults(defaults.copy(verticalScroll = v)) else editor.updateViewOverrides(overrides.copy(verticalScroll = v))
-    fun setContrast(v: Int) =
-        if (global) editor.updateViewDefaults(defaults.copy(contrast = v)) else editor.updateViewOverrides(overrides.copy(contrast = v))
-    fun setInvert(v: Int) =
-        if (global) editor.updateViewDefaults(defaults.copy(invert = v)) else editor.updateViewOverrides(overrides.copy(invert = v))
-    fun setBrightness(v: Int) =
-        if (global) editor.updateViewDefaults(defaults.copy(brightness = v)) else editor.updateViewOverrides(overrides.copy(brightness = v))
-    fun setSepia(v: Int) =
-        if (global) editor.updateViewDefaults(defaults.copy(sepia = v)) else editor.updateViewOverrides(overrides.copy(sepia = v))
-    fun setKeepImages(v: Boolean) =
-        if (global) editor.updateViewDefaults(defaults.copy(keepImages = v)) else editor.updateViewOverrides(overrides.copy(keepImages = v))
-    fun setRotation(v: Int) =
-        if (global) editor.updateViewDefaults(defaults.copy(rotation = v)) else editor.updateViewOverrides(overrides.copy(rotation = v))
-    fun setScrollbar(v: Boolean) =
-        if (global) editor.updateViewDefaults(defaults.copy(scrollbar = v)) else editor.updateViewOverrides(overrides.copy(scrollbar = v))
+    fun apply(new: ViewOverrides) {
+        editor.updateViewOverrides(new)
+        if (editor.viewSettings != editor.viewDefaults) showDefaultRow = true
+    }
+    fun setMode(v: ViewingMode) = apply(overrides.copy(mode = v))
+    fun setVerticalScroll(v: Boolean) = apply(overrides.copy(verticalScroll = v))
+    fun setContrast(v: Int) = apply(overrides.copy(contrast = v))
+    fun setInvert(v: Int) = apply(overrides.copy(invert = v))
+    fun setBrightness(v: Int) = apply(overrides.copy(brightness = v))
+    fun setSepia(v: Int) = apply(overrides.copy(sepia = v))
+    fun setKeepImages(v: Boolean) = apply(overrides.copy(keepImages = v))
+    fun setRotation(v: Int) = apply(overrides.copy(rotation = v))
+    fun setScrollbar(v: Boolean) = apply(overrides.copy(scrollbar = v))
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(300.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle("VIEW")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("Global", global) { tab = 0 }
-                ModeChip("This Doc", !global) { tab = 1 }
-            }
-            Text(
-                if (global) "Applies on every document" else "Overrides the Global view settings for this document",
-                color = LocalPalette.current.textDim.toComposeColor(),
-                fontSize = 11.sp,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-
-            Spacer(Modifier.size(10.dp))
             StyleCaption("VIEWING MODE")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ModeChip("Single", vs.mode == ViewingMode.SINGLE) { setMode(ViewingMode.SINGLE) }
@@ -401,6 +379,29 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
             )
 
             ToggleRow("SCROLLBAR", vs.scrollbar) { setScrollbar(it) }
+
+            Spacer(Modifier.size(8.dp))
+            if (showDefaultRow && overrides != ViewOverrides()) {
+                // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
+                    Checkbox(
+                        checked = defaults != ViewSettings() && vs == defaults,
+                        onCheckedChange = { on ->
+                            editor.updateViewDefaults(if (on) vs else ViewSettings())
+                        },
+                    )
+                    Text(
+                        "Default for all notes",
+                        color = LocalPalette.current.text.toComposeColor(),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                }
+                Spacer(Modifier.size(4.dp))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                ModeChip("Reset", false) { apply(ViewOverrides()) }
+            }
         }
     }
 }

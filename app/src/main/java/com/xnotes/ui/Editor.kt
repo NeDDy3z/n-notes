@@ -311,11 +311,11 @@ class Editor(context: Context) {
     var zoomLocked by mutableStateOf(false)
         private set
 
-    /** Global View-menu defaults (the menu's Global tab; persisted in settings.json). */
+    /** Global View-menu defaults every note without overrides follows (persisted in settings.json). */
     var viewDefaults by mutableStateOf(settings.viewDefaults)
         private set
 
-    /** The open note's View-menu overrides (its This Doc tab; stored app-side like zoom/scroll). */
+    /** The open note's View-menu overrides (stored app-side like zoom/scroll). */
     var viewOverrides by mutableStateOf(com.xnotes.canvas.ViewOverrides())
         private set
 
@@ -2492,8 +2492,9 @@ class Editor(context: Context) {
         viewStates.put(key, state.zoom, state.scrollX, state.scrollY, viewOverrides)
     }
 
-    /** Update the global View-menu defaults (its Global tab), persist them, and re-resolve
-     *  the open note — a note only follows the change where it has no override of its own. */
+    /** Update the global View-menu defaults (the menu's "Default for all notes" checkbox),
+     *  persist them, and re-resolve the open note — a note only follows the change where it
+     *  has no override of its own. */
     fun updateViewDefaults(new: com.xnotes.canvas.ViewSettings) {
         if (viewDefaults == new) return
         viewDefaults = new
@@ -2502,7 +2503,7 @@ class Editor(context: Context) {
         applyResolvedViewSettings()
     }
 
-    /** Update the open note's View-menu overrides (its This Doc tab) and persist them. */
+    /** Update the open note's View-menu overrides and persist them. */
     fun updateViewOverrides(new: com.xnotes.canvas.ViewOverrides) {
         if (viewOverrides == new) return
         viewOverrides = new
@@ -2516,21 +2517,10 @@ class Editor(context: Context) {
         applyResolvedViewSettings()
     }
 
-    /** True while the View menu's Global tab is open: the canvas previews the global defaults
-     *  directly (this note's overrides suspended) so edits there show live on the document. */
-    private var previewGlobalView = false
-
-    /** Driven by the View menu as its tabs switch/close; leaving re-applies the note's overrides. */
-    fun setGlobalViewPreview(active: Boolean) {
-        if (previewGlobalView == active) return
-        previewGlobalView = active
-        applyResolvedViewSettings()
-    }
-
     /** Re-resolve the effective settings and react to whatever actually changed. */
     private fun applyResolvedViewSettings() {
         val prev = viewSettings
-        val resolved = if (previewGlobalView) viewDefaults else viewOverrides.resolve(viewDefaults)
+        val resolved = viewOverrides.resolve(viewDefaults)
         if (prev == resolved) return
         viewSettings = resolved
         onViewSettingsChanged(prev, resolved)

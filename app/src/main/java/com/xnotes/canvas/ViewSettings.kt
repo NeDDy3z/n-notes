@@ -18,10 +18,10 @@ enum class ViewingMode(val id: String) {
 
 /**
  * A complete set of View-menu settings. Used in two roles: the app-wide **defaults**
- * (the menu's Global tab, persisted in [com.xnotes.settings.Settings]) and the
- * **resolved** effective settings of the open note ([ViewOverrides.resolve]).
- * The colour filters follow CSS filter semantics and are applied to the PDF page
- * raster only, in the fixed order contrast, invert, brightness, sepia.
+ * (saved via the menu's "Default for all notes" checkbox, persisted in
+ * [com.xnotes.settings.Settings]) and the **resolved** effective settings of the open
+ * note ([ViewOverrides.resolve]). The colour filters follow CSS filter semantics and are
+ * applied to the PDF page raster only, in the fixed order contrast, invert, brightness, sepia.
  */
 data class ViewSettings(
     val mode: ViewingMode = ViewingMode.SINGLE,
@@ -47,8 +47,8 @@ data class ViewSettings(
 }
 
 /**
- * Per-note View-menu overrides (the menu's This Doc tab): null fields inherit the
- * global [ViewSettings] defaults, set fields shadow them for this note. Scoped to the
+ * Per-note View-menu overrides: null fields inherit the global [ViewSettings]
+ * defaults, set fields shadow them for this note. Scoped to the
  * open file but stored app-side — in [com.xnotes.platform.ViewStateStore] for folder
  * notes and the session sidecar for the open note, exactly like zoom and scroll —
  * never in the .xnote format.
