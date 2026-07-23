@@ -65,9 +65,11 @@ class DocumentCodec(
             writeManifest(JsonWrite(w), doc, assets)
             w.flush()
             zos.closeEntry()
-            // The flow lives in its own ODF entry, written only when non-empty so notes
-            // without typed text stay byte-identical and old readers see nothing new.
-            if (!doc.flow.isEmpty) zos.putDeflated(FlowXml.ENTRY_NAME, FlowXml.write(doc.flow))
+            // The flow lives in its own ODF entry, written only when non-empty (or carrying
+            // custom defaults) so untouched notes stay byte-identical to old readers.
+            if (!doc.flow.isEmpty || !com.xnotes.core.text.FlowDefaults.of(doc.flow).isEmpty) {
+                zos.putDeflated(FlowXml.ENTRY_NAME, FlowXml.write(doc.flow))
+            }
             // Stream each image straight from its temp file into the bundle, never as a byte[], so a
             // note full of large images doesn't materialize them all in the heap on every save.
             for ((name, file) in assets) zos.putStored(name, file, isCancelled)

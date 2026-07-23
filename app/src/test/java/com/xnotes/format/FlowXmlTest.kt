@@ -80,6 +80,13 @@ class FlowXmlTest {
     }
 
     @Test
+    fun defaultColorReadsLegacyNearWhiteAsAuto() {
+        assertNull(roundTrip(TextFlow()).defaultColor)
+        val legacy = TextFlow().apply { defaultColor = TextFlow.DEFAULT_COLOR }
+        assertNull(roundTrip(legacy).defaultColor)
+    }
+
+    @Test
     fun whitespaceSurvivesOdfEncoding() {
         val flow = TextFlow().apply {
             paragraphs.add(Paragraph(mutableListOf(Run("  lead, three   in, trail  "))))
@@ -137,6 +144,21 @@ class FlowXmlTest {
         val back = codec.read(ByteArrayInputStream(out.toByteArray()))
         assertEquals("flowing", back.flow.plainText())
         assertTrue(back.flow.paragraphs[0].runs[0].style.bold)
+    }
+
+    @Test
+    fun bundleKeepsCustomDefaultsWithNoTypedText() {
+        val codec = DocumentCodec(FakeImageCodec(), FakeTextMeasurer())
+        val doc = Document(pages = mutableListOf(Page(100.0, 100.0)))
+        doc.flow.defaultColor = Rgba(200, 40, 40, 255)
+        doc.flow.defaultSizePt = 16.0
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        assertTrue(zipEntryNames(out.toByteArray()).contains(FlowXml.ENTRY_NAME))
+        val back = codec.read(ByteArrayInputStream(out.toByteArray()))
+        assertEquals(Rgba(200, 40, 40, 255), back.flow.defaultColor)
+        assertEquals(16.0, back.flow.defaultSizePt, 1e-9)
+        assertTrue(back.flow.isEmpty)
     }
 
     private fun zipEntryNames(bytes: ByteArray): List<String> {

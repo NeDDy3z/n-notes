@@ -921,7 +921,7 @@ class Editor(context: Context) {
             }
         }
         flowLayout.codeBackground = { activeCodeTheme().background }
-        flowLayout.defaultColorOverride = { defaultTextColor() }
+        flowLayout.autoColor = { defaultTextColor() }
     }
 
     /**
@@ -1161,7 +1161,7 @@ class Editor(context: Context) {
         val layout = FlowLayout(textMeasurer)
         val theme = activeCodeTheme()
         layout.codeBackground = { theme.background }
-        layout.defaultColorOverride = { defaultTextColor() }
+        layout.autoColor = { defaultTextColor() }
         val hl = highlighter ?: return layout
         val spans = HashMap<Paragraph, List<com.xnotes.core.text.CodeSpan>>()
         var i = 0
@@ -3373,7 +3373,8 @@ class Editor(context: Context) {
     private fun defaultTextColor(): Rgba =
         if (palette.isDark) com.xnotes.core.text.TextFlow.DEFAULT_COLOR else Rgba(28, 28, 28, 255)
 
-    fun flowDefaultColor(): Rgba = defaultTextColor()
+    /** The effective base text colour: the flow's explicit default, else the theme auto colour. */
+    fun flowDefaultColor(): Rgba = state.document.flow.defaultColor ?: defaultTextColor()
     fun flowDefaultFace(): FontFace = state.document.flow.defaultFace
     fun flowMarginsValue(): FlowMargins = state.document.flow.margins
 

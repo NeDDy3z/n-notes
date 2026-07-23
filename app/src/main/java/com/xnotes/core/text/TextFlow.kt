@@ -140,7 +140,9 @@ class TextFlow {
     var margins: FlowMargins = FlowMargins()
     var defaultFace: FontFace = FontFace.SANS
     var defaultSizePt: Double = DEFAULT_SIZE_PT
-    var defaultColor: Rgba = DEFAULT_COLOR
+
+    /** Explicit base text colour, or null to follow the host theme (auto). */
+    var defaultColor: Rgba? = null
 
     /** The face code paragraphs and inline code render in. */
     var monoFace: FontFace = FontFace.MONO
@@ -207,5 +209,33 @@ class TextFlow {
 
         /** Matches TextItem's historical default so text is visible on the default paper. */
         val DEFAULT_COLOR = Rgba(236, 236, 236, 255)
+    }
+}
+
+/**
+ * The flow's document-level defaults as one value: what the text tool's config
+ * popup edits, what "Default for new notes" saves, and what new notes are
+ * stamped with. Empty (all built-ins) means nothing to stamp or persist.
+ */
+data class FlowDefaults(
+    val face: FontFace = FontFace.SANS,
+    val monoFace: FontFace = FontFace.MONO,
+    val sizePt: Double = TextFlow.DEFAULT_SIZE_PT,
+    val color: Rgba? = null,
+    val margins: FlowMargins = FlowMargins(),
+) {
+    val isEmpty: Boolean get() = this == FlowDefaults()
+
+    fun applyTo(flow: TextFlow) {
+        flow.defaultFace = face
+        flow.monoFace = monoFace
+        flow.defaultSizePt = sizePt
+        flow.defaultColor = color
+        flow.margins = margins
+    }
+
+    companion object {
+        fun of(flow: TextFlow): FlowDefaults =
+            FlowDefaults(flow.defaultFace, flow.monoFace, flow.defaultSizePt, flow.defaultColor, flow.margins)
     }
 }

@@ -50,8 +50,8 @@ class FlowLayout(private val measurer: TextMeasurer) {
     /** The active code theme's block background, read at layout time (null = neutral grey). */
     var codeBackground: () -> Rgba? = { null }
 
-    /** Theme override for the flow's default text colour, read at layout time (null = the flow's own). */
-    var defaultColorOverride: () -> Rgba? = { null }
+    /** Theme-derived colour for text when the flow sets no explicit default, read at layout time. */
+    var autoColor: () -> Rgba? = { null }
 
     // --- per-paragraph measurement (cached) ---
 
@@ -237,7 +237,7 @@ class FlowLayout(private val measurer: TextMeasurer) {
      * virtual pages the tail overflowed past the real ones.
      */
     fun layout(flow: TextFlow, pageBoxes: List<PageBox>, dpi: Int): FlowFrame {
-        val defColor = defaultColorOverride() ?: flow.defaultColor
+        val defColor = flow.defaultColor ?: autoColor() ?: TextFlow.DEFAULT_COLOR
         if (pageBoxes.isEmpty()) return FlowFrame(emptyList(), flow.rev, 0, defColor, codeBackground())
         pruneCaches(flow)
         val contentRects = pageBoxes.map { contentRectOf(it, flow.margins, dpi) }

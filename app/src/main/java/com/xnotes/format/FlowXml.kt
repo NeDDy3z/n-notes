@@ -59,7 +59,7 @@ object FlowXml {
         append(" xnotes:margin-bottom-mm=\"${flow.margins.bottomMm}\"")
         append(" xnotes:default-face=\"${escapeAttr(flow.defaultFace.id)}\"")
         append(" xnotes:default-size-pt=\"${flow.defaultSizePt}\"")
-        append(" xnotes:default-color=\"${hex(flow.defaultColor)}\"")
+        flow.defaultColor?.let { append(" xnotes:default-color=\"${hex(it)}\"") }
         if (flow.monoFace != FontFace.MONO) append(" xnotes:mono-face=\"${escapeAttr(flow.monoFace.id)}\"")
         append(">\n")
 
@@ -189,7 +189,8 @@ object FlowXml {
         )
         attr(root, "default-face")?.let { flow.defaultFace = FontFace.fromId(it) }
         flow.defaultSizePt = attrDouble(root, "default-size-pt", TextFlow.DEFAULT_SIZE_PT)
-        flow.defaultColor = parseHex(attr(root, "default-color")) ?: TextFlow.DEFAULT_COLOR
+        // Legacy files always wrote the (then ignored) built-in near-white; read it back as auto.
+        flow.defaultColor = parseHex(attr(root, "default-color"))?.takeUnless { it == TextFlow.DEFAULT_COLOR }
         attr(root, "mono-face")?.let { flow.monoFace = FontFace.fromId(it) }
 
         val charStyles = HashMap<String, CharStyle>()
