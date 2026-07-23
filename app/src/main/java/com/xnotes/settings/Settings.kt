@@ -3,6 +3,9 @@ package com.xnotes.settings
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.pal.FontFace
+import com.xnotes.core.text.FlowDefaults
+import com.xnotes.core.text.FlowMargins
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
@@ -77,6 +80,8 @@ data class Settings(
     val presentation: PresentationSettings = PresentationSettings(),
     /** All Pages style stamped onto every newly created note; empty ⇒ none saved. */
     val newNoteStyle: PageStyle = PageStyle(),
+    /** Flow (text tool) defaults stamped onto every newly created note; empty ⇒ none saved. */
+    val newNoteFlow: FlowDefaults = FlowDefaults(),
     val prefs: Preferences = Preferences(),
     /** One-shot flag: the first-run stylus check (which may auto-enable finger-draw) has run. */
     val fingerDrawAutoChecked: Boolean = false,
@@ -108,6 +113,7 @@ data class Settings(
             .put("render_scale", renderScale)
             .put("presentation", presentation.toJson())
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
+            .apply { if (!newNoteFlow.isEmpty) put("new_note_flow", flowDefaultsJson(newNoteFlow)) }
             .put("prefs", prefs.toJson())
             .put("view_defaults", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaults))
             .put("finger_draw_auto_checked", fingerDrawAutoChecked)
@@ -146,6 +152,7 @@ data class Settings(
                 renderScale = o.optDouble("render_scale", 1.0),
                 presentation = PresentationSettings.fromJson(o.optJSONObject("presentation")),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
+                newNoteFlow = flowDefaults(o.optJSONObject("new_note_flow")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
                 fingerDrawAutoChecked = o.optBoolean("finger_draw_auto_checked", false),
             )
@@ -179,6 +186,33 @@ data class Settings(
                 pattern = PagePattern.fromId(o.optString("pattern", "")),
                 patternColor = rgba(o.optJSONArray("pattern_color")),
                 spacing = if (o.has("spacing")) o.optDouble("spacing") else null,
+            )
+        }
+
+        private fun flowDefaultsJson(d: FlowDefaults) = JSONObject()
+            .put("face", d.face.id)
+            .put("mono_face", d.monoFace.id)
+            .put("size_pt", d.sizePt)
+            .apply { d.color?.let { put("color", rgbaArr(it)) } }
+            .put("margin_left_mm", d.margins.leftMm)
+            .put("margin_top_mm", d.margins.topMm)
+            .put("margin_right_mm", d.margins.rightMm)
+            .put("margin_bottom_mm", d.margins.bottomMm)
+
+        private fun flowDefaults(o: JSONObject?): FlowDefaults {
+            if (o == null) return FlowDefaults()
+            val d = FlowDefaults()
+            return FlowDefaults(
+                face = FontFace(o.optString("face", d.face.id)),
+                monoFace = FontFace(o.optString("mono_face", d.monoFace.id)),
+                sizePt = o.optDouble("size_pt", d.sizePt),
+                color = rgba(o.optJSONArray("color")),
+                margins = FlowMargins(
+                    leftMm = o.optDouble("margin_left_mm", FlowMargins.DEFAULT_MM),
+                    topMm = o.optDouble("margin_top_mm", FlowMargins.DEFAULT_MM),
+                    rightMm = o.optDouble("margin_right_mm", FlowMargins.DEFAULT_MM),
+                    bottomMm = o.optDouble("margin_bottom_mm", FlowMargins.DEFAULT_MM),
+                ),
             )
         }
 

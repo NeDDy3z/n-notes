@@ -46,6 +46,7 @@ import com.xnotes.core.model.resolvedPattern
 import com.xnotes.core.model.resolvedPatternColor
 import com.xnotes.core.model.resolvedSpacing
 import com.xnotes.core.text.CharStyle
+import com.xnotes.core.text.FlowDefaults
 import com.xnotes.core.text.FlowEditor
 import com.xnotes.core.text.FlowFrame
 import com.xnotes.core.text.FlowLayout
@@ -172,7 +173,7 @@ class Editor(context: Context) {
 
     val state = CanvasState(
         Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation)
-            .also { it.style = settings.newNoteStyle },
+            .also { stampNewNoteDefaults(it) },
         AndroidSurfaceFactory(),
         buildPalette(settings.prefs),
     )
@@ -1510,6 +1511,25 @@ class Editor(context: Context) {
         settingsRepo.save(settings)
     }
 
+    /** The saved flow defaults stamped onto newly created notes (empty ⇒ app built-ins). */
+    var newNoteFlow by mutableStateOf(settings.newNoteFlow)
+        private set
+
+    /** Save (or, passing empty defaults, forget) the flow defaults new notes start with. */
+    fun saveNewNoteFlow(defaults: FlowDefaults) {
+        if (newNoteFlow == defaults) return
+        newNoteFlow = defaults
+        settings = settings.copy(newNoteFlow = defaults)
+        settingsRepo.save(settings)
+    }
+
+    /** Stamp the saved new-note defaults (page style + flow config) onto a fresh [doc]. */
+    private fun stampNewNoteDefaults(doc: Document): Document {
+        doc.style = settings.newNoteStyle
+        settings.newNoteFlow.applyTo(doc.flow)
+        return doc
+    }
+
     /** Replace the document-wide ("All Pages") style override. */
     fun setDocumentStyle(style: PageStyle) {
         val prev = state.document.style
@@ -2034,7 +2054,7 @@ class Editor(context: Context) {
     fun createBlankNoteFile(treeUri: String, parentDocId: String, rawName: String): String? {
         val name = uniqueNoteName(treeUri, parentDocId, rawName)
         val blank = Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation)
-            .also { it.style = settings.newNoteStyle }
+            .also { stampNewNoteDefaults(it) }
         return createNoteFile(treeUri, parentDocId, name) { codec.write(blank, it) }
     }
 
@@ -2043,7 +2063,7 @@ class Editor(context: Context) {
     fun createPdfNoteFile(treeUri: String, parentDocId: String, rawName: String, pdfFile: java.io.File): String? {
         val source = com.xnotes.platform.PdfSource.create(appContext, pdfFile) ?: return null
         val doc = com.xnotes.platform.PdfImporter.import(source, state.document.dpi) // doc.pdfFile = pdfFile
-        doc.style = settings.newNoteStyle
+        stampNewNoteDefaults(doc)
         val name = uniqueNoteName(treeUri, parentDocId, rawName)
         val uri = createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
         source.close()
@@ -3376,7 +3396,6 @@ class Editor(context: Context) {
     /** The effective base text colour: the flow's explicit default, else the theme auto colour. */
     fun flowDefaultColor(): Rgba = state.document.flow.defaultColor ?: defaultTextColor()
     fun flowDefaultFace(): FontFace = state.document.flow.defaultFace
-    fun flowMarginsValue(): FlowMargins = state.document.flow.margins
 
     /** Rewrite character styles over the selection, or arm them for the next typed run. */
     fun flowSetChar(apply: (CharStyle) -> CharStyle) {
@@ -3499,35 +3518,27 @@ class Editor(context: Context) {
 
     // --- flow document config (the text tool's popup: margins + defaults; not undoable) ---
 
-    fun setFlowMargins(m: FlowMargins) {
-        state.document.flow.margins = FlowMargins(
-            m.leftMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
-            m.topMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
-            m.rightMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
-            m.bottomMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
+    /** The document's flow defaults as one value, for the text tool's config popup. */
+    fun flowConfigValue(): FlowDefaults = FlowDefaults.of(state.document.flow)
+
+    /** Replace the document's flow defaults (clamped), relayout, and mark it dirty. */
+    fun setFlowConfig(config: FlowDefaults) {
+        val next = config.copy(
+            sizePt = config.sizePt.coerceIn(6.0, 96.0),
+            margins = FlowMargins(
+                config.margins.leftMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
+                config.margins.topMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
+                config.margins.rightMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
+                config.margins.bottomMm.coerceIn(FlowMargins.MIN_MM, FlowMargins.MAX_MM),
+            ),
         )
-        flowConfigChanged()
-    }
-
-    fun setFlowDefaultFace(f: FontFace) {
-        state.document.flow.defaultFace = f
-        flowConfigChanged()
-    }
-
-    fun flowMonoFace(): FontFace = state.document.flow.monoFace
-
-    fun setFlowMonoFace(f: FontFace) {
-        state.document.flow.monoFace = f
-        flowConfigChanged()
-    }
-
-    fun setFlowDefaultSize(pt: Double) {
-        state.document.flow.defaultSizePt = pt.coerceIn(6.0, 96.0)
+        if (next == FlowDefaults.of(state.document.flow)) return
+        next.applyTo(state.document.flow)
         flowConfigChanged()
     }
 
     private fun flowConfigChanged() {
-        if (!state.document.flow.isEmpty) state.document.dirty = true
+        state.document.dirty = true
         republishFlow(invalidate = true)
         if (flowText.active) flowText.ensureCaretVisible()
         refreshContent()
@@ -3788,7 +3799,7 @@ class Editor(context: Context) {
             Document.DEFAULT_NEW_PAGES,
             settings.prefs.defaultPageSize,
             settings.prefs.defaultPageOrientation,
-        ).also { it.style = settings.newNoteStyle }
+        ).also { stampNewNoteDefaults(it) }
         rebuildPdfSource() // close the outgoing note's PDF source (a blank note has none)
         adoptOpenPdf(state.document) // and reclaim its temp PDF file now it's released
         history.clear()

@@ -714,7 +714,7 @@ private fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClic
 
 /** A text-label chip for a segmented picker (e.g. the eraser's STROKE/AREA modes). */
 @Composable
-private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
