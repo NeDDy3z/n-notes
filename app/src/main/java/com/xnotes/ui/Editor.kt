@@ -129,6 +129,10 @@ class Editor(context: Context) {
 
     private val deviceHasDisplayCutout = com.xnotes.deviceHasDisplayCutout(context)
 
+    /** Whether the OS is in dark mode right now; resolves the "system" appearance. */
+    private var systemInDarkMode = (context.resources.configuration.uiMode and
+        android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
     /** Whether the window runs in fullscreen. Persisted via [Preferences.startFullscreen]; when unset
      *  it defaults to on unless the display has a camera cutout. The activity observes this and drives
      *  the window. */
@@ -193,7 +197,7 @@ class Editor(context: Context) {
         }
 
     private fun activeCodeTheme(): com.xnotes.core.text.HighlightTheme = customCodeTheme
-        ?: if (settings.prefs.isDark) {
+        ?: if (resolvedAppearance(settings.prefs) != "light") {
             com.xnotes.core.text.HighlightTheme.DARK
         } else {
             com.xnotes.core.text.HighlightTheme.LIGHT
@@ -1269,16 +1273,36 @@ class Editor(context: Context) {
         applyPagePrefsToState(settings.prefs)
     }
 
+    /** The appearance mode to render: "system" follows the OS dark/light state. */
+    private fun resolvedAppearance(p: Preferences): String =
+        if (p.uiAppearance == "system") (if (systemInDarkMode) "dark" else "light") else p.uiAppearance
+
     /** The chrome palette for [p]: Material You (system scheme, accent-seeded below Android 12)
      *  when the active appearance mode picked the material style, else the classic accent chrome. */
     private fun buildPalette(p: Preferences): Palette {
+        val appearance = resolvedAppearance(p)
+        val dark = appearance != "light"
         if (p.paletteStyle == "material") {
-            val m = p.materialSeed?.let { MaterialColors.seeded(it, dark = p.isDark) }
-                ?: dynamicMaterialColors(appContext, dark = p.isDark)
-                ?: MaterialColors.seeded(p.accentColor, dark = p.isDark)
-            return Palette.material(p.uiAppearance, m)
+            val m = p.materialSeed?.let { MaterialColors.seeded(it, dark = dark) }
+                ?: dynamicMaterialColors(appContext, dark = dark)
+                ?: MaterialColors.seeded(p.accentColor, dark = dark)
+            return Palette.material(appearance, m)
         }
-        return Palette.forAppearance(p.uiAppearance, p.accentColor)
+        return Palette.forAppearance(appearance, p.accentColor)
+    }
+
+    /** The OS dark/light state flipped (uiMode arrives via onConfigurationChanged, no activity
+     *  recreation): under the "system" appearance, rebuild the chrome and themed content live. */
+    fun onSystemDarkModeChanged(dark: Boolean) {
+        if (systemInDarkMode == dark) return
+        systemInDarkMode = dark
+        if (settings.prefs.uiAppearance != "system") return
+        applyPagePrefsToState(settings.prefs)
+        republishFlow(invalidate = true)
+        state.invalidateAllCaches()
+        refreshView()
+        prefsVersion++
+        view.requestRender()
     }
 
     private fun applyPagePrefsToState(p: Preferences) {

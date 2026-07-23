@@ -191,6 +191,13 @@ class MainActivity : ComponentActivity() {
         else -> null
     }
 
+    // uiMode is in configChanges, so a system dark/light flip lands here instead of recreating us.
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val night = newConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        editor?.onSystemDarkModeChanged(night == android.content.res.Configuration.UI_MODE_NIGHT_YES)
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && editor?.fullscreen == true) applyFullscreen(true) // re-hide transient bars after they swipe in

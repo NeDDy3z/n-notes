@@ -22,7 +22,7 @@ class SettingsTest {
         assertEquals(1.0, s.renderScale, 1e-9)
         assertFalse(s.sidebarVisible)
         assertEquals(PageSize.A4, s.prefs.defaultPageSize)
-        assertTrue(s.prefs.isDark)
+        assertEquals("system", s.prefs.uiAppearance)
         assertEquals(com.xnotes.canvas.ViewSettings(), s.viewDefaults)
     }
 
@@ -81,9 +81,9 @@ class SettingsTest {
         assertEquals(Rgba(20, 20, 20, 255), back.prefs.pageColor)
     }
 
-    @Test fun malformedAppearanceFallsBackToDark() {
+    @Test fun malformedAppearanceFallsBackToSystem() {
         val o = JSONObject().put("prefs", JSONObject().put("ui_appearance", "rainbow"))
-        assertEquals("dark", Settings.fromJson(o).prefs.uiAppearance)
+        assertEquals("system", Settings.fromJson(o).prefs.uiAppearance)
     }
 
     @Test fun toolbarColorsPaddedToSeven() {
@@ -187,6 +187,7 @@ class SettingsTest {
 
     @Test fun paletteStyleDefaultsPerMode() {
         val p = Preferences.fromJson(JSONObject())
+        assertEquals("material", p.systemPaletteStyle)
         assertEquals("material", p.darkPaletteStyle)
         assertEquals("material", p.lightPaletteStyle)
         assertEquals("classic", p.oledPaletteStyle)
@@ -196,8 +197,14 @@ class SettingsTest {
 
     @Test fun paletteStyleRoundTrips() {
         val back = Preferences.fromJson(
-            Preferences(darkPaletteStyle = "classic", lightPaletteStyle = "classic", oledPaletteStyle = "material").toJson(),
+            Preferences(
+                systemPaletteStyle = "classic",
+                darkPaletteStyle = "classic",
+                lightPaletteStyle = "classic",
+                oledPaletteStyle = "material",
+            ).toJson(),
         )
+        assertEquals("classic", back.systemPaletteStyle)
         assertEquals("classic", back.darkPaletteStyle)
         assertEquals("classic", back.lightPaletteStyle)
         assertEquals("material", back.oledPaletteStyle)
@@ -205,10 +212,12 @@ class SettingsTest {
 
     @Test fun paletteStyleMalformedFallsBackPerMode() {
         val o = JSONObject()
+            .put("system_palette_style", "neon")
             .put("dark_palette_style", "neon")
             .put("light_palette_style", "neon")
             .put("oled_palette_style", "neon")
         val p = Preferences.fromJson(o)
+        assertEquals("material", p.systemPaletteStyle)
         assertEquals("material", p.darkPaletteStyle)
         assertEquals("material", p.lightPaletteStyle)
         assertEquals("classic", p.oledPaletteStyle)
@@ -227,9 +236,14 @@ class SettingsTest {
     }
 
     @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {
-        val p = Preferences(uiAppearance = "oled", darkPaletteStyle = "classic", lightPaletteStyle = "classic")
-            .withPaletteStyle("material")
+        val p = Preferences(
+            uiAppearance = "oled",
+            systemPaletteStyle = "classic",
+            darkPaletteStyle = "classic",
+            lightPaletteStyle = "classic",
+        ).withPaletteStyle("material")
         assertEquals("material", p.oledPaletteStyle)
+        assertEquals("classic", p.systemPaletteStyle)
         assertEquals("classic", p.darkPaletteStyle)
         assertEquals("classic", p.lightPaletteStyle)
     }

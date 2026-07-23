@@ -10,9 +10,10 @@ import org.json.JSONObject
  * field falls back to its default if missing or malformed.
  */
 data class Preferences(
-    val uiAppearance: String = "dark", // "dark" | "light" | "oled"
+    val uiAppearance: String = "system", // "system" (follows OS dark/light) | "dark" | "light" | "oled"
     val accentColor: Rgba = DEFAULT_ACCENT,
     /** Chrome palette per appearance mode: "classic" (accent-derived) | "material" (Material You). */
+    val systemPaletteStyle: String = "material",
     val darkPaletteStyle: String = "material",
     val lightPaletteStyle: String = "material",
     val oledPaletteStyle: String = "classic",
@@ -66,27 +67,28 @@ data class Preferences(
     /** Language the format bar's code toggle last applied; "" until a language is picked. */
     val lastCodeLanguage: String = "",
 ) {
-    val isDark: Boolean get() = uiAppearance != "light"
-
     /** The palette style of the active appearance mode. */
     val paletteStyle: String get() = paletteStyleFor(uiAppearance)
 
     fun paletteStyleFor(appearance: String): String = when (appearance) {
         "light" -> lightPaletteStyle
         "oled" -> oledPaletteStyle
-        else -> darkPaletteStyle
+        "dark" -> darkPaletteStyle
+        else -> systemPaletteStyle
     }
 
     /** Set the palette style of the active appearance mode, leaving the other modes alone. */
     fun withPaletteStyle(style: String): Preferences = when (uiAppearance) {
         "light" -> copy(lightPaletteStyle = style)
         "oled" -> copy(oledPaletteStyle = style)
-        else -> copy(darkPaletteStyle = style)
+        "dark" -> copy(darkPaletteStyle = style)
+        else -> copy(systemPaletteStyle = style)
     }
 
     fun toJson(): JSONObject = JSONObject()
         .put("ui_appearance", uiAppearance)
         .put("accent_color", Rgba.toHex(accentColor))
+        .put("system_palette_style", systemPaletteStyle)
         .put("dark_palette_style", darkPaletteStyle)
         .put("light_palette_style", lightPaletteStyle)
         .put("oled_palette_style", oledPaletteStyle)
@@ -129,7 +131,8 @@ data class Preferences(
 
         fun fromJson(o: JSONObject?): Preferences {
             if (o == null) return Preferences()
-            val appearance = o.optString("ui_appearance", "dark").let { if (it == "light" || it == "oled") it else "dark" }
+            val appearance = o.optString("ui_appearance", "system")
+                .let { if (it == "dark" || it == "light" || it == "oled") it else "system" }
             val template = o.optString("default_template", "color").let { if (it == "pdf") "pdf" else "color" }
             val zoomLockPan = o.optString("zoom_lock_pan", "single").let { if (it == "double" || it == "none") it else "single" }
             val tapActions = setOf("none", "undo", "redo", "toggle_pan", "toggle_eraser", "toggle_previous")
@@ -139,6 +142,7 @@ data class Preferences(
             return Preferences(
                 uiAppearance = appearance,
                 accentColor = Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT,
+                systemPaletteStyle = paletteStyle("system_palette_style", "material"),
                 darkPaletteStyle = paletteStyle("dark_palette_style", "material"),
                 lightPaletteStyle = paletteStyle("light_palette_style", "material"),
                 oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),

@@ -170,6 +170,7 @@ fun PreferencesPane(
             SectionTitle("General")
             FieldLabel("UI theme")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("System", prefs.uiAppearance == "system") { update(prefs.copy(uiAppearance = "system")) }
                 Chip("Dark", prefs.uiAppearance == "dark") { update(prefs.copy(uiAppearance = "dark")) }
                 Chip("Light", prefs.uiAppearance == "light") { update(prefs.copy(uiAppearance = "light")) }
                 Chip("OLED", prefs.uiAppearance == "oled") { update(prefs.copy(uiAppearance = "oled")) }
