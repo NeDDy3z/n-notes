@@ -59,7 +59,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -265,7 +264,7 @@ private fun BackstageContent(
     }
 
     if (compact) {
-        Box(Modifier.fillMaxSize().background(palette.menuBg.toComposeColor()).imePadding()) {
+        Box(Modifier.fillMaxSize().background(palette.bg.toComposeColor()).imePadding()) {
             BackstageMain(
                 Modifier.fillMaxSize(), editor, view, compact, sidebarOpen, { animateClose = true; sidebarOpen = true }, { selectView(BackstageView.HOME) },
                 onOpenFile, onPickRoot, importPdf, onShareFile, onSaveCopyFile, onExportFilePdf, createMode, { createMode = it }, onImportCodeTheme, onImportFont,
@@ -287,7 +286,7 @@ private fun BackstageContent(
             }
         }
     } else {
-        Row(Modifier.fillMaxSize().background(palette.menuBg.toComposeColor()).imePadding()) {
+        Row(Modifier.fillMaxSize().background(palette.bg.toComposeColor()).imePadding()) {
             AnimatedVisibility(
                 visible = sidebarOpen,
                 enter = expandHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), expandFrom = Alignment.Start) + fadeIn(animationSpec = tween(SIDEBAR_ANIM_MS)),

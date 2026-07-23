@@ -1,11 +1,13 @@
 package com.xnotes.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
@@ -713,6 +715,32 @@ private fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClic
             modifier = Modifier.size(20.dp),
         )
     }
+}
+
+/**
+ * The app's dropdown menu: material's, pinned to the palette menu surface and given a
+ * hairline border so it reads against same-tone surfaces (the backstage, OLED black)
+ * where a shadow alone vanishes. Shadows material3's composable for every same-package
+ * caller that doesn't import material's directly.
+ */
+@Composable
+internal fun DropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    properties: PopupProperties = PopupProperties(focusable = true),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val palette = LocalPalette.current
+    androidx.compose.material3.DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        properties = properties,
+        containerColor = palette.menuBg.toComposeColor(),
+        border = BorderStroke(1.dp, palette.border.toComposeColor()),
+        content = content,
+    )
 }
 
 /** A text-label chip for a segmented picker (e.g. the eraser's STROKE/AREA modes). */
