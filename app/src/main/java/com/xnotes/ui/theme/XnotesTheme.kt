@@ -17,6 +17,9 @@ val LocalPalette = staticCompositionLocalOf { Palette.dark() }
 @Composable
 fun XnotesTheme(palette: Palette, content: @Composable () -> Unit) {
     val accent = palette.accent.toComposeColor()
+    // The surfaceContainer* roles must come from the palette too: components read them
+    // directly (menus draw surfaceContainer), and the darkColorScheme()/lightColorScheme()
+    // baselines are purple-seeded constants that ignore the palette entirely.
     val scheme = if (palette.isDark) {
         darkColorScheme(
             primary = accent,
@@ -29,6 +32,13 @@ fun XnotesTheme(palette: Palette, content: @Composable () -> Unit) {
             surfaceVariant = palette.surface.toComposeColor(),
             onSurfaceVariant = palette.textDim.toComposeColor(),
             outline = palette.border.toComposeColor(),
+            surfaceDim = palette.bg.toComposeColor(),
+            surfaceBright = palette.surfaceHi.toComposeColor(),
+            surfaceContainerLowest = palette.bg.toComposeColor(),
+            surfaceContainerLow = palette.panel.toComposeColor(),
+            surfaceContainer = palette.menuBg.toComposeColor(),
+            surfaceContainerHigh = palette.surface.toComposeColor(),
+            surfaceContainerHighest = palette.surfaceHi.toComposeColor(),
         )
     } else {
         lightColorScheme(
@@ -42,6 +52,13 @@ fun XnotesTheme(palette: Palette, content: @Composable () -> Unit) {
             surfaceVariant = palette.surface.toComposeColor(),
             onSurfaceVariant = palette.textDim.toComposeColor(),
             outline = palette.border.toComposeColor(),
+            surfaceDim = palette.surface.toComposeColor(),
+            surfaceBright = palette.paper.toComposeColor(),
+            surfaceContainerLowest = palette.paper.toComposeColor(),
+            surfaceContainerLow = palette.menuBg.toComposeColor(),
+            surfaceContainer = palette.menuBg.toComposeColor(),
+            surfaceContainerHigh = palette.panel.toComposeColor(),
+            surfaceContainerHighest = palette.bg.toComposeColor(),
         )
     }
     CompositionLocalProvider(LocalPalette provides palette) {
