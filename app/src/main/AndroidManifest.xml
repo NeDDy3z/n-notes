@@ -17,7 +17,7 @@
             android:launchMode="singleTask"
             android:theme="@style/Theme.Xnotes.Splash"
             android:hardwareAccelerated="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|density|uiMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
