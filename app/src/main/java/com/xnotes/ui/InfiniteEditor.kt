@@ -5,11 +5,23 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.History
+import com.xnotes.core.infinite.AddCanvasItem
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.infinite.CanvasViewport
 import com.xnotes.core.infinite.InfiniteDocument
+import com.xnotes.core.infinite.InkPass
+import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.Waypoint
+import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.Stroke
+import com.xnotes.core.tools.InkPalette
+import com.xnotes.core.tools.Tool
+import com.xnotes.core.tools.ToolConfig
+import com.xnotes.core.tools.ToolDefaults
+import com.xnotes.gl.CanvasScene
 import com.xnotes.gl.InfiniteCanvasView
 import com.xnotes.ui.theme.Palette
 
@@ -41,7 +53,24 @@ class InfiniteEditor(context: Context) {
         viewport = view.viewport,
         requestRender = { view.publish() },
         onViewChanged = { onViewChanged() },
+        configFor = { configFor(it) },
+        onWetStroke = { publishWetStroke(it) },
+        onCommitStroke = { commitStroke(it) },
+        devicePxPerDp = { devicePxPerDp },
     )
+
+    private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
+
+    /** Per-tool style, with the toolbar's active ink colour folded in at draw time. */
+    private val toolConfigs = HashMap<Tool, ToolConfig>()
+
+    /** The armed tool, mirrored into Compose so the toolbar can show which one it is. */
+    var tool by mutableStateOf(Tool.PEN)
+        private set
+
+    /** The active ink colour, used by any tool without a colour override of its own. */
+    var inkColor by mutableStateOf(InkPalette.DEFAULT)
+        private set
 
     /** Live zoom, mirrored into Compose so a readout can follow a pinch frame by frame. */
     var zoomPercent by mutableStateOf(100)
@@ -60,14 +89,114 @@ class InfiniteEditor(context: Context) {
     var renderFailure by mutableStateOf<String?>(null)
         private set
 
+    /** The GL-side mirror of the document. Fed by [modelListener]; never reads the model itself. */
+    private val scene = CanvasScene()
+
+    /**
+     * Keeps the renderer in step with the model. Every mutation goes through [InfiniteDocument],
+     * including the ones history performs, so undo and redo repaint through exactly this path with
+     * nothing extra to remember.
+     */
+    private val modelListener = object : InfiniteDocument.Listener {
+        override fun onItemAdded(item: CanvasItem) {
+            pushItem(item)
+            scene.setOrder(document.items)
+            view.publish()
+        }
+
+        override fun onItemRemoved(item: CanvasItem) {
+            scene.remove(item)
+            scene.setOrder(document.items)
+            view.publish()
+        }
+
+        override fun onItemChanged(item: CanvasItem) {
+            pushItem(item)
+            view.publish()
+        }
+
+        override fun onReset() {
+            rebuildScene()
+            view.publish()
+        }
+    }
+
     init {
         view.input = { interaction.onTouch(it) }
+        view.genericMotion = { interaction.onGenericMotion(it) }
         view.afterLayout = { applyInitialView() }
         view.onContextReady = { renderFailure = view.failure }
+        view.scene = scene
+        document.listener = modelListener
+    }
+
+    /** Tessellate [item] and hand the triangles to the renderer, or drop it if it draws nothing. */
+    private fun pushItem(item: CanvasItem) {
+        val meshed = ItemMesher.mesh(item)
+        if (meshed == null) scene.remove(item)
+        else scene.upsert(item, meshed.mesh, meshed.color, meshed.pass, meshed.bounds)
+    }
+
+    /** Re-tessellate the whole document, after a load or a wholesale list replacement. */
+    private fun rebuildScene() {
+        scene.reset()
+        for (item in document.items) pushItem(item)
+        scene.setOrder(document.items)
     }
 
     /** Repaint the canvas with whatever the model currently says. */
     fun requestRender() = view.publish()
+
+    // --- tools ---
+
+    fun armTool(next: Tool) {
+        tool = next
+        interaction.tool = next
+    }
+
+    fun armInkColor(color: Rgba) {
+        inkColor = color
+    }
+
+    fun setToolConfig(forTool: Tool, config: ToolConfig) {
+        toolConfigs[forTool] = config
+    }
+
+    fun configFor(forTool: Tool): ToolConfig {
+        val base = toolConfigs.getOrPut(forTool) { ToolDefaults.configFor(forTool) }
+        // A tool with a colour override always draws in its own colour; the rest follow the
+        // toolbar's active ink.
+        return base.copy(rgba = base.colorOverride ?: inkColor)
+    }
+
+    /** Latch a stylus side button that arrived as a key event, so the pen behaves as on a note. */
+    fun onStylusButtonKey(keyCode: Int, down: Boolean): Boolean =
+        interaction.onStylusButtonKey(keyCode, down)
+
+    // --- drawing ---
+
+    private fun publishWetStroke(stroke: Stroke?) {
+        if (stroke == null) {
+            scene.setWet(null, InkPalette.DEFAULT, InkPass.OPAQUE, Rect(0.0, 0.0, 0.0, 0.0))
+            return
+        }
+        val meshed = ItemMesher.mesh(stroke) ?: return
+        scene.setWet(meshed.mesh, meshed.color, meshed.pass, meshed.bounds)
+    }
+
+    /** Pen up: the finished stroke joins the document, and the edit joins the undo stack. */
+    private fun commitStroke(stroke: Stroke) {
+        document.add(stroke)
+        history.push(AddCanvasItem(document, stroke))
+        document.dirty = true
+        refresh()
+    }
+
+    /** Adopt the app's pen preferences, so the canvas and the paged note behave the same. */
+    fun applyInputPrefs(fingerDraws: Boolean, penButtonTool: Tool?) {
+        interaction.fingerDraws = fingerDraws
+        interaction.penButtonTool = penButtonTool
+    }
 
     /** Adopt the chrome's palette, so the paper matches the rest of the app. */
     fun applyPalette(palette: Palette) {
@@ -81,14 +210,18 @@ class InfiniteEditor(context: Context) {
     }
 
     fun replaceDocument(next: InfiniteDocument) {
+        document.listener = null
         document = next
+        next.listener = modelListener
         history.clear()
         interaction.resetGestureState()
         view.background = next.background
         view.paperColor = next.background.paperColor ?: view.paperColor
+        rebuildScene()
         appliedInitialView = false
         applyInitialView()
         refresh()
+        view.publish()
     }
 
     // --- view ---

@@ -1,0 +1,311 @@
+package com.xnotes.core.infinite
+
+import com.xnotes.core.geometry.Rect
+import com.xnotes.core.stroke.Sample
+import com.xnotes.core.stroke.StrokeEngine
+import com.xnotes.core.stroke.StrokeGeometry
+import com.xnotes.core.tools.Tool
+import com.xnotes.core.tools.ToolDefaults
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.math.hypot
+
+class StrokeTessellatorTest {
+
+    private fun geometryOf(vararg pts: Pair<Double, Double>, tool: Tool = Tool.PEN): StrokeGeometry {
+        val c = ToolDefaults.configFor(tool)
+        return StrokeEngine.build(
+            pts.map { Sample(it.first, it.second, 1.0) },
+            c.baseWidth, c.pressureEnabled, c.pressureMinFactor, c.directionStrength,
+            c.speedStrength, c.taperEnabled, c.taperMinFactor,
+            holdEnds = tool == Tool.PEN,
+        )
+    }
+
+    private fun line(n: Int, dx: Double = 4.0): StrokeGeometry =
+        geometryOf(*Array(n) { (it * dx) to 0.0 })
+
+    /** Every point of the mesh, as (x, y) pairs. */
+    private fun points(m: MeshData): List<Pair<Double, Double>> =
+        (0 until m.vertexCount).map { m.positions[2 * it] to m.positions[2 * it + 1] }
+
+    private fun meshBounds(m: MeshData): Rect {
+        var minX = Double.POSITIVE_INFINITY
+        var minY = Double.POSITIVE_INFINITY
+        var maxX = Double.NEGATIVE_INFINITY
+        var maxY = Double.NEGATIVE_INFINITY
+        for ((x, y) in points(m)) {
+            if (x < minX) minX = x
+            if (x > maxX) maxX = x
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+        }
+        return Rect(minX, minY, maxX - minX, maxY - minY)
+    }
+
+    /** Winding-agnostic point-in-mesh test: is the point inside any triangle? */
+    private fun covers(m: MeshData, px: Double, py: Double): Boolean {
+        for (t in 0 until m.triangleCount) {
+            val a = m.indices[3 * t]
+            val b = m.indices[3 * t + 1]
+            val c = m.indices[3 * t + 2]
+            if (inTriangle(
+                    px, py,
+                    m.positions[2 * a], m.positions[2 * a + 1],
+                    m.positions[2 * b], m.positions[2 * b + 1],
+                    m.positions[2 * c], m.positions[2 * c + 1],
+                )
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun inTriangle(
+        px: Double, py: Double,
+        ax: Double, ay: Double, bx: Double, by: Double, cx: Double, cy: Double,
+    ): Boolean {
+        fun side(x1: Double, y1: Double, x2: Double, y2: Double) =
+            (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
+        val d1 = side(ax, ay, bx, by)
+        val d2 = side(bx, by, cx, cy)
+        val d3 = side(cx, cy, ax, ay)
+        val neg = d1 < -1e-12 || d2 < -1e-12 || d3 < -1e-12
+        val pos = d1 > 1e-12 || d2 > 1e-12 || d3 > 1e-12
+        return !(neg && pos)
+    }
+
+    // --- the rail reindex, as pure array math ---
+
+    @Test fun theRailsComeStraightOffTheOutline() {
+        val g = line(5)
+        val n = g.pointCount
+        for (i in 0 until n) {
+            // Left rail forward, right rail reversed: exactly what StrokeEngine packs.
+            assertEquals(g.outline[2 * i].toDouble(), StrokeTessellator.leftX(g, n, i), 0.0)
+            assertEquals(g.outline[2 * i + 1].toDouble(), StrokeTessellator.leftY(g, n, i), 0.0)
+            assertEquals(g.outline[2 * (2 * n - 1 - i)].toDouble(), StrokeTessellator.rightX(g, n, i), 0.0)
+        }
+    }
+
+    @Test fun theTwoRailsStraddleTheCenterlineByTheHalfWidth() {
+        val g = line(6)
+        val n = g.pointCount
+        for (i in 0 until n) {
+            val lx = StrokeTessellator.leftX(g, n, i)
+            val ly = StrokeTessellator.leftY(g, n, i)
+            val rx = StrokeTessellator.rightX(g, n, i)
+            val ry = StrokeTessellator.rightY(g, n, i)
+            assertEquals("left rail off the centerline", g.hw(i), hypot(lx - g.cx(i), ly - g.cy(i)), 1e-4)
+            assertEquals("right rail off the centerline", g.hw(i), hypot(rx - g.cx(i), ry - g.cy(i)), 1e-4)
+            // The midpoint of the two rails is the centerline point itself.
+            assertEquals(g.cx(i), (lx + rx) / 2.0, 1e-4)
+            assertEquals(g.cy(i), (ly + ry) / 2.0, 1e-4)
+        }
+    }
+
+    @Test fun theRailsAreOnOppositeSidesEverywhere() {
+        val g = geometryOf(0.0 to 0.0, 10.0 to 3.0, 18.0 to 14.0, 22.0 to 30.0)
+        val n = g.pointCount
+        for (i in 0 until n) {
+            val lx = StrokeTessellator.leftX(g, n, i) - g.cx(i)
+            val ly = StrokeTessellator.leftY(g, n, i) - g.cy(i)
+            val rx = StrokeTessellator.rightX(g, n, i) - g.cx(i)
+            val ry = StrokeTessellator.rightY(g, n, i) - g.cy(i)
+            assertTrue("rails on the same side at $i", lx * rx + ly * ry < 0.0)
+        }
+    }
+
+    // --- mesh shape ---
+
+    @Test fun anEmptyGeometryTessellatesToNothing() {
+        val m = StrokeTessellator.tessellate(StrokeGeometry.EMPTY)
+        assertTrue(m.isEmpty)
+        assertEquals(0, m.vertexCount)
+    }
+
+    @Test fun aSingleSampleBecomesADisc() {
+        val g = geometryOf(5.0 to 7.0)
+        val m = StrokeTessellator.tessellate(g)
+        assertTrue(m.triangleCount >= StrokeTessellator.MIN_CIRCLE_SEGMENTS)
+        assertTrue(covers(m, 5.0, 7.0))
+        assertTrue(covers(m, 5.0 + g.hw(0) * 0.8, 7.0))
+        assertTrue(!covers(m, 5.0 + g.hw(0) * 2.0, 7.0))
+    }
+
+    @Test fun aStraightLineCoversItsWholeLength() {
+        val g = line(8, dx = 5.0)
+        val m = StrokeTessellator.tessellate(g)
+        var x = g.cx(0)
+        while (x <= g.cx(g.pointCount - 1)) {
+            assertTrue("gap on the centerline at x=$x", covers(m, x, 0.0))
+            x += 0.5
+        }
+    }
+
+    @Test fun theRibbonIsWatertightAcrossASharpCorner() {
+        val g = geometryOf(0.0 to 0.0, 20.0 to 0.0, 20.0 to 20.0, 0.0 to 20.0)
+        val m = StrokeTessellator.tessellate(g)
+        for (i in 0 until g.pointCount) {
+            assertTrue("hole at sample $i", covers(m, g.cx(i), g.cy(i)))
+        }
+        // And along the centerline between samples, where a pinched join would leave a notch.
+        for (i in 0 until g.pointCount - 1) {
+            for (t in 1..9) {
+                val f = t / 10.0
+                val x = g.cx(i) + (g.cx(i + 1) - g.cx(i)) * f
+                val y = g.cy(i) + (g.cy(i + 1) - g.cy(i)) * f
+                assertTrue("hole between samples $i and ${i + 1}", covers(m, x, y))
+            }
+        }
+    }
+
+    @Test fun theEndsAreRoundedPastTheLastSample() {
+        val g = line(6, dx = 6.0)
+        val m = StrokeTessellator.tessellate(g)
+        val h = g.hw(0)
+        // A flat cap would stop at the sample; the round one reaches most of a half-width past it.
+        assertTrue("start cap is flat", covers(m, g.cx(0) - h * 0.7, 0.0))
+        val last = g.pointCount - 1
+        assertTrue("end cap is flat", covers(m, g.cx(last) + g.hw(last) * 0.7, 0.0))
+    }
+
+    @Test fun theMeshStaysInsideTheStrokeBounds() {
+        val g = geometryOf(0.0 to 0.0, 14.0 to 9.0, 30.0 to 4.0, 41.0 to 22.0)
+        val m = StrokeTessellator.tessellate(g)
+        val mb = meshBounds(m)
+        // Every mesh vertex is within the stroke's own disc-swept bounds, plus the chord tolerance.
+        var minX = Double.POSITIVE_INFINITY
+        var minY = Double.POSITIVE_INFINITY
+        var maxX = Double.NEGATIVE_INFINITY
+        var maxY = Double.NEGATIVE_INFINITY
+        for (i in 0 until g.pointCount) {
+            minX = minOf(minX, g.cx(i) - g.hw(i))
+            maxX = maxOf(maxX, g.cx(i) + g.hw(i))
+            minY = minOf(minY, g.cy(i) - g.hw(i))
+            maxY = maxOf(maxY, g.cy(i) + g.hw(i))
+        }
+        val slack = 1e-6
+        assertTrue(mb.left >= minX - slack)
+        assertTrue(mb.top >= minY - slack)
+        assertTrue(mb.right <= maxX + slack)
+        assertTrue(mb.bottom <= maxY + slack)
+    }
+
+    @Test fun everyIndexPointsAtARealVertex() {
+        for (g in listOf(line(2), line(9), geometryOf(0.0 to 0.0), geometryOf(0.0 to 0.0, 3.0 to 40.0, 3.0 to 0.0))) {
+            val m = StrokeTessellator.tessellate(g)
+            assertEquals(0, m.indices.size % 3)
+            for (i in m.indices) {
+                assertTrue("index $i out of range", i >= 0 && i < m.vertexCount)
+            }
+        }
+    }
+
+    @Test fun noTriangleIsDegenerate() {
+        val g = geometryOf(0.0 to 0.0, 11.0 to 2.0, 23.0 to 9.0, 30.0 to 25.0)
+        val m = StrokeTessellator.tessellate(g)
+        var degenerate = 0
+        for (t in 0 until m.triangleCount) {
+            val a = m.indices[3 * t]
+            val b = m.indices[3 * t + 1]
+            val c = m.indices[3 * t + 2]
+            val area = kotlin.math.abs(
+                (m.positions[2 * b] - m.positions[2 * a]) * (m.positions[2 * c + 1] - m.positions[2 * a + 1]) -
+                    (m.positions[2 * c] - m.positions[2 * a]) * (m.positions[2 * b + 1] - m.positions[2 * a + 1]),
+            ) / 2.0
+            if (area < 1e-9) degenerate++
+        }
+        assertEquals(0, degenerate)
+    }
+
+    // --- chord tolerance ---
+
+    @Test fun aTighterToleranceCutsMoreSegments() {
+        val coarse = StrokeTessellator.circleSegments(3.0, 0.5)
+        val fine = StrokeTessellator.circleSegments(3.0, 0.5 / 64.0)
+        assertTrue(fine > coarse)
+    }
+
+    @Test fun segmentCountsStayInsideTheirBounds() {
+        for (r in listOf(0.01, 0.5, 3.0, 20.0, 400.0)) {
+            for (tol in listOf(1e-6, 0.008, 0.1, 5.0)) {
+                val n = StrokeTessellator.circleSegments(r, tol)
+                assertTrue(n >= StrokeTessellator.MIN_CIRCLE_SEGMENTS)
+                assertTrue(n <= StrokeTessellator.MAX_CIRCLE_SEGMENTS)
+            }
+        }
+    }
+
+    @Test fun theDefaultToleranceHoldsHalfAPixelAtMaxZoom() {
+        val radius = 1.5 // a 3 px pen
+        val n = StrokeTessellator.circleSegments(radius, StrokeTessellator.DEFAULT_TOLERANCE)
+        val sagitta = radius * (1.0 - kotlin.math.cos(Math.PI / n))
+        assertTrue(
+            "chord error $sagitta content px shows at ${sagitta * CanvasViewport.MAX_ZOOM} device px",
+            sagitta * CanvasViewport.MAX_ZOOM <= 0.5 + 1e-9,
+        )
+    }
+
+    @Test fun degenerateRadiiAndTolerancesDoNotThrow() {
+        assertTrue(StrokeTessellator.circleSegments(0.0, 0.01) >= StrokeTessellator.MIN_CIRCLE_SEGMENTS)
+        assertTrue(StrokeTessellator.circleSegments(-1.0, 0.01) >= StrokeTessellator.MIN_CIRCLE_SEGMENTS)
+        assertTrue(StrokeTessellator.circleSegments(3.0, 0.0) <= StrokeTessellator.MAX_CIRCLE_SEGMENTS)
+        assertTrue(StrokeTessellator.circleSegments(3.0, Double.NaN) <= StrokeTessellator.MAX_CIRCLE_SEGMENTS)
+    }
+
+    // --- join discs ---
+
+    @Test fun aGentleCurveNeedsNoJoinDiscs() {
+        val pts = (0..20).map { (it * 3.0) to (it * 0.15) }
+        val g = geometryOf(*pts.toTypedArray())
+        for (i in 1 until g.pointCount - 1) {
+            assertTrue(StrokeTessellator.turnAngle(g, i) < StrokeTessellator.JOIN_DISC_ANGLE)
+        }
+    }
+
+    @Test fun aRightAngleTurnsUpAsALargeTurnAngle() {
+        val g = geometryOf(0.0 to 0.0, 30.0 to 0.0, 30.0 to 30.0)
+        val worst = (1 until g.pointCount - 1).maxOf { StrokeTessellator.turnAngle(g, it) }
+        assertTrue("a right angle should read as a hard turn, got $worst", worst > StrokeTessellator.JOIN_DISC_ANGLE)
+    }
+
+    @Test fun turnAngleIsZeroAtTheEndsAndOnAStraightRun() {
+        val g = line(6)
+        assertEquals(0.0, StrokeTessellator.turnAngle(g, 0), 1e-12)
+        assertEquals(0.0, StrokeTessellator.turnAngle(g, g.pointCount - 1), 1e-12)
+        for (i in 1 until g.pointCount - 1) {
+            assertEquals(0.0, StrokeTessellator.turnAngle(g, i), 1e-6)
+        }
+    }
+
+    // --- scale ---
+
+    @Test fun costGrowsLinearlyWithSampleCount() {
+        val short = StrokeTessellator.tessellate(line(10))
+        val long = StrokeTessellator.tessellate(line(100))
+        // The caps are a fixed overhead, so the body dominates and the ratio tracks the samples.
+        val bodyShort = short.triangleCount
+        val bodyLong = long.triangleCount
+        assertTrue(bodyLong > bodyShort)
+        assertTrue("cost should stay near linear", bodyLong < bodyShort * 12)
+    }
+
+    @Test fun aHighlighterRibbonTessellatesLikeAPenOne() {
+        val g = geometryOf(0.0 to 0.0, 40.0 to 0.0, 80.0 to 10.0, tool = Tool.HIGHLIGHTER)
+        val m = StrokeTessellator.tessellate(g)
+        assertTrue(!m.isEmpty)
+        assertTrue(covers(m, 40.0, 0.0))
+        assertTrue(covers(m, 20.0, 0.0))
+    }
+
+    @Test fun tessellationIsDeterministic() {
+        val g = geometryOf(0.0 to 0.0, 12.0 to 5.0, 25.0 to 3.0)
+        val a = StrokeTessellator.tessellate(g)
+        val b = StrokeTessellator.tessellate(g)
+        assertTrue(a.positions.contentEquals(b.positions))
+        assertTrue(a.indices.contentEquals(b.indices))
+    }
+}

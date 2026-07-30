@@ -1,0 +1,113 @@
+package com.xnotes.core.infinite
+
+import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.ImageData
+import com.xnotes.core.model.ImageItem
+import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.Stroke
+import com.xnotes.core.stroke.Sample
+import com.xnotes.core.tools.Tool
+import com.xnotes.core.tools.ToolConfig
+import com.xnotes.core.tools.ToolDefaults
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+class ItemMesherTest {
+
+    private fun stroke(tool: Tool, config: ToolConfig = ToolDefaults.configFor(tool)): Stroke =
+        Stroke(tool, config, mutableListOf(Sample(0.0, 0.0, 1.0), Sample(20.0, 5.0, 1.0), Sample(40.0, 0.0, 1.0)))
+
+    // --- pass selection ---
+
+    @Test fun opaqueInkGoesStraightIntoTheBatch() {
+        assertEquals(InkPass.OPAQUE, ItemMesher.passFor(stroke(Tool.PEN)))
+        assertEquals(InkPass.OPAQUE, ItemMesher.passFor(stroke(Tool.CALLIGRAPHY)))
+        assertEquals(InkPass.OPAQUE, ItemMesher.passFor(stroke(Tool.TAPER)))
+    }
+
+    @Test fun theHighlighterMultiplies() {
+        assertEquals(InkPass.MULTIPLY, ItemMesher.passFor(stroke(Tool.HIGHLIGHTER)))
+    }
+
+    @Test fun theHighlighterMultipliesWhateverItsAlpha() {
+        val opaqueish = ToolDefaults.configFor(Tool.HIGHLIGHTER).copy(highlighterAlpha = 0.9)
+        assertEquals(InkPass.MULTIPLY, ItemMesher.passFor(stroke(Tool.HIGHLIGHTER, opaqueish)))
+    }
+
+    @Test fun translucentPenInkIsMaskedRatherThanDrawnTwice() {
+        val faded = ToolDefaults.configFor(Tool.PEN).copy(rgba = Rgba(20, 30, 40, 128))
+        assertEquals(InkPass.TRANSLUCENT, ItemMesher.passFor(stroke(Tool.PEN, faded)))
+    }
+
+    @Test fun fullyOpaquePenInkIsNotMasked() {
+        val solid = ToolDefaults.configFor(Tool.PEN).copy(rgba = Rgba(20, 30, 40, 255))
+        assertEquals(InkPass.OPAQUE, ItemMesher.passFor(stroke(Tool.PEN, solid)))
+    }
+
+    // --- meshing ---
+
+    @Test fun aStrokeMeshesWithItsRenderColourAndPaintBounds() {
+        val s = stroke(Tool.PEN)
+        val m = ItemMesher.mesh(s)!!
+        assertEquals(s.renderColor, m.color)
+        assertEquals(s.paintBounds(), m.bounds)
+        assertEquals(InkPass.OPAQUE, m.pass)
+        assertTrue(!m.mesh.isEmpty)
+    }
+
+    @Test fun aHighlighterMeshesWithItsScaledAlpha() {
+        val s = stroke(Tool.HIGHLIGHTER)
+        val m = ItemMesher.mesh(s)!!
+        assertTrue("the highlighter must arrive translucent", m.color.a < 255)
+        assertEquals(InkPass.MULTIPLY, m.pass)
+    }
+
+    @Test fun aNeonStrokeReportsBoundsWiderThanItsInk() {
+        val glow = ToolDefaults.configFor(Tool.PEN).copy(neon = true)
+        val s = stroke(Tool.PEN, glow)
+        val m = ItemMesher.mesh(s)!!
+        assertTrue("the halo must be inside the culled bounds", m.bounds.w > s.bounds().w)
+    }
+
+    @Test fun anEmptyStrokeMeshesToNothing() {
+        assertNull(ItemMesher.mesh(Stroke(Tool.PEN, ToolConfig(), mutableListOf())))
+    }
+
+    @Test fun itemKindsWithNoGeometryYetAreSkipped() {
+        val image = ImageItem(ImageData(File("none"), 4, 4), Rect(0.0, 0.0, 4.0, 4.0))
+        assertNull(ItemMesher.mesh(image))
+    }
+
+    @Test fun aDotStillMeshes() {
+        val dot = Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(3.0, 4.0, 1.0)))
+        assertNotNull(ItemMesher.mesh(dot))
+    }
+
+    // --- multiply colour ---
+
+    @Test fun aMultiplyColourAtFullAlphaIsTheInkItself() {
+        val ink = Rgba(30, 60, 90, 255)
+        assertEquals(ink, ItemMesher.multiplyColor(ink, 1.0))
+    }
+
+    @Test fun aMultiplyColourAtZeroAlphaIsWhiteAndChangesNothing() {
+        assertEquals(Rgba(255, 255, 255, 255), ItemMesher.multiplyColor(Rgba(0, 0, 0, 255), 0.0))
+    }
+
+    @Test fun aMultiplyColourFadesTowardWhiteWithAlpha() {
+        val half = ItemMesher.multiplyColor(Rgba(0, 0, 0, 255), 0.5)
+        assertEquals(127, half.r)
+        assertEquals(255, half.a)
+    }
+
+    @Test fun theMultiplyColourStaysInRangeForAnyAlpha() {
+        for (a in listOf(-1.0, 0.0, 0.37, 1.0, 2.0, Double.NaN)) {
+            val c = ItemMesher.multiplyColor(Rgba(10, 200, 90, 255), if (a.isNaN()) 0.0 else a)
+            assertTrue(c.r in 0..255 && c.g in 0..255 && c.b in 0..255)
+        }
+    }
+}

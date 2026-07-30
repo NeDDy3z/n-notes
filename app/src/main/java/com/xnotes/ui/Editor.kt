@@ -388,6 +388,7 @@ class Editor(context: Context) {
     fun newCanvas() {
         infinite.newCanvas()
         infinite.applyPalette(palette)
+        infinite.applyInputPrefs(settings.prefs.fingerDraws, controller.penButtonTool)
         canvasOpen = true
         noteOpen = true
     }
@@ -1334,6 +1335,7 @@ class Editor(context: Context) {
         palette = buildPalette(p)
         state.palette = palette
         infiniteOrNull?.applyPalette(palette)
+        infiniteOrNull?.applyInputPrefs(p.fingerDraws, if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER))
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
@@ -3773,6 +3775,9 @@ class Editor(context: Context) {
             android.view.KeyEvent.ACTION_UP -> false
             else -> return false
         }
+        // A canvas is on top: the same key stream drives its pen, so a Bluetooth or USI side
+        // button behaves there exactly as it does on a note.
+        if (canvasOpen) return infinite.onStylusButtonKey(e.keyCode, down)
         return controller.onStylusButtonKey(e.keyCode, down)
     }
 

@@ -1,0 +1,199 @@
+package com.xnotes.core.infinite
+
+import com.xnotes.core.stroke.StrokeGeometry
+import kotlin.math.PI
+import kotlin.math.acos
+import kotlin.math.atan2
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
+
+/**
+ * A triangle mesh in content space. Positions are doubles because the canvas is unbounded: a float
+ * absolute position has already lost visible precision a million pixels from the origin, and the
+ * uploader splits each coordinate into a coarse chunk index plus a small local offset precisely so
+ * the GPU never has to hold one. Indices are relative to this mesh's own first vertex.
+ */
+class MeshData(
+    /** Interleaved x,y in content space; `positions.size / 2` vertices. */
+    val positions: DoubleArray,
+    /** Triangle list, three indices per triangle, zero-based within this mesh. */
+    val indices: IntArray,
+) {
+    val vertexCount: Int get() = positions.size / 2
+    val triangleCount: Int get() = indices.size / 3
+    val isEmpty: Boolean get() = indices.isEmpty()
+
+    companion object {
+        val EMPTY = MeshData(DoubleArray(0), IntArray(0))
+    }
+}
+
+/**
+ * Turns a [StrokeGeometry] into triangles once, at commit time. Every frame then draws those
+ * triangles with the current zoom pushed in as a uniform, so ink is resolution independent: there
+ * is no raster to be at the wrong scale, and no blur to resolve when a pinch settles.
+ *
+ * The ribbon needs no triangulator. [StrokeGeometry.outline] already holds both rails, the left
+ * edge forward then the right edge reversed, so vertex `i` of the left rail is `outline[2i]` and
+ * its partner on the right rail is `outline[2 * (2n - 1 - i)]`. Consecutive quads share their
+ * whole edge exactly, so the body is watertight with no join geometry at all.
+ *
+ * What the rails do not cover is the round ends, and the outer notch where the stroke turns hard
+ * enough that the two quads pinch. Both are filled with a disc, which is what the paged renderer
+ * sweeps down the centerline, so the silhouette matches the ink the rest of the app draws.
+ *
+ * Antialiasing comes from multisampling on these triangle edges rather than from coverage computed
+ * in a shader, because MSAA is the only one of the two that composes correctly where a stroke
+ * overlaps itself: a sample is covered or not, so the same colour written twice is still that
+ * colour. That makes the silhouette's fidelity the whole of the quality, which is why the round
+ * parts are tessellated to a chord tolerance rather than to a fixed segment count.
+ */
+object StrokeTessellator {
+
+    /**
+     * Content-space chord error allowed on a round cap or join. Chosen so a curve stays under half
+     * a device pixel of error at [CanvasViewport.MAX_ZOOM], since geometry is baked once and the
+     * canvas zooms far past what a page ever does.
+     */
+    const val DEFAULT_TOLERANCE = 0.5 / CanvasViewport.MAX_ZOOM
+
+    /** Fewest and most segments a full circle is ever cut into. */
+    const val MIN_CIRCLE_SEGMENTS = 8
+    const val MAX_CIRCLE_SEGMENTS = 64
+
+    /**
+     * Turn angle, in radians, past which a sample gets its own disc. Below it the two ribbon quads
+     * already meet flush; above it their outer edges pinch and leave a notch the disc fills.
+     * Smoothed handwriting turns a fraction of this per sample, so discs stay rare.
+     */
+    const val JOIN_DISC_ANGLE = 0.18
+
+    /** Half-widths at or below this contribute nothing and are skipped. */
+    private const val MIN_HALF_WIDTH = 1e-6
+
+    fun tessellate(g: StrokeGeometry, tolerance: Double = DEFAULT_TOLERANCE): MeshData {
+        val n = g.pointCount
+        if (n == 0) return MeshData.EMPTY
+        val b = MeshBuilder(estimateVertices(g), estimateIndices(g))
+        if (n == 1) {
+            if (g.hw(0) > MIN_HALF_WIDTH) b.circle(g.cx(0), g.cy(0), g.hw(0), tolerance)
+            return b.build()
+        }
+        if (g.outlineCount < 2 * n) return b.build() // geometry without rails: nothing to draw
+
+        // Body: one quad per segment, both of its vertices taken straight off the rails, so
+        // consecutive quads share an entire edge and the ribbon never gaps along its length.
+        for (i in 0 until n - 1) {
+            val h0 = g.hw(i)
+            val h1 = g.hw(i + 1)
+            if (h0 <= MIN_HALF_WIDTH && h1 <= MIN_HALF_WIDTH) continue
+            val l0 = b.vertex(leftX(g, n, i), leftY(g, n, i))
+            val r0 = b.vertex(rightX(g, n, i), rightY(g, n, i))
+            val l1 = b.vertex(leftX(g, n, i + 1), leftY(g, n, i + 1))
+            val r1 = b.vertex(rightX(g, n, i + 1), rightY(g, n, i + 1))
+            b.triangle(l0, r0, r1)
+            b.triangle(l0, r1, l1)
+        }
+
+        // Round ends. A whole disc rather than a half one: it costs two extra fans per stroke and
+        // removes every orientation question, and it is exactly the disc the paged renderer sweeps.
+        if (g.hw(0) > MIN_HALF_WIDTH) b.circle(g.cx(0), g.cy(0), g.hw(0), tolerance)
+        if (g.hw(n - 1) > MIN_HALF_WIDTH) b.circle(g.cx(n - 1), g.cy(n - 1), g.hw(n - 1), tolerance)
+
+        // Discs at the hard turns only.
+        for (i in 1 until n - 1) {
+            val h = g.hw(i)
+            if (h <= MIN_HALF_WIDTH) continue
+            if (turnAngle(g, i) > JOIN_DISC_ANGLE) b.circle(g.cx(i), g.cy(i), h, tolerance)
+        }
+        return b.build()
+    }
+
+    /** Segments a circle of [radius] needs to stay within [tolerance] of true. */
+    fun circleSegments(radius: Double, tolerance: Double): Int {
+        if (!radius.isFinite() || radius <= 0.0) return MIN_CIRCLE_SEGMENTS
+        if (!tolerance.isFinite() || tolerance <= 0.0) return MAX_CIRCLE_SEGMENTS
+        if (tolerance >= radius) return MIN_CIRCLE_SEGMENTS
+        // Sagitta of a chord subtending 2a is r(1 - cos a); solve for a and cut the circle by it.
+        val a = acos(1.0 - tolerance / radius)
+        if (a <= 0.0) return MAX_CIRCLE_SEGMENTS
+        return ceil(PI / a).toInt().coerceIn(MIN_CIRCLE_SEGMENTS, MAX_CIRCLE_SEGMENTS)
+    }
+
+    /** Angle between the ribbon's normal before and after sample [i], in radians. */
+    fun turnAngle(g: StrokeGeometry, i: Int): Double {
+        val n = g.pointCount
+        if (i <= 0 || i >= n - 1) return 0.0
+        val ax = g.cx(i) - g.cx(i - 1)
+        val ay = g.cy(i) - g.cy(i - 1)
+        val bx = g.cx(i + 1) - g.cx(i)
+        val by = g.cy(i + 1) - g.cy(i)
+        val la = hypot(ax, ay)
+        val lb = hypot(bx, by)
+        if (la < 1e-12 || lb < 1e-12) return 0.0
+        val cross = (ax * by - ay * bx) / (la * lb)
+        val dot = (ax * bx + ay * by) / (la * lb)
+        return kotlin.math.abs(atan2(cross, dot))
+    }
+
+    // --- rail accessors: the outline is the left edge forward, then the right edge reversed ---
+
+    fun leftX(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * i].toDouble()
+    fun leftY(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * i + 1].toDouble()
+    fun rightX(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * (2 * n - 1 - i)].toDouble()
+    fun rightY(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * (2 * n - 1 - i) + 1].toDouble()
+
+    private fun estimateVertices(g: StrokeGeometry): Int {
+        val n = g.pointCount
+        return 2 * n + 2 * (MIN_CIRCLE_SEGMENTS + 2) + 16
+    }
+
+    private fun estimateIndices(g: StrokeGeometry): Int {
+        val n = g.pointCount
+        return 6 * maxOf(0, n - 1) + 6 * (MIN_CIRCLE_SEGMENTS + 2) + 48
+    }
+
+    /** Growable position and index arrays, so a stroke tessellates without per-vertex allocation. */
+    private class MeshBuilder(vertexHint: Int, indexHint: Int) {
+        private var pos = DoubleArray(maxOf(8, vertexHint * 2))
+        private var idx = IntArray(maxOf(12, indexHint))
+        private var vertexCount = 0
+        private var indexCount = 0
+
+        fun vertex(x: Double, y: Double): Int {
+            if (2 * vertexCount + 2 > pos.size) pos = pos.copyOf(pos.size * 2)
+            pos[2 * vertexCount] = x
+            pos[2 * vertexCount + 1] = y
+            return vertexCount++
+        }
+
+        fun triangle(a: Int, b: Int, c: Int) {
+            if (indexCount + 3 > idx.size) idx = idx.copyOf(idx.size * 2)
+            idx[indexCount] = a
+            idx[indexCount + 1] = b
+            idx[indexCount + 2] = c
+            indexCount += 3
+        }
+
+        /** A filled disc as a triangle fan around its centre. */
+        fun circle(cx: Double, cy: Double, radius: Double, tolerance: Double) {
+            val segments = circleSegments(radius, tolerance)
+            val centre = vertex(cx, cy)
+            val step = 2.0 * PI / segments
+            var first = -1
+            var prev = -1
+            for (k in 0 until segments) {
+                val a = k * step
+                val v = vertex(cx + radius * cos(a), cy + radius * sin(a))
+                if (first < 0) first = v else triangle(centre, prev, v)
+                prev = v
+            }
+            if (first >= 0 && prev != first) triangle(centre, prev, first)
+        }
+
+        fun build(): MeshData =
+            MeshData(pos.copyOf(2 * vertexCount), idx.copyOf(indexCount))
+    }
+}

@@ -1,14 +1,21 @@
 package com.xnotes.ui
 
 import android.view.Choreographer
+import android.view.KeyEvent
 import android.view.MotionEvent
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.infinite.CanvasViewport
+import com.xnotes.core.model.Stroke
+import com.xnotes.core.stroke.Sample
+import com.xnotes.core.stroke.StrokeSimplify
+import com.xnotes.core.tools.Tool
+import com.xnotes.core.tools.ToolConfig
 import com.xnotes.canvas.InteractionController
+import com.xnotes.canvas.StylusButtonLatch
 import kotlin.math.exp
 
 /** What the current gesture is doing. */
-enum class CanvasPointerMode { IDLE, PAN, PINCH }
+enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW }
 
 /**
  * Gestures on the infinite canvas.
@@ -27,12 +34,37 @@ class InfiniteInteraction(
     private val requestRender: () -> Unit,
     /** Called whenever the view moved, so the host can refresh a zoom readout or schedule a save. */
     private val onViewChanged: () -> Unit = {},
+    /** The style the armed tool draws with, including the toolbar's active ink colour. */
+    private val configFor: (Tool) -> ToolConfig = { ToolConfig() },
+    /** The wet stroke changed: re-tessellate it into the dynamic buffer, or clear it when null. */
+    private val onWetStroke: (Stroke?) -> Unit = {},
+    /** Pen up on a finished stroke: add it to the document and push the undo command. */
+    private val onCommitStroke: (Stroke) -> Unit = {},
+    /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
+    private val devicePxPerDp: () -> Double = { 1.0 },
 ) {
 
     private val choreographer = Choreographer.getInstance()
 
+    /** The armed tool. */
+    var tool: Tool = Tool.PEN
+
+    /** Whether a finger draws, or pans instead. Mirrors the paged canvas's preference. */
+    var fingerDraws: Boolean = false
+
+    /** Tool the stylus side button arms while it is held; null leaves the button alone. */
+    var penButtonTool: Tool? = Tool.ERASER
+
+    private val stylusButtons = StylusButtonLatch()
+
     var mode = CanvasPointerMode.IDLE
         private set
+
+    // The stroke being drawn, live until the pen lifts.
+    private var liveStroke: Stroke? = null
+    private var drawingPointerId = -1
+    private var drawingIsStylus = false
+    private var strokeStartTimeMs = 0L
 
     // Pan and inertial fling, in viewport px and viewport px/s.
     private var lastPan = Pt.ZERO
@@ -51,33 +83,75 @@ class InfiniteInteraction(
     fun onTouch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> handleDown(e)
-            MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount >= 2) beginPinch(e)
+            MotionEvent.ACTION_POINTER_DOWN -> handlePointerDown(e)
             MotionEvent.ACTION_MOVE -> handleMove(e)
             MotionEvent.ACTION_POINTER_UP -> handlePointerUp(e)
-            MotionEvent.ACTION_UP -> handleUp()
+            MotionEvent.ACTION_UP -> handleUp(e)
             MotionEvent.ACTION_CANCEL -> abortGesture()
         }
         return true
     }
+
+    /**
+     * Latch a side button reported only on the hovering generic-motion stream, which is the only
+     * place some pens put it.
+     */
+    fun onGenericMotion(e: MotionEvent) {
+        stylusButtons.onGenericMotion(e)
+    }
+
+    /** Latch a side button delivered as a key event, which is all Bluetooth and USI pens send. */
+    fun onStylusButtonKey(keyCode: Int, down: Boolean): Boolean = stylusButtons.onKey(keyCode, down)
 
     /** Drop any in-flight gesture and stop a glide, so a document swap cannot bleed into the next. */
     fun resetGestureState() {
         stopFling()
         mode = CanvasPointerMode.IDLE
         panVel = Pt.ZERO
+        liveStroke = null
+        onWetStroke(null)
+        stylusButtons.reset()
     }
 
     // --- pointer handling ---
 
     private fun handleDown(e: MotionEvent) {
         stopFling() // a new touch halts any in-progress glide
-        beginPan(e.getX(0).toDouble(), e.getY(0).toDouble())
+        drawingPointerId = e.getPointerId(0)
+        drawingIsStylus = e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+        val vx = e.getX(0).toDouble()
+        val vy = e.getY(0).toDouble()
+
+        // Which tool this pointer actually drives: the pen's eraser end and its held side button
+        // both override the armed tool, and a finger pans unless finger-draw is on. This mirrors
+        // the paged canvas so a pen behaves the same on either surface.
+        val toolType = e.getToolType(0)
+        val buttonHeld = stylusButtons.heldFor(e)
+        val effective: Tool = when {
+            toolType == MotionEvent.TOOL_TYPE_ERASER -> Tool.ERASER
+            buttonHeld && penButtonTool != null -> penButtonTool!!
+            toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff -> Tool.PAN
+            else -> tool
+        }
+
+        if (effective.isStroke) beginDraw(vx, vy, effective, e) else beginPan(vx, vy)
+    }
+
+    private fun handlePointerDown(e: MotionEvent) {
+        // A stylus stroke ignores an incidental palm or second finger; a finger stroke yields to a
+        // pinch, since two fingers can only mean a zoom.
+        if (mode == CanvasPointerMode.DRAW && drawingIsStylus) return
+        if (e.pointerCount >= 2) {
+            if (mode == CanvasPointerMode.DRAW) abandonStroke()
+            beginPinch(e)
+        }
     }
 
     private fun handleMove(e: MotionEvent) {
         when (mode) {
             CanvasPointerMode.PAN -> extendPan(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.PINCH -> updatePinch(e)
+            CanvasPointerMode.DRAW -> extendDraw(e)
             CanvasPointerMode.IDLE -> Unit
         }
     }
@@ -94,8 +168,9 @@ class InfiniteInteraction(
         }
     }
 
-    private fun handleUp() {
+    private fun handleUp(e: MotionEvent) {
         val wasMoving = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
+        if (mode == CanvasPointerMode.DRAW) endDraw(e)
         mode = CanvasPointerMode.IDLE
         if (wasMoving) startFling(panVel)
         onViewChanged()
@@ -103,10 +178,122 @@ class InfiniteInteraction(
     }
 
     private fun abortGesture() {
+        if (mode == CanvasPointerMode.DRAW) abandonStroke()
         mode = CanvasPointerMode.IDLE
         stopFling()
         requestRender()
     }
+
+    // --- drawing ---
+
+    private fun beginDraw(vx: Double, vy: Double, drawTool: Tool, e: MotionEvent) {
+        val base = configFor(drawTool)
+        // SCALE off: divide the width by the draw-time zoom so the stroke keeps a constant
+        // on-screen thickness whatever zoom it was drawn at. Baked in, so it is ordinary ink after.
+        val z = viewport.zoom
+        val config = if (base.scale) {
+            base
+        } else {
+            base.copy(
+                baseWidth = base.baseWidth / z,
+                dashLength = base.dashLength / z,
+                dashGap = base.dashGap / z,
+                scale = true,
+            )
+        }
+        val straight = drawTool == Tool.HIGHLIGHTER && config.straightLine
+        val stroke = Stroke(
+            drawTool, config,
+            speedScale = z / devicePxPerDp().coerceAtLeast(1e-9),
+            straight = straight,
+        )
+        // Live until the pen lifts, so lift-time rules cannot fire mid-draw.
+        stroke.finished = false
+        strokeStartTimeMs = e.eventTime
+        val p = viewport.viewportToContent(Pt(vx, vy))
+        stroke.addSample(Sample(p.x, p.y, pressureOf(e, 0)))
+        liveStroke = stroke
+        mode = CanvasPointerMode.DRAW
+        onWetStroke(stroke)
+        requestRender()
+    }
+
+    private fun extendDraw(e: MotionEvent) {
+        val idx = e.findPointerIndex(drawingPointerId)
+        if (idx < 0) return
+        // Historical points first: the digitizer batches several samples into one event, and
+        // dropping them coarsens a fast stroke into visible chords.
+        for (h in 0 until e.historySize) {
+            addStrokePoint(
+                e.getHistoricalX(idx, h).toDouble(),
+                e.getHistoricalY(idx, h).toDouble(),
+                if (drawingIsStylus) e.getHistoricalPressure(idx, h).toDouble() else 1.0,
+                e.getHistoricalEventTime(h),
+                force = false,
+            )
+        }
+        addStrokePoint(
+            e.getX(idx).toDouble(), e.getY(idx).toDouble(),
+            pressureOf(e, idx), e.eventTime, force = false,
+        )
+        onWetStroke(liveStroke)
+        requestRender()
+    }
+
+    private fun addStrokePoint(vx: Double, vy: Double, pressure: Double, timeMs: Long, force: Boolean) {
+        val stroke = liveStroke ?: return
+        val p = viewport.viewportToContent(Pt(vx, vy))
+        val t = (timeMs - strokeStartTimeMs).toDouble()
+        if (stroke.straight) {
+            stroke.setStraightEnd(Sample(p.x, p.y, pressure.coerceIn(0.0, 1.0), t))
+            return
+        }
+        val last = stroke.samples.lastOrNull()
+        // Decimate by on-screen spacing rather than content spacing, so drawing while zoomed in
+        // keeps its detail instead of faceting into chords a zoom factor long.
+        val gate = (InteractionController.MIN_SAMPLE_DIST / viewport.zoom)
+            .coerceAtMost(InteractionController.MIN_SAMPLE_DIST)
+        if (force || last == null || Pt(last.x, last.y).manhattanTo(p) >= gate) {
+            stroke.addSample(Sample(p.x, p.y, pressure.coerceIn(0.0, 1.0), t))
+        }
+    }
+
+    private fun endDraw(e: MotionEvent) {
+        val idx = e.findPointerIndex(drawingPointerId).coerceAtLeast(0)
+        addStrokePoint(
+            e.getX(idx).toDouble(), e.getY(idx).toDouble(),
+            pressureOf(e, idx), e.eventTime, force = true,
+        )
+        val stroke = liveStroke
+        liveStroke = null
+        onWetStroke(null)
+        if (stroke == null || stroke.isEmpty) return
+        // The pen is up: rebuild with lift-time rules on before the stroke is committed.
+        stroke.finished = true
+        simplifyForCommit(stroke)
+        onCommitStroke(stroke)
+    }
+
+    /** Drop the wet stroke without committing it, when a second finger turns the gesture into a zoom. */
+    private fun abandonStroke() {
+        liveStroke = null
+        onWetStroke(null)
+    }
+
+    /** Shed the samples the ribbon does not need, at the tolerance the draw zoom justifies. */
+    private fun simplifyForCommit(stroke: Stroke) {
+        if (stroke.straight) return
+        val eps = (InteractionController.SIMPLIFY_EPS / viewport.zoom)
+            .coerceAtMost(InteractionController.SIMPLIFY_EPS)
+        val slim = StrokeSimplify.simplify(stroke.samples, stroke.geometry().halfWidths, eps)
+        if (slim.size == stroke.samples.size) return
+        stroke.samples.clear()
+        stroke.samples.addAll(slim)
+        stroke.invalidate()
+    }
+
+    private fun pressureOf(e: MotionEvent, index: Int): Double =
+        if (drawingIsStylus) e.getPressure(index).toDouble() else 1.0
 
     // --- pan ---
 

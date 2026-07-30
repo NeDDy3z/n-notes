@@ -1,7 +1,9 @@
 package com.xnotes.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,9 +17,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.core.tools.InkPalette
+import com.xnotes.core.tools.Tool
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
+
+/** The tools the infinite canvas offers; text, screenshot and the page tools have no meaning here. */
+private val CANVAS_TOOLS = listOf(
+    Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER,
+)
+
+private fun iconFor(tool: Tool) = when (tool) {
+    Tool.PAN -> XnotesIcons.pan
+    Tool.HIGHLIGHTER -> XnotesIcons.shapeRect
+    Tool.ERASER -> XnotesIcons.eraser
+    else -> XnotesIcons.edit
+}
 
 /**
  * The infinite canvas's chrome. Deliberately a separate bar from the paged [Toolbar]: most of that
@@ -46,12 +62,27 @@ fun InfiniteToolbar(
                 tint = palette.text.toComposeColor(),
             )
         }
-        Text(
-            editor.title,
-            color = palette.text.toComposeColor(),
-            fontSize = 14.sp,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
+        for (t in CANVAS_TOOLS) {
+            val active = editor.tool == t
+            IconButton(onClick = { editor.armTool(t) }) {
+                Icon(
+                    iconFor(t),
+                    contentDescription = t.id,
+                    modifier = Modifier.size(22.dp),
+                    tint = (if (active) palette.accent else palette.text).toComposeColor(),
+                )
+            }
+        }
+        for (c in InkPalette.presets) {
+            val active = editor.inkColor == c
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 3.dp)
+                    .size(if (active) 20.dp else 16.dp)
+                    .background(c.toComposeColor())
+                    .clickable { editor.armInkColor(c) },
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
