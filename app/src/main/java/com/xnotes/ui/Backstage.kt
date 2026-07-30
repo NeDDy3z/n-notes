@@ -238,6 +238,11 @@ private fun BackstageContent(
         if (editor.browseRoot != null) { onSelectView(BackstageView.HOME); createMode = CreateMode.FILE } else onPickRoot()
         if (compact) { animateClose = false; sidebarOpen = false }
     }
+    // A canvas is not yet backed by a file, so unlike a note it opens without needing a folder.
+    val newCanvas: () -> Unit = {
+        editor.newCanvas()
+        if (compact) { animateClose = false; sidebarOpen = false }
+    }
     val importPdf: () -> Unit = {
         if (editor.browseRoot != null) onImportPdf() else onPickRoot()
         if (compact) { animateClose = false; sidebarOpen = false }
@@ -282,7 +287,7 @@ private fun BackstageContent(
                 enter = slideInHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), initialOffsetX = { -it }),
                 exit = if (animateClose) slideOutHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), targetOffsetX = { -it }) else ExitTransition.None,
             ) {
-                BackstageSidebar(Modifier.width(296.dp), view, dismissSidebar, selectView, newNote, importPdf, openSystem)
+                BackstageSidebar(Modifier.width(296.dp), view, dismissSidebar, selectView, newNote, newCanvas, importPdf, openSystem)
             }
         }
     } else {
@@ -292,7 +297,7 @@ private fun BackstageContent(
                 enter = expandHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), expandFrom = Alignment.Start) + fadeIn(animationSpec = tween(SIDEBAR_ANIM_MS)),
                 exit = shrinkHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), shrinkTowards = Alignment.Start) + fadeOut(animationSpec = tween(SIDEBAR_ANIM_MS)),
             ) {
-                BackstageSidebar(Modifier.width(264.dp), view, { sidebarOpen = false }, selectView, newNote, importPdf, openSystem)
+                BackstageSidebar(Modifier.width(264.dp), view, { sidebarOpen = false }, selectView, newNote, newCanvas, importPdf, openSystem)
             }
             BackstageMain(
                 Modifier.weight(1f).fillMaxHeight(), editor, view, compact, sidebarOpen, { sidebarOpen = true }, { selectView(BackstageView.HOME) },
@@ -310,6 +315,7 @@ private fun BackstageSidebar(
     onCollapse: () -> Unit,
     onSelectView: (BackstageView) -> Unit,
     onNewNote: () -> Unit,
+    onNewCanvas: () -> Unit,
     onImportPdf: () -> Unit,
     onOpenSystem: () -> Unit,
 ) {
@@ -331,6 +337,7 @@ private fun BackstageSidebar(
         Spacer(Modifier.height(6.dp))
         Command(XnotesIcons.home, "Home", selected = view == BackstageView.HOME) { onSelectView(BackstageView.HOME) }
         Command(XnotesIcons.plus, "New note") { onNewNote() }
+        Command(XnotesIcons.canvas, "New canvas") { onNewCanvas() }
         Command(XnotesIcons.importDoc, "Import PDF…") { onImportPdf() }
         Command(XnotesIcons.folder, "Open…") { onOpenSystem() }
         RailDivider()

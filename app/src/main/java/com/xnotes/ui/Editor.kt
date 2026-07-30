@@ -368,6 +368,30 @@ class Editor(context: Context) {
     var noteOpen by mutableStateOf(false)
         private set
 
+    /** True when the open document is an infinite canvas rather than a paged note, so the editor
+     *  layer hosts the GL canvas and its own chrome. Meaningful only while [noteOpen]. */
+    var canvasOpen by mutableStateOf(false)
+        private set
+
+    private var infiniteOrNull: InfiniteEditor? = null
+
+    /** The infinite canvas's orchestrator, built on first use. It hangs off this editor rather
+     *  than standing beside it so it can never race the temp-directory purge in this constructor,
+     *  which would delete an open note's live PDF and image files out from under it. */
+    val infinite: InfiniteEditor
+        get() = infiniteOrNull ?: InfiniteEditor(appContext).also {
+            infiniteOrNull = it
+            it.applyPalette(palette)
+        }
+
+    /** Open a fresh, unsaved infinite canvas on top of backstage. */
+    fun newCanvas() {
+        infinite.newCanvas()
+        infinite.applyPalette(palette)
+        canvasOpen = true
+        noteOpen = true
+    }
+
     /** Bumped whenever page content changes, to refresh thumbnails. */
     var contentVersion by mutableStateOf(0)
         private set
@@ -1309,6 +1333,7 @@ class Editor(context: Context) {
     private fun applyPagePrefsToState(p: Preferences) {
         palette = buildPalette(p)
         state.palette = palette
+        infiniteOrNull?.applyPalette(palette)
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
@@ -3809,6 +3834,13 @@ class Editor(context: Context) {
      *  [noteOpen] so the editor is removed from the stack. The document stays as an inert buffer. */
     fun goHome() {
         if (!noteOpen) return
+        // A canvas has none of the paged note's text sessions, autosave binding or thumbnails yet,
+        // so leaving one is just popping the layer.
+        if (canvasOpen) {
+            canvasOpen = false
+            noteOpen = false
+            return
+        }
         commitText() // commit an open text box before leaving (also hides its keyboard)
         flowText.endSession() // end any live flow caret (flushes typing, hides the keyboard)
         saveViewState() // remember this folder note's view before leaving

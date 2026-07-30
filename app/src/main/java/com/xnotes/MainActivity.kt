@@ -629,7 +629,26 @@ private fun EditorScreen(
 
             // TOP LAYER: the editor (toolbar + canvas), pushed only when a note is open. Its
             // BackHandlers live here so — composed after backstage — they take priority while open.
-            if (editor.noteOpen) {
+            if (editor.noteOpen && editor.canvasOpen) {
+                // The infinite canvas has its own chrome: the paged toolbar is almost entirely
+                // pages, viewing modes and text, none of which mean anything here.
+                BackHandler(enabled = true) { editor.goHome() }
+                val canvas = editor.infinite
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(LocalPalette.current.bg.toComposeColor()),
+                ) {
+                    com.xnotes.ui.InfiniteToolbar(canvas, onOpenBackstage = { editor.goHome() })
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                        AndroidView(
+                            factory = { canvas.view },
+                            modifier = Modifier.fillMaxSize(),
+                            update = { it.publish() },
+                        )
+                    }
+                }
+            } else if (editor.noteOpen) {
                 // While a text box is open, Back commits-or-dismisses it (and hides the keyboard).
                 BackHandler(enabled = editor.editingField != null) { editor.commitText() }
                 // A live flow caret session ends first (flushing its typing burst).
