@@ -158,6 +158,9 @@ private fun ToolbarItemView(
     onToggleFullscreen: () -> Unit,
 ) {
     when (item) {
+        // Canvas-only items; a stored paged layout can never hold one, so nothing is drawn.
+        ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP -> Unit
+
         ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, "Home") { onOpenBackstage() }
         ToolbarItem.TITLE -> Label(
             editor.title,

@@ -291,6 +291,9 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
     var toolbarColorCount by mutableStateOf(5)
         private set
     var toolbarLayout by mutableStateOf(ToolbarLayout.DEFAULT)
+
+    /** The infinite canvas's own bar. Its own layout: the two surfaces hold different items. */
+    var canvasToolbarLayout by mutableStateOf(ToolbarLayout.CANVAS_DEFAULT)
         private set
     var renderScale by mutableStateOf(1.0)
         private set
@@ -398,6 +401,8 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
             it.armShapeConfig(settings.shapeConfig)
             it.toolbarColors = toolbarColors
             it.recentColors = recentColors
+            it.toolbarColorCount = toolbarColorCount
+            it.toolbarLayout = canvasToolbarLayout
             it.pickColor(activeColorIndex)
             // A style tuned on the canvas is the same style, so it persists through this editor.
             it.onToolStyleChanged = { settingsDirty = true }
@@ -1379,6 +1384,7 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
         toolbarColors = settings.toolbarColors
         toolbarColorCount = settings.toolbarColorCount
         toolbarLayout = settings.toolbarLayout
+        canvasToolbarLayout = settings.canvasToolbarLayout
         activeColorIndex = settings.activeColor.coerceIn(0, toolbarColorCount - 1)
         // Render always at 1x (the DPI/supersampling control was removed).
         renderScale = 1.0
@@ -1479,10 +1485,19 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
         settingsRepo.save(settings)
     }
 
+    /** The same, for the infinite canvas's bar. */
+    fun applyCanvasToolbarLayout(layout: ToolbarLayout) {
+        canvasToolbarLayout = layout
+        infiniteOrNull?.toolbarLayout = layout
+        settings = settings.copy(canvasToolbarLayout = layout)
+        settingsRepo.save(settings)
+    }
+
     /** Set how many colour swatches the toolbar shows (1-7) and persist. */
     fun applyToolbarColorCount(count: Int) {
         val c = count.coerceIn(1, 7)
         toolbarColorCount = c
+        infiniteOrNull?.toolbarColorCount = c
         if (activeColorIndex >= c) pickColor(c - 1)
         settings = settings.copy(toolbarColorCount = c)
         settingsRepo.save(settings)
@@ -1499,6 +1514,8 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
         canvas.armShapeConfig(settings.shapeConfig)
         canvas.toolbarColors = toolbarColors
         canvas.recentColors = recentColors
+        canvas.toolbarColorCount = toolbarColorCount
+        canvas.toolbarLayout = canvasToolbarLayout
         canvas.pickColor(activeColorIndex)
     }
 

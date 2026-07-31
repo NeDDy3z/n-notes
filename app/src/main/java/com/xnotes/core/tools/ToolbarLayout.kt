@@ -41,7 +41,13 @@ enum class ToolbarItem(val id: String, val label: String) {
     ZOOM_LOCK("zoom_lock", "Zoom lock"),
     FULLSCREEN("fullscreen", "Full screen"),
     PRESENT("present", "Present"),
-    COLORS("colors", "Colours");
+    COLORS("colors", "Colours"),
+
+    /** Canvas only: saved views, which are what page numbers are on an unbounded surface. */
+    WAYPOINTS("waypoints", "Waypoints"),
+
+    /** Canvas only: the overview map in the corner. */
+    MINIMAP("minimap", "Minimap");
 
     companion object {
         fun fromId(id: String?): ToolbarItem? = entries.firstOrNull { it.id == id }
@@ -109,12 +115,13 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
         return copy(sections = mutable.mapIndexed { idx, e -> sections[idx].copy(entries = e) })
     }
 
-    /** Add any canonical item missing from this layout, visible, so the bar never goes stale
+    /** Add any of [among] missing from this layout, visible, so the bar never goes stale
      *  across versions: an item with a designated neighbour ([INSERT_AFTER]) slots in right
      *  after it; anything else is appended to the last section. */
-    fun withMissingItemsAppended(): ToolbarLayout {
+    fun withMissingItemsAppended(among: Set<ToolbarItem> = NOTE_ITEMS): ToolbarLayout {
         var layout = this
         for (item in ToolbarItem.entries) {
+            if (item !in among) continue
             if (layout.sections.any { s -> s.entries.any { it.item == item } }) continue
             layout = layout.insertMissing(item)
         }
@@ -143,6 +150,26 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.VIEW to ToolbarItem.STYLES,
         )
 
+        /**
+         * The two bars hold different things, so each has its own set and neither can be handed the
+         * other's. A page menu means nothing on an unbounded canvas, and a waypoint means nothing in
+         * a paged note; an item outside a layout's set is dropped on load rather than drawn as a
+         * dead chip.
+         */
+        val CANVAS_ITEMS: Set<ToolbarItem> = setOf(
+            ToolbarItem.HOME, ToolbarItem.TITLE,
+            ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
+            ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
+            ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.SHAPE,
+            ToolbarItem.IMAGE, ToolbarItem.COLORS, ToolbarItem.UNDO, ToolbarItem.REDO,
+            ToolbarItem.STYLES, ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP,
+            ToolbarItem.ZOOM, ToolbarItem.FIT,
+        )
+
+        /** Everything the paged bar can hold: the whole enum bar the two canvas-only additions. */
+        val NOTE_ITEMS: Set<ToolbarItem> =
+            ToolbarItem.entries.toSet() - setOf(ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP)
+
         /** Mirrors the hardcoded bar exactly (see Toolbar.kt) so existing users see no change. */
         val DEFAULT: ToolbarLayout = of(
             listOf(ToolbarItem.HOME, ToolbarItem.TITLE),
@@ -161,28 +188,50 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.FULLSCREEN, ToolbarItem.PRESENT),
         )
 
+        /** Mirrors the hardcoded canvas bar (see InfiniteToolbar.kt). */
+        val CANVAS_DEFAULT: ToolbarLayout = of(
+            listOf(ToolbarItem.HOME, ToolbarItem.TITLE),
+            listOf(
+                ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
+                ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
+            ),
+            listOf(ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.LASSO),
+            listOf(ToolbarItem.SHAPE),
+            listOf(ToolbarItem.IMAGE),
+            listOf(ToolbarItem.COLORS),
+            listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
+            listOf(ToolbarItem.STYLES, ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP),
+            listOf(ToolbarItem.ZOOM, ToolbarItem.FIT),
+        )
+
         private fun of(vararg groups: List<ToolbarItem>): ToolbarLayout =
             ToolbarLayout(groups.map { g -> ToolbarSection(g.map { ToolbarEntry(it) }) })
 
         /**
-         * Build from raw (id, visible) pairs per section as read from storage: unknown ids are
-         * dropped, duplicates keep their first occurrence, empty input falls back to [DEFAULT], and
-         * any canonical item not present is appended so the bar never goes stale across versions.
+         * Build from raw (id, visible) pairs per section as read from storage: ids outside [among]
+         * are dropped, duplicates keep their first occurrence, empty input falls back to [fallback],
+         * and any item of [among] not present is appended so the bar never goes stale across
+         * versions.
          */
-        fun fromRaw(rawSections: List<List<Pair<String, Boolean>>>): ToolbarLayout {
-            if (rawSections.isEmpty()) return DEFAULT
+        fun fromRaw(
+            rawSections: List<List<Pair<String, Boolean>>>,
+            among: Set<ToolbarItem> = NOTE_ITEMS,
+            fallback: ToolbarLayout = DEFAULT,
+        ): ToolbarLayout {
+            if (rawSections.isEmpty()) return fallback
             val seen = LinkedHashSet<ToolbarItem>()
             val sections = rawSections.map { raw ->
                 ToolbarSection(
                     raw.mapNotNull { (id, visible) ->
                         val item = ToolbarItem.fromId(id) ?: return@mapNotNull null
+                        if (item !in among) return@mapNotNull null
                         if (!seen.add(item)) return@mapNotNull null
                         ToolbarEntry(item, visible)
                     },
                 )
             }
-            if (sections.all { it.entries.isEmpty() }) return DEFAULT
-            return ToolbarLayout(sections).withMissingItemsAppended()
+            if (sections.all { it.entries.isEmpty() }) return fallback
+            return ToolbarLayout(sections).withMissingItemsAppended(among)
         }
     }
 }

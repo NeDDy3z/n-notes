@@ -66,6 +66,8 @@ data class Settings(
     val toolbarColors: List<Rgba> = InkPalette.presets,
     val toolbarColorCount: Int = 5,
     val toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
+    /** The infinite canvas's own bar. A separate layout because the two hold different items. */
+    val canvasToolbarLayout: ToolbarLayout = ToolbarLayout.CANVAS_DEFAULT,
     val activeColor: Int = 0,
     val recentColors: List<Rgba> = emptyList(),
     /** Persisted SAF tree URI for the in-app file explorer's root folder, or null. */
@@ -103,6 +105,7 @@ data class Settings(
             .put("toolbar_colors", JSONArray().apply { toolbarColors.forEach { put(rgbaArr(it)) } })
             .put("toolbar_color_count", toolbarColorCount)
             .put("toolbar_layout", toolbarLayoutJson(toolbarLayout))
+            .put("canvas_toolbar_layout", toolbarLayoutJson(canvasToolbarLayout))
             .put("active_color", activeColor)
             .put("recent_colors", JSONArray().apply { recentColors.forEach { put(rgbaArr(it)) } })
             .apply { browseRoot?.let { put("browse_root", it) } }
@@ -142,6 +145,11 @@ data class Settings(
                 toolbarColors = colors.take(7),
                 toolbarColorCount = o.optInt("toolbar_color_count", 5).coerceIn(1, 7),
                 toolbarLayout = toolbarLayout(o.optJSONObject("toolbar_layout")),
+                canvasToolbarLayout = toolbarLayout(
+                    o.optJSONObject("canvas_toolbar_layout"),
+                    ToolbarLayout.CANVAS_ITEMS,
+                    ToolbarLayout.CANVAS_DEFAULT,
+                ),
                 activeColor = o.optInt("active_color", 0).coerceIn(0, 6),
                 recentColors = rgbaList(o.optJSONArray("recent_colors")).take(24),
                 browseRoot = o.optString("browse_root", "").ifEmpty { null },
@@ -300,9 +308,13 @@ data class Settings(
             return JSONObject().put("sections", secArr)
         }
 
-        private fun toolbarLayout(o: JSONObject?): ToolbarLayout {
-            if (o == null) return ToolbarLayout.DEFAULT
-            val secArr = o.optJSONArray("sections") ?: return ToolbarLayout.DEFAULT
+        private fun toolbarLayout(
+            o: JSONObject?,
+            among: Set<com.xnotes.core.tools.ToolbarItem> = ToolbarLayout.NOTE_ITEMS,
+            fallback: ToolbarLayout = ToolbarLayout.DEFAULT,
+        ): ToolbarLayout {
+            if (o == null) return fallback
+            val secArr = o.optJSONArray("sections") ?: return fallback
             val raw = ArrayList<List<Pair<String, Boolean>>>()
             for (i in 0 until secArr.length()) {
                 val entryArr = secArr.optJSONArray(i) ?: continue
@@ -313,7 +325,7 @@ data class Settings(
                 }
                 raw.add(entries)
             }
-            return ToolbarLayout.fromRaw(raw)
+            return ToolbarLayout.fromRaw(raw, among, fallback)
         }
     }
 }

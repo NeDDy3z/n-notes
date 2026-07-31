@@ -108,6 +108,8 @@ object XnotesIcons {
     val page = icon(rect(3.0, 3.0, 18.0, 18.0), "M12 8v8", "M8 12h8")
     // The infinite canvas: a ruled field running past its own edges.
     val canvas = icon(rect(3.0, 3.0, 18.0, 18.0), "M3 9h18", "M3 15h18", "M9 3v18", "M15 3v18")
+    // The overview map: a frame with the viewport's own smaller frame inside it.
+    val map = icon(rect(3.0, 3.0, 18.0, 18.0), rect(12.0, 12.0, 7.0, 6.0))
     val prev = icon("M15 18l-6-6 6-6")
     val next = icon("M9 18l6-6-6-6")
     val file = icon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6")

@@ -116,7 +116,10 @@ fun PreferencesPane(
     LaunchedEffect(editor.prefsVersion) { prefs = editor.preferences }
 
     val scrollState = rememberScrollState()
-    val layout = editor.toolbarLayout
+    // Which bar the toolbar section is arranging. The two are separate layouts, so the drag state
+    // below always belongs to whichever is on screen.
+    var canvasTab by remember { mutableStateOf(false) }
+    val layout = if (canvasTab) editor.canvasToolbarLayout else editor.toolbarLayout
     // Toolbar drag state, hoisted here so the floating "ghost" chip can be drawn at the pane
     // root (above and outside the scroll, so it is never clipped). Bounds are plain maps read
     // only at drag time; observable state is just the dragged item, finger, and drop slot.
@@ -133,11 +136,28 @@ fun PreferencesPane(
     var sectionDropTarget by remember { mutableStateOf<Int?>(null) }
     var paneTopLeft by remember { mutableStateOf(Offset.Zero) }
     var viewport by remember { mutableStateOf(Rect.Zero) }
+    fun editedLayout(): ToolbarLayout = if (canvasTab) editor.canvasToolbarLayout else editor.toolbarLayout
+    fun applyEdited(next: ToolbarLayout) {
+        if (canvasTab) editor.applyCanvasToolbarLayout(next) else editor.applyToolbarLayout(next)
+    }
     fun retarget() {
-        dropTarget = toolbarDropTarget(editor.toolbarLayout, dragFinger, chipBounds, sectionBounds)
+        dropTarget = toolbarDropTarget(editedLayout(), dragFinger, chipBounds, sectionBounds)
     }
     fun retargetSection() {
-        sectionDropTarget = toolbarSectionDropTarget(editor.toolbarLayout, dragFinger, sectionBounds)
+        sectionDropTarget = toolbarSectionDropTarget(editedLayout(), dragFinger, sectionBounds)
+    }
+    fun showTab(canvas: Boolean) {
+        if (canvasTab == canvas) return
+        canvasTab = canvas
+        // The bounds maps are keyed by item and the two bars share most items, so stale entries
+        // from the other tab would aim a drop at a chip that is no longer there.
+        chipBounds.clear()
+        sectionBounds.clear()
+        sectionGrabBounds.clear()
+        dragItem = null
+        dragSection = null
+        dropTarget = null
+        sectionDropTarget = null
     }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { paneTopLeft = it.boundsInRoot().topLeft }) {
@@ -350,11 +370,8 @@ fun PreferencesPane(
             }
 
             HorizontalDivider(color = palette.border.toComposeColor())
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SectionTitle("Toolbar")
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { editor.applyToolbarLayout(ToolbarLayout.DEFAULT) }) { Text("Reset", fontSize = 13.sp) }
-            }
+            SectionTitle("Toolbar")
+            // Above the tabs because it governs both bars: the swatch count is one setting.
             FieldLabel("Colours on the toolbar  ${editor.toolbarColorCount}")
             Slider(
                 value = editor.toolbarColorCount.toFloat(),
@@ -363,6 +380,19 @@ fun PreferencesPane(
                 steps = 5,
                 modifier = Modifier.width(280.dp),
             )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Chip("xnote", selected = !canvasTab) { showTab(false) }
+                Chip("xcanvas", selected = canvasTab) { showTab(true) }
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = {
+                        applyEdited(if (canvasTab) ToolbarLayout.CANVAS_DEFAULT else ToolbarLayout.DEFAULT)
+                    },
+                ) { Text("Reset", fontSize = 13.sp) }
+            }
             Text(
                 "Tap a tool to show or hide it. Long-press to drag it within or across sections. Long-press a section's top to move the whole section.",
                 color = palette.textDim.toComposeColor(),
@@ -377,9 +407,9 @@ fun PreferencesPane(
                 chipBounds = chipBounds,
                 sectionBounds = sectionBounds,
                 sectionGrabBounds = sectionGrabBounds,
-                onToggle = { s, i -> editor.applyToolbarLayout(editor.toolbarLayout.toggleVisible(s, i)) },
-                onDelete = { s -> editor.applyToolbarLayout(editor.toolbarLayout.removeSection(s)) },
-                onAdd = { editor.applyToolbarLayout(editor.toolbarLayout.addSection()) },
+                onToggle = { s, i -> applyEdited(editedLayout().toggleVisible(s, i)) },
+                onDelete = { s -> applyEdited(editedLayout().removeSection(s)) },
+                onAdd = { applyEdited(editedLayout().addSection()) },
                 onDragStart = { item, local ->
                     dragItem = item
                     dragGrab = local
@@ -391,11 +421,11 @@ fun PreferencesPane(
                     val target = dropTarget
                     val moving = dragItem
                     if (target != null && moving != null) {
-                        val cur = editor.toolbarLayout
+                        val cur = editedLayout()
                         val fSec = cur.sections.indexOfFirst { s -> s.entries.any { it.item == moving } }
                         val fIdx = if (fSec >= 0) cur.sections[fSec].entries.indexOfFirst { it.item == moving } else -1
                         if (fSec >= 0 && fIdx >= 0) {
-                            editor.applyToolbarLayout(cur.moveItem(fSec, fIdx, target.first, target.second))
+                            applyEdited(cur.moveItem(fSec, fIdx, target.first, target.second))
                         }
                     }
                     dragItem = null
@@ -418,9 +448,9 @@ fun PreferencesPane(
                     val from = dragSection
                     val insertAt = sectionDropTarget
                     if (from != null && insertAt != null) {
-                        val cur = editor.toolbarLayout
+                        val cur = editedLayout()
                         val to = (if (insertAt > from) insertAt - 1 else insertAt).coerceIn(0, cur.sections.lastIndex)
-                        if (to != from) editor.applyToolbarLayout(cur.moveSection(from, to))
+                        if (to != from) applyEdited(cur.moveSection(from, to))
                     }
                     dragSection = null
                     sectionDropTarget = null
@@ -441,7 +471,8 @@ fun PreferencesPane(
         if (ghostChip != null) {
             Box(Modifier.offset { IntOffset(gx, gy) }) { ToolbarDragGhost(ghostChip) }
         } else if (ghostSecIdx != null) {
-            val sectionG = editor.toolbarLayout.sections.getOrNull(ghostSecIdx)
+            val sectionG = (if (canvasTab) editor.canvasToolbarLayout else editor.toolbarLayout)
+                .sections.getOrNull(ghostSecIdx)
             val widthG = sectionBounds[ghostSecIdx]?.width
             if (sectionG != null && widthG != null) {
                 Box(Modifier.offset { IntOffset(gx, gy) }) { SectionCardGhost(sectionG, widthG) }

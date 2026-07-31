@@ -489,6 +489,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     var toolbarColors by mutableStateOf(InkPalette.presets)
     var activeColorIndex by mutableStateOf(0)
     var recentColors by mutableStateOf<List<Rgba>>(emptyList())
+    var toolbarColorCount by mutableStateOf(5)
+
+    /** How this bar is arranged, handed over by the host, which owns the settings file. */
+    var toolbarLayout by mutableStateOf(com.xnotes.core.tools.ToolbarLayout.CANVAS_DEFAULT)
 
     /** Fired when a tool's style changed here, so the host can persist it. */
     var onToolStyleChanged: (() -> Unit)? = null

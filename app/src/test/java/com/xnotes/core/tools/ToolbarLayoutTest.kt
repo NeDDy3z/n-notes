@@ -36,8 +36,8 @@ class ToolbarLayoutTest {
 
     @Test fun defaultContainsEveryItemOnce() {
         val items = ToolbarLayout.DEFAULT.items()
-        assertEquals(ToolbarItem.entries.toSet(), items.toSet())
-        assertEquals(ToolbarItem.entries.size, items.size)
+        assertEquals(ToolbarLayout.NOTE_ITEMS, items.toSet())
+        assertEquals(ToolbarLayout.NOTE_ITEMS.size, items.size)
     }
 
     @Test fun defaultRoundTripsThroughRaw() {
@@ -53,8 +53,8 @@ class ToolbarLayoutTest {
         val raw = ToolbarLayout.DEFAULT.toRaw().toMutableList()
         raw[0] = listOf("frobnicate" to true) + raw[0]
         val back = ToolbarLayout.fromRaw(raw)
-        assertEquals(ToolbarItem.entries.size, back.items().size)
-        assertEquals(ToolbarItem.entries.toSet(), back.items().toSet())
+        assertEquals(ToolbarLayout.NOTE_ITEMS.size, back.items().size)
+        assertEquals(ToolbarLayout.NOTE_ITEMS, back.items().toSet())
     }
 
     @Test fun duplicateIdsKeepFirst() {
@@ -68,7 +68,7 @@ class ToolbarLayoutTest {
         val raw = ToolbarLayout.DEFAULT.toRaw()
             .map { s -> s.filterNot { it.first == ToolbarItem.PRESENT.id || it.first == ToolbarItem.STYLES.id } }
         val back = ToolbarLayout.fromRaw(raw)
-        assertEquals(ToolbarItem.entries.toSet(), back.items().toSet())
+        assertEquals(ToolbarLayout.NOTE_ITEMS, back.items().toSet())
         val last = back.sections.last().entries
         assertTrue(last.any { it.item == ToolbarItem.PRESENT && it.visible })
         assertTrue(last.any { it.item == ToolbarItem.STYLES && it.visible })
@@ -100,7 +100,7 @@ class ToolbarLayoutTest {
             .map { s -> s.filterNot { it.first == ToolbarItem.TEXT_BOX.id || it.first == ToolbarItem.TEXT.id } }
             .filter { it.isNotEmpty() }
         val back = ToolbarLayout.fromRaw(raw)
-        assertEquals(ToolbarItem.entries.toSet(), back.items().toSet())
+        assertEquals(ToolbarLayout.NOTE_ITEMS, back.items().toSet())
         val last = back.sections.last().entries.map { it.item }
         // TEXT lands at the end first (enum order), then TEXT_BOX slots in after it.
         assertEquals(last.indexOf(ToolbarItem.TEXT) + 1, last.indexOf(ToolbarItem.TEXT_BOX))
@@ -174,5 +174,56 @@ class ToolbarLayoutTest {
             ),
         )
         assertEquals(2, l.visibleSections.size)
+    }
+
+    // --- the canvas bar, which is its own layout with its own items ---
+
+    @Test fun canvasDefaultHoldsEveryCanvasItemOnce() {
+        val items = ToolbarLayout.CANVAS_DEFAULT.items()
+        assertEquals(ToolbarLayout.CANVAS_ITEMS, items.toSet())
+        assertEquals(ToolbarLayout.CANVAS_ITEMS.size, items.size)
+    }
+
+    @Test fun theTwoBarsDoNotShareTheirOwnItems() {
+        assertTrue(ToolbarItem.WAYPOINTS !in ToolbarLayout.NOTE_ITEMS)
+        assertTrue(ToolbarItem.MINIMAP !in ToolbarLayout.NOTE_ITEMS)
+        assertTrue(ToolbarItem.PAGE_MENU !in ToolbarLayout.CANVAS_ITEMS)
+        assertTrue(ToolbarItem.TEXT !in ToolbarLayout.CANVAS_ITEMS)
+    }
+
+    @Test fun theCanvasDefaultRoundTripsThroughRaw() {
+        assertEquals(
+            ToolbarLayout.CANVAS_DEFAULT,
+            ToolbarLayout.fromRaw(
+                ToolbarLayout.CANVAS_DEFAULT.toRaw(),
+                ToolbarLayout.CANVAS_ITEMS,
+                ToolbarLayout.CANVAS_DEFAULT,
+            ),
+        )
+    }
+
+    /** A stored paged layout handed to the canvas must not put page tools on it. */
+    @Test fun aCanvasLayoutDropsWhatBelongsToTheOtherBar() {
+        val back = ToolbarLayout.fromRaw(
+            ToolbarLayout.DEFAULT.toRaw(),
+            ToolbarLayout.CANVAS_ITEMS,
+            ToolbarLayout.CANVAS_DEFAULT,
+        )
+        assertEquals(ToolbarLayout.CANVAS_ITEMS, back.items().toSet())
+    }
+
+    @Test fun aCanvasLayoutStoredBeforeAnItemExistedGrowsIt() {
+        val raw = ToolbarLayout.CANVAS_DEFAULT.toRaw()
+            .map { s -> s.filterNot { it.first == ToolbarItem.MINIMAP.id } }
+        val back = ToolbarLayout.fromRaw(raw, ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
+        assertEquals(ToolbarLayout.CANVAS_ITEMS, back.items().toSet())
+        assertTrue(back.sections.last().entries.any { it.item == ToolbarItem.MINIMAP && it.visible })
+    }
+
+    @Test fun anEmptyCanvasLayoutFallsBackToTheCanvasDefault() {
+        assertEquals(
+            ToolbarLayout.CANVAS_DEFAULT,
+            ToolbarLayout.fromRaw(emptyList(), ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT),
+        )
     }
 }
