@@ -320,7 +320,7 @@ private fun ViewButton(editor: Editor) {
 }
 
 @Composable
-private fun ToolbarIcon(
+internal fun ToolbarIcon(
     icon: ImageVector,
     contentDescription: String,
     active: Boolean = false,
@@ -352,7 +352,7 @@ private fun ToolbarIcon(
 }
 
 @Composable
-private fun Swatch(color: androidx.compose.ui.graphics.Color, active: Boolean, onClick: () -> Unit) {
+internal fun Swatch(color: androidx.compose.ui.graphics.Color, active: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .padding(horizontal = 3.dp)
@@ -367,7 +367,7 @@ private fun Swatch(color: androidx.compose.ui.graphics.Color, active: Boolean, o
 }
 
 @Composable
-private fun Label(text: String, modifier: Modifier = Modifier) {
+internal fun Label(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         color = LocalPalette.current.textDim.toComposeColor(),
@@ -380,7 +380,7 @@ private fun Label(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Separator() {
+internal fun Separator() {
     Box(
         Modifier
             .padding(horizontal = 4.dp)

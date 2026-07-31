@@ -311,7 +311,7 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun StyleCaption(text: String) {
+internal fun StyleCaption(text: String) {
     Text(
         text,
         color = LocalPalette.current.textDim.toComposeColor(),
@@ -655,7 +655,7 @@ fun ColorSwitcherPopup(editor: Editor, index: Int, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun PopupTitle(text: String) {
+internal fun PopupTitle(text: String) {
     Text(
         text,
         color = LocalPalette.current.accent.toComposeColor(),
@@ -675,7 +675,7 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 @Composable
-private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, enabled: Boolean = true, onChange: (Float) -> Unit) {
+internal fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, enabled: Boolean = true, onChange: (Float) -> Unit) {
     Column {
         Text(
             "$label  ${"%.0f".format(value)}",

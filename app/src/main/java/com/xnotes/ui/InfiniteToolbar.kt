@@ -1,44 +1,39 @@
 package com.xnotes.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.Tool
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 
-/** The tools the infinite canvas offers; text, screenshot and the page tools have no meaning here. */
-private val CANVAS_TOOLS = listOf(
-    Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER,
-)
-
-private fun iconFor(tool: Tool) = when (tool) {
-    Tool.PAN -> XnotesIcons.pan
-    Tool.HIGHLIGHTER -> XnotesIcons.shapeRect
-    Tool.ERASER -> XnotesIcons.eraser
-    else -> XnotesIcons.edit
-}
+/** The tools the infinite canvas offers. Text, screenshot and the page tools mean nothing here. */
+private val CANVAS_TOOLS =
+    listOf(Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER)
 
 /**
- * The infinite canvas's chrome. Deliberately a separate bar from the paged [Toolbar]: most of that
- * one addresses pages, viewing modes, pagination and text, none of which mean anything here, and
- * bolting a document-type branch onto every one of its rows would be worse than a second bar.
+ * The infinite canvas's chrome. A separate bar from the paged [Toolbar] because most of that one
+ * addresses pages, viewing modes, pagination and text, none of which exist here; but it is built
+ * from the same pieces, so the two look like one app rather than two.
  */
 @Composable
 fun InfiniteToolbar(
@@ -46,86 +41,56 @@ fun InfiniteToolbar(
     onOpenBackstage: () -> Unit,
 ) {
     val palette = LocalPalette.current
+    // The stroke tools use the same designed drawables the paged toolbar does, so a pen looks like
+    // a pen on either canvas rather than like a generic glyph.
+    val toolIcons: Map<Tool, ImageVector> = mapOf(
+        Tool.PEN to ImageVector.vectorResource(R.drawable.ic_stroke_regular),
+        Tool.DASHED to ImageVector.vectorResource(R.drawable.ic_stroke_dashed),
+        Tool.CALLIGRAPHY to ImageVector.vectorResource(R.drawable.ic_stroke_calligraphy),
+        Tool.SPEED to ImageVector.vectorResource(R.drawable.ic_stroke_speed),
+        Tool.TAPER to ImageVector.vectorResource(R.drawable.ic_stroke_taper),
+        Tool.HIGHLIGHTER to ImageVector.vectorResource(R.drawable.ic_stroke_highlighter),
+        Tool.PAN to XnotesIcons.pan,
+    )
+    var stylesOpen by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
             .background(palette.panel.toComposeColor())
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onOpenBackstage) {
-            Icon(
-                XnotesIcons.home,
-                contentDescription = "Home",
-                modifier = Modifier.size(22.dp),
-                tint = palette.text.toComposeColor(),
-            )
+        ToolbarIcon(XnotesIcons.prev, "Home") { onOpenBackstage() }
+        Label(editor.title, Modifier.padding(end = 4.dp))
+        Separator()
+
+        for (tool in CANVAS_TOOLS) {
+            val icon = toolIcons[tool] ?: continue
+            ToolbarIcon(icon, tool.name, active = editor.tool == tool) { editor.armTool(tool) }
         }
-        for (t in CANVAS_TOOLS) {
-            val active = editor.tool == t
-            IconButton(onClick = { editor.armTool(t) }) {
-                Icon(
-                    iconFor(t),
-                    contentDescription = t.id,
-                    modifier = Modifier.size(22.dp),
-                    tint = (if (active) palette.accent else palette.text).toComposeColor(),
-                )
-            }
+        Separator()
+
+        for (color in InkPalette.presets) {
+            Swatch(color.toComposeColor(), active = editor.inkColor == color) { editor.armInkColor(color) }
         }
-        for (c in InkPalette.presets) {
-            val active = editor.inkColor == c
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 3.dp)
-                    .size(if (active) 20.dp else 16.dp)
-                    .background(c.toComposeColor())
-                    .clickable { editor.armInkColor(c) },
-            )
+        Separator()
+
+        Box {
+            ToolbarIcon(XnotesIcons.sliders, "Styles", active = stylesOpen) { stylesOpen = true }
+            if (stylesOpen) CanvasStylesPopup(editor) { stylesOpen = false }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            editor.renderFailure?.let {
-                Text(
-                    "GL unavailable",
-                    color = palette.accent.toComposeColor(),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                )
-            }
-            Text(
-                "${editor.zoomPercent}%",
-                color = palette.textDim.toComposeColor(),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-            IconButton(onClick = { editor.zoomToFit() }) {
-                Icon(
-                    XnotesIcons.fit,
-                    contentDescription = "Fit all",
-                    modifier = Modifier.size(22.dp),
-                    tint = palette.text.toComposeColor(),
-                )
-            }
-            IconButton(onClick = { editor.undo() }, enabled = editor.canUndo) {
-                Icon(
-                    XnotesIcons.undo,
-                    contentDescription = "Undo",
-                    modifier = Modifier.size(22.dp),
-                    tint = (if (editor.canUndo) palette.text else palette.textDim).toComposeColor(),
-                )
-            }
-            IconButton(onClick = { editor.redo() }, enabled = editor.canRedo) {
-                Icon(
-                    XnotesIcons.redo,
-                    contentDescription = "Redo",
-                    modifier = Modifier.size(22.dp),
-                    tint = (if (editor.canRedo) palette.text else palette.textDim).toComposeColor(),
-                )
-            }
+        ToolbarIcon(XnotesIcons.fit, "Fit all") { editor.zoomToFit() }
+        Label("${editor.zoomPercent}%")
+        ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
+        ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
+
+        editor.renderFailure?.let {
+            Separator()
+            Label("GL unavailable")
         }
+        Spacer(Modifier.padding(horizontal = 2.dp))
     }
 }
