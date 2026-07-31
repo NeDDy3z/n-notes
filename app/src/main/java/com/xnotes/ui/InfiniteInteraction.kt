@@ -5,6 +5,8 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.infinite.CanvasViewport
+import com.xnotes.core.infinite.EraseSession
+import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.StrokeSimplify
@@ -15,7 +17,7 @@ import com.xnotes.canvas.StylusButtonLatch
 import kotlin.math.exp
 
 /** What the current gesture is doing. */
-enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW }
+enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE }
 
 /**
  * Gestures on the infinite canvas.
@@ -42,6 +44,12 @@ class InfiniteInteraction(
     private val onWetStroke: (Stroke?) -> Unit = {},
     /** Pen up on a finished stroke: add it to the document and push the undo command. */
     private val onCommitStroke: (Stroke) -> Unit = {},
+    /** Begin an eraser drag; the host owns the document and the undo stack. */
+    private val onEraseBegin: () -> EraseSession? = { null },
+    /** The eraser drag ended: push its single undo command. */
+    private val onEraseEnd: (EraseSession) -> Unit = {},
+    /** Where the eraser cursor sits in viewport pixels, and how wide, or null to hide it. */
+    private val onEraserCursor: (Pt?, Double) -> Unit = { _, _ -> },
     /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
     private val devicePxPerDp: () -> Double = { 1.0 },
 ) {
@@ -58,6 +66,8 @@ class InfiniteInteraction(
     var penButtonTool: Tool? = Tool.ERASER
 
     private val stylusButtons = StylusButtonLatch()
+
+    private var eraseSession: EraseSession? = null
 
     var mode = CanvasPointerMode.IDLE
         private set
@@ -136,15 +146,22 @@ class InfiniteInteraction(
             else -> tool
         }
 
-        if (effective.isStroke) beginDraw(vx, vy, effective, e) else beginPan(vx, vy)
+        when {
+            effective.isStroke -> beginDraw(vx, vy, effective, e)
+            effective == Tool.ERASER -> beginErase(vx, vy)
+            else -> beginPan(vx, vy)
+        }
     }
 
     private fun handlePointerDown(e: MotionEvent) {
         // A stylus stroke ignores an incidental palm or second finger; a finger stroke yields to a
         // pinch, since two fingers can only mean a zoom.
         if (mode == CanvasPointerMode.DRAW && drawingIsStylus) return
+        if (mode == CanvasPointerMode.ERASE && drawingIsStylus) return
         if (e.pointerCount >= 2) {
             if (mode == CanvasPointerMode.DRAW) abandonStroke()
+            // A finger erase yields to a pinch: commit what it already removed rather than lose it.
+            if (mode == CanvasPointerMode.ERASE) endErase()
             beginPinch(e)
         }
     }
@@ -154,6 +171,7 @@ class InfiniteInteraction(
             CanvasPointerMode.PAN -> extendPan(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.PINCH -> updatePinch(e)
             CanvasPointerMode.DRAW -> extendDraw(e)
+            CanvasPointerMode.ERASE -> extendErase(e)
             CanvasPointerMode.IDLE -> Unit
         }
     }
@@ -173,6 +191,7 @@ class InfiniteInteraction(
     private fun handleUp(e: MotionEvent) {
         val wasMoving = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
         if (mode == CanvasPointerMode.DRAW) endDraw(e)
+        if (mode == CanvasPointerMode.ERASE) endErase()
         mode = CanvasPointerMode.IDLE
         setInteractive(false, true)
         if (wasMoving) startFling(panVel)
@@ -182,6 +201,7 @@ class InfiniteInteraction(
 
     private fun abortGesture() {
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
+        if (mode == CanvasPointerMode.ERASE) endErase()
         mode = CanvasPointerMode.IDLE
         setInteractive(false, true)
         stopFling()
@@ -283,6 +303,49 @@ class InfiniteInteraction(
         stroke.finished = true
         simplifyForCommit(stroke)
         onCommitStroke(stroke)
+    }
+
+    // --- erasing ---
+
+    /** Eraser radius in content pixels: the tool's width, or a constant on-screen size when off. */
+    fun eraserRadius(): Double {
+        val cfg = configFor(Tool.ERASER)
+        return if (cfg.scale) cfg.baseWidth else cfg.baseWidth / viewport.zoom
+    }
+
+    private fun areaErase(): Boolean = configFor(Tool.ERASER).eraseMode == EraseMode.AREA
+
+    private fun beginErase(vx: Double, vy: Double) {
+        eraseSession = onEraseBegin() ?: return
+        mode = CanvasPointerMode.ERASE
+        eraseAt(vx, vy)
+    }
+
+    private fun extendErase(e: MotionEvent) {
+        val idx = e.findPointerIndex(drawingPointerId)
+        if (idx < 0) return
+        // The historical points matter here as much as when drawing: a fast sweep that only sampled
+        // the newest event would skip over strokes between one frame and the next.
+        for (h in 0 until e.historySize) {
+            eraseAt(e.getHistoricalX(idx, h).toDouble(), e.getHistoricalY(idx, h).toDouble())
+        }
+        eraseAt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
+    }
+
+    private fun eraseAt(vx: Double, vy: Double) {
+        val session = eraseSession ?: return
+        onEraserCursor(Pt(vx, vy), eraserRadius() * viewport.zoom)
+        val content = viewport.viewportToContent(Pt(vx, vy))
+        session.erase(content.x, content.y, eraserRadius(), areaErase())
+        requestRender()
+    }
+
+    private fun endErase() {
+        val session = eraseSession ?: return
+        eraseSession = null
+        onEraserCursor(null, 0.0)
+        onEraseEnd(session)
+        requestRender()
     }
 
     /** Drop the wet stroke without committing it, when a second finger turns the gesture into a zoom. */

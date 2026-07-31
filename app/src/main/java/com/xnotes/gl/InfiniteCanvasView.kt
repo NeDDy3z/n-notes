@@ -99,6 +99,16 @@ class InfiniteCanvasView @JvmOverloads constructor(
         isFocusableInTouchMode = true
     }
 
+    private var cursorAt: com.xnotes.core.geometry.Pt? = null
+    private var cursorRadius = 0.0
+
+    /** Show the eraser cursor at [at] in viewport pixels with [radiusPx], or hide it when null. */
+    fun setEraserCursor(at: com.xnotes.core.geometry.Pt?, radiusPx: Double) {
+        cursorAt = at
+        cursorRadius = radiusPx
+        publish()
+    }
+
     /** Publish calls so far; the renderer differences them per frame for the debug readout. */
     private var publishRequests = 0
 
@@ -124,6 +134,10 @@ class InfiniteCanvasView @JvmOverloads constructor(
             heightPx = viewport.heightPx,
             background = background,
             paper = paperColor,
+            cursorX = cursorAt?.x ?: 0.0,
+            cursorY = cursorAt?.y ?: 0.0,
+            cursorRadius = cursorRadius,
+            cursorVisible = cursorAt != null && cursorRadius > 0.0,
         )
         glRenderer.publishRequests = publishRequests
         // In continuous mode the render thread is already drawing every refresh; otherwise ask for

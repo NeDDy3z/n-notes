@@ -22,6 +22,11 @@ data class FrameState(
     val heightPx: Int,
     val background: CanvasBackground,
     val paper: Rgba,
+    /** Eraser cursor centre in device pixels, or null when the eraser is not down. */
+    val cursorX: Double = 0.0,
+    val cursorY: Double = 0.0,
+    val cursorRadius: Double = 0.0,
+    val cursorVisible: Boolean = false,
 ) {
     companion object {
         val EMPTY = FrameState(1.0, 0.0, 0.0, 0, 0, CanvasBackground(), Rgba(255, 255, 255, 255))
@@ -75,6 +80,7 @@ class GlRenderer : GLSurfaceView.Renderer {
         private set
 
     private var background: BackgroundShader? = null
+    private var cursor: CursorShader? = null
 
     /** What the last frame did, swapped wholesale so the main thread never sees it half written. */
     @Volatile
@@ -124,8 +130,10 @@ class GlRenderer : GLSurfaceView.Renderer {
         frameCount = 0
         frameHead = 0
         Log.i(TAG, "context $contextGen on $rendererName, $glVersionName, ${msaaSamples()}x MSAA")
+        cursor = null
         try {
             background = BackgroundShader(contextGen)
+            cursor = CursorShader(contextGen)
         } catch (e: GlShaderException) {
             failure = e.message
             Log.e(TAG, "background shader unavailable", e)
@@ -156,6 +164,9 @@ class GlRenderer : GLSurfaceView.Renderer {
         }
 
         scene?.drawContent(f)
+        if (f.cursorVisible) {
+            cursor?.draw(f.cursorX, f.cursorY, f.cursorRadius, cursorColor(f.paper), f.widthPx, f.heightPx)
+        }
         sampleFrame(started, f)
     }
 
@@ -240,6 +251,12 @@ class GlRenderer : GLSurfaceView.Renderer {
             glVersion = glVersionName,
         )
         stats = scene?.describe(base) ?: base
+    }
+
+    /** A ring that reads against the paper it sits on, dark on light and light on dark. */
+    private fun cursorColor(paper: Rgba): Rgba {
+        val luminance = (paper.r * 0.299 + paper.g * 0.587 + paper.b * 0.114) / 255.0
+        return if (luminance > 0.5) Rgba(0, 0, 0, 150) else Rgba(255, 255, 255, 170)
     }
 
     companion object {

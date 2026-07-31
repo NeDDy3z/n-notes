@@ -58,6 +58,12 @@ class InfiniteDocument(
         /** [item]'s geometry changed in place (moved, resized, erased into fragments, restyled). */
         fun onItemChanged(item: CanvasItem) {}
 
+        /**
+         * The z order changed. Fired once per structural edit, after the per-item callbacks, so a
+         * change touching many items publishes one ordering rather than one per item.
+         */
+        fun onOrderChanged() {}
+
         /** The whole list was replaced; rebuild everything. */
         fun onReset() {}
     }
@@ -94,6 +100,7 @@ class InfiniteDocument(
         index.insert(item)
         invalidateDerived()
         listener?.onItemAdded(item)
+        listener?.onOrderChanged()
     }
 
     /** Insert at a z position, clamped into range. Used by undo to restore an exact slot. */
@@ -102,6 +109,7 @@ class InfiniteDocument(
         index.insert(item)
         invalidateDerived()
         listener?.onItemAdded(item)
+        listener?.onOrderChanged()
     }
 
     fun addAll(newItems: List<CanvasItem>) {
@@ -112,6 +120,7 @@ class InfiniteDocument(
             listener?.onItemAdded(item)
         }
         invalidateDerived()
+        listener?.onOrderChanged()
     }
 
     fun remove(item: CanvasItem): Boolean {
@@ -119,6 +128,7 @@ class InfiniteDocument(
         index.remove(item)
         invalidateDerived()
         listener?.onItemRemoved(item)
+        listener?.onOrderChanged()
         return true
     }
 
@@ -130,7 +140,10 @@ class InfiniteDocument(
             listener?.onItemRemoved(item)
             any = true
         }
-        if (any) invalidateDerived()
+        if (any) {
+            invalidateDerived()
+            listener?.onOrderChanged()
+        }
     }
 
     /**
@@ -148,6 +161,49 @@ class InfiniteDocument(
     }
 
     fun clear() = replaceAll(emptyList())
+
+    /**
+     * Splice [replacements] into [item]'s own z slot, which is what the area eraser needs: a stroke
+     * it cuts becomes the fragments that survived, and they must sit exactly where the original was
+     * rather than on top of everything. Returns the slot they landed in, or -1 when [item] is
+     * absent. An empty [replacements] simply removes the item.
+     */
+    fun replaceItem(item: CanvasItem, replacements: List<CanvasItem>): Int {
+        val at = indexOfRef(item)
+        if (at < 0) return -1
+        backing.removeAt(at)
+        index.remove(item)
+        listener?.onItemRemoved(item)
+        for (i in replacements.indices) {
+            val fragment = replacements[i]
+            backing.add(at + i, fragment)
+            index.insert(fragment)
+            listener?.onItemAdded(fragment)
+        }
+        invalidateDerived()
+        listener?.onOrderChanged()
+        return at
+    }
+
+    /**
+     * The inverse of [replaceItem]: drop [replacements] and put [item] back at [at]. Used by undo,
+     * which needs the recorded slot because a fully erased item leaves no fragment to find it by.
+     */
+    fun restoreItem(item: CanvasItem, replacements: List<CanvasItem>, at: Int) {
+        for (fragment in replacements) {
+            if (!backing.removeRef(fragment)) continue
+            index.remove(fragment)
+            listener?.onItemRemoved(fragment)
+        }
+        if (!containsRef(item)) {
+            val slot = at.coerceIn(0, backing.size)
+            backing.add(slot, item)
+            index.insert(item)
+            listener?.onItemAdded(item)
+        }
+        invalidateDerived()
+        listener?.onOrderChanged()
+    }
 
     fun containsRef(item: CanvasItem): Boolean = backing.any { it === item }
 
@@ -172,12 +228,16 @@ class InfiniteDocument(
 
     // --- queries ---
 
+    /** Items whose paint bounds meet the viewport, back to front. See [itemsIn]. */
+    fun visibleItems(rect: Rect): List<CanvasItem> = itemsIn(rect)
+
     /**
-     * Items whose paint bounds meet [rect], back to front. This is the per-frame cull: the index
-     * narrows the document to a candidate set, and the z sort puts them back in painter order,
-     * dropping the duplicates a multi-cell item produced along the way.
+     * Items whose paint bounds meet [rect], back to front. This is the per-frame cull and the
+     * eraser's candidate query both: the index narrows the document to a candidate set, and the z
+     * sort puts them back in painter order, dropping the duplicates a multi-cell item produced
+     * along the way.
      */
-    fun visibleItems(rect: Rect): List<CanvasItem> {
+    fun itemsIn(rect: Rect): List<CanvasItem> {
         val raw = ArrayList<CanvasItem>()
         index.queryRaw(rect, raw)
         if (raw.isEmpty()) return raw

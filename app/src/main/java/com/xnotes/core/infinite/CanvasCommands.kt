@@ -85,6 +85,36 @@ class ReplaceCanvasItems(
 }
 
 /**
+ * One area-erase drag: each item the eraser cut, swapped for the fragments that survived it.
+ *
+ * The paged canvas records this as a before and after snapshot of the whole page's item list, which
+ * an infinite canvas cannot afford: the "page" is the entire document, so a single erase gesture
+ * would copy every reference the canvas holds, on the main thread, mid-drag. Recording only what
+ * was touched keeps the cost proportional to the erasing rather than to the document.
+ *
+ * A fragment can be cut again later in the same drag, so the entries are coalesced as the drag
+ * runs: each one holds the item as it was when the drag began and the fragments left when it
+ * ended, never the states in between. Each also carries the slot the original occupied, because a
+ * fully erased item leaves no fragment to find its way back by.
+ */
+class SplitCanvasItems(
+    private val doc: InfiniteDocument,
+    private val splits: List<Split>,
+) : Command {
+
+    class Split(val at: Int, val original: CanvasItem, val fragments: List<CanvasItem>)
+
+    override fun redo() {
+        for (split in splits) doc.replaceItem(split.original, split.fragments)
+    }
+
+    override fun undo() {
+        // Reverse order, so each recorded slot is read against the state it was captured in.
+        for (split in splits.asReversed()) doc.restoreItem(split.original, split.fragments, split.at)
+    }
+}
+
+/**
  * Run a paged geometry command against the canvas, telling the document which items moved so the
  * index re-files them and the renderer re-uploads their vertices. Wraps `MoveItems`,
  * `ResizeItem`, `TransformItems` and `RotateImage` without forking any of them.

@@ -27,8 +27,10 @@ import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 
 /** The tools the infinite canvas offers. Text, screenshot and the page tools mean nothing here. */
-private val CANVAS_TOOLS =
-    listOf(Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER)
+private val CANVAS_TOOLS = listOf(
+    Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER,
+    Tool.ERASER,
+)
 
 /**
  * The infinite canvas's chrome. A separate bar from the paged [Toolbar] because most of that one
@@ -51,8 +53,10 @@ fun InfiniteToolbar(
         Tool.TAPER to ImageVector.vectorResource(R.drawable.ic_stroke_taper),
         Tool.HIGHLIGHTER to ImageVector.vectorResource(R.drawable.ic_stroke_highlighter),
         Tool.PAN to XnotesIcons.pan,
+        Tool.ERASER to XnotesIcons.eraser,
     )
     var stylesOpen by remember { mutableStateOf(false) }
+    var eraserOpen by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -69,7 +73,13 @@ fun InfiniteToolbar(
 
         for (tool in CANVAS_TOOLS) {
             val icon = toolIcons[tool] ?: continue
-            ToolbarIcon(icon, tool.name, active = editor.tool == tool) { editor.armTool(tool) }
+            Box {
+                // Tapping the armed eraser again opens its settings, exactly as the paged bar does.
+                ToolbarIcon(icon, tool.name, active = editor.tool == tool) {
+                    if (tool == Tool.ERASER && editor.tool == tool) eraserOpen = true else editor.armTool(tool)
+                }
+                if (tool == Tool.ERASER && eraserOpen) CanvasEraserPopup(editor) { eraserOpen = false }
+            }
         }
         Separator()
 

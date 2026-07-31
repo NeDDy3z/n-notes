@@ -10,6 +10,7 @@ import com.xnotes.core.history.History
 import com.xnotes.core.infinite.AddCanvasItem
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.infinite.CanvasViewport
+import com.xnotes.core.infinite.EraseSession
 import com.xnotes.core.infinite.InfiniteDocument
 import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
@@ -57,6 +58,9 @@ class InfiniteEditor(context: Context) {
         configFor = { configFor(it) },
         onWetStroke = { publishWetStroke(it) },
         onCommitStroke = { commitStroke(it) },
+        onEraseBegin = { EraseSession(document) },
+        onEraseEnd = { commitErase(it) },
+        onEraserCursor = { at, radius -> view.setEraserCursor(at, radius) },
         devicePxPerDp = { devicePxPerDp },
     )
 
@@ -113,12 +117,15 @@ class InfiniteEditor(context: Context) {
     private val modelListener = object : InfiniteDocument.Listener {
         override fun onItemAdded(item: CanvasItem) {
             pushItem(item)
-            scene.setOrder(document.items)
-            view.publish()
         }
 
         override fun onItemRemoved(item: CanvasItem) {
             scene.remove(item)
+        }
+
+        override fun onOrderChanged() {
+            // Once per structural edit rather than once per item, so an eraser drag that cuts a
+            // dozen strokes publishes one ordering instead of a dozen.
             scene.setOrder(document.items)
             view.publish()
         }
@@ -207,6 +214,15 @@ class InfiniteEditor(context: Context) {
         }
         val meshed = ItemMesher.mesh(stroke) ?: return
         scene.setWet(meshed.mesh, meshed.color, meshed.pass, meshed.bounds)
+    }
+
+    /** Pen up on an eraser drag: the whole drag is one undoable edit, however much it cut. */
+    private fun commitErase(session: EraseSession) {
+        val command = session.buildCommand() ?: return
+        history.push(command)
+        markDirty()
+        refresh()
+        view.publish()
     }
 
     /** Pen up: the finished stroke joins the document, and the edit joins the undo stack. */
