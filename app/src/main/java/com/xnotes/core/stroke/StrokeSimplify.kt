@@ -49,10 +49,12 @@ object StrokeSimplify {
      *  on either side of it, plus one for the tangent's finite differences to land in. */
     const val DIR_REACH = 3.0
 
-    /** The direction-critical arc for a pen of [directionStrength]: the nib's confirm window when
-     *  its width follows its heading, and 0 for every pen whose width does not care. */
-    fun dirArcFor(directionStrength: Double): Double =
-        if (directionStrength > 0.0) StrokeEngine.DIR_CONFIRM_LEN else 0.0
+    /** The direction-critical arc for a pen of [directionStrength] drawn at [smoothScale]: the nib's
+     *  own confirm window when its width follows its heading, and 0 for every pen whose width does
+     *  not care. Reads the window from [StrokeEngine] rather than restating it, since a guard that
+     *  protected a different arc than the one being confirmed would protect the wrong samples. */
+    fun dirArcFor(directionStrength: Double, smoothScale: Double): Double =
+        if (directionStrength > 0.0) StrokeEngine.dirConfirmLen(smoothScale) else 0.0
 
     /**
      * The samples the ribbon actually needs. A sample survives when its position or its rendered

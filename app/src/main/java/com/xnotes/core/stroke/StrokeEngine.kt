@@ -56,14 +56,26 @@ object StrokeEngine {
     /** Calligraphy pen: the broad/thick face of the nib is only allowed in once the stroke has held
      *  that heading for this many content px of travel (see [confirmThickening] in [build]). Long
      *  enough to outvote a pen-down or lift-off jitter or a one/two-pixel wobble, short enough that a
-     *  real downstroke still swells almost at once. */
+     *  real downstroke still swells almost at once. Scaled by the stroke's draw zoom like the
+     *  smoothing lengths, so it is that much *hand* travel and not that much page. */
     const val DIR_CONFIRM_LEN = 8.0
 
     /** Calligraphy pen: a *finished* stroke whose whole arc is at most this many content px is a
      *  dot, and takes the nib's broad face outright — the thin face would leave a tap nearly
      *  invisible (a dot can never travel far enough to confirm a thick heading). Judged only once
-     *  the pen has lifted ([build]'s `finished`), so the live preview never opens thick. */
+     *  the pen has lifted ([build]'s `finished`), so the live preview never opens thick. Scaled with
+     *  [DIR_CONFIRM_LEN]: the dot rule is the escape hatch for a stroke too short to confirm, so the
+     *  two have to move together or there is a band that is neither. */
     const val DOT_MAX_LEN = 5.0
+
+    /** The arc constants above are hand gestures, so they are quoted at 100% zoom and scaled by the
+     *  stroke's [smoothScale] to the page. Without it a nib drawn at 4x had to be dragged four times
+     *  as far across the glass before it would thicken, since the page it was writing on was a
+     *  quarter the size. */
+    fun dirConfirmLen(smoothScale: Double): Double = DIR_CONFIRM_LEN * max(smoothScale, 0.0)
+
+    /** [DOT_MAX_LEN] at the stroke's draw zoom; see [dirConfirmLen]. */
+    fun dotMaxLen(smoothScale: Double): Double = DOT_MAX_LEN * max(smoothScale, 0.0)
 
     /** Calligraphy pen: the direction-y a dot is built at. Past the broad face's 1.0 on purpose,
      *  so a dot lands slightly bigger than the thickest line and reads as a deliberate mark. */
@@ -436,13 +448,13 @@ object StrokeEngine {
         val dirY = if (ds > 0.0) {
             var arc = 0.0
             for (i in 1 until n) arc += hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
-            if (finished && arc <= DOT_MAX_LEN) DoubleArray(n) { DOT_DIR_Y }
+            if (finished && arc <= dotMaxLen(smoothScale)) DoubleArray(n) { DOT_DIR_Y }
             else {
                 // Along the smoothed path, which is the one confirmThickening measures its window on.
                 val dirSteps = DoubleArray(n)
                 for (i in 1 until n) dirSteps[i] = hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
                 emaByArc(
-                    confirmThickening(ty, sx, sy, DIR_CONFIRM_LEN),
+                    confirmThickening(ty, sx, sy, dirConfirmLen(smoothScale)),
                     dirSteps,
                     DIR_SMOOTH_LEN * max(smoothScale, 0.0),
                 )

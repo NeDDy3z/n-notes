@@ -942,7 +942,7 @@ class InteractionController(
         val eps = (SIMPLIFY_EPS / state.zoom).coerceAtMost(SIMPLIFY_EPS)
         val slim = StrokeSimplify.simplify(
             stroke.samples, stroke.geometry().halfWidths, eps,
-            StrokeSimplify.dirArcFor(stroke.config.directionStrength),
+            StrokeSimplify.dirArcFor(stroke.config.directionStrength, stroke.smoothScale),
         )
         if (slim.size == stroke.samples.size) return
         stroke.samples.clear()

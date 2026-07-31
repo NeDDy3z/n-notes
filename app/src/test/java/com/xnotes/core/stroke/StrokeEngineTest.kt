@@ -94,7 +94,7 @@ class StrokeEngineTest {
             (1..160).map { Sample(48.0 + it * step, -48.0 + it * step, 1.0) }
         val drawn = StrokeEngine.build(pts, 6.0, false, 1.0, ds)
         val kept = StrokeSimplify.simplify(
-            pts, drawn.halfWidths, StrokeSimplify.LEGACY_EPS, StrokeSimplify.dirArcFor(ds),
+            pts, drawn.halfWidths, StrokeSimplify.LEGACY_EPS, StrokeSimplify.dirArcFor(ds, 1.0),
         )
         assertTrue("the reduction has to actually drop samples", kept.size < pts.size)
         val committed = StrokeEngine.build(kept, 6.0, false, 1.0, ds)
@@ -109,6 +109,32 @@ class StrokeEngineTest {
         assertEquals("every kept sample should have been matched", kept.size, j)
         // Exact but for the packed-float geometry: what is left is a few ulps of the stored width.
         assertEquals("nib half-width moved under reduction", 0.0, worst, 1e-5)
+    }
+
+    @Test fun theSameGestureAtAnyZoomIsAScaledCopy() {
+        // Drawing at 4x lays the same hand movement onto a quarter as much page, so the ink has to
+        // come out a quarter the size and otherwise identical. It did not: the nib's confirm window
+        // was quoted in page pixels, so at 4x the pen had to be dragged four times as far across the
+        // glass before it would thicken. Every arc constant now scales with the draw zoom, and this
+        // pins the whole width pipeline to it, confirm window and dot rule included.
+        val ds = 0.6
+        val k = 0.25
+        // A thin lead-in across the nib's edge, then a long broad downstroke.
+        val gesture = (0..14).map { Sample(it * 1.4, -it * 1.4, 1.0) } +
+            (1..30).map { Sample(19.6 + it * 1.4, -19.6 + it * 1.4, 1.0) }
+        val full = StrokeEngine.build(gesture, 6.0, false, 1.0, ds)
+        val zoomed = StrokeEngine.build(
+            gesture.map { Sample(it.x * k, it.y * k, it.pressure, it.t) },
+            6.0 * k, false, 1.0, ds, smoothScale = k,
+        )
+        assertEquals(full.pointCount, zoomed.pointCount)
+        for (i in 0 until full.pointCount) {
+            assertEquals("half-width at $i", full.hw(i) * k, zoomed.hw(i), 1e-6)
+            assertEquals("x at $i", full.cx(i) * k, zoomed.cx(i), 1e-6)
+            assertEquals("y at $i", full.cy(i) * k, zoomed.cy(i), 1e-6)
+        }
+        // And the stroke really does thicken, so the check is not passing on two thin ribbons.
+        assertTrue(full.halfWidths.max() > 1.8f * full.halfWidths.min())
     }
 
     // --- Width formula ---

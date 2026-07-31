@@ -32,10 +32,11 @@ class Stroke(
      *  exactly from the first sample to the last — the EMA low-pass otherwise pulls a 2-point
      *  stroke's far end to the midpoint, lagging it behind the stylus. */
     val straight: Boolean = false,
-    /** Scale on the ink low-pass lengths ([StrokeEngine.SMOOTH_LEN]), captured at pen-down as
-     *  1 ÷ zoom and capped at 1. The smoothing is then a fixed size on screen rather than on the
-     *  page, so writing small at high zoom follows the nib as closely as writing at 100% does.
-     *  1.0 = drawn at 100% zoom, and the default for anything built without a pen. */
+    /** Scale on every arc-length constant the engine measures the hand against: the low-pass
+     *  lengths, the nib's direction-confirm window, the calligraphy dot rule. Captured at pen-down
+     *  as 1 ÷ zoom and capped at 1, so they are lengths of *gesture* rather than of page, and
+     *  writing small at high zoom behaves as writing at 100% does. 1.0 = drawn at 100% zoom, and
+     *  the default for anything built without a pen. */
     val smoothScale: Double = 1.0,
 ) : CanvasItem {
 
