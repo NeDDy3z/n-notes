@@ -94,7 +94,7 @@ class StrokeEngineTest {
             (1..160).map { Sample(48.0 + it * step, -48.0 + it * step, 1.0) }
         val drawn = StrokeEngine.build(pts, 6.0, false, 1.0, ds)
         val kept = StrokeSimplify.simplify(
-            pts, drawn.halfWidths, StrokeSimplify.LEGACY_EPS, StrokeSimplify.dirArcFor(ds, 1.0),
+            pts, drawn.halfWidths, StrokeSimplify.LEGACY_EPS, 1.0, ds,
         )
         assertTrue("the reduction has to actually drop samples", kept.size < pts.size)
         val committed = StrokeEngine.build(kept, 6.0, false, 1.0, ds)
@@ -135,6 +135,38 @@ class StrokeEngineTest {
         }
         // And the stroke really does thicken, so the check is not passing on two thin ribbons.
         assertTrue(full.halfWidths.max() > 1.8f * full.halfWidths.min())
+
+        // The taper pen's floor is the same kind of length: a 12 px flick tapers, and at 4x it is a
+        // 3 px flick that still has to, since the hand did the same thing.
+        val tick = (0..8).map { Sample(it * 1.5, 0.0, 1.0) }
+        val tickFull = StrokeEngine.build(tick, 4.0, false, 1.0, 0.0, taperEnabled = true)
+        val tickZoomed = StrokeEngine.build(
+            tick.map { Sample(it.x * k, it.y * k, it.pressure, it.t) },
+            4.0 * k, false, 1.0, 0.0, taperEnabled = true, smoothScale = k,
+        )
+        assertTrue("the flick has to actually taper", tickFull.hw(8) < 0.5f * tickFull.hw(0))
+        for (i in 0 until tickFull.pointCount) {
+            assertEquals("taper half-width at $i", tickFull.hw(i) * k, tickZoomed.hw(i), 1e-6)
+        }
+    }
+
+    @Test fun theReductionDropsTheSameSamplesAtAnyZoom() {
+        // The reduction's own arcs are lengths of hand too. Left in page pixels, drawing at 4x let it
+        // open a gap four times as wide on screen as the one it opens at 100%, and protect a corner
+        // over a quarter as much of it.
+        val k = 0.25
+        val pts = (0..300).map { Sample(it * 0.5, 18.0 * sin(it * 0.5 / 13.0), 1.0) }
+        val full = StrokeEngine.build(pts, 3.0, false, 1.0, 0.0)
+        val keptFull = StrokeSimplify.simplify(pts, full.halfWidths, 0.2, 1.0, 0.0)
+        assertTrue("the reduction has to actually drop samples", keptFull.size < pts.size)
+
+        val scaled = pts.map { Sample(it.x * k, it.y * k, it.pressure, it.t) }
+        val zoomed = StrokeEngine.build(scaled, 3.0 * k, false, 1.0, 0.0, smoothScale = k)
+        val keptZoomed = StrokeSimplify.simplify(scaled, zoomed.halfWidths, 0.2 * k, k, 0.0)
+        assertEquals("the same gesture must reduce to the same samples", keptFull.size, keptZoomed.size)
+        for (j in keptFull.indices) {
+            assertEquals("kept sample $j", keptFull[j].x * k, keptZoomed[j].x, 1e-9)
+        }
     }
 
     // --- Width formula ---

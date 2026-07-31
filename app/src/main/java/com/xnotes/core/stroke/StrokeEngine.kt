@@ -101,8 +101,9 @@ object StrokeEngine {
      *  divide by ~zero and spike the speed. */
     const val MIN_DT = 1.0
 
-    /** Taper pen: strokes shorter than this (page px of arc length) are left
-     *  un-tapered, so a quick tick doesn't collapse to nothing. */
+    /** Taper pen: strokes shorter than this arc are left un-tapered, so a quick tick doesn't
+     *  collapse to nothing. Quoted at 100% zoom and scaled by the stroke's draw zoom, since what
+     *  makes a tick a tick is how far the hand went, not how much page it landed on. */
     const val TAPER_MIN_LEN = 8.0
 
     /** Pens that hold their ends ([holdEndPressure]) do so over this many samples at each end,
@@ -279,14 +280,20 @@ object StrokeEngine {
      * the tip (a sharp point when that is 0). Longer strokes just stretch the same profile. Returns
      * all-`1.0` when [taperEnabled] is false or the stroke is too short ([TAPER_MIN_LEN]).
      */
-    fun taperFactors(cx: DoubleArray, cy: DoubleArray, taperEnabled: Boolean, taperMinFactor: Double): DoubleArray {
+    fun taperFactors(
+        cx: DoubleArray,
+        cy: DoubleArray,
+        taperEnabled: Boolean,
+        taperMinFactor: Double,
+        smoothScale: Double = 1.0,
+    ): DoubleArray {
         val n = cx.size
         val out = DoubleArray(n) { 1.0 }
         if (!taperEnabled || n < 2) return out
         val cum = DoubleArray(n)
         for (i in 1 until n) cum[i] = cum[i - 1] + hypot(cx[i] - cx[i - 1], cy[i] - cy[i - 1])
         val total = cum[n - 1]
-        if (total < TAPER_MIN_LEN) return out
+        if (total < TAPER_MIN_LEN * max(smoothScale, 0.0)) return out
         for (i in 0 until n) {
             // Fractional arc position: 1 at the head, easing to 0 at the tip. The whole stroke is
             // the taper; the tip bottoms out at taperMinFactor of full instead of a sharp point.
@@ -433,7 +440,7 @@ object StrokeEngine {
 
         // Optional width multipliers: speed thins fast travel, taper points the ends.
         val sf = speedFactors(samples, speedStrength, speedScale)
-        val tf = taperFactors(sx, sy, taperEnabled, taperMinFactor)
+        val tf = taperFactors(sx, sy, taperEnabled, taperMinFactor, smoothScale)
 
         // Calligraphy: the tangent-y that sets nib width, with the broad (thick) face held back
         // until the stroke commits to that heading. confirmThickening opens the signal over

@@ -24,11 +24,12 @@ object StrokeSimplify {
     /** Compaction tolerance (content px) for legacy files, whose draw zoom is unknown. */
     const val LEGACY_EPS = 0.1
 
-    /** Longest arc (content px) the reducer may open between kept samples. */
+    /** Longest arc the reducer may open between kept samples, at 100% zoom. Scaled by the draw zoom
+     *  like [eps], so the chord it allows is the same size on screen wherever it was drawn. */
     const val MAX_GAP = 3.0
 
     /** Original samples within this arc of a sharp corner are kept, so the chord the reducer would
-     *  otherwise draw across it cannot square the turn off. */
+     *  otherwise draw across it cannot square the turn off. Scaled with [MAX_GAP]. */
     const val CORNER_KEEP_ARC = 2.0
 
     /** A kept vertex whose chords bend past this cosine (30°) is a sharp corner. Gentle curves
@@ -39,8 +40,9 @@ object StrokeSimplify {
      *  hold reads the settled pressure this many samples in) and the dense pen-up tail. */
     const val END_KEEP = StrokeEngine.CAP_HOLD_SAMPLES + 1
 
-    /** Strokes at/below this arc (content px) are never reduced: the calligraphy dot rule
-     *  ([StrokeEngine.DOT_MAX_LEN]) judges the smoothed arc, which must not shift near it. */
+    /** Strokes at/below this arc are never reduced: the calligraphy dot rule
+     *  ([StrokeEngine.DOT_MAX_LEN]) judges the smoothed arc, which must not shift near it. Scaled by
+     *  the draw zoom, since the rule it is protecting is scaled by it too. */
     const val MIN_ARC = 10.0
 
     private const val MIN_SAMPLES = 2 * END_KEEP + 3
@@ -49,13 +51,6 @@ object StrokeSimplify {
      *  on either side of it, plus one for the tangent's finite differences to land in. */
     const val DIR_REACH = 3.0
 
-    /** The direction-critical arc for a pen of [directionStrength] drawn at [smoothScale]: the nib's
-     *  own confirm window when its width follows its heading, and 0 for every pen whose width does
-     *  not care. Reads the window from [StrokeEngine] rather than restating it, since a guard that
-     *  protected a different arc than the one being confirmed would protect the wrong samples. */
-    fun dirArcFor(directionStrength: Double, smoothScale: Double): Double =
-        if (directionStrength > 0.0) StrokeEngine.dirConfirmLen(smoothScale) else 0.0
-
     /**
      * The samples the ribbon actually needs. A sample survives when its position or its rendered
      * half-width ([halfWidths], from the stroke's built geometry, one per sample) deviates from
@@ -63,24 +58,27 @@ object StrokeSimplify {
      * spike or a speed-pen thinning from being flattened away. Returns the original list (same
      * reference) when nothing is worth dropping.
      *
-     * [dirArc] is [StrokeEngine.DIR_CONFIRM_LEN] for a nib whose width follows its heading, and 0
-     * for every other pen; see [keepDirectionCritical] for what it protects and why nothing else
-     * here can protect it.
+     * [scale] is the stroke's `smoothScale`: every arc below is quoted at 100% zoom and scaled by it,
+     * so a stroke drawn zoomed in is reduced by the same amounts on screen as one drawn at 100%.
+     * [directionStrength] is the pen's, and picks up the nib guard for a stroke whose width follows
+     * its heading; see [keepDirectionCritical] for what that protects and why nothing else can.
      */
     fun simplify(
         samples: List<Sample>,
         halfWidths: FloatArray,
         eps: Double,
-        dirArc: Double = 0.0,
+        scale: Double = 1.0,
+        directionStrength: Double = 0.0,
     ): List<Sample> {
         val n = samples.size
         if (n < MIN_SAMPLES || halfWidths.size != n || eps <= 0.0) return samples
+        val k = if (scale > 0.0) scale else 1.0
 
         val cum = DoubleArray(n)
         for (i in 1 until n) {
             cum[i] = cum[i - 1] + hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y)
         }
-        if (cum[n - 1] <= MIN_ARC) return samples
+        if (cum[n - 1] <= MIN_ARC * k) return samples
 
         val keep = BooleanArray(n)
         for (i in 0 until END_KEEP) {
@@ -88,10 +86,13 @@ object StrokeSimplify {
             keep[n - 1 - i] = true
         }
 
+        // The nib's guard reads its arc straight from the engine, since a guard protecting a
+        // different stretch than the one being confirmed would protect the wrong samples.
+        val dirArc = if (directionStrength > 0.0) StrokeEngine.dirConfirmLen(k) else 0.0
         rdp(samples, halfWidths, keep, END_KEEP - 1, n - END_KEEP, eps)
-        keepCornerNeighborhoods(samples, keep, cum)
-        if (dirArc > 0.0) keepDirectionCritical(samples, keep, cum, dirArc)
-        capGaps(keep, cum)
+        keepCornerNeighborhoods(samples, keep, cum, k)
+        if (dirArc > 0.0) keepDirectionCritical(samples, keep, cum, dirArc, k)
+        capGaps(keep, cum, k)
 
         var kept = 0
         for (i in 0 until n) if (keep[i]) kept++
@@ -144,8 +145,14 @@ object StrokeSimplify {
     }
 
     /** Restore the original density around every sharp corner of the kept polyline. */
-    private fun keepCornerNeighborhoods(samples: List<Sample>, keep: BooleanArray, cum: DoubleArray) {
+    private fun keepCornerNeighborhoods(
+        samples: List<Sample>,
+        keep: BooleanArray,
+        cum: DoubleArray,
+        scale: Double,
+    ) {
         val n = samples.size
+        val cornerArc = CORNER_KEEP_ARC * scale
         val kept = ArrayList<Int>()
         for (i in 0 until n) if (keep[i]) kept.add(i)
         for (k in 1 until kept.size - 1) {
@@ -161,9 +168,9 @@ object StrokeSimplify {
             if (ul < 1e-9 || vl < 1e-9) continue
             if ((ux * vx + uy * vy) / (ul * vl) >= CORNER_COS) continue
             var i = c
-            while (i > 0 && cum[c] - cum[i - 1] <= CORNER_KEEP_ARC) i--
+            while (i > 0 && cum[c] - cum[i - 1] <= cornerArc) i--
             var j = c
-            while (j < n - 1 && cum[j + 1] - cum[c] <= CORNER_KEEP_ARC) j++
+            while (j < n - 1 && cum[j + 1] - cum[c] <= cornerArc) j++
             for (t in i..j) keep[t] = true
         }
     }
@@ -183,7 +190,13 @@ object StrokeSimplify {
      * where the path turns through the nib's edge, since that is where the heading a window
      * minimises over is actually changing; a steady run has nothing to lose, however thinned.
      */
-    private fun keepDirectionCritical(samples: List<Sample>, keep: BooleanArray, cum: DoubleArray, arc: Double) {
+    private fun keepDirectionCritical(
+        samples: List<Sample>,
+        keep: BooleanArray,
+        cum: DoubleArray,
+        arc: Double,
+        scale: Double,
+    ) {
         val n = samples.size
         val total = cum[n - 1]
         // The opening erodes and then dilates, so one confirmed value is a minimum of minima and
@@ -195,7 +208,7 @@ object StrokeSimplify {
         // near-horizontal run flip sign on jitter alone, and that would protect the whole stroke.
         var previous = 0.0
         for (i in 1 until n) {
-            val dy = headingY(samples, cum, i)
+            val dy = headingY(samples, cum, i, scale)
             if (dy == 0.0) continue
             if (previous != 0.0 && (dy > 0.0) != (previous > 0.0)) {
                 var a = i
@@ -209,22 +222,24 @@ object StrokeSimplify {
     }
 
     /** The y of the path's heading at [i], over a chord of about [CORNER_KEEP_ARC] either side. */
-    private fun headingY(samples: List<Sample>, cum: DoubleArray, i: Int): Double {
+    private fun headingY(samples: List<Sample>, cum: DoubleArray, i: Int, scale: Double): Double {
         val n = samples.size
+        val chord = CORNER_KEEP_ARC * scale
         var a = i
-        while (a > 0 && cum[i] - cum[a - 1] <= CORNER_KEEP_ARC) a--
+        while (a > 0 && cum[i] - cum[a - 1] <= chord) a--
         var b = i
-        while (b < n - 1 && cum[b] - cum[i] <= CORNER_KEEP_ARC) b++
+        while (b < n - 1 && cum[b] - cum[i] <= chord) b++
         return samples[b].y - samples[a].y
     }
 
     /** Re-keep samples so every kept-to-kept arc is at most [MAX_GAP] — or a single raw segment,
      *  when a fast pen was already sparser than the cap. Checked on every sample (kept ones too),
      *  so a gap can't slip past just because its far end was already kept. */
-    private fun capGaps(keep: BooleanArray, cum: DoubleArray) {
+    private fun capGaps(keep: BooleanArray, cum: DoubleArray, scale: Double) {
+        val maxGap = MAX_GAP * scale
         var last = 0
         for (i in 1 until keep.size) {
-            if (cum[i] - cum[last] > MAX_GAP && i - 1 > last) {
+            if (cum[i] - cum[last] > maxGap && i - 1 > last) {
                 keep[i - 1] = true
                 last = i - 1
             }
