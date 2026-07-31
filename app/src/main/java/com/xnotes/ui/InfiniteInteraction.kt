@@ -15,6 +15,7 @@ import com.xnotes.canvas.SelectionMath
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.infinite.CanvasSelection
 import com.xnotes.core.infinite.EraseSession
+import com.xnotes.core.infinite.LiftTransform
 import com.xnotes.core.infinite.OverlayTessellator
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Rgba
@@ -85,8 +86,8 @@ class InfiniteInteraction(
     private val onSelectionChanged: () -> Unit = {},
     /** A finished selection drag: push its single undo command. */
     private val onCommitSelection: (com.xnotes.core.history.Command?) -> Unit = {},
-    /** Draw [items] shifted by the drag so far, rather than moving them. An empty list ends it. */
-    private val onLiftSelection: (List<CanvasItem>, Double, Double) -> Unit = { _, _, _ -> },
+    /** Draw [items] displaced by the drag so far, rather than moving them. An empty list ends it. */
+    private val onLiftSelection: (List<CanvasItem>, LiftTransform) -> Unit = { _, _ -> },
     /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
     private val devicePxPerDp: () -> Double = { 1.0 },
     /** A press that landed on the minimap; returns true when it was consumed as navigation. */
@@ -132,6 +133,12 @@ class InfiniteInteraction(
     private var grabHandle: HandleId? = null
     private var moveAnchor = Pt.ZERO
     private var movedBy = Pt.ZERO
+
+    // Where the rotate grip is being dragged to, and whether the renderer is doing the turning.
+    // Only ink and shapes rotate faithfully in the shader: an image or a text box has no rotation in
+    // the model either, so a selection holding one is turned the slow way and stays honest.
+    private var rotatePointer = Pt.ZERO
+    private var liftedRotate = false
 
     // A finger press landed off a live selection and became a pan; a tap there dismisses it, a
     // real drag pans and leaves it alone.
@@ -196,7 +203,9 @@ class InfiniteInteraction(
         mode = CanvasPointerMode.IDLE
         panVel = Pt.ZERO
         liveStroke = null
+        liftedRotate = false
         onWetStroke(null)
+        onLiftSelection(emptyList(), LiftTransform.NONE)
         stylusButtons.reset()
     }
 
@@ -329,7 +338,13 @@ class InfiniteInteraction(
         // dropping the lift is the whole undo.
         if (mode == CanvasPointerMode.MOVE) {
             selection()?.previewMove(0.0, 0.0)
-            onLiftSelection(emptyList(), 0.0, 0.0)
+            onLiftSelection(emptyList(), LiftTransform.NONE)
+            onSelectionChanged()
+        }
+        if (mode == CanvasPointerMode.ROTATE && liftedRotate) {
+            selection()?.previewRotateBack()
+            onLiftSelection(emptyList(), LiftTransform.NONE)
+            liftedRotate = false
             onSelectionChanged()
         }
         mode = CanvasPointerMode.IDLE
@@ -471,7 +486,7 @@ class InfiniteInteraction(
         selection()?.clear()
         bandRect = null
         lassoPoints.clear()
-        onLiftSelection(emptyList(), 0.0, 0.0)
+        onLiftSelection(emptyList(), LiftTransform.NONE)
         onSelectionChanged()
         requestRender()
     }
@@ -487,7 +502,10 @@ class InfiniteInteraction(
             val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
             if (grip != null && at.distanceTo(grip) <= tolerance) {
                 sel.beginTransform(at)
+                rotatePointer = at
+                liftedRotate = sel.items.all { it is Stroke || it is ShapeItem }
                 mode = CanvasPointerMode.ROTATE
+                if (liftedRotate) onLiftSelection(sel.items, LiftTransform.NONE)
                 return
             }
             val handle = sel.hitHandle(at, tolerance)
@@ -502,7 +520,7 @@ class InfiniteInteraction(
                 moveAnchor = at
                 movedBy = Pt.ZERO
                 mode = CanvasPointerMode.MOVE
-                onLiftSelection(sel.items, 0.0, 0.0)
+                onLiftSelection(sel.items, LiftTransform.NONE)
                 return
             }
         }
@@ -571,7 +589,7 @@ class InfiniteInteraction(
         val at = viewport.viewportToContent(Pt(vx, vy))
         movedBy = Pt(at.x - moveAnchor.x, at.y - moveAnchor.y)
         sel.previewMove(movedBy.x, movedBy.y)
-        onLiftSelection(sel.items, movedBy.x, movedBy.y)
+        onLiftSelection(sel.items, LiftTransform(movedBy.x, movedBy.y))
         onSelectionChanged()
         requestRender()
     }
@@ -580,7 +598,7 @@ class InfiniteInteraction(
     private fun endMove() {
         val sel = selection() ?: return
         sel.moveLive(movedBy.x, movedBy.y)
-        onLiftSelection(emptyList(), 0.0, 0.0)
+        onLiftSelection(emptyList(), LiftTransform.NONE)
         onCommitSelection(sel.buildCommand(movedOnly = true, dx = movedBy.x, dy = movedBy.y))
         onSelectionChanged()
         requestRender()
@@ -594,9 +612,22 @@ class InfiniteInteraction(
         requestRender()
     }
 
+    /**
+     * A turn in progress. Where the whole selection rotates faithfully, the model is left alone and
+     * the renderer is told the angle, so a turn costs two uniforms however much is selected. A
+     * rotation is exact that way because it leaves stroke widths alone, which a resize does not.
+     */
     private fun extendRotate(vx: Double, vy: Double) {
         val sel = selection() ?: return
-        sel.rotateLive(viewport.viewportToContent(Pt(vx, vy)))
+        val at = viewport.viewportToContent(Pt(vx, vy))
+        rotatePointer = at
+        if (liftedRotate) {
+            val swept = sel.previewRotate(at)
+            val pivot = sel.transformPivot ?: Pt.ZERO
+            onLiftSelection(sel.items, LiftTransform(pivot = pivot, angle = swept))
+        } else {
+            sel.rotateLive(at)
+        }
         onSelectionChanged()
         requestRender()
     }
@@ -605,6 +636,13 @@ class InfiniteInteraction(
         val sel = selection() ?: return
         val wasResize = grabHandle != null
         grabHandle = null
+        // Finger up on a lifted turn: apply the whole thing to the model once, then hand the drawing
+        // back to it.
+        if (liftedRotate) {
+            sel.rotateLive(rotatePointer)
+            onLiftSelection(emptyList(), LiftTransform.NONE)
+            liftedRotate = false
+        }
         onCommitSelection(sel.buildCommand(movedOnly = false))
         // A resize of an upright box snaps onto the real bounds, which is what keeps the chrome
         // honest around a text box that refused to shrink past its own text. A turned box cannot be

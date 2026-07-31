@@ -80,6 +80,21 @@ object CanvasProjection {
         val centreY = v.localY - v.offsetY
         var spineX = v.offsetX * camera.widthScale
         var spineY = v.offsetY * camera.widthScale
+
+        // A dragged selection can be turned as well as shifted. The spine turns by the same angle,
+        // which leaves its length alone, so the width the vertex encodes survives the rotation and
+        // the sub-pixel rule below still measures the right thing.
+        var posX = (v.chunkX - camera.camChunkX) * CHUNK_SIZE + centreX
+        var posY = (v.chunkY - camera.camChunkY) * CHUNK_SIZE + centreY
+        val relX = posX - camera.pivotX
+        val relY = posY - camera.pivotY
+        posX = camera.pivotX + relX * camera.rotCos - relY * camera.rotSin
+        posY = camera.pivotY + relX * camera.rotSin + relY * camera.rotCos
+        val turnedX = spineX * camera.rotCos - spineY * camera.rotSin
+        val turnedY = spineX * camera.rotSin + spineY * camera.rotCos
+        spineX = turnedX
+        spineY = turnedY
+
         val reach = hypot(spineX, spineY) * camera.zoom
         if (reach > 0.0 && reach < MIN_HALF_WIDTH_PX) {
             val push = MIN_HALF_WIDTH_PX / reach
@@ -87,8 +102,8 @@ object CanvasProjection {
             spineY *= push
         }
         return Point(
-            (v.chunkX - camera.camChunkX) * CHUNK_SIZE + centreX + spineX + camera.translateX,
-            (v.chunkY - camera.camChunkY) * CHUNK_SIZE + centreY + spineY + camera.translateY,
+            posX + spineX + camera.translateX,
+            posY + spineY + camera.translateY,
         )
     }
 
@@ -126,6 +141,11 @@ object CanvasProjection {
          */
         val translateX: Double = 0.0,
         val translateY: Double = 0.0,
+        /** The turn a dragged selection is drawn at, about a pivot in the camera's own chunk frame. */
+        val rotCos: Double = 1.0,
+        val rotSin: Double = 0.0,
+        val pivotX: Double = 0.0,
+        val pivotY: Double = 0.0,
     ) {
         val camChunkX: Double get() = floor(scrollX / CHUNK_SIZE)
         val camChunkY: Double get() = floor(scrollY / CHUNK_SIZE)

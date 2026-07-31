@@ -143,13 +143,37 @@ class CanvasSelection(private val doc: InfiniteDocument) {
      */
     fun rotateLive(pointer: Pt) {
         val from = startBox ?: return
+        val swept = sweptAngle(from, pointer)
+        box = from.copy(angle = from.angle + swept)
+        applyLive(Affine.rotateAbout(from.center, swept))
+    }
+
+    /**
+     * Turn the box alone and report the angle, for a drag the renderer is turning rather than the
+     * model. The counterpart of [previewMove]: the model stays put until the finger lifts, and
+     * [rotateLive] then applies the whole turn once.
+     */
+    fun previewRotate(pointer: Pt): Double {
+        val from = startBox ?: return 0.0
+        val swept = sweptAngle(from, pointer)
+        box = from.copy(angle = from.angle + swept)
+        return swept
+    }
+
+    /** Put the box back where the turn started, for a gesture that was cancelled rather than ended. */
+    fun previewRotateBack() {
+        startBox?.let { box = it }
+    }
+
+    /** The point a transform turns and scales about: the box as it was when the gesture began. */
+    val transformPivot: Pt? get() = startBox?.center
+
+    private fun sweptAngle(from: Obb, pointer: Pt): Double {
         val centre = from.center
         // Without a recorded grab, fall back to the grip's own direction, which is the box's local
         // up: that reduces to pointing up at the pointer.
         val grab = startGrabAngle ?: (from.angle - Math.PI / 2.0)
-        val swept = kotlin.math.atan2(pointer.y - centre.y, pointer.x - centre.x) - grab
-        box = from.copy(angle = from.angle + swept)
-        applyLive(Affine.rotateAbout(centre, swept))
+        return kotlin.math.atan2(pointer.y - centre.y, pointer.x - centre.x) - grab
     }
 
     /**

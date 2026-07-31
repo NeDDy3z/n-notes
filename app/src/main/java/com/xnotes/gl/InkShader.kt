@@ -49,20 +49,27 @@ class InkShader(contextGen: Int) {
         program.set("uOffsetScale", (1.0 / GeometryStore.OFFSET_SCALE).toFloat())
         program.set("uMinHalfPx", MIN_HALF_WIDTH_PX)
         setWidthScale(1.0)
-        setTranslate(0.0, 0.0)
+        clearLift()
         clearOverride()
     }
 
     /**
-     * Shift this draw by content pixels, for a selection being dragged.
+     * Draw this batch turned and shifted, for a selection being dragged.
      *
      * A drag used to move the model itself, which meant re-tessellating and re-uploading every
      * selected item on every touch sample. The vertices never needed to move: the whole design puts
      * the view in a uniform, and a drag is the same kind of thing.
+     *
+     * [pivotX]/[pivotY] are in the camera's own chunk frame, the same frame the vertices rebuild
+     * themselves in, so nothing large is ever subtracted from anything large.
      */
-    fun setTranslate(dx: Double, dy: Double) {
+    fun setLift(pivotX: Double, pivotY: Double, cos: Double, sin: Double, dx: Double, dy: Double) {
+        program.set("uPivot", pivotX.toFloat(), pivotY.toFloat())
+        program.set("uRot", cos.toFloat(), sin.toFloat())
         program.set("uTranslate", dx.toFloat(), dy.toFloat())
     }
+
+    fun clearLift() = setLift(0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
 
     /**
      * Narrow the ribbon about its own centreline. Neon's white-hot core is the body's very
@@ -113,6 +120,8 @@ class InkShader(contextGen: Int) {
             uniform float uMinHalfPx;
             uniform float uWidthScale;
             uniform vec2 uTranslate;
+            uniform vec2 uPivot;
+            uniform vec2 uRot;
             uniform vec4 uOverride;
             uniform float uOverrideMix;
 
@@ -126,7 +135,16 @@ class InkShader(contextGen: Int) {
                 vec2 spine = aOffset * uOffsetScale;
                 vec2 centre = aLocal - spine;
                 spine *= uWidthScale;
-                vec2 world = (aChunk - uCamChunk) * uChunkSize + centre + spine + uTranslate;
+
+                // A dragged selection can be turned as well as shifted. The spine turns with it,
+                // which leaves its length alone, so the width the vertex encodes survives the turn
+                // and the sub-pixel rule below still measures the right thing. uRot is (1, 0) for
+                // everything not under a drag, and the pivot is then zero, so this is exact.
+                vec2 pos = (aChunk - uCamChunk) * uChunkSize + centre;
+                vec2 rel = pos - uPivot;
+                pos = uPivot + vec2(rel.x * uRot.x - rel.y * uRot.y, rel.x * uRot.y + rel.y * uRot.x);
+                spine = vec2(spine.x * uRot.x - spine.y * uRot.y, spine.x * uRot.y + spine.y * uRot.x);
+                vec2 world = pos + spine + uTranslate;
 
                 // Zoomed out far enough a stroke is thinner than a pixel, and a sub-pixel line does
                 // not simply get fainter: it breaks into a dotted shimmer that crawls as the canvas

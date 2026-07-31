@@ -153,6 +153,44 @@ class CanvasProjectionTest {
         assertEquals(12.0, shifted.x - plain.x, 1e-9)
     }
 
+    /** Turning a selection is a uniform too, so it must land where rotating the model would. */
+    @Test
+    fun `a live rotation matches turning the content itself`() {
+        val cam = camera(scrollX = 100.0, scrollY = 50.0, zoom = 1.5)
+        // A quarter turn about (200, 100) sends (260, 100) to (200, 160).
+        val turned = cam.copy(rotCos = 0.0, rotSin = 1.0, pivotX = 200.0, pivotY = 100.0)
+        val live = CanvasProjection.devicePoint(Vertex.of(260.0, 100.0), turned)
+        val baked = CanvasProjection.devicePoint(Vertex.of(200.0, 160.0), cam)
+        assertEquals(baked.x, live.x, 1e-9)
+        assertEquals(baked.y, live.y, 1e-9)
+    }
+
+    /** A rotation must leave the ribbon exactly as wide as it was; that is why it can be a uniform. */
+    @Test
+    fun `a live rotation keeps the ribbon its own width`() {
+        val cam = camera(zoom = 1.0)
+        val turned = cam.copy(rotCos = 0.0, rotSin = 1.0, pivotX = 10.0, pivotY = 10.0)
+        val rail = Vertex.of(10.0, 14.0, offsetX = 0.0, offsetY = 4.0)
+        val spine = Vertex.of(10.0, 10.0)
+        val railAt = CanvasProjection.devicePoint(rail, turned)
+        val spineAt = CanvasProjection.devicePoint(spine, turned)
+        val half = kotlin.math.hypot(railAt.x - spineAt.x, railAt.y - spineAt.y)
+        assertEquals("a turn is not a scale", 4.0, half, 1e-9)
+        // And the rail turned with the spine: what pointed down now points left.
+        assertEquals(-4.0, railAt.x - spineAt.x, 1e-9)
+        assertEquals(0.0, railAt.y - spineAt.y, 1e-9)
+    }
+
+    @Test
+    fun `a live rotation leaves its own pivot alone`() {
+        val cam = camera(scrollX = 20.0, scrollY = 30.0, zoom = 2.0)
+        val turned = cam.copy(rotCos = 0.6, rotSin = 0.8, pivotX = 90.0, pivotY = 70.0)
+        val plain = CanvasProjection.devicePoint(Vertex.of(90.0, 70.0), cam)
+        val spun = CanvasProjection.devicePoint(Vertex.of(90.0, 70.0), turned)
+        assertEquals(plain.x, spun.x, 1e-6)
+        assertEquals(plain.y, spun.y, 1e-6)
+    }
+
     @Test
     fun `the width scale leaves the centreline where it was`() {
         val centre = Vertex.of(10.0, 10.0)
