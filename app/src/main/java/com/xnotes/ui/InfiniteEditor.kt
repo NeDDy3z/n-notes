@@ -5,6 +5,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.History
 import com.xnotes.core.infinite.AddCanvasItem
@@ -13,6 +14,7 @@ import com.xnotes.core.infinite.CanvasSelection
 import com.xnotes.core.infinite.CanvasViewport
 import com.xnotes.core.infinite.EraseCanvasItems
 import com.xnotes.core.infinite.MeshPart
+import com.xnotes.core.infinite.Minimap
 import com.xnotes.core.infinite.OverlayTessellator
 import com.xnotes.core.infinite.StrokeTessellator
 import com.xnotes.core.infinite.EraseSession
@@ -80,6 +82,7 @@ class InfiniteEditor(context: Context) {
         onSelectionChanged = { publishOverlay() },
         onCommitSelection = { commitSelection(it) },
         devicePxPerDp = { devicePxPerDp },
+        onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
@@ -123,6 +126,19 @@ class InfiniteEditor(context: Context) {
 
     /** Fired after any edit that makes the document dirty, so the host can schedule an autosave. */
     var onContentChanged: (() -> Unit)? = null
+
+    /** Whether the minimap is shown. */
+    var minimapVisible by mutableStateOf(true)
+        private set
+
+    fun toggleMinimap() {
+        minimapVisible = !minimapVisible
+        view.minimapVisible = minimapVisible
+    }
+
+    /** Saved views, mirrored into Compose so the chrome can list them. */
+    var waypoints by mutableStateOf<List<Waypoint>>(emptyList())
+        private set
 
     /** Whether the debug HUD is up; toggled by a four-finger tap, as on the paged canvas. */
     var debugVisible by mutableStateOf(false)
@@ -193,6 +209,7 @@ class InfiniteEditor(context: Context) {
         view.afterLayout = { applyInitialView() }
         view.onContextReady = { renderFailure = view.failure }
         view.onFourFingerTap = { toggleDebug() }
+        view.minimapVisible = minimapVisible
         view.scene = scene
         // Decoding reads a file and can take tens of milliseconds, so it never runs on the render
         // thread; the finished bitmap is picked up and uploaded at the start of the next frame.
@@ -414,6 +431,7 @@ class InfiniteEditor(context: Context) {
     fun applyPalette(palette: Palette) {
         this.palette = palette
         view.paperColor = document.background.paperColor ?: palette.paper
+        view.accent = palette.accent
     }
 
     // --- documents ---
@@ -485,7 +503,27 @@ class InfiniteEditor(context: Context) {
         if (clean.isEmpty()) return
         document.waypoints.removeAll { it.name.equals(clean, ignoreCase = true) }
         document.waypoints.add(viewport.toWaypoint(clean))
+        waypoints = document.waypoints.toList()
         markDirty()
+    }
+
+    fun removeWaypoint(waypoint: Waypoint) {
+        document.waypoints.removeAll { it.name == waypoint.name }
+        waypoints = document.waypoints.toList()
+        markDirty()
+    }
+
+    /** A tap on the minimap: centre the view on whatever was tapped. */
+    fun minimapTap(vx: Double, vy: Double): Boolean {
+        if (!minimapVisible) return false
+        val panel = Minimap.panel(viewport.widthPx, viewport.heightPx)
+        if (!panel.contains(Pt(vx, vy))) return false
+        val extent = Minimap.mappedExtent(document.contentBounds(), viewport.visibleContentRect())
+        val target = Minimap.toContent(Pt(vx, vy), extent, panel)
+        viewport.centerOn(target.x, target.y)
+        onViewChanged()
+        view.publish()
+        return true
     }
 
     fun setBackground(background: CanvasBackground) {
@@ -514,11 +552,15 @@ class InfiniteEditor(context: Context) {
     private fun onViewChanged() {
         document.lastView = viewport.toWaypoint()
         zoomPercent = Math.round(viewport.zoom * 100).toInt()
+        // The minimap maps everything drawn, so its extent moves with the content, not the view.
+        view.contentBounds = document.contentBounds()
     }
 
     private fun refresh() {
         title = document.title
         canUndo = history.canUndo
         canRedo = history.canRedo
+        waypoints = document.waypoints.toList()
+        view.contentBounds = document.contentBounds()
     }
 }

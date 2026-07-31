@@ -18,16 +18,32 @@ import kotlin.math.sin
 internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
 
     private var pos = DoubleArray(maxOf(8, vertexHint * 2))
+    private var off = DoubleArray(maxOf(8, vertexHint * 2))
     private var idx = IntArray(maxOf(12, indexHint))
     private var vertexCount = 0
     private var indexCount = 0
 
     val isEmpty: Boolean get() = indexCount == 0
 
-    fun vertex(x: Double, y: Double): Int {
-        if (2 * vertexCount + 2 > pos.size) pos = pos.copyOf(pos.size * 2)
+    /**
+     * A vertex at ([x], [y]), displaced ([ox], [oy]) from the line it belongs to.
+     *
+     * The offset is what lets the renderer keep a hair-thin line visible. Zoomed far enough out a
+     * stroke is narrower than a pixel, and a sub-pixel line does not fade evenly: it breaks into a
+     * dotted shimmer that crawls as the canvas pans. Knowing how far each vertex sits from its own
+     * spine lets the shader push it out to a pixel and take the width back out of the alpha, so the
+     * line stays a line and simply gets fainter. A fill has no spine, so its offset is zero and it
+     * is left alone.
+     */
+    fun vertex(x: Double, y: Double, ox: Double = 0.0, oy: Double = 0.0): Int {
+        if (2 * vertexCount + 2 > pos.size) {
+            pos = pos.copyOf(pos.size * 2)
+            off = off.copyOf(off.size * 2)
+        }
         pos[2 * vertexCount] = x
         pos[2 * vertexCount + 1] = y
+        off[2 * vertexCount] = ox
+        off[2 * vertexCount + 1] = oy
         return vertexCount++
     }
 
@@ -49,7 +65,9 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
         var prev = -1
         for (k in 0 until segments) {
             val a = k * step
-            val v = vertex(cx + radius * cos(a), cy + radius * sin(a))
+            val dx = radius * cos(a)
+            val dy = radius * sin(a)
+            val v = vertex(cx + dx, cy + dy, dx, dy)
             if (first < 0) first = v else triangle(centre, prev, v)
             prev = v
         }
@@ -105,10 +123,10 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
             if (len < 1e-9) continue
             val nx = -dy / len * halfWidth
             val ny = dx / len * halfWidth
-            val v0 = vertex(a.x + nx, a.y + ny)
-            val v1 = vertex(a.x - nx, a.y - ny)
-            val v2 = vertex(b.x + nx, b.y + ny)
-            val v3 = vertex(b.x - nx, b.y - ny)
+            val v0 = vertex(a.x + nx, a.y + ny, nx, ny)
+            val v1 = vertex(a.x - nx, a.y - ny, -nx, -ny)
+            val v2 = vertex(b.x + nx, b.y + ny, nx, ny)
+            val v3 = vertex(b.x - nx, b.y - ny, -nx, -ny)
             triangle(v0, v1, v3)
             triangle(v0, v3, v2)
         }
@@ -151,7 +169,8 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
         }
     }
 
-    fun build(): MeshData = MeshData(pos.copyOf(2 * vertexCount), idx.copyOf(indexCount))
+    fun build(): MeshData =
+        MeshData(pos.copyOf(2 * vertexCount), off.copyOf(2 * vertexCount), idx.copyOf(indexCount))
 
     private fun isEar(points: List<Pt>, live: List<Int>, prev: Int, cur: Int, next: Int): Boolean {
         val a = points[prev]

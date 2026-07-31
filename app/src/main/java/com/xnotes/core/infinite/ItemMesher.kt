@@ -33,6 +33,12 @@ class MeshedItem(
     val parts: List<MeshPart>,
     /** Content-space region the item paints into, used for culling and for the cover quad. */
     val bounds: Rect,
+    /**
+     * The item's thinnest half-width in content pixels, or 0 when it has no line. Zoomed out far
+     * enough this falls below a pixel on screen, and the renderer fades the item rather than
+     * letting it shimmer at a width the display cannot hold.
+     */
+    val minHalfWidth: Double = 0.0,
 ) {
     val isEmpty: Boolean get() = parts.isEmpty()
 }
@@ -63,13 +69,25 @@ object ItemMesher {
         val mesh = StrokeTessellator.tessellate(stroke.geometry(), tolerance)
         if (mesh.isEmpty) return null
         val part = MeshPart(mesh, stroke.renderColor, passFor(stroke))
-        return MeshedItem(listOf(part), stroke.paintBounds())
+        return MeshedItem(listOf(part), stroke.paintBounds(), narrowestHalfWidth(stroke))
+    }
+
+    /**
+     * The thinnest the stroke gets, in content pixels. The renderer needs it to know when the
+     * stroke has fallen below a pixel on screen and should be faded rather than fattened.
+     */
+    private fun narrowestHalfWidth(stroke: Stroke): Double {
+        val widths = stroke.geometry().halfWidths
+        if (widths.isEmpty()) return 0.0
+        var min = Double.MAX_VALUE
+        for (w in widths) if (w > 0f && w < min) min = w.toDouble()
+        return if (min == Double.MAX_VALUE) 0.0 else min
     }
 
     private fun meshShape(shape: ShapeItem, tolerance: Double): MeshedItem? {
         val parts = ShapeTessellator.tessellate(shape, tolerance)
         if (parts.isEmpty()) return null
-        return MeshedItem(parts, shape.paintBounds())
+        return MeshedItem(parts, shape.paintBounds(), shape.strokeWidth / 2.0)
     }
 
     /** The pass a stroke has to take, from its tool and its resolved ink alpha. */

@@ -87,6 +87,8 @@ class InfiniteInteraction(
     private val onCommitSelection: (com.xnotes.core.history.Command?) -> Unit = {},
     /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
     private val devicePxPerDp: () -> Double = { 1.0 },
+    /** A press that landed on the minimap; returns true when it was consumed as navigation. */
+    private val onMinimapPress: (Double, Double) -> Boolean = { _, _ -> false },
 ) {
 
     private val choreographer = Choreographer.getInstance()
@@ -192,6 +194,11 @@ class InfiniteInteraction(
 
     private fun handleDown(e: MotionEvent) {
         stopFling() // a new touch halts any in-progress glide
+        // The minimap sits over the canvas, so a press on it navigates rather than draws.
+        if (onMinimapPress(e.getX(0).toDouble(), e.getY(0).toDouble())) {
+            mode = CanvasPointerMode.IDLE
+            return
+        }
         drawingPointerId = e.getPointerId(0)
         drawingIsStylus = e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
         val vx = e.getX(0).toDouble()

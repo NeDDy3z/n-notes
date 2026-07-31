@@ -107,6 +107,10 @@ class GeometryStore {
             vertexMirror.put(p + 13, g)
             vertexMirror.put(p + 14, b)
             vertexMirror.put(p + 15, a)
+            // How far this vertex sits from its own line, quantized; the shader uses it to keep a
+            // sub-pixel stroke a line rather than a shimmer.
+            vertexMirror.putShort(p + 16, quantizeOffset(mesh.offsets[2 * i]))
+            vertexMirror.putShort(p + 18, quantizeOffset(mesh.offsets[2 * i + 1]))
             p += VERTEX_STRIDE
         }
         markVertexDirty(vOffset, vCount)
@@ -216,6 +220,11 @@ class GeometryStore {
             GLES30.glEnableVertexAttribArray(color)
             GLES30.glVertexAttribPointer(color, 4, GLES30.GL_UNSIGNED_BYTE, true, VERTEX_STRIDE, 12)
         }
+        val offset = program.attribOffset
+        if (offset >= 0) {
+            GLES30.glEnableVertexAttribArray(offset)
+            GLES30.glVertexAttribPointer(offset, 2, GLES30.GL_SHORT, false, VERTEX_STRIDE, 16)
+        }
     }
 
     /** Draw [indexCount] indices starting at [indexOffset]; the buffers must already be bound. */
@@ -284,7 +293,16 @@ class GeometryStore {
          */
         const val CHUNK_SIZE = 4096.0
 
-        const val VERTEX_STRIDE = 16
+        const val VERTEX_STRIDE = 20
+
+        /** Fixed-point steps per content pixel in the stored spine offset. */
+        const val OFFSET_SCALE = 64.0
+
+        /** [v] content pixels as the fixed-point short the vertex format stores. */
+        fun quantizeOffset(v: Double): Short {
+            if (!v.isFinite()) return 0
+            return (v * OFFSET_SCALE).coerceIn(-32768.0, 32767.0).toInt().toShort()
+        }
         const val INDEX_STRIDE = 4
 
         private const val INITIAL_VERTICES = 8192

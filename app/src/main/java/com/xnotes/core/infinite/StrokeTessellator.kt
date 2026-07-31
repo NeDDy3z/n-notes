@@ -14,6 +14,11 @@ import kotlin.math.hypot
 class MeshData(
     /** Interleaved x,y in content space; `positions.size / 2` vertices. */
     val positions: DoubleArray,
+    /**
+     * Interleaved x,y displacement of each vertex from the line it belongs to, zero for a fill.
+     * The renderer uses it to keep a sub-pixel line visible rather than letting it shimmer.
+     */
+    val offsets: DoubleArray,
     /** Triangle list, three indices per triangle, zero-based within this mesh. */
     val indices: IntArray,
 ) {
@@ -22,7 +27,7 @@ class MeshData(
     val isEmpty: Boolean get() = indices.isEmpty()
 
     companion object {
-        val EMPTY = MeshData(DoubleArray(0), IntArray(0))
+        val EMPTY = MeshData(DoubleArray(0), DoubleArray(0), IntArray(0))
     }
 }
 
@@ -85,10 +90,12 @@ object StrokeTessellator {
             val h0 = g.hw(i)
             val h1 = g.hw(i + 1)
             if (h0 <= MIN_HALF_WIDTH && h1 <= MIN_HALF_WIDTH) continue
-            val l0 = b.vertex(leftX(g, n, i), leftY(g, n, i))
-            val r0 = b.vertex(rightX(g, n, i), rightY(g, n, i))
-            val l1 = b.vertex(leftX(g, n, i + 1), leftY(g, n, i + 1))
-            val r1 = b.vertex(rightX(g, n, i + 1), rightY(g, n, i + 1))
+            // Each rail vertex remembers how far it sits from the centreline, so a stroke thinner
+            // than a pixel can be widened back to one and faded instead of breaking up.
+            val l0 = b.vertex(leftX(g, n, i), leftY(g, n, i), leftX(g, n, i) - g.cx(i), leftY(g, n, i) - g.cy(i))
+            val r0 = b.vertex(rightX(g, n, i), rightY(g, n, i), rightX(g, n, i) - g.cx(i), rightY(g, n, i) - g.cy(i))
+            val l1 = b.vertex(leftX(g, n, i + 1), leftY(g, n, i + 1), leftX(g, n, i + 1) - g.cx(i + 1), leftY(g, n, i + 1) - g.cy(i + 1))
+            val r1 = b.vertex(rightX(g, n, i + 1), rightY(g, n, i + 1), rightX(g, n, i + 1) - g.cx(i + 1), rightY(g, n, i + 1) - g.cy(i + 1))
             b.triangle(l0, r0, r1)
             b.triangle(l0, r1, l1)
         }

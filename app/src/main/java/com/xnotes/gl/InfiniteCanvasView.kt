@@ -102,6 +102,26 @@ class InfiniteCanvasView @JvmOverloads constructor(
     private var cursorAt: com.xnotes.core.geometry.Pt? = null
     private var cursorRadius = 0.0
 
+    /** Whether the minimap is shown, and the extent of what has been drawn. */
+    var minimapVisible: Boolean = false
+        set(value) {
+            field = value
+            publish()
+        }
+
+    var contentBounds: com.xnotes.core.geometry.Rect? = null
+        set(value) {
+            field = value
+            publish()
+        }
+
+    /** Accent colour for the minimap's markers. */
+    var accent: Rgba = Rgba(0, 230, 118, 255)
+        set(value) {
+            field = value
+            publish()
+        }
+
     /** Show the eraser cursor at [at] in viewport pixels with [radiusPx], or hide it when null. */
     fun setEraserCursor(at: com.xnotes.core.geometry.Pt?, radiusPx: Double) {
         cursorAt = at
@@ -138,6 +158,9 @@ class InfiniteCanvasView @JvmOverloads constructor(
             cursorY = cursorAt?.y ?: 0.0,
             cursorRadius = cursorRadius,
             cursorVisible = cursorAt != null && cursorRadius > 0.0,
+            minimapVisible = minimapVisible,
+            contentBounds = contentBounds,
+            accent = accent,
         )
         glRenderer.publishRequests = publishRequests
         // In continuous mode the render thread is already drawing every refresh; otherwise ask for

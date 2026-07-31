@@ -6,6 +6,7 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.MeshData
+import com.xnotes.core.infinite.Minimap
 import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ImageItem
@@ -85,6 +86,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private var ink: InkShader? = null
     private var cover: CoverShader? = null
     private var imageShader: ImageShader? = null
+    private var minimapShader: MinimapShader? = null
 
     /** Textures for placed images, decoded at the size the current zoom needs. */
     val textures = TextureCache()
@@ -168,10 +170,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         ink = null
         cover = null
         imageShader = null
+        minimapShader = null
         try {
             ink = InkShader(contextGen)
             cover = CoverShader(contextGen)
             imageShader = ImageShader(contextGen)
+            minimapShader = MinimapShader(contextGen)
         } catch (e: GlShaderException) {
             Log.e(TAG, "ink shaders unavailable", e)
         }
@@ -266,9 +270,41 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         }
 
         drawWet(program, frame, camChunkX, camChunkY)
+        if (frame.minimapVisible) drawMinimap(frame)
 
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         program.disableAttributes()
+    }
+
+    /**
+     * The minimap: a panel, a dot per item, and the viewport's own outline.
+     *
+     * It is drawn from item bounds rather than by running the scene through a second transform,
+     * which would cost a second full pass of everything visible. At this scale a stroke is a dot
+     * either way, so the cheap version conveys exactly as much.
+     */
+    private fun drawMinimap(frame: FrameState) {
+        val shader = minimapShader ?: return
+        val panel = Minimap.panel(frame.widthPx, frame.heightPx)
+        val visible = Rect(frame.scrollX, frame.scrollY, frame.widthPx / frame.zoom, frame.heightPx / frame.zoom)
+        val extent = Minimap.mappedExtent(frame.contentBounds, visible)
+        val paperDim = Rgba(frame.paper.r, frame.paper.g, frame.paper.b, 210)
+        shader.fill(panel, paperDim, frame.widthPx, frame.heightPx)
+        shader.outline(panel, 1.0, frame.accent.withAlpha(90), frame.widthPx, frame.heightPx)
+
+        val dot = frame.accent.withAlpha(150)
+        for (record in records.values) {
+            val mapped = Minimap.toPanel(record.bounds, extent, panel)
+            // Everything reads as at least a dot, so a single thin stroke is not invisible.
+            val w = mapped.w.coerceAtLeast(MINIMAP_DOT_PX)
+            val h = mapped.h.coerceAtLeast(MINIMAP_DOT_PX)
+            shader.fill(Rect(mapped.x, mapped.y, w, h), dot, frame.widthPx, frame.heightPx)
+        }
+        shader.outline(
+            Minimap.toPanel(visible, extent, panel), 1.5, frame.accent,
+            frame.widthPx, frame.heightPx,
+        )
+        lastDrawCalls += 9
     }
 
     /**
@@ -568,5 +604,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
         /** Cells a cull will walk before it gives up and scans every record instead. */
         private const val MAX_QUERY_CELLS = 4096L
+
+        /** Smallest a minimap marker is drawn, so one thin stroke is still visible. */
+        private const val MINIMAP_DOT_PX = 1.5
     }
 }

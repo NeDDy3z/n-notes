@@ -27,6 +27,11 @@ data class FrameState(
     val cursorY: Double = 0.0,
     val cursorRadius: Double = 0.0,
     val cursorVisible: Boolean = false,
+    /** Whether to draw the minimap, and what it should map. */
+    val minimapVisible: Boolean = false,
+    val contentBounds: com.xnotes.core.geometry.Rect? = null,
+    /** Accent for the minimap's markers, from the app palette. */
+    val accent: Rgba = Rgba(0, 230, 118, 255),
 ) {
     companion object {
         val EMPTY = FrameState(1.0, 0.0, 0.0, 0, 0, CanvasBackground(), Rgba(255, 255, 255, 255))

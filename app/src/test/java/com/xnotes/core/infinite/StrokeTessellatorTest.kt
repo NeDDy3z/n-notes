@@ -301,11 +301,42 @@ class StrokeTessellatorTest {
         assertTrue(covers(m, 20.0, 0.0))
     }
 
+    @Test fun everyRailVertexKnowsHowFarItSitsFromTheCentreline() {
+        val g = line(6)
+        val m = StrokeTessellator.tessellate(g)
+        assertEquals(m.positions.size, m.offsets.size)
+        var offRail = 0
+        for (i in 0 until m.vertexCount) {
+            val ox = m.offsets[2 * i]
+            val oy = m.offsets[2 * i + 1]
+            if (hypot(ox, oy) > 1e-9) offRail++
+        }
+        assertTrue("the ribbon and its caps must carry offsets", offRail > 0)
+        // Every offset is at most a half-width, since that is how far the rails reach.
+        val widest = (0 until g.pointCount).maxOf { g.hw(it) }
+        for (i in 0 until m.vertexCount) {
+            assertTrue(hypot(m.offsets[2 * i], m.offsets[2 * i + 1]) <= widest + 1e-6)
+        }
+    }
+
+    @Test fun aStrokeThinnerThanAPixelFadesRatherThanVanishing() {
+        // The shader's rule, checked here as the arithmetic it implements.
+        val halfWidth = 1.5
+        val zoom = 0.05
+        val reach = halfWidth * zoom
+        assertTrue("this stroke really is sub-pixel", reach < 0.5)
+        val fade = reach / 0.5
+        val widened = halfWidth * (0.5 / reach)
+        assertEquals("widened back to the floor", 0.5, widened * zoom, 1e-9)
+        assertEquals("and the width taken back out of the alpha", reach, widened * zoom * fade, 1e-9)
+    }
+
     @Test fun tessellationIsDeterministic() {
         val g = geometryOf(0.0 to 0.0, 12.0 to 5.0, 25.0 to 3.0)
         val a = StrokeTessellator.tessellate(g)
         val b = StrokeTessellator.tessellate(g)
         assertTrue(a.positions.contentEquals(b.positions))
+        assertTrue(a.offsets.contentEquals(b.offsets))
         assertTrue(a.indices.contentEquals(b.indices))
     }
 }

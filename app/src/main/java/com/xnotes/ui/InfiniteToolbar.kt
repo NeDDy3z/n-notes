@@ -62,6 +62,7 @@ fun InfiniteToolbar(
     var stylesOpen by remember { mutableStateOf(false) }
     var eraserOpen by remember { mutableStateOf(false) }
     var shapeOpen by remember { mutableStateOf(false) }
+    var waypointsOpen by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -105,6 +106,10 @@ fun InfiniteToolbar(
         Box {
             ToolbarIcon(XnotesIcons.sliders, "Styles", active = stylesOpen) { stylesOpen = true }
             if (stylesOpen) CanvasStylesPopup(editor) { stylesOpen = false }
+        }
+        Box {
+            ToolbarIcon(XnotesIcons.bookmark, "Waypoints", active = waypointsOpen) { waypointsOpen = true }
+            if (waypointsOpen) CanvasWaypointsPopup(editor) { waypointsOpen = false }
         }
         ToolbarIcon(XnotesIcons.fit, "Fit all") { editor.zoomToFit() }
         Label("${editor.zoomPercent}%")
