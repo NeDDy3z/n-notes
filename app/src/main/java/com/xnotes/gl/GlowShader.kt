@@ -1,0 +1,115 @@
+package com.xnotes.gl
+
+import android.opengl.GLES30
+
+/**
+ * The two halves of a bloom: a separable Gaussian, then a composite of the blurred result over the
+ * picture at the halo's own alpha.
+ *
+ * Separable is what makes a wide halo affordable: a radius of `r` costs `2r` taps across two passes
+ * instead of `r * r` in one. The taps are capped, and a radius past the cap widens the step between
+ * them rather than adding more, which for a Gaussian this soft is indistinguishable.
+ */
+class GlowShader(contextGen: Int) {
+
+    private val blur = GlProgram.build(FULLSCREEN_VERTEX_SRC, BLUR_FRAGMENT_SRC, contextGen)
+    private val composite = GlProgram.build(FULLSCREEN_VERTEX_SRC, COMPOSITE_FRAGMENT_SRC, contextGen)
+
+    val contextGen: Int get() = blur.contextGen
+
+    fun release() {
+        blur.release()
+        composite.release()
+    }
+
+    /**
+     * Blur [texture] along one axis into whatever is bound. [radiusPx] is in the buffer's own
+     * pixels, and [horizontal] picks the axis.
+     */
+    fun blur(texture: Int, radiusPx: Double, horizontal: Boolean, bufferW: Int, bufferH: Int) {
+        blur.use()
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
+        blur.set("uTexture", 0)
+        val taps = tapsFor(radiusPx)
+        blur.set("uTaps", taps)
+        // Past the tap cap the step widens instead of the count growing, so a very wide halo stays
+        // one pass rather than becoming unaffordable.
+        blur.set("uStep", (radiusPx / taps).coerceAtLeast(1.0).toFloat())
+        blur.set("uSigma", (radiusPx / 2.0).coerceAtLeast(0.5).toFloat())
+        blur.set(
+            "uDirection",
+            if (horizontal) 1f / bufferW else 0f,
+            if (horizontal) 0f else 1f / bufferH,
+        )
+        GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+    }
+
+    /** Draw [texture] over the picture at [alpha], which is the halo's own brightness. */
+    fun compositeOver(texture: Int, alpha: Double) {
+        composite.use()
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
+        composite.set("uTexture", 0)
+        composite.set("uAlpha", alpha.coerceIn(0.0, 1.0).toFloat())
+        GLES30.glEnable(GLES30.GL_BLEND)
+        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+    }
+
+    private fun tapsFor(radiusPx: Double): Int =
+        radiusPx.toInt().coerceIn(1, MAX_TAPS)
+
+    companion object {
+        /** Most samples taken per side, per pass. */
+        const val MAX_TAPS = 24
+
+        private val FULLSCREEN_VERTEX_SRC = """#version 300 es
+            out vec2 vUv;
+            void main() {
+                float x = float((gl_VertexID & 1) << 2) - 1.0;
+                float y = float((gl_VertexID & 2) << 1) - 1.0;
+                vUv = vec2((x + 1.0) * 0.5, (y + 1.0) * 0.5);
+                gl_Position = vec4(x, y, 0.0, 1.0);
+            }
+        """.trimIndent()
+
+        private val BLUR_FRAGMENT_SRC = """#version 300 es
+            precision mediump float;
+            uniform sampler2D uTexture;
+            uniform vec2 uDirection;
+            uniform int uTaps;
+            uniform float uStep;
+            uniform float uSigma;
+            in vec2 vUv;
+            out vec4 fragColor;
+            void main() {
+                vec4 sum = texture(uTexture, vUv);
+                float weight = 1.0;
+                for (int i = 1; i <= 32; i++) {
+                    if (i > uTaps) break;
+                    float d = float(i) * uStep;
+                    float w = exp(-(d * d) / (2.0 * uSigma * uSigma));
+                    vec2 offset = uDirection * d;
+                    sum += texture(uTexture, vUv + offset) * w;
+                    sum += texture(uTexture, vUv - offset) * w;
+                    weight += 2.0 * w;
+                }
+                fragColor = sum / weight;
+            }
+        """.trimIndent()
+
+        private val COMPOSITE_FRAGMENT_SRC = """#version 300 es
+            precision mediump float;
+            uniform sampler2D uTexture;
+            uniform float uAlpha;
+            in vec2 vUv;
+            out vec4 fragColor;
+            void main() {
+                vec4 c = texture(uTexture, vUv);
+                fragColor = vec4(c.rgb, c.a * uAlpha);
+            }
+        """.trimIndent()
+    }
+}

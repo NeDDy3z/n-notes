@@ -180,7 +180,7 @@ class Stroke(
      * bloom's size and brightness; it overrides the translucent path, so neon works
      * on any stroke tool.
      */
-    private fun neonGlowRadius(): Double {
+    internal fun neonGlowRadius(): Double {
         val s = config.neonStrength.coerceIn(0.0, 1.0)
         return (config.baseWidth * (NEON_BLOOM_WIDE_FACTOR_MIN + NEON_BLOOM_WIDE_FACTOR_SPAN * s))
             .coerceAtLeast(NEON_BLOOM_WIDE_MIN)
@@ -224,15 +224,7 @@ class Stroke(
     }
 
     /** [c] lerped a fraction [t] toward white (alpha preserved). */
-    private fun lighten(c: Rgba, t: Double): Rgba {
-        val f = t.coerceIn(0.0, 1.0)
-        return Rgba(
-            (c.r + (255 - c.r) * f).toInt(),
-            (c.g + (255 - c.g) * f).toInt(),
-            (c.b + (255 - c.b) * f).toInt(),
-            c.a,
-        )
-    }
+
 
     override fun bounds(): Rect {
         cachedBounds?.let { return it }
@@ -415,26 +407,37 @@ class Stroke(
     companion object {
         const val KIND = "stroke"
 
+        /** [c] lerped a fraction [t] toward white (alpha preserved). */
+        internal fun lighten(c: Rgba, t: Double): Rgba {
+            val f = t.coerceIn(0.0, 1.0)
+            return Rgba(
+                (c.r + (255 - c.r) * f).toInt(),
+                (c.g + (255 - c.g) * f).toInt(),
+                (c.b + (255 - c.b) * f).toInt(),
+                c.a,
+            )
+        }
+
         /** Neon bloom: two stacked NORMAL-blur passes, a wide faint halo under a
          *  tighter brighter one. Radius = base_width * (MIN + SPAN * neonStrength),
          *  floored in page px; alpha = MIN + SPAN * neonStrength. */
-        private const val NEON_BLOOM_WIDE_FACTOR_MIN = 1.8
-        private const val NEON_BLOOM_WIDE_FACTOR_SPAN = 5.0
-        private const val NEON_BLOOM_WIDE_MIN = 6.0
-        private const val NEON_BLOOM_WIDE_ALPHA_MIN = 0.0
-        private const val NEON_BLOOM_WIDE_ALPHA_SPAN = 0.42
+        internal const val NEON_BLOOM_WIDE_FACTOR_MIN = 1.8
+        internal const val NEON_BLOOM_WIDE_FACTOR_SPAN = 5.0
+        internal const val NEON_BLOOM_WIDE_MIN = 6.0
+        internal const val NEON_BLOOM_WIDE_ALPHA_MIN = 0.0
+        internal const val NEON_BLOOM_WIDE_ALPHA_SPAN = 0.42
 
-        private const val NEON_BLOOM_TIGHT_FACTOR_MIN = 0.7
-        private const val NEON_BLOOM_TIGHT_FACTOR_SPAN = 1.8
-        private const val NEON_BLOOM_TIGHT_MIN = 2.5
-        private const val NEON_BLOOM_TIGHT_ALPHA_MIN = 0.0
-        private const val NEON_BLOOM_TIGHT_ALPHA_SPAN = 0.85
+        internal const val NEON_BLOOM_TIGHT_FACTOR_MIN = 0.7
+        internal const val NEON_BLOOM_TIGHT_FACTOR_SPAN = 1.8
+        internal const val NEON_BLOOM_TIGHT_MIN = 2.5
+        internal const val NEON_BLOOM_TIGHT_ALPHA_MIN = 0.0
+        internal const val NEON_BLOOM_TIGHT_ALPHA_SPAN = 0.85
 
         /** Fraction of the tube width filled by the solid white-hot core. */
-        private const val NEON_CORE_FRAC = 0.3
+        internal const val NEON_CORE_FRAC = 0.3
 
         /** Body colour lifted this fraction toward white so the tube reads as lit. */
-        private const val NEON_BODY_LIGHTEN = 0.10
+        internal const val NEON_BODY_LIGHTEN = 0.10
     }
 }
 

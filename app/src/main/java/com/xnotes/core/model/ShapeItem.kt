@@ -138,7 +138,7 @@ class ShapeItem(
      * opaque colour **body**, then a thinner **white-hot core** down the centre so
      * the colour reads at the tube's edges. [neonStrength] scales the halo only.
      */
-    private fun neonGlowRadius(): Double {
+    internal fun neonGlowRadius(): Double {
         val s = neonStrength.coerceIn(0.0, 1.0)
         return (strokeWidth * (GLOW_FACTOR_MIN + GLOW_FACTOR_SPAN * s)).coerceAtLeast(GLOW_MIN)
     }
@@ -448,12 +448,12 @@ class ShapeItem(
         private const val GLOW_MIN = 4.0
 
         /** Halo opacity = MIN + SPAN × neonStrength. */
-        private const val GLOW_ALPHA_MIN = 0.25
-        private const val GLOW_ALPHA_SPAN = 0.55
+        internal const val GLOW_ALPHA_MIN = 0.25
+        internal const val GLOW_ALPHA_SPAN = 0.55
 
         /** White-hot core line width as a fraction of the stroke width, with a page-px floor. */
-        private const val CORE_WIDTH_FRAC = 0.4
-        private const val CORE_WIDTH_MIN = 1.0
+        internal const val CORE_WIDTH_FRAC = 0.4
+        internal const val CORE_WIDTH_MIN = 1.0
     }
 }
 

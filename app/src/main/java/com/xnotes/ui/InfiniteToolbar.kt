@@ -63,6 +63,7 @@ fun InfiniteToolbar(
     var eraserOpen by remember { mutableStateOf(false) }
     var shapeOpen by remember { mutableStateOf(false) }
     var waypointsOpen by remember { mutableStateOf(false) }
+    var penOpen by remember { mutableStateOf<Tool?>(null) }
 
     Row(
         modifier = Modifier
@@ -85,11 +86,13 @@ fun InfiniteToolbar(
                     when {
                         tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
                         tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
+                        tool.isStroke && editor.tool == tool -> penOpen = tool
                         else -> editor.armTool(tool)
                     }
                 }
                 if (tool == Tool.ERASER && eraserOpen) CanvasEraserPopup(editor) { eraserOpen = false }
                 if (tool == Tool.SHAPE && shapeOpen) CanvasShapePopup(editor) { shapeOpen = false }
+                if (penOpen == tool) CanvasPenPopup(editor, tool) { penOpen = null }
             }
         }
         Separator()

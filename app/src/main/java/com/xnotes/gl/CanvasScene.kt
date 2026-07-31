@@ -5,6 +5,7 @@ import android.util.Log
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
+import com.xnotes.core.infinite.GlowSpec
 import com.xnotes.core.infinite.MeshData
 import com.xnotes.core.infinite.Minimap
 import com.xnotes.core.infinite.MeshPart
@@ -29,6 +30,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         val pass: InkPass,
         val coverColor: Rgba,
         val coverAlpha: Double,
+        val glow: GlowSpec? = null,
     )
 
     private class Record(
@@ -87,6 +89,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private var cover: CoverShader? = null
     private var imageShader: ImageShader? = null
     private var minimapShader: MinimapShader? = null
+    private var glowShader: GlowShader? = null
+    private val glowTarget = GlowTarget()
 
     /** Textures for placed images, decoded at the size the current zoom needs. */
     val textures = TextureCache()
@@ -171,11 +175,14 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         cover = null
         imageShader = null
         minimapShader = null
+        glowShader = null
+        glowTarget.onContextCreated(contextGen)
         try {
             ink = InkShader(contextGen)
             cover = CoverShader(contextGen)
             imageShader = ImageShader(contextGen)
             minimapShader = MinimapShader(contextGen)
+            glowShader = GlowShader(contextGen)
         } catch (e: GlShaderException) {
             Log.e(TAG, "ink shaders unavailable", e)
         }
@@ -189,6 +196,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         drainEdits()
         textures.beginFrame()
         textures.uploadPending()
+        glowTarget.resize(frame.widthPx, frame.heightPx, contextGen)
         val program = ink ?: return
         if (program.contextGen != contextGen) return
         if (records.isEmpty() && wetParts.isEmpty()) {
@@ -259,6 +267,15 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                         drawMasked(record, part, frame, multiply = false)
                         rebind(program, frame, camChunkX, camChunkY)
                     }
+                    InkPass.GLOW -> {
+                        flushRun(runStart, runCount)
+                        runStart = -1
+                        runCount = 0
+                        drawGlow(program, store, part, frame, camChunkX, camChunkY)
+                        rebind(program, frame, camChunkX, camChunkY)
+                        store.bindForDraw(contextGen)
+                        store.bindAttributes(program)
+                    }
                 }
             }
         }
@@ -317,7 +334,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         if (!wetStore.bindForDraw(contextGen)) return
         wetStore.bindAttributes(program)
         for (part in wetParts) {
-            if (part.pass == InkPass.OPAQUE) {
+            if (part.pass == InkPass.GLOW) {
+                drawGlow(program, wetStore, part, frame, camChunkX, camChunkY)
+                rebind(program, frame, camChunkX, camChunkY)
+                wetStore.bindForDraw(contextGen)
+                wetStore.bindAttributes(program)
+            } else if (part.pass == InkPass.OPAQUE) {
                 wetStore.drawRange(part.slice.indexOffset, part.slice.indexCount)
                 lastDrawCalls++
             } else {
@@ -357,6 +379,60 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         }
         shader.draw(corners, texture, image.orientation / 90)
         lastDrawCalls++
+    }
+
+    /**
+     * Neon's two halos: the geometry into an offscreen buffer, blurred across and back, then
+     * composited under the item at the halo's own brightness. Twice, wide and faint under tight and
+     * bright, which is the layering the paged renderer paints.
+     *
+     * The buffers are a fraction of the viewport, since a blur hides the resolution it was computed
+     * at, and each halo composites once rather than per overlap, so a self-crossing scribble cannot
+     * pile up into a brighter blob.
+     */
+    private fun drawGlow(
+        program: InkShader,
+        from: GeometryStore,
+        part: Part,
+        frame: FrameState,
+        camChunkX: Double,
+        camChunkY: Double,
+    ) {
+        val shader = glowShader ?: return
+        val spec = part.glow ?: return
+        if (!glowTarget.ready) return
+        val scale = glowTarget.downscale
+        for (halo in 0 until 2) {
+            val radius = if (halo == 0) spec.wideRadius else spec.tightRadius
+            val alpha = if (halo == 0) spec.wideAlpha else spec.tightAlpha
+            if (alpha <= 0.0 || radius <= 0.0) continue
+            // The blur works in the glow buffer's own pixels, so the content radius has to come
+            // through the zoom and the downscale before it means anything there.
+            val radiusPx = (radius * frame.zoom / scale).coerceAtMost(GlowShader.MAX_TAPS.toDouble() * 2.0)
+            if (radiusPx < 0.4) continue
+
+            glowTarget.bindAndClear(0)
+            program.begin(
+                camChunkX, camChunkY,
+                frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
+                frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
+                frame.zoom, glowTarget.bufferWidth, glowTarget.bufferHeight,
+            )
+            from.bindForDraw(contextGen)
+            from.bindAttributes(program)
+            GLES30.glDisable(GLES30.GL_BLEND)
+            from.drawRange(part.slice.indexOffset, part.slice.indexCount)
+
+            program.disableAttributes()
+            glowTarget.bindAndClear(1)
+            shader.blur(glowTarget.texture(0), radiusPx, horizontal = true, bufferW = glowTarget.bufferWidth, bufferH = glowTarget.bufferHeight)
+            glowTarget.bindAndClear(0)
+            shader.blur(glowTarget.texture(1), radiusPx, horizontal = false, bufferW = glowTarget.bufferWidth, bufferH = glowTarget.bufferHeight)
+
+            glowTarget.unbind(frame.widthPx, frame.heightPx)
+            shader.compositeOver(glowTarget.texture(0), alpha)
+            lastDrawCalls += 4
+        }
     }
 
     private fun flushRun(start: Int, count: Int) {
@@ -465,7 +541,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             // which is what stops its own overlaps from compounding.
             val baked = if (part.pass == InkPass.OPAQUE) part.color else part.color.withAlpha(255)
             val slice = store.put(part.mesh, baked) ?: continue
-            parts.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0))
+            parts.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0, part.glow))
         }
         if (parts.isEmpty() && edit.image == null) return
         val record = Record(edit.item, parts, edit.bounds, previousZ ?: nextZ++, edit.image)
@@ -483,7 +559,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         for (part in edit.parts) {
             val baked = if (part.pass == InkPass.OPAQUE) part.color else part.color.withAlpha(255)
             val slice = wetStore.put(part.mesh, baked) ?: continue
-            built.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0))
+            built.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0, part.glow))
         }
         wetParts = built
     }

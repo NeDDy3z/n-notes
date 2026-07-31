@@ -74,14 +74,24 @@ object StrokeTessellator {
     /** Half-widths at or below this contribute nothing and are skipped. */
     private const val MIN_HALF_WIDTH = 1e-6
 
-    fun tessellate(g: StrokeGeometry, tolerance: Double = DEFAULT_TOLERANCE): MeshData {
+    /**
+     * [widthScale] narrows the ribbon about its own centreline, which is how neon's white-hot core
+     * is drawn: the same path at a fraction of the width, so it rounds with the body on every pen.
+     */
+    fun tessellate(
+        g: StrokeGeometry,
+        tolerance: Double = DEFAULT_TOLERANCE,
+        widthScale: Double = 1.0,
+    ): MeshData {
         val n = g.pointCount
         if (n == 0) return MeshData.EMPTY
         val b = MeshBuilder(estimateVertices(g), estimateIndices(g))
         if (n == 1) {
-            if (g.hw(0) > MIN_HALF_WIDTH) b.circle(g.cx(0), g.cy(0), g.hw(0), tolerance)
+            val h = g.hw(0) * widthScale
+            if (h > MIN_HALF_WIDTH) b.circle(g.cx(0), g.cy(0), h, tolerance)
             return b.build()
         }
+        if (widthScale != 1.0) return scaledRibbon(g, tolerance, widthScale)
         if (g.outlineCount < 2 * n) return b.build() // geometry without rails: nothing to draw
 
         // Body: one quad per segment, both of its vertices taken straight off the rails, so
@@ -110,6 +120,38 @@ object StrokeTessellator {
             val h = g.hw(i)
             if (h <= MIN_HALF_WIDTH) continue
             if (turnAngle(g, i) > JOIN_DISC_ANGLE) b.circle(g.cx(i), g.cy(i), h, tolerance)
+        }
+        return b.build()
+    }
+
+    /**
+     * The ribbon at a fraction of its width, built from the centreline and scaled half-widths
+     * rather than from the rails, since the rails only exist at full width.
+     */
+    private fun scaledRibbon(g: StrokeGeometry, tolerance: Double, widthScale: Double): MeshData {
+        val n = g.pointCount
+        val b = MeshBuilder(estimateVertices(g), estimateIndices(g))
+        for (i in 0 until n - 1) {
+            val h0 = g.hw(i) * widthScale
+            val h1 = g.hw(i + 1) * widthScale
+            if (h0 <= MIN_HALF_WIDTH && h1 <= MIN_HALF_WIDTH) continue
+            val dx = g.cx(i + 1) - g.cx(i)
+            val dy = g.cy(i + 1) - g.cy(i)
+            val len = hypot(dx, dy)
+            if (len < 1e-9) continue
+            val nx = -dy / len
+            val ny = dx / len
+            val l0 = b.vertex(g.cx(i) + nx * h0, g.cy(i) + ny * h0, nx * h0, ny * h0)
+            val r0 = b.vertex(g.cx(i) - nx * h0, g.cy(i) - ny * h0, -nx * h0, -ny * h0)
+            val l1 = b.vertex(g.cx(i + 1) + nx * h1, g.cy(i + 1) + ny * h1, nx * h1, ny * h1)
+            val r1 = b.vertex(g.cx(i + 1) - nx * h1, g.cy(i + 1) - ny * h1, -nx * h1, -ny * h1)
+            b.triangle(l0, r0, r1)
+            b.triangle(l0, r1, l1)
+        }
+        // A disc at every sample, since a segment-normal ribbon gaps at its joins.
+        for (i in 0 until n) {
+            val h = g.hw(i) * widthScale
+            if (h > MIN_HALF_WIDTH) b.circle(g.cx(i), g.cy(i), h, tolerance)
         }
         return b.build()
     }
