@@ -433,10 +433,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             store.bindForDraw(contextGen)
             store.bindAttributes(program)
         }
-        shader.compositeOver(
-            glowTarget.texture(glowTarget.layerIndex), 1.0,
-            glowTarget.usedFractionX(frame.widthPx), glowTarget.usedFractionY(frame.heightPx),
-        )
+        shader.compositeOver(glowTarget.texture(glowTarget.layerIndex), 1.0)
         lastDrawCalls++
         rebind(program, frame, camChunkX, camChunkY)
         store.bindForDraw(contextGen)
@@ -498,33 +495,35 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             val radius = if (halo == 0) spec.wideRadius else spec.tightRadius
             val alpha = if (halo == 0) spec.wideAlpha else spec.tightAlpha
             if (alpha <= 0.0 || radius <= 0.0) continue
-            // The blur works in the glow buffer's own pixels, so the content radius has to come
-            // through the zoom and the downscale before it means anything there.
-            val radiusPx = (radius * frame.zoom / scale).coerceAtMost(GlowShader.MAX_TAPS.toDouble() * 2.0)
+            // The blur works in the buffer's own pixels, so the content radius comes through the
+            // zoom and then the buffer's own ratio to the screen.
+            val radiusPx = (radius * frame.zoom * bufferRatioX(frame))
+                .coerceAtMost(GlowShader.MAX_TAPS.toDouble() * 2.0)
             if (radiusPx < 0.4) continue
 
             // Only the stroke's own patch of screen is touched, grown by the blur's reach. A halo
             // is a small thing on a large display, and clearing and blurring the whole buffer for
             // each one is what made inking with neon crawl.
-            val patch = glowPatch(record.bounds, radiusPx * scale, frame) ?: continue
+            val patch = glowPatch(record.bounds, radiusPx / bufferRatioX(frame), frame) ?: continue
             GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
 
-            scissorInBuffer(patch, scale)
+            scissorInBuffer(patch, frame)
             glowTarget.bind(0)
             GLES30.glClearColor(0f, 0f, 0f, 0f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-            // The buffer is a fraction of the viewport, so the zoom has to shrink by the same
-            // fraction: drawing at full device scale into a smaller buffer would put the halo down
-            // magnified and anchored at the corner. The viewport passed is the fractional size
-            // rather than the buffer's rounded-up pixel count, so an odd viewport still maps to the
-            // same clip space as the real pass.
+            // Exactly the projection the screen pass uses, with nothing divided by anything. The
+            // downscale is already done: glViewport maps clip space onto the smaller buffer, so
+            // rendering the same picture into it renders it smaller. Shrinking the zoom as well
+            // applied the downscale twice and put the halo down at half size in the corner, which
+            // is what a halo sitting away from its stroke looks like. It also means the whole
+            // buffer is exactly the whole screen, so nothing has to be cropped on the way back.
             program.begin(
                 camChunkX, camChunkY,
                 frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
                 frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-                frame.zoom / scale,
-                glowTarget.bufferWidth.toDouble() * scale,
-                glowTarget.bufferHeight.toDouble() * scale,
+                frame.zoom,
+                frame.widthPx.toDouble(),
+                frame.heightPx.toDouble(),
             )
             from.bindForDraw(contextGen)
             from.bindAttributes(program)
@@ -537,20 +536,15 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             glowTarget.bind(0)
             shader.blur(glowTarget.texture(1), radiusPx, false, glowTarget.bufferWidth, glowTarget.bufferHeight)
 
+            // The buffer is the screen, so every hop samples it one to one.
             if (intoLayer) {
-                // Buffer to buffer, so the mapping is one to one; only the final hop to the screen
-                // crops away the sliver the rounded-up buffer added.
                 glowTarget.bind(glowTarget.layerIndex)
-                scissorInBuffer(patch, scale)
-                shader.compositeOver(glowTarget.texture(0), alpha)
+                scissorInBuffer(patch, frame)
             } else {
                 glowTarget.unbind(frame.widthPx, frame.heightPx)
                 GLES30.glScissor(patch[0], frame.heightPx - patch[1] - patch[3], patch[2], patch[3])
-                shader.compositeOver(
-                    glowTarget.texture(0), alpha,
-                    glowTarget.usedFractionX(frame.widthPx), glowTarget.usedFractionY(frame.heightPx),
-                )
             }
+            shader.compositeOver(glowTarget.texture(0), alpha)
             GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
             lastDrawCalls += 4
         }
@@ -579,20 +573,25 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         return intArrayOf(x0, y0, x1 - x0, y1 - y0)
     }
 
+    /** Buffer pixels per screen pixel. The buffer covers the whole screen, so this is its ratio. */
+    private fun bufferRatioX(frame: FrameState): Double =
+        if (frame.widthPx <= 0) 1.0 else glowTarget.bufferWidth.toDouble() / frame.widthPx
+
+    private fun bufferRatioY(frame: FrameState): Double =
+        if (frame.heightPx <= 0) 1.0 else glowTarget.bufferHeight.toDouble() / frame.heightPx
+
     /** Set the scissor for a glow-buffer pass, converting the device patch into buffer pixels. */
-    private fun scissorInBuffer(patch: IntArray, scale: Int) {
-        val x = patch[0] / scale
-        val w = (patch[2] + scale - 1) / scale + 1
-        val h = (patch[3] + scale - 1) / scale + 1
+    private fun scissorInBuffer(patch: IntArray, frame: FrameState) {
+        val rx = bufferRatioX(frame)
+        val ry = bufferRatioY(frame)
+        val x = kotlin.math.floor(patch[0] * rx).toInt().coerceIn(0, glowTarget.bufferWidth)
+        val yTop = kotlin.math.floor(patch[1] * ry).toInt().coerceIn(0, glowTarget.bufferHeight)
+        val w = (kotlin.math.ceil(patch[2] * rx).toInt() + 1).coerceAtMost(glowTarget.bufferWidth - x)
+        val h = (kotlin.math.ceil(patch[3] * ry).toInt() + 1).coerceAtMost(glowTarget.bufferHeight - yTop)
         // The buffer shares the framebuffer's y-up convention, so the patch flips into it.
-        val yTop = patch[1] / scale
         val y = (glowTarget.bufferHeight - yTop - h).coerceAtLeast(0)
-        GLES30.glScissor(
-            x.coerceIn(0, glowTarget.bufferWidth),
-            y,
-            w.coerceAtMost(glowTarget.bufferWidth - x.coerceIn(0, glowTarget.bufferWidth)),
-            h.coerceAtMost(glowTarget.bufferHeight - y),
-        )
+        if (w <= 0 || h <= 0) return
+        GLES30.glScissor(x, y, w, h)
     }
 
     private fun flushRun(start: Int, count: Int) {

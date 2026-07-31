@@ -86,17 +86,6 @@ class GlowTarget {
     val bufferWidth: Int get() = width
     val bufferHeight: Int get() = height
 
-    /**
-     * The fraction of the buffer the viewport actually occupies. Rounding the buffer up leaves a
-     * sliver on the right and bottom that was never drawn into, and sampling it would stretch the
-     * halo by that fraction and slide it off the stroke.
-     */
-    fun usedFractionX(viewportW: Int): Float =
-        if (width <= 0) 1f else (viewportW.toFloat() / (width * DOWNSCALE))
-
-    fun usedFractionY(viewportH: Int): Float =
-        if (height <= 0) 1f else (viewportH.toFloat() / (height * DOWNSCALE))
-
     /** Go back to drawing on screen at [viewportW] by [viewportH]. */
     fun unbind(viewportW: Int, viewportH: Int) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
