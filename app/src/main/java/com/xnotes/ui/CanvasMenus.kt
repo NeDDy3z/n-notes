@@ -148,30 +148,47 @@ private fun ActionIcon(icon: ImageVector, desc: String, enabled: Boolean = true,
 }
 
 /**
+ * What the long-press menu needs from whichever editor is open. Same reasoning as
+ * [SelectionMenuHost]: one menu, taken through an interface, rather than two that resemble each
+ * other and drift.
+ */
+interface LongPressMenuHost {
+    /** Where the press landed, or null when no menu is open. */
+    val contextMenu: ContextMenuTarget?
+
+    val hasClipboardItems: Boolean
+    val clipboardHasImage: Boolean
+
+    fun pasteItemsAt(content: com.xnotes.core.geometry.Pt)
+    fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt)
+    fun dismissContextMenu()
+}
+
+/**
  * Long-press paste menu on empty space: paste copied items or an image from the
  * system clipboard at the press point, or insert an image there.
  */
 @Composable
-fun LongPressMenu(editor: Editor, onInsertImageAt: (com.xnotes.core.geometry.Pt) -> Unit) {
-    val target = editor.contextMenu ?: return
+fun LongPressMenu(host: LongPressMenuHost, onInsertImageAt: (com.xnotes.core.geometry.Pt) -> Unit) {
+    val target = host.contextMenu ?: return
     val density = LocalDensity.current
     val xDp = with(density) { target.viewportX.toFloat().toDp() }
     val yDp = with(density) { target.viewportY.toFloat().toDp() }
 
     Box(modifier = Modifier.offset(xDp, yDp).size(1.dp)) {
-        DropdownMenu(expanded = true, onDismissRequest = { editor.dismissContextMenu() }) {
-            if (editor.hasClipboardItems) {
+        DropdownMenu(expanded = true, onDismissRequest = { host.dismissContextMenu() }) {
+            if (host.hasClipboardItems) {
                 DropdownMenuItem(text = { Text("Paste here") }, onClick = {
-                    editor.pasteItemsAt(target.content); editor.dismissContextMenu()
+                    host.pasteItemsAt(target.content); host.dismissContextMenu()
                 })
             }
-            if (editor.clipboardHasImage) {
+            if (host.clipboardHasImage) {
                 DropdownMenuItem(text = { Text("Paste image") }, onClick = {
-                    editor.pasteClipboardImageAt(target.content); editor.dismissContextMenu()
+                    host.pasteClipboardImageAt(target.content); host.dismissContextMenu()
                 })
             }
             DropdownMenuItem(text = { Text("Insert image…") }, onClick = {
-                onInsertImageAt(target.content); editor.dismissContextMenu()
+                onInsertImageAt(target.content); host.dismissContextMenu()
             })
         }
     }

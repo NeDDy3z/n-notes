@@ -121,7 +121,7 @@ private const val SIDECAR_DIR = ".xnote"
 private const val SIDECAR_FILE = "colors.json"
 
 @Stable
-class Editor(context: Context) : ToolPopupHost, SelectionMenuHost {
+class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost {
 
     private val appContext = context.applicationContext
     private val settingsRepo = SettingsRepository(context)
@@ -366,7 +366,7 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost {
         private set
 
     /** Long-press paste context menu target, or null when hidden. */
-    var contextMenu by mutableStateOf<ContextMenuTarget?>(null)
+    override var contextMenu by mutableStateOf<ContextMenuTarget?>(null)
         private set
     var title by mutableStateOf(state.document.title)
         private set
@@ -817,15 +817,15 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost {
 
     // --- selection menu / clipboard ---
 
-    val hasClipboardItems: Boolean get() = controller.hasClipboardItems()
-    val clipboardHasImage: Boolean get() = clipboardImageUri() != null
+    override val hasClipboardItems: Boolean get() = controller.hasClipboardItems()
+    override val clipboardHasImage: Boolean get() = clipboardImageUri() != null
 
     override fun copySelection() = controller.copySelection()
     override fun cutSelection() = controller.cutSelection()
     override fun duplicateSelection() = controller.duplicateSelection()
     override fun rotateSelectedImage() = controller.rotateSelectedImage()
     override fun dismissSelectionMenu() { selectionMenu = null }
-    fun dismissContextMenu() { contextMenu = null }
+    override fun dismissContextMenu() { contextMenu = null }
     fun dismissScreenshot() = controller.clearScreenshot()
 
     /** Render the screenshot tool's capture rectangle to a PNG and put it on the system clipboard. */
@@ -888,11 +888,11 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost {
         true
     }.getOrDefault(false)
 
-    fun pasteItemsAt(content: com.xnotes.core.geometry.Pt) {
+    override fun pasteItemsAt(content: com.xnotes.core.geometry.Pt) {
         controller.pasteItemsAt(content)
     }
 
-    fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt) {
+    override fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt) {
         val uri = clipboardImageUri() ?: run {
             clipboardSvgBytes()?.let { insertImageAt(it, content) }
                 ?: run { message = "The clipboard has no image to paste." }
@@ -905,23 +905,10 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost {
     }
 
     /** SVG markup sitting on the clipboard as plain text (copied source), as insertable bytes. */
-    private fun clipboardSvgBytes(): ByteArray? {
-        val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return null
-        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString() ?: return null
-        val t = text.trimStart('\uFEFF').trimStart()
-        val looksSvg = t.startsWith("<svg") || ((t.startsWith("<?xml") || t.startsWith("<!")) && t.contains("<svg"))
-        return if (looksSvg) text.toByteArray() else null
-    }
+    private fun clipboardSvgBytes(): ByteArray? = com.xnotes.platform.SystemClipboard.svgBytes(appContext)
 
-    private fun clipboardImageUri(): android.net.Uri? {
-        val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return null
-        val clip = cm.primaryClip ?: return null
-        if (clip.itemCount == 0) return null
-        val uri = clip.getItemAt(0).uri ?: return null
-        val type = appContext.contentResolver.getType(uri)
-        val isImage = type?.startsWith("image/") == true || clip.description?.hasMimeType("image/*") == true
-        return if (isImage) uri else null
-    }
+    private fun clipboardImageUri(): android.net.Uri? =
+        com.xnotes.platform.SystemClipboard.imageUri(appContext)
 
     private fun rebuildPdfSource() {
         pdfSource?.close()

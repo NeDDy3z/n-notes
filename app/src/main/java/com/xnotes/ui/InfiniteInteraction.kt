@@ -92,6 +92,8 @@ class InfiniteInteraction(
     private val devicePxPerDp: () -> Double = { 1.0 },
     /** A press that landed on the minimap; returns true when it was consumed as navigation. */
     private val onMinimapPress: (Double, Double) -> Boolean = { _, _ -> false },
+    /** A finger held still on empty canvas: open the paste menu at this viewport and content point. */
+    private val onContextMenu: (Pt, Pt) -> Unit = { _, _ -> },
 ) {
 
     private val choreographer = Choreographer.getInstance()
@@ -145,6 +147,10 @@ class InfiniteInteraction(
     // real drag pans and leaves it alone.
     private var panMayDismiss = false
     private var panDownAt = Pt.ZERO
+
+    // A finger held still on empty canvas opens the paste menu.
+    private var longPressRunnable: Runnable? = null
+    private var longPressAt = Pt.ZERO
 
     // Hold-still-to-snap: a freehand stroke that stops moving becomes the shape it looks like.
     private val handler = Handler(Looper.getMainLooper())
@@ -201,6 +207,7 @@ class InfiniteInteraction(
     /** Drop any in-flight gesture and stop a glide, so a document swap cannot bleed into the next. */
     fun resetGestureState() {
         stopFling()
+        cancelLongPress()
         mode = CanvasPointerMode.IDLE
         panVel = Pt.ZERO
         liveStroke = null
@@ -250,6 +257,8 @@ class InfiniteInteraction(
             if (effective == Tool.PAN) panMayDismiss = hasSelection() else clearSelection()
         }
 
+        armLongPress(Pt(vx, vy), onSelection, toolType == MotionEvent.TOOL_TYPE_FINGER)
+
         when {
             effective.isStroke -> beginDraw(vx, vy, effective, e)
             effective == Tool.ERASER -> beginErase(vx, vy)
@@ -260,7 +269,49 @@ class InfiniteInteraction(
         }
     }
 
+    // --- long press on empty canvas ---
+
+    /**
+     * Arm the paste menu for a finger held still on empty canvas.
+     *
+     * Finger only, like the paged canvas: the stylus always draws, so resting it never pops a menu.
+     * A press on the selection or on an item is left alone, because those already mean something.
+     */
+    private fun armLongPress(at: Pt, onSelection: Boolean, isFinger: Boolean) {
+        cancelLongPress()
+        if (!isFinger || onSelection) return
+        // The rect only narrows the index; whether the press is really on something is the item's
+        // own answer, so it is padded rather than a bare point.
+        val content = viewport.viewportToContent(at)
+        val pad = TAP_SLOP_PX / viewport.zoom
+        val near = Rect(content.x - pad, content.y - pad, pad * 2, pad * 2)
+        if (itemsIn(near).any { it.contains(content) }) return
+        longPressAt = at
+        val r = Runnable { triggerLongPress() }
+        longPressRunnable = r
+        handler.postDelayed(r, InteractionController.LONG_PRESS_MS)
+    }
+
+    private fun cancelLongPress() {
+        longPressRunnable?.let { handler.removeCallbacks(it) }
+        longPressRunnable = null
+    }
+
+    private fun triggerLongPress() {
+        longPressRunnable = null
+        // The gesture underway is only ever a pan or a stroke that has not moved; drop it so the
+        // menu is not fighting a drag, and stop the press from also dismissing the selection.
+        if (mode == CanvasPointerMode.DRAW) abandonStroke()
+        if (mode == CanvasPointerMode.SHAPE) abandonShape()
+        mode = CanvasPointerMode.IDLE
+        panMayDismiss = false
+        setInteractive(false, true)
+        onContextMenu(longPressAt, viewport.viewportToContent(longPressAt))
+        requestRender()
+    }
+
     private fun handlePointerDown(e: MotionEvent) {
+        cancelLongPress() // a second finger is a pinch, never a held press
         // A stylus stroke ignores an incidental palm or second finger; a finger stroke yields to a
         // pinch, since two fingers can only mean a zoom.
         if (mode == CanvasPointerMode.DRAW && drawingIsStylus) return
@@ -274,6 +325,11 @@ class InfiniteInteraction(
     }
 
     private fun handleMove(e: MotionEvent) {
+        // A finger that wanders is panning or drawing, not holding still for the menu.
+        if (longPressRunnable != null) {
+            val moved = Pt(e.getX(0).toDouble(), e.getY(0).toDouble()).distanceTo(longPressAt)
+            if (moved > InteractionController.LONG_PRESS_SLOP) cancelLongPress()
+        }
         when (mode) {
             CanvasPointerMode.PAN -> extendPan(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.PINCH -> updatePinch(e)
@@ -302,6 +358,7 @@ class InfiniteInteraction(
     }
 
     private fun handleUp(e: MotionEvent) {
+        cancelLongPress()
         val wasMoving = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
         // A finger tap off the selection puts it away; a tap is the only way to say so with a
         // finger, since a drag there is a pan.
@@ -332,6 +389,7 @@ class InfiniteInteraction(
     }
 
     private fun abortGesture() {
+        cancelLongPress()
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
         if (mode == CanvasPointerMode.ERASE) endErase()
         if (mode == CanvasPointerMode.SHAPE) abandonShape()

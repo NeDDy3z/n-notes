@@ -51,7 +51,7 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
-class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
+class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost {
 
     private val appContext = context.applicationContext
 
@@ -87,6 +87,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
         onLiftSelection = { items, at -> scene.setLift(items, at) },
         devicePxPerDp = { devicePxPerDp },
         onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
+        onContextMenu = { vp, content -> contextMenu = ContextMenuTarget(vp.x, vp.y, content) },
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
@@ -366,7 +367,28 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
         publishOverlay()
     }
 
-    val hasClipboardItems: Boolean get() = clipboard.isNotEmpty()
+    override val hasClipboardItems: Boolean get() = clipboard.isNotEmpty()
+
+    // --- long-press paste menu ---
+
+    /** Where a held finger opened the paste menu, or null when no menu is open. */
+    override var contextMenu: ContextMenuTarget? by mutableStateOf(null)
+
+    override val clipboardHasImage: Boolean
+        get() = com.xnotes.platform.SystemClipboard.hasImage(appContext)
+
+    override fun dismissContextMenu() {
+        contextMenu = null
+    }
+
+    override fun pasteItemsAt(content: Pt) {
+        pasteClipboard(content)
+    }
+
+    override fun pasteClipboardImageAt(content: Pt) {
+        val bytes = com.xnotes.platform.SystemClipboard.imageBytes(appContext) ?: return
+        insertImage(bytes, content)
+    }
 
     /** Put the selection on top. On a flat canvas that is purely a reorder of the item list. */
     override fun bringToFront() {

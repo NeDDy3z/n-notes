@@ -243,6 +243,8 @@ private fun EditorScreen(
     var guardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingAfterSave by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingInsertContent by remember { mutableStateOf<com.xnotes.core.geometry.Pt?>(null) }
+    // The same, for the infinite canvas: where a long-press menu asked the image to land.
+    var pendingCanvasInsertContent by remember { mutableStateOf<com.xnotes.core.geometry.Pt?>(null) }
     var pendingShareUri by remember { mutableStateOf<String?>(null) }
     var pendingSaveCopyUri by remember { mutableStateOf<String?>(null) }
     // A finished PDF render awaiting a SAF "Save as" destination (open-note / file / pages export).
@@ -432,7 +434,8 @@ private fun EditorScreen(
             val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { resolver.openInputStream(uri)?.use { input -> input.readBytes() } }.getOrNull()
             }
-            if (bytes != null) editor.infinite.insertImage(bytes)
+            if (bytes != null) editor.infinite.insertImage(bytes, pendingCanvasInsertContent)
+            pendingCanvasInsertContent = null
         }
     }
 
@@ -675,6 +678,10 @@ private fun EditorScreen(
                             update = { it.publish() },
                         )
                         com.xnotes.ui.SelectionMenu(canvas)
+                        com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c ->
+                            pendingCanvasInsertContent = c
+                            insertCanvasImageLauncher.launch(arrayOf("image/*"))
+                        })
                         com.xnotes.ui.CanvasDebugOverlay(canvas)
                     }
                 }
