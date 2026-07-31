@@ -70,15 +70,6 @@ class InkShader(contextGen: Int) {
         program.set("uOverrideMix", 0f)
     }
 
-    /**
-     * Multiply every vertex colour by [tint]. Left at opaque white for normal ink; used to fade a
-     * stroke whose true width has fallen under a pixel, and to force full alpha while a translucent
-     * stroke is accumulating into the stencil.
-     */
-    fun setTint(tint: Rgba) {
-        program.set("uTint", tint.r / 255f, tint.g / 255f, tint.b / 255f, tint.a / 255f)
-    }
-
     fun disableAttributes() {
         if (attribLocal >= 0) GLES30.glDisableVertexAttribArray(attribLocal)
         if (attribChunk >= 0) GLES30.glDisableVertexAttribArray(attribChunk)
@@ -87,8 +78,6 @@ class InkShader(contextGen: Int) {
     }
 
     companion object {
-        val NO_TINT = Rgba(255, 255, 255, 255)
-
         /**
          * Narrowest half-width a line is ever rasterized at, in device pixels. Below this a line
          * is pushed back out to it and the width it gained is taken out of its alpha, so it fades
@@ -150,13 +139,8 @@ class InkShader(contextGen: Int) {
         private val FRAGMENT_SRC = """#version 300 es
             precision mediump float;
             in vec4 vColor;
-            uniform vec4 uTint;
             out vec4 fragColor;
-            void main() {
-                vec4 c = vColor * uTint;
-                // Premultiply so the standard blend function composites a faded stroke correctly.
-                fragColor = vec4(c.rgb, c.a);
-            }
+            void main() { fragColor = vColor; }
         """.trimIndent()
     }
 }
