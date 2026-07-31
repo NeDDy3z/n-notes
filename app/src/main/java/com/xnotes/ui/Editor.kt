@@ -121,7 +121,7 @@ private const val SIDECAR_DIR = ".xnote"
 private const val SIDECAR_FILE = "colors.json"
 
 @Stable
-class Editor(context: Context) : ToolPopupHost {
+class Editor(context: Context) : ToolPopupHost, SelectionMenuHost {
 
     private val appContext = context.applicationContext
     private val settingsRepo = SettingsRepository(context)
@@ -357,6 +357,9 @@ class Editor(context: Context) : ToolPopupHost {
     /** True when the settled selection is a single image, so the menu shows the rotate action. */
     var selectionIsImage by mutableStateOf(false)
         private set
+
+    override val selectionMenuRect: com.xnotes.core.geometry.Rect? get() = selectionMenu
+    override val selectionMenuIsImage: Boolean get() = selectionIsImage
 
     /** Viewport rect to anchor the screenshot tool's "copy as image" menu, or null when hidden. */
     var screenshotMenu by mutableStateOf<com.xnotes.core.geometry.Rect?>(null)
@@ -817,11 +820,11 @@ class Editor(context: Context) : ToolPopupHost {
     val hasClipboardItems: Boolean get() = controller.hasClipboardItems()
     val clipboardHasImage: Boolean get() = clipboardImageUri() != null
 
-    fun copySelection() = controller.copySelection()
-    fun cutSelection() = controller.cutSelection()
-    fun duplicateSelection() = controller.duplicateSelection()
-    fun rotateSelectedImage() = controller.rotateSelectedImage()
-    fun dismissSelectionMenu() { selectionMenu = null }
+    override fun copySelection() = controller.copySelection()
+    override fun cutSelection() = controller.cutSelection()
+    override fun duplicateSelection() = controller.duplicateSelection()
+    override fun rotateSelectedImage() = controller.rotateSelectedImage()
+    override fun dismissSelectionMenu() { selectionMenu = null }
     fun dismissContextMenu() { contextMenu = null }
     fun dismissScreenshot() = controller.clearScreenshot()
 
@@ -3469,9 +3472,9 @@ class Editor(context: Context) : ToolPopupHost {
 
     // --- selection edits ---
 
-    fun deleteSelection() = controller.deleteSelection()
+    override fun deleteSelection() = controller.deleteSelection()
     fun selectAll() = controller.selectAll()
-    fun bringToFront() = controller.bringToFront()
+    override fun bringToFront() = controller.bringToFront()
     fun escape() = controller.escape()
 
     fun toggleSidebar() {

@@ -674,6 +674,7 @@ private fun EditorScreen(
                             modifier = Modifier.fillMaxSize(),
                             update = { it.publish() },
                         )
+                        com.xnotes.ui.SelectionMenu(canvas)
                         com.xnotes.ui.CanvasDebugOverlay(canvas)
                     }
                 }

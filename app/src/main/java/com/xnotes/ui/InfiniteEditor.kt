@@ -9,6 +9,7 @@ import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.History
 import com.xnotes.core.infinite.AddCanvasItem
+import com.xnotes.core.infinite.AddCanvasItems
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.infinite.CanvasSelection
 import com.xnotes.core.infinite.CanvasViewport
@@ -16,6 +17,7 @@ import com.xnotes.core.infinite.EraseCanvasItems
 import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.infinite.Minimap
 import com.xnotes.core.infinite.OverlayTessellator
+import com.xnotes.core.infinite.ReplaceCanvasItems
 import com.xnotes.core.infinite.StrokeTessellator
 import com.xnotes.core.infinite.EraseSession
 import com.xnotes.core.infinite.InfiniteDocument
@@ -25,6 +27,7 @@ import com.xnotes.core.infinite.Waypoint
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
+import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
@@ -48,7 +51,7 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
-class InfiniteEditor(context: Context) : ToolPopupHost {
+class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
 
     private val appContext = context.applicationContext
 
@@ -259,8 +262,44 @@ class InfiniteEditor(context: Context) : ToolPopupHost {
         interaction.tool = next
     }
 
+    // --- selection actions ---
+
+    /**
+     * The selection's own clipboard, and the actions the floating menu offers.
+     *
+     * These are the canvas's siblings of the paged controller's, not a reuse of them: the paged ones
+     * are written against pages, and every one of them would need a page index that does not exist
+     * here. The behaviour they present is the same, which is what the shared [SelectionMenu] holds
+     * them to.
+     */
+    private val clipboard = ArrayList<CanvasItem>()
+
+    /** Only text needs a measurer to clone, and the canvas has none; this satisfies the signature. */
+    private val textMeasurer = com.xnotes.platform.AndroidTextMeasurer()
+
+    /** Where the floating menu sits, or null while a gesture is running or nothing is selected. */
+    override var selectionMenuRect: Rect? by mutableStateOf(null)
+        private set
+
+    override val selectionMenuIsImage: Boolean
+        get() = selection.items.singleOrNull() is ImageItem
+
+    /** Re-anchor the floating menu over the settled selection, or take it away. */
+    private fun refreshSelectionMenu() {
+        val box = selection.box
+        selectionMenuRect = if (box == null || interaction.mode != CanvasPointerMode.IDLE) {
+            null
+        } else {
+            Rect.bounding(box.corners().map { viewport.contentToViewport(it) })
+        }
+    }
+
+    override fun dismissSelectionMenu() {
+        selectionMenuRect = null
+    }
+
     /** Delete whatever is selected, as one undoable edit. */
-    fun deleteSelection() {
+    override fun deleteSelection() {
         val items = selection.items
         if (items.isEmpty()) return
         val command = EraseCanvasItems.capture(document, items)
@@ -269,6 +308,102 @@ class InfiniteEditor(context: Context) : ToolPopupHost {
         interaction.clearSelection()
         markDirty()
         refresh()
+    }
+
+    override fun copySelection() {
+        if (selection.isEmpty) return
+        clipboard.clear()
+        selection.items.mapTo(clipboard) { it.deepCopy(textMeasurer) }
+    }
+
+    override fun cutSelection() {
+        if (selection.isEmpty) return
+        copySelection()
+        deleteSelection()
+    }
+
+    /** Clone the selection a nudge down and right, and leave the copies selected. */
+    override fun duplicateSelection() {
+        if (selection.isEmpty) return
+        val clones = selection.items.map { it.deepCopy(textMeasurer) }
+        for (clone in clones) clone.translate(DUPLICATE_NUDGE, DUPLICATE_NUDGE)
+        document.addAll(clones)
+        history.push(AddCanvasItems(document, clones))
+        selection.select(clones)
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    /** Paste the clipboard at [atContent], or a nudge from where it was copied. */
+    fun pasteClipboard(atContent: Pt? = null) {
+        if (clipboard.isEmpty()) return
+        val clones = clipboard.map { it.deepCopy(textMeasurer) }
+        var box: Rect? = null
+        for (clone in clones) box = box?.union(clone.bounds()) ?: clone.bounds()
+        val bounds = box ?: return
+        val dx: Double
+        val dy: Double
+        if (atContent == null) {
+            dx = DUPLICATE_NUDGE
+            dy = DUPLICATE_NUDGE
+        } else {
+            dx = atContent.x - bounds.left
+            dy = atContent.y - bounds.top
+        }
+        for (clone in clones) clone.translate(dx, dy)
+        document.addAll(clones)
+        history.push(AddCanvasItems(document, clones))
+        selection.select(clones)
+        armTool(Tool.SELECT)
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    val hasClipboardItems: Boolean get() = clipboard.isNotEmpty()
+
+    /** Put the selection on top. On a flat canvas that is purely a reorder of the item list. */
+    override fun bringToFront() {
+        if (selection.isEmpty) return
+        val before = document.items.toList()
+        val moved = selection.items
+        val kept = before.filter { item -> moved.none { it === item } }
+        val after = kept + moved
+        if (after.size == before.size && after.indices.all { after[it] === before[it] }) return
+        document.replaceAll(after)
+        history.push(ReplaceCanvasItems(document, before, after))
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    /** Turn the one selected image a quarter turn; the stored bytes are untouched, so it is lossless. */
+    override fun rotateSelectedImage() {
+        val item = selection.items.singleOrNull() as? ImageItem ?: return
+        val oldRect = item.rect
+        val oldOrientation = item.orientation
+        val centre = oldRect.center
+        val newRect = Rect(
+            centre.x - oldRect.h / 2.0, centre.y - oldRect.w / 2.0, oldRect.h, oldRect.w,
+        )
+        val newOrientation = (oldOrientation + 90) % 360
+        item.rect = newRect
+        item.orientation = newOrientation
+        document.itemsChanged(listOf(item))
+        history.push(
+            com.xnotes.core.infinite.OnCanvas(
+                document,
+                com.xnotes.core.history.RotateImage(
+                    item, oldRect, oldOrientation, newRect, newOrientation,
+                ),
+                listOf(item),
+            ),
+        )
+        selection.refreshBox()
+        markDirty()
+        refresh()
+        publishOverlay()
     }
 
     fun armInkColor(color: Rgba) {
@@ -357,6 +492,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost {
      */
     private fun publishOverlay() {
         hasSelection = !selection.isEmpty
+        refreshSelectionMenu()
         val accent = palette?.accent ?: InkPalette.DEFAULT
         val zoom = viewport.zoom
         val parts = ArrayList<MeshPart>(3)
@@ -484,6 +620,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost {
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> undo()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Y -> redo()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_A -> selectAll()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_C -> copySelection()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_X -> cutSelection()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_V -> pasteClipboard()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_D -> duplicateSelection()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_0 -> zoomToFit()
             ctrl && (e.keyCode == android.view.KeyEvent.KEYCODE_PLUS || e.keyCode == android.view.KeyEvent.KEYCODE_EQUALS) -> zoomBy(ZOOM_STEP)
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_MINUS -> zoomBy(1.0 / ZOOM_STEP)
@@ -635,6 +775,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost {
     private fun onViewChanged() {
         document.lastView = viewport.toWaypoint()
         zoomPercent = Math.round(viewport.zoom * 100).toInt()
+        // The menu is anchored in viewport pixels, so a pan or a zoom moves it.
+        refreshSelectionMenu()
         // The minimap maps everything drawn, so its extent moves with the content, not the view.
         view.contentBounds = document.contentBounds()
     }
@@ -650,5 +792,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost {
     companion object {
         /** Zoom step for the keyboard, matching a comfortable notch of a pinch. */
         const val ZOOM_STEP = 1.25
+
+        /** Content pixels a duplicate lands from its original, so the copy is visibly a copy. */
+        const val DUPLICATE_NUDGE = 24.0
     }
 }

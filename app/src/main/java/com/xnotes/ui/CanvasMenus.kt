@@ -31,17 +31,41 @@ import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 
 /**
+ * What the selection menu needs from whichever editor is open.
+ *
+ * The bar is the same bar on either canvas, so it is the same composable rather than a second one
+ * that resembles it. Taking the few members it reads through an interface is what makes "identical"
+ * a property of the code rather than something to keep checking, exactly as [ToolPopupHost] does
+ * for the tool popups.
+ */
+interface SelectionMenuHost {
+    /** Where the settled selection sits in viewport pixels, or null to hide the bar. */
+    val selectionMenuRect: com.xnotes.core.geometry.Rect?
+
+    /** Whether the selection is a single image, which is the only thing rotate applies to. */
+    val selectionMenuIsImage: Boolean
+
+    fun deleteSelection()
+    fun cutSelection()
+    fun copySelection()
+    fun bringToFront()
+    fun duplicateSelection()
+    fun rotateSelectedImage()
+    fun dismissSelectionMenu()
+}
+
+/**
  * Floating action bar shown above a settled selection (spec-adjacent): delete,
  * cut, copy, bring-to-front, duplicate. Hidden while moving/resizing.
  */
 @Composable
-fun SelectionMenu(editor: Editor) {
-    val rect = editor.selectionMenu ?: return
+fun SelectionMenu(host: SelectionMenuHost) {
+    val rect = host.selectionMenuRect ?: return
     val palette = LocalPalette.current
     val density = LocalDensity.current
 
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { ((if (editor.selectionIsImage) 6 else 5) * 46).dp.toPx() }
+    val barWidthPx = with(density) { ((if (host.selectionMenuIsImage) 6 else 5) * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
@@ -60,12 +84,12 @@ fun SelectionMenu(editor: Editor) {
             .background(palette.menuBg.toComposeColor())
             .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
     ) {
-        ActionIcon(XnotesIcons.trash, "Delete") { editor.deleteSelection() }
-        ActionIcon(XnotesIcons.cut, "Cut") { editor.cutSelection() }
-        ActionIcon(XnotesIcons.copy, "Copy") { editor.copySelection(); editor.dismissSelectionMenu() }
-        ActionIcon(XnotesIcons.front, "Bring to front") { editor.bringToFront(); editor.dismissSelectionMenu() }
-        ActionIcon(XnotesIcons.duplicate, "Duplicate") { editor.duplicateSelection() }
-        if (editor.selectionIsImage) ActionIcon(XnotesIcons.rotate, "Rotate") { editor.rotateSelectedImage() }
+        ActionIcon(XnotesIcons.trash, "Delete") { host.deleteSelection() }
+        ActionIcon(XnotesIcons.cut, "Cut") { host.cutSelection() }
+        ActionIcon(XnotesIcons.copy, "Copy") { host.copySelection(); host.dismissSelectionMenu() }
+        ActionIcon(XnotesIcons.front, "Bring to front") { host.bringToFront(); host.dismissSelectionMenu() }
+        ActionIcon(XnotesIcons.duplicate, "Duplicate") { host.duplicateSelection() }
+        if (host.selectionMenuIsImage) ActionIcon(XnotesIcons.rotate, "Rotate") { host.rotateSelectedImage() }
     }
 }
 

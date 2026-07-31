@@ -285,6 +285,9 @@ class InfiniteInteraction(
         setInteractive(false, true)
         if (wasMoving) startFling(panVel)
         onViewChanged()
+        // Once more now the gesture has settled, so chrome that only shows on a still selection
+        // gets its chance; during the drag the mode was still MOVE.
+        onSelectionChanged()
         requestRender()
     }
 
