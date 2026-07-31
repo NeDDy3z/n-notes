@@ -20,19 +20,44 @@ class BackgroundPatternTest {
     // --- level selection ---
 
     @Test fun theChosenPeriodAlwaysLandsInItsBand() {
+        for (spacing in listOf(16.0, 32.0, 64.0, 120.0, 200.0)) {
+            val target = BackgroundPattern.targetPeriodPx(spacing)
+            var zoom = CanvasViewport.MIN_ZOOM
+            while (zoom <= CanvasViewport.MAX_ZOOM) {
+                val periodPx = spacing * BackgroundPattern.levelMultiplier(spacing, zoom) * zoom
+                assertTrue(
+                    "period $periodPx px at zoom $zoom spacing $spacing is below the target",
+                    periodPx >= target - 1e-9,
+                )
+                assertTrue(
+                    "period $periodPx px at zoom $zoom spacing $spacing should have halved",
+                    periodPx < 2 * target + 1e-9,
+                )
+                zoom *= 1.09
+            }
+        }
+    }
+
+    @Test fun atFullZoomTheRulingIsExactlyTheConfiguredSpacing() {
+        // The whole point of anchoring on the spacing: 100% zoom shows the grid that was asked for.
+        for (spacing in listOf(32.0, 64.0, 100.0, 200.0)) {
+            assertEquals(1.0, BackgroundPattern.levelMultiplier(spacing, 1.0), 1e-12)
+        }
+    }
+
+    @Test fun aSpacingUnderTheFloorIsPulledUpRatherThanDrawnUnreadable() {
+        // 16 content px at 100% zoom would be a 16 px grid; the floor coarsens it to 32.
+        val k = BackgroundPattern.levelMultiplier(16.0, 1.0)
+        assertEquals(2.0, k, 1e-12)
+        assertTrue(16.0 * k >= BackgroundPattern.MIN_PERIOD_PX)
+    }
+
+    @Test fun theRulingKeepsTheSameOnScreenDensityAtEveryZoom() {
         val spacing = 64.0
-        var zoom = CanvasViewport.MIN_ZOOM
-        while (zoom <= CanvasViewport.MAX_ZOOM) {
-            val periodPx = spacing * BackgroundPattern.levelMultiplier(spacing, zoom) * zoom
-            assertTrue(
-                "period $periodPx px at zoom $zoom is below the floor",
-                periodPx >= BackgroundPattern.MIN_PERIOD_PX - 1e-9,
-            )
-            assertTrue(
-                "period $periodPx px at zoom $zoom should have halved",
-                periodPx < 2 * BackgroundPattern.MIN_PERIOD_PX + 1e-9,
-            )
-            zoom *= 1.09
+        val at1 = spacing * BackgroundPattern.levelMultiplier(spacing, 1.0) * 1.0
+        for (zoom in listOf(0.02, 0.25, 4.0, 17.0, 64.0)) {
+            val p = spacing * BackgroundPattern.levelMultiplier(spacing, zoom) * zoom
+            assertTrue("period $p at zoom $zoom drifted from $at1", p >= at1 - 1e-9 && p < at1 * 2 + 1e-9)
         }
     }
 
@@ -102,15 +127,17 @@ class BackgroundPatternTest {
     // --- subdivision fade ---
 
     @Test fun theSubdivisionFadesInAcrossTheBand() {
-        assertEquals(0.0, BackgroundPattern.subdivisionAlpha(BackgroundPattern.MIN_PERIOD_PX), 1e-12)
-        assertEquals(1.0, BackgroundPattern.subdivisionAlpha(2 * BackgroundPattern.MIN_PERIOD_PX), 1e-12)
-        val mid = BackgroundPattern.subdivisionAlpha(BackgroundPattern.MIN_PERIOD_PX * 1.5)
+        val target = 64.0
+        assertEquals(0.0, BackgroundPattern.subdivisionAlpha(target, target), 1e-12)
+        assertEquals(1.0, BackgroundPattern.subdivisionAlpha(2 * target, target), 1e-12)
+        val mid = BackgroundPattern.subdivisionAlpha(target * 1.5, target)
         assertTrue(mid > 0.4 && mid < 0.6)
     }
 
     @Test fun theSubdivisionIsFullExactlyWhereTheLevelFlips() {
         // At the flip the subdivision becomes the new base level; anything short of full would pop.
         val spacing = 64.0
+        val target = BackgroundPattern.targetPeriodPx(spacing)
         var zoom = 0.02
         var lastK = BackgroundPattern.levelMultiplier(spacing, zoom)
         while (zoom < 64.0) {
@@ -121,7 +148,7 @@ class BackgroundPatternTest {
                 assertEquals(
                     "the finer level must be fully in as it takes over",
                     1.0,
-                    BackgroundPattern.subdivisionAlpha(periodJustBefore),
+                    BackgroundPattern.subdivisionAlpha(periodJustBefore, target),
                     0.02,
                 )
                 lastK = k
@@ -134,7 +161,7 @@ class BackgroundPatternTest {
     @Test fun resolveGivesTheShaderOnlySmallNumbers() {
         val bg = CanvasBackground(PagePattern.GRID, Rgba(0, 0, 0, 64), 64.0)
         val r = BackgroundPattern.resolve(bg, viewport(3.0, 12_345_678.9, -9_876_543.2))
-        assertTrue(r.periodPx >= BackgroundPattern.MIN_PERIOD_PX)
+        assertTrue(r.periodPx >= BackgroundPattern.targetPeriodPx(bg.clampedSpacing))
         assertTrue(r.phaseXPx >= 0.0 && r.phaseXPx < r.periodPx)
         assertTrue(r.phaseYPx >= 0.0 && r.phaseYPx < r.periodPx)
         assertEquals(r.periodPx / 2.0, r.subPeriodPx, 1e-9)
@@ -144,7 +171,7 @@ class BackgroundPatternTest {
     @Test fun resolveHonoursTheSpacingClamp() {
         val tooTight = CanvasBackground(PagePattern.GRID, Rgba(0, 0, 0, 64), spacing = 1.0)
         val r = BackgroundPattern.resolve(tooTight, viewport(1.0))
-        // A 1 px spacing clamps up to the ruling minimum before the level is chosen.
+        // A 1 px spacing clamps up to the model minimum, then the ruling floor coarsens it again.
         assertTrue(r.periodPx >= BackgroundPattern.MIN_PERIOD_PX)
         assertEquals(16.0, tooTight.clampedSpacing, 1e-9)
     }

@@ -41,6 +41,9 @@ interface GlScene {
 
     /** Draw the scene for [frame]. Runs on the GL thread with the framebuffer already cleared. */
     fun drawContent(frame: FrameState)
+
+    /** Fill in what the scene just drew, for the debug HUD. Runs on the GL thread. */
+    fun describe(into: GlStats): GlStats = into
 }
 
 /**
@@ -73,6 +76,21 @@ class GlRenderer : GLSurfaceView.Renderer {
 
     private var background: BackgroundShader? = null
 
+    /** What the last frame did, swapped wholesale so the main thread never sees it half written. */
+    @Volatile
+    var stats: GlStats = GlStats()
+        private set
+
+    /** Reads the multisample count the config chooser obtained, which it only knows once a
+     *  surface exists, so it is asked for rather than handed over at construction. */
+    var msaaSamples: () -> Int = { 0 }
+
+    private var lastFrameNs = 0L
+    private var fps = 0.0
+    private var frameMs = 0.0
+    private var rendererName = ""
+    private var glVersionName = ""
+
     /** Invoked on the GL thread right after a context is (re)built, for host-side bookkeeping. */
     var onContextReady: ((Int) -> Unit)? = null
 
@@ -81,9 +99,10 @@ class GlRenderer : GLSurfaceView.Renderer {
         background = null
         contextGen++
         failure = null
-        val renderer = GLES30.glGetString(GLES30.GL_RENDERER)
-        val version = GLES30.glGetString(GLES30.GL_VERSION)
-        Log.i(TAG, "context $contextGen on $renderer, $version")
+        rendererName = GLES30.glGetString(GLES30.GL_RENDERER) ?: ""
+        glVersionName = GLES30.glGetString(GLES30.GL_VERSION) ?: ""
+        lastFrameNs = 0L
+        Log.i(TAG, "context $contextGen on $rendererName, $glVersionName, ${msaaSamples()}x MSAA")
         try {
             background = BackgroundShader(contextGen)
         } catch (e: GlShaderException) {
@@ -115,9 +134,49 @@ class GlRenderer : GLSurfaceView.Renderer {
         }
 
         scene?.drawContent(f)
+        sampleFrame()
+    }
+
+    /**
+     * Time one painted frame and republish the stats. A gap longer than [IDLE_GAP_NS] means the
+     * canvas simply stopped repainting, so the rate reads zero rather than freezing at its last
+     * value; the estimate then re-seeds cleanly from the next real frame.
+     */
+    private fun sampleFrame() {
+        val now = System.nanoTime()
+        val last = lastFrameNs
+        lastFrameNs = now
+        val dt = now - last
+        if (last == 0L || dt <= 0L) {
+            fps = 0.0
+            frameMs = 0.0
+        } else if (dt > IDLE_GAP_NS) {
+            fps = 0.0
+            frameMs = 0.0
+        } else {
+            val instFps = 1_000_000_000.0 / dt
+            val instMs = dt / 1_000_000.0
+            fps = if (fps == 0.0) instFps else fps * (1 - SMOOTH) + instFps * SMOOTH
+            frameMs = if (frameMs == 0.0) instMs else frameMs * (1 - SMOOTH) + instMs * SMOOTH
+        }
+        val base = GlStats(
+            fps = fps,
+            frameMs = frameMs,
+            contextGen = contextGen,
+            msaaSamples = msaaSamples(),
+            renderer = rendererName,
+            glVersion = glVersionName,
+        )
+        stats = scene?.describe(base) ?: base
     }
 
     companion object {
         private const val TAG = "xnotes.gl"
+
+        /** Frame gaps longer than this mean the canvas went idle, not that it ran slowly. */
+        private const val IDLE_GAP_NS = 200_000_000L
+
+        /** Weight on the newest frame in the rate estimate. */
+        private const val SMOOTH = 0.15
     }
 }

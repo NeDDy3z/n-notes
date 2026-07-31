@@ -425,6 +425,11 @@ private fun EditorScreen(
 
     fun openTreeFile(uriStr: String) {
         val name = displayNameOf(resolver, Uri.parse(uriStr))
+        // The extension picks the editor: the two document types share the explorer but not much else.
+        if (com.xnotes.core.util.DocumentKind.ofName(name ?: "") == com.xnotes.core.util.DocumentKind.CANVAS) {
+            scope.launch { editor.openCanvasAsync(uriStr, name) }
+            return
+        }
         // Read off-thread behind the "Opening note…" spinner so a big embedded PDF doesn't freeze the UI.
         scope.launch { editor.openAsync(uriStr, name) }
     }
@@ -646,6 +651,7 @@ private fun EditorScreen(
                             modifier = Modifier.fillMaxSize(),
                             update = { it.publish() },
                         )
+                        com.xnotes.ui.CanvasDebugOverlay(canvas)
                     }
                 }
             } else if (editor.noteOpen) {

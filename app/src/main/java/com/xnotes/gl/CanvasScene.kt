@@ -38,6 +38,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             val color: Rgba,
             val pass: InkPass,
             val bounds: Rect,
+            /**
+             * Set on the message that commits the stroke under the pen. Clearing the wet buffer
+             * and adding the committed stroke have to land in the same message: as two, a frame
+             * can fall between them and show one blank frame where the stroke should be.
+             */
+            val clearsWet: Boolean = false,
         ) : Edit()
 
         /** The stroke under the pen, re-tessellated as samples arrive; a null mesh clears it. */
@@ -91,10 +97,35 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     var lastVisibleItems: Int = 0
         private set
 
+    /** Milliseconds the newest tessellation took, published by whoever produced it. */
+    @Volatile
+    var lastTessellateMs: Double = 0.0
+
+    override fun describe(into: GlStats): GlStats = into.copy(
+        items = records.size,
+        visibleItems = lastVisibleItems,
+        drawCalls = lastDrawCalls,
+        vertices = store.usedVertices,
+        vertexCapacity = store.vertexCapacity,
+        indices = store.usedIndices,
+        indexCapacity = store.indexCapacity,
+        geometryBytes = store.gpuBytes + wetStore.gpuBytes,
+        liveGeometryBytes = store.liveBytes + wetStore.liveBytes,
+        wetVertices = wetSlice?.vertexCount ?: 0,
+        lastTessellateMs = lastTessellateMs,
+    )
+
     // --- main-thread API ---
 
-    fun upsert(item: CanvasItem, mesh: MeshData, color: Rgba, pass: InkPass, bounds: Rect) {
-        pending.add(Edit.Upsert(item, mesh, color, pass, bounds))
+    fun upsert(
+        item: CanvasItem,
+        mesh: MeshData,
+        color: Rgba,
+        pass: InkPass,
+        bounds: Rect,
+        clearsWet: Boolean = false,
+    ) {
+        pending.add(Edit.Upsert(item, mesh, color, pass, bounds, clearsWet))
     }
 
     fun remove(item: CanvasItem) {
@@ -329,6 +360,9 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     }
 
     private fun applyUpsert(edit: Edit.Upsert) {
+        // Committing the wet stroke is one step, not two: the buffer is released and the finished
+        // stroke takes its place within a single frame's drain, so nothing can be drawn between.
+        if (edit.clearsWet) clearWetBuffer()
         // An item edited in place keeps its depth: only a structural change reorders, and that
         // arrives as its own message.
         val previousZ = records[edit.item]?.z
@@ -353,14 +387,18 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private fun applyWet(edit: Edit.Wet) {
         // The whole buffer is rewritten rather than appended to, so a long stroke does not leave a
         // trail of dead allocations behind it.
-        wetStore.clear()
-        wetSlice = null
+        clearWetBuffer()
         val mesh = edit.mesh ?: return
         wetColor = edit.color
         wetPass = edit.pass
         wetBounds = edit.bounds
         val baked = if (edit.pass == InkPass.OPAQUE) edit.color else edit.color.withAlpha(255)
         wetSlice = wetStore.put(mesh, baked)
+    }
+
+    private fun clearWetBuffer() {
+        wetStore.clear()
+        wetSlice = null
     }
 
     private fun applyRemove(item: CanvasItem) {

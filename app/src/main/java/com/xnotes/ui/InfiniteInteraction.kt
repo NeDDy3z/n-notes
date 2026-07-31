@@ -266,9 +266,13 @@ class InfiniteInteraction(
         )
         val stroke = liveStroke
         liveStroke = null
-        onWetStroke(null)
-        if (stroke == null || stroke.isEmpty) return
-        // The pen is up: rebuild with lift-time rules on before the stroke is committed.
+        if (stroke == null || stroke.isEmpty) {
+            onWetStroke(null)
+            return
+        }
+        // The pen is up: rebuild with lift-time rules on before the stroke is committed. The wet
+        // buffer is deliberately not cleared here: the commit releases it in the same step, so no
+        // frame can land between the two and blink.
         stroke.finished = true
         simplifyForCommit(stroke)
         onCommitStroke(stroke)

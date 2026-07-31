@@ -14,8 +14,11 @@ package com.xnotes.core.infinite
  */
 object BackgroundPattern {
 
-    /** Smallest on-screen period, in device pixels, the base level is allowed to shrink to. */
-    const val MIN_PERIOD_PX = 14.0
+    /**
+     * Floor on the on-screen period, in device pixels, so an absurdly tight spacing cannot produce
+     * a grid too fine to read. The spacing itself is the target above this.
+     */
+    const val MIN_PERIOD_PX = 24.0
 
     /** Ruling line thickness in device pixels, so the grid reads the same at every zoom. */
     const val LINE_WIDTH_PX = 1.0
@@ -46,21 +49,35 @@ object BackgroundPattern {
     )
 
     /**
+     * The on-screen period the ruling aims for, in device pixels. It is the configured spacing
+     * itself, so at 100% zoom the user sees exactly the grid they asked for; the floor only guards
+     * against a spacing so tight it would be unreadable at any zoom.
+     */
+    fun targetPeriodPx(spacing: Double): Double =
+        if (spacing.isFinite() && spacing > 0.0) spacing.coerceAtLeast(MIN_PERIOD_PX) else MIN_PERIOD_PX
+
+    /**
      * Power-of-two multiple of [spacing] whose on-screen period lands in
-     * `[MIN_PERIOD_PX, 2 * MIN_PERIOD_PX)`. Returns the multiplier rather than the period so the
-     * caller keeps the content-space period exact for the phase computation.
+     * `[target, 2 * target)`, where the target is [targetPeriodPx]. Returns the multiplier rather
+     * than the period so the caller keeps the content-space period exact for the phase.
+     *
+     * Anchoring the band on the spacing rather than on a fixed pixel count is what makes the grid
+     * mean something: at 100% zoom the multiplier is 1 and the ruling is exactly as coarse as it
+     * was set to be. Zooming in halves it, zooming out doubles it, so the grid on screen always
+     * looks the same density however far in or out the canvas is.
      */
     fun levelMultiplier(spacing: Double, zoom: Double): Double {
         if (!spacing.isFinite() || spacing <= 0.0 || !zoom.isFinite() || zoom <= 0.0) return 1.0
         val base = spacing * zoom
         if (!base.isFinite() || base <= 0.0) return 1.0
+        val target = targetPeriodPx(spacing)
         var k = 1.0
         var steps = 0
-        while (base * k < MIN_PERIOD_PX && steps < MAX_STEPS) {
+        while (base * k < target && steps < MAX_STEPS) {
             k *= 2.0
             steps++
         }
-        while (base * (k / 2.0) >= MIN_PERIOD_PX && steps < MAX_STEPS) {
+        while (base * (k / 2.0) >= target && steps < MAX_STEPS) {
             k /= 2.0
             steps++
         }
@@ -79,13 +96,13 @@ object BackgroundPattern {
 
     /**
      * How strongly the half-period subdivision shows: invisible when the base period is at its
-     * smallest, full by the time the base period has doubled. The ramp has to reach full strength
-     * exactly where [levelMultiplier] flips, because at that moment the subdivision becomes the new
-     * base level; anything less than full there would pop.
+     * target, full by the time it has doubled. The ramp has to reach full strength exactly where
+     * [levelMultiplier] flips, because at that moment the subdivision becomes the new base level;
+     * anything less than full there would pop.
      */
-    fun subdivisionAlpha(periodPx: Double): Double {
-        if (!periodPx.isFinite()) return 0.0
-        return ((periodPx - MIN_PERIOD_PX) / MIN_PERIOD_PX).coerceIn(0.0, 1.0)
+    fun subdivisionAlpha(periodPx: Double, targetPx: Double): Double {
+        if (!periodPx.isFinite() || !targetPx.isFinite() || targetPx <= 0.0) return 0.0
+        return ((periodPx - targetPx) / targetPx).coerceIn(0.0, 1.0)
     }
 
     /** Everything the fragment shader needs for one frame. */
@@ -105,7 +122,7 @@ object BackgroundPattern {
             subPeriodPx = periodPx / 2.0,
             subPhaseXPx = phase(scrollX, subContentPeriod) * zoom,
             subPhaseYPx = phase(scrollY, subContentPeriod) * zoom,
-            subdivisionAlpha = subdivisionAlpha(periodPx),
+            subdivisionAlpha = subdivisionAlpha(periodPx, targetPeriodPx(spacing)),
         )
     }
 

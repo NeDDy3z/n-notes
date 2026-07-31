@@ -89,6 +89,18 @@ class InfiniteEditor(context: Context) {
     var renderFailure by mutableStateOf<String?>(null)
         private set
 
+    /** Fired after any edit that makes the document dirty, so the host can schedule an autosave. */
+    var onContentChanged: (() -> Unit)? = null
+
+    /** Whether the debug HUD is up; toggled by a four-finger tap, as on the paged canvas. */
+    var debugVisible by mutableStateOf(false)
+        private set
+
+    fun toggleDebug() {
+        debugVisible = !debugVisible
+        view.publish()
+    }
+
     /** The GL-side mirror of the document. Fed by [modelListener]; never reads the model itself. */
     private val scene = CanvasScene()
 
@@ -126,15 +138,27 @@ class InfiniteEditor(context: Context) {
         view.genericMotion = { interaction.onGenericMotion(it) }
         view.afterLayout = { applyInitialView() }
         view.onContextReady = { renderFailure = view.failure }
+        view.onFourFingerTap = { toggleDebug() }
         view.scene = scene
         document.listener = modelListener
     }
 
+    /**
+     * Set only while the stroke under the pen is being committed, so the message that adds it also
+     * releases the wet buffer. Two messages would let a frame fall between them and blink.
+     */
+    private var committingWetStroke = false
+
     /** Tessellate [item] and hand the triangles to the renderer, or drop it if it draws nothing. */
     private fun pushItem(item: CanvasItem) {
+        val started = System.nanoTime()
         val meshed = ItemMesher.mesh(item)
-        if (meshed == null) scene.remove(item)
-        else scene.upsert(item, meshed.mesh, meshed.color, meshed.pass, meshed.bounds)
+        scene.lastTessellateMs = (System.nanoTime() - started) / 1_000_000.0
+        if (meshed == null) {
+            scene.remove(item)
+            return
+        }
+        scene.upsert(item, meshed.mesh, meshed.color, meshed.pass, meshed.bounds, committingWetStroke)
     }
 
     /** Re-tessellate the whole document, after a load or a wholesale list replacement. */
@@ -186,10 +210,20 @@ class InfiniteEditor(context: Context) {
 
     /** Pen up: the finished stroke joins the document, and the edit joins the undo stack. */
     private fun commitStroke(stroke: Stroke) {
-        document.add(stroke)
+        committingWetStroke = true
+        try {
+            document.add(stroke)
+        } finally {
+            committingWetStroke = false
+        }
         history.push(AddCanvasItem(document, stroke))
-        document.dirty = true
+        markDirty()
         refresh()
+    }
+
+    private fun markDirty() {
+        document.dirty = true
+        onContentChanged?.invoke()
     }
 
     /** Adopt the app's pen preferences, so the canvas and the paged note behave the same. */
@@ -270,26 +304,28 @@ class InfiniteEditor(context: Context) {
         if (clean.isEmpty()) return
         document.waypoints.removeAll { it.name.equals(clean, ignoreCase = true) }
         document.waypoints.add(viewport.toWaypoint(clean))
-        document.dirty = true
+        markDirty()
     }
 
     fun setBackground(background: CanvasBackground) {
         document.background = background
-        document.dirty = true
         view.background = background
         view.paperColor = background.paperColor ?: view.paperColor
+        markDirty()
     }
 
     // --- history ---
 
     fun undo() {
         history.undo()
+        markDirty()
         refresh()
         view.publish()
     }
 
     fun redo() {
         history.redo()
+        markDirty()
         refresh()
         view.publish()
     }

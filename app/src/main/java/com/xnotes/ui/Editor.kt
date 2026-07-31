@@ -182,6 +182,7 @@ class Editor(context: Context) {
     private val textMeasurer = AndroidTextMeasurer()
     private val imageCodec = AndroidImageCodec()
     private val codec = DocumentCodec(imageCodec, textMeasurer)
+    private val canvasCodec = com.xnotes.format.CanvasCodec(imageCodec)
 
     /** One flow layout + snapshot: repainted from cache threads, so only the published frame is read. */
     private class PublishedFlow(val frame: FlowFrame, val indexOf: Map<Page, Int>)
@@ -384,13 +385,98 @@ class Editor(context: Context) {
             it.applyPalette(palette)
         }
 
+    /** The canvas's autosave binding, the sibling of [autosaveUri] for the paged note. */
+    var canvasAutosaveUri: String? = null
+        private set
+
+    private var canvasAutosaveJob: kotlinx.coroutines.Job? = null
+
     /** Open a fresh, unsaved infinite canvas on top of backstage. */
     fun newCanvas() {
-        infinite.newCanvas()
-        infinite.applyPalette(palette)
-        infinite.applyInputPrefs(settings.prefs.fingerDraws, controller.penButtonTool)
+        openCanvasDocument(com.xnotes.core.infinite.InfiniteDocument(), uri = null, displayName = null)
+    }
+
+    /**
+     * Read the `.xcanvas` at [uri] and push its editor on top of backstage. IO, so call it off the
+     * main thread; the model swap itself hops back to the main thread.
+     */
+    suspend fun openCanvasAsync(uri: String, name: String?): Boolean {
+        val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use {
+                    canvasCodec.read(it, imageDir)
+                }
+            }.getOrNull()
+        } ?: return false
+        openCanvasDocument(doc, uri, name)
+        return true
+    }
+
+    private fun openCanvasDocument(
+        doc: com.xnotes.core.infinite.InfiniteDocument,
+        uri: String?,
+        displayName: String?,
+    ) {
+        flushAutosave() // a paged note may be open underneath; do not leave its edits unwritten
+        doc.path = uri
+        doc.displayName = displayName
+        val canvas = infinite
+        canvas.replaceDocument(doc)
+        canvas.applyPalette(palette)
+        canvas.applyInputPrefs(settings.prefs.fingerDraws, controller.penButtonTool)
+        canvas.onContentChanged = { scheduleCanvasAutosave() }
+        // Only a canvas living under the granted folder autosaves; anything else is left alone,
+        // matching how a note opened from outside the root behaves.
+        canvasAutosaveUri = if (uri != null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
         canvasOpen = true
         noteOpen = true
+    }
+
+    /** Write [doc] to [uri] through a private temp, so a failed encode never truncates a good file. */
+    private fun writeCanvasSafely(uri: String, doc: com.xnotes.core.infinite.InfiniteDocument): Boolean =
+        synchronized(saveLock) {
+            runCatching {
+                val tmp = java.io.File.createTempFile("save", ".xcanvas", saveTmpDir)
+                try {
+                    java.io.FileOutputStream(tmp).use { canvasCodec.write(doc, it) }
+                    val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
+                        ?: return@runCatching false
+                    out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it) } }
+                    true
+                } finally {
+                    tmp.delete()
+                }
+            }.getOrDefault(false)
+        }
+
+    private fun scheduleCanvasAutosave() {
+        val uri = canvasAutosaveUri ?: return
+        canvasAutosaveJob?.cancel()
+        canvasAutosaveJob = autosaveScope.launch {
+            kotlinx.coroutines.delay(1200L) // debounce: write after a short idle
+            val canvas = infiniteOrNull ?: return@launch
+            val doc = canvas.document
+            if (!doc.dirty) return@launch
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                writeCanvasSafely(uri, doc)
+            }
+            if (ok) {
+                doc.dirty = false
+                invalidateThumb(uri)
+            }
+        }
+    }
+
+    /** Write the open canvas to its file now; a no-op when it is not a folder canvas or not dirty. */
+    fun flushCanvasAutosave() {
+        canvasAutosaveJob?.cancel()
+        val uri = canvasAutosaveUri ?: return
+        val canvas = infiniteOrNull ?: return
+        if (!canvas.document.dirty) return
+        if (writeCanvasSafely(uri, canvas.document)) {
+            canvas.document.dirty = false
+            invalidateThumb(uri)
+        }
     }
 
     /** Bumped whenever page content changes, to refresh thumbnails. */
@@ -1894,6 +1980,70 @@ class Editor(context: Context) {
         return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
     }
 
+    /**
+     * The square tile for an infinite canvas: its content framed with a little margin, drawn with
+     * the ordinary CPU renderer rather than through GL. The items are the same [CanvasItem]s the
+     * paged note holds, so they paint themselves, and doing it here keeps thumbnails off the render
+     * thread entirely, with no readback and nothing that needs a live EGL context.
+     */
+    private fun renderCanvasThumbnailSquare(
+        doc: com.xnotes.core.infinite.InfiniteDocument,
+        sidePx: Int,
+    ): android.graphics.Bitmap? {
+        val side = sidePx.coerceAtLeast(1)
+        val surface = com.xnotes.platform.AndroidRasterSurface.create(side, side)
+        surface.fill(doc.background.paperColor ?: state.palette.paper)
+        val bounds = doc.contentBounds()
+        if (bounds != null && bounds.w > 0.0 && bounds.h > 0.0) {
+            val r = surface.renderer()
+            val margin = side * 0.06
+            val scale = ((side - 2 * margin) / maxOf(bounds.w, bounds.h)).coerceAtMost(1.0)
+            // Centre the content in the square, whichever way round it is.
+            r.translate(
+                margin + (side - 2 * margin - bounds.w * scale) / 2.0,
+                margin + (side - 2 * margin - bounds.h * scale) / 2.0,
+            )
+            r.scale(scale, scale)
+            r.translate(-bounds.left, -bounds.top)
+            for (item in doc.items.toList()) item.paint(r)
+        }
+        return surface.bitmap
+    }
+
+    /** The square thumbnail for the canvas at [uri]; null when it is not a readable canvas. */
+    suspend fun canvasTileThumbnail(uri: String): ImageBitmap? {
+        synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return it } }
+        return withContext(thumbDispatcher) {
+            delay(150)
+            if (!isActive) return@withContext null
+            synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return@withContext it } }
+            val bmp = thumbCache.load(uri) ?: run {
+                val doc = runCatching {
+                    appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use {
+                        canvasCodec.read(it, imageDir)
+                    }
+                }.getOrNull() ?: return@withContext null
+                try {
+                    renderCanvasThumbnailSquare(doc, tilePx)?.also { thumbCache.store(uri, it) }
+                        ?: return@withContext null
+                } finally {
+                    for (item in doc.items) if (item is ImageItem) runCatching { item.image.file.delete() }
+                }
+            }
+            val img = bmp.asImageBitmap()
+            synchronized(noteThumbs) { noteThumbs.put(uri, img) }
+            img
+        }
+    }
+
+    /** The square tile for the document at [uri], whichever kind it is. */
+    suspend fun tileThumbnail(uri: String, name: String): ImageBitmap? =
+        if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
+            canvasTileThumbnail(uri)
+        } else {
+            noteTileThumbnail(uri)
+        }
+
     /** The square side (px) explorer tiles render at — fixed so rotation/column changes don't re-render. */
     private val tilePx = 600
 
@@ -2045,19 +2195,26 @@ class Editor(context: Context) {
         ) != null
     }.getOrDefault(false)
 
-    /** Resolves a note file name: blank -> "untitled_N.xnote"; else ensures .xnote and avoids conflicts with a "_N" suffix. */
-    private fun uniqueNoteName(treeUri: String, parentDocId: String, raw: String): String {
+    /** Resolves a document file name: blank -> "untitled_N"; else ensures the extension for [kind]
+     *  and avoids conflicts with a "_N" suffix. */
+    private fun uniqueDocumentName(
+        treeUri: String,
+        parentDocId: String,
+        raw: String,
+        kind: com.xnotes.core.util.DocumentKind,
+    ): String {
+        val ext = kind.suffix
         val taken = browseChildren(treeUri, parentDocId).map { it.name.lowercase() }.toSet()
-        val base = raw.trim().removeSuffix(".xnote").removeSuffix(".XNOTE").trim()
+        val base = com.xnotes.core.util.DocumentKind.stripSuffix(raw.trim()).trim()
         if (base.isEmpty()) {
             var n = 1
-            while ("untitled_$n.xnote" in taken) n++
-            return "untitled_$n.xnote"
+            while ("untitled_$n$ext" in taken) n++
+            return "untitled_$n$ext"
         }
-        if ("${base.lowercase()}.xnote" !in taken) return "$base.xnote"
+        if ("${base.lowercase()}$ext" !in taken) return "$base$ext"
         var n = 1
-        while ("${base.lowercase()}_$n.xnote" in taken) n++
-        return "${base}_$n.xnote"
+        while ("${base.lowercase()}_$n$ext" in taken) n++
+        return "${base}_$n$ext"
     }
 
     /** Creates a new `.xnote` named [name] under [parentDocId], written by [write]; returns its URI, or null.
@@ -2077,9 +2234,17 @@ class Editor(context: Context) {
         }
     }
 
+    /** Creates a blank `.xcanvas` under [parentDocId]; returns its URI, or null. IO — call off-thread. */
+    fun createBlankCanvasFile(treeUri: String, parentDocId: String, rawName: String): String? {
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.CANVAS)
+        return createNoteFile(treeUri, parentDocId, name) {
+            canvasCodec.write(com.xnotes.core.infinite.InfiniteDocument(), it)
+        }
+    }
+
     /** Creates a blank `.xnote` under [parentDocId]; returns its URI, or null. IO — call off-thread. */
     fun createBlankNoteFile(treeUri: String, parentDocId: String, rawName: String): String? {
-        val name = uniqueNoteName(treeUri, parentDocId, rawName)
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
         val blank = Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation)
             .also { stampNewNoteDefaults(it) }
         return createNoteFile(treeUri, parentDocId, name) { codec.write(blank, it) }
@@ -2091,7 +2256,7 @@ class Editor(context: Context) {
         val source = com.xnotes.platform.PdfSource.create(appContext, pdfFile) ?: return null
         val doc = com.xnotes.platform.PdfImporter.import(source, state.document.dpi) // doc.pdfFile = pdfFile
         stampNewNoteDefaults(doc)
-        val name = uniqueNoteName(treeUri, parentDocId, rawName)
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
         val uri = createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
         source.close()
         return uri
@@ -2101,7 +2266,7 @@ class Editor(context: Context) {
      *  returns its URI, or null. Streamed copy, so a big embedded PDF never loads into RAM. IO. */
     fun createNoteFileFromFile(treeUri: String, parentDocId: String, rawName: String, file: java.io.File): String? {
         runCatching { java.io.FileInputStream(file).use { codec.read(it) } }.getOrNull() ?: return null // validate it's a real .xnote (no PDF extraction)
-        val name = uniqueNoteName(treeUri, parentDocId, rawName)
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
         return createNoteFile(treeUri, parentDocId, name) { out -> copyStream(java.io.FileInputStream(file), out) { importCancelled.get() } }
     }
 
@@ -2674,7 +2839,7 @@ class Editor(context: Context) {
                         // dot-folders stay hidden from the explorer too.
                         if (name == SIDECAR_DIR) { sidecarDocId = id; continue }
                         if (name.startsWith(".")) continue
-                    } else if (!name.endsWith(".xnote", ignoreCase = true)) {
+                    } else if (!com.xnotes.core.util.DocumentKind.isDocument(name)) {
                         continue
                     }
                     val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id).toString()
@@ -3842,6 +4007,8 @@ class Editor(context: Context) {
         // A canvas has none of the paged note's text sessions, autosave binding or thumbnails yet,
         // so leaving one is just popping the layer.
         if (canvasOpen) {
+            flushCanvasAutosave()
+            canvasAutosaveUri = null
             canvasOpen = false
             noteOpen = false
             return

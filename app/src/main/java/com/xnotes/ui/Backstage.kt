@@ -144,7 +144,7 @@ import kotlin.math.roundToInt
 enum class BackstageView { HOME, PREFERENCES, ABOUT }
 
 /** Whether the Home explorer is awaiting a new file/folder name. */
-private enum class CreateMode { NONE, FILE, FOLDER }
+private enum class CreateMode { NONE, FILE, CANVAS, FOLDER }
 
 /** Entries copied/cut in the explorer; [sourceParentDocId] is the folder they came from (for moves). */
 private data class ClipItem(val entries: List<BrowseEntry>, val sourceParentDocId: String, val isCut: Boolean)
@@ -153,7 +153,7 @@ private data class ClipItem(val entries: List<BrowseEntry>, val sourceParentDocI
 private fun nextUntitled(entries: List<BrowseEntry>?): String {
     val taken = entries.orEmpty().filter { !it.isDir }.map { it.name.lowercase() }.toSet()
     var n = 1
-    while ("untitled_$n.xnote" in taken) n++
+    while (taken.any { it.equals("untitled_$n.xnote", true) || it.equals("untitled_$n.xcanvas", true) }) n++
     return "untitled_$n"
 }
 
@@ -238,9 +238,8 @@ private fun BackstageContent(
         if (editor.browseRoot != null) { onSelectView(BackstageView.HOME); createMode = CreateMode.FILE } else onPickRoot()
         if (compact) { animateClose = false; sidebarOpen = false }
     }
-    // A canvas is not yet backed by a file, so unlike a note it opens without needing a folder.
     val newCanvas: () -> Unit = {
-        editor.newCanvas()
+        if (editor.browseRoot != null) { onSelectView(BackstageView.HOME); createMode = CreateMode.CANVAS } else onPickRoot()
         if (compact) { animateClose = false; sidebarOpen = false }
     }
     val importPdf: () -> Unit = {
@@ -669,6 +668,7 @@ private fun ExplorerSection(
                     IconAction(XnotesIcons.plus, "New") { newMenuOpen = true }
                     DropdownMenu(expanded = newMenuOpen, onDismissRequest = { newMenuOpen = false }) {
                         DropdownMenuItem(text = { Text("New Note") }, onClick = { newMenuOpen = false; onCreateMode(CreateMode.FILE) })
+                        DropdownMenuItem(text = { Text("New Canvas") }, onClick = { newMenuOpen = false; onCreateMode(CreateMode.CANVAS) })
                         DropdownMenuItem(text = { Text("Import PDF") }, onClick = { newMenuOpen = false; onImportPdf() })
                     }
                 }
@@ -960,13 +960,15 @@ private fun ExplorerSection(
         val isFolder = pendingImport == null && createMode == CreateMode.FOLDER
         val default = when {
             pendingImport != null -> pendingImport.defaultName // import names default to the source file
-            createMode == CreateMode.FILE -> nextUntitled(editor.cachedChildren(root, currentDocId))
+            createMode == CreateMode.FILE || createMode == CreateMode.CANVAS ->
+                nextUntitled(editor.cachedChildren(root, currentDocId))
             else -> "" // new folder
         }
         NameDialog(
             title = when {
                 pendingImport != null -> "Import"
                 isFolder -> "New folder"
+                createMode == CreateMode.CANVAS -> "New canvas"
                 else -> "New note"
             },
             initial = default,
@@ -990,6 +992,10 @@ private fun ExplorerSection(
                         val ok = withContext(Dispatchers.IO) { editor.createFolder(root, currentDocId, n) }
                         if (ok) { onCreateMode(CreateMode.NONE); refreshKey++ } else fieldError = "Couldn’t create that folder."
                     }
+                    createMode == CreateMode.CANVAS -> scope.launch {
+                        val uri = withContext(Dispatchers.IO) { editor.createBlankCanvasFile(root, currentDocId, n) }
+                        if (uri != null) { onCreateMode(CreateMode.NONE); refreshKey++ } else fieldError = "Couldn’t create the canvas."
+                    }
                     else -> scope.launch {
                         // Just create the note in the explorer — it opens only when the user taps it.
                         val uri = withContext(Dispatchers.IO) { editor.createBlankNoteFile(root, currentDocId, n) }
@@ -1008,7 +1014,11 @@ private fun ExplorerSection(
             confirmLabel = "Rename",
             allowEmpty = false,
             onConfirm = { raw ->
-                val newName = if (entry.isDir || raw.endsWith(".xnote", ignoreCase = true)) raw else "$raw.xnote"
+                val kind = com.xnotes.core.util.DocumentKind.ofName(entry.name)
+                val newName = if (entry.isDir || kind == null) raw
+                    else com.xnotes.core.util.DocumentKind.withSuffix(
+                        com.xnotes.core.util.DocumentKind.stripSuffix(raw), kind,
+                    )
                 // Renames touch the open-note binding (Compose state) so run on the main thread.
                 val ok = editor.renameDocument(entry.documentUri, newName)
                 renaming = null
@@ -1162,7 +1172,7 @@ private fun IconAction(icon: ImageVector, desc: String, onClick: () -> Unit) {
 }
 
 private fun entryLabel(entry: BrowseEntry): String =
-    if (entry.isDir) entry.name else entry.name.removeSuffix(".xnote").removeSuffix(".XNOTE")
+    if (entry.isDir) entry.name else com.xnotes.core.util.DocumentKind.stripSuffix(entry.name)
 
 /** A file's last-edited date for the line beneath its tile (relative, e.g. "2 days ago"). */
 private fun entryDate(entry: BrowseEntry): String =
@@ -1389,7 +1399,7 @@ private fun FileTile(
     // Seed from the in-memory cache for an instant paint, then load/render off-thread; re-keying on
     // the file's mtime re-renders the tile after the note is edited.
     val thumb by produceState<ImageBitmap?>(editor.cachedNoteTile(entry.documentUri), entry.documentUri, entry.modified) {
-        value = editor.noteTileThumbnail(entry.documentUri)
+        value = editor.tileThumbnail(entry.documentUri, entry.name)
     }
     val accent = palette.accent.toComposeColor()
     val onAccent = palette.bg.toComposeColor()

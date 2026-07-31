@@ -59,6 +59,16 @@ class GeometryStore {
     val usedVertices: Int get() = vertexAllocator.used
     val usedIndices: Int get() = indexAllocator.used
 
+    /** Bytes the GPU holds for this store, which is the mirror's size on both sides. */
+    val gpuBytes: Long
+        get() = vertexAllocator.capacity.toLong() * VERTEX_STRIDE +
+            indexAllocator.capacity.toLong() * INDEX_STRIDE
+
+    /** Bytes actually referenced by live geometry, so fragmentation shows as the gap to [gpuBytes]. */
+    val liveBytes: Long
+        get() = vertexAllocator.used.toLong() * VERTEX_STRIDE +
+            indexAllocator.used.toLong() * INDEX_STRIDE
+
     /**
      * Write [mesh] into the buffers in [color] and return where it landed. Positions are split into
      * chunk plus local here rather than in the tessellator, so the tessellator stays pure doubles.
