@@ -29,7 +29,7 @@ import com.xnotes.ui.theme.toComposeColor
 /** The tools the infinite canvas offers. Text, screenshot and the page tools mean nothing here. */
 private val CANVAS_TOOLS = listOf(
     Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER,
-    Tool.ERASER,
+    Tool.ERASER, Tool.SHAPE,
 )
 
 /**
@@ -54,9 +54,11 @@ fun InfiniteToolbar(
         Tool.HIGHLIGHTER to ImageVector.vectorResource(R.drawable.ic_stroke_highlighter),
         Tool.PAN to XnotesIcons.pan,
         Tool.ERASER to XnotesIcons.eraser,
+        Tool.SHAPE to XnotesIcons.shape,
     )
     var stylesOpen by remember { mutableStateOf(false) }
     var eraserOpen by remember { mutableStateOf(false) }
+    var shapeOpen by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -76,9 +78,14 @@ fun InfiniteToolbar(
             Box {
                 // Tapping the armed eraser again opens its settings, exactly as the paged bar does.
                 ToolbarIcon(icon, tool.name, active = editor.tool == tool) {
-                    if (tool == Tool.ERASER && editor.tool == tool) eraserOpen = true else editor.armTool(tool)
+                    when {
+                        tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
+                        tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
+                        else -> editor.armTool(tool)
+                    }
                 }
                 if (tool == Tool.ERASER && eraserOpen) CanvasEraserPopup(editor) { eraserOpen = false }
+                if (tool == Tool.SHAPE && shapeOpen) CanvasShapePopup(editor) { shapeOpen = false }
             }
         }
         Separator()

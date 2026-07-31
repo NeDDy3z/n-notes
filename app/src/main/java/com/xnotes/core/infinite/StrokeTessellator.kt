@@ -2,12 +2,8 @@ package com.xnotes.core.infinite
 
 import com.xnotes.core.stroke.StrokeGeometry
 import kotlin.math.PI
-import kotlin.math.acos
 import kotlin.math.atan2
-import kotlin.math.ceil
-import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.sin
 
 /**
  * A triangle mesh in content space. Positions are doubles because the canvas is unbounded: a float
@@ -60,8 +56,8 @@ object StrokeTessellator {
     const val DEFAULT_TOLERANCE = 0.5 / CanvasViewport.MAX_ZOOM
 
     /** Fewest and most segments a full circle is ever cut into. */
-    const val MIN_CIRCLE_SEGMENTS = 8
-    const val MAX_CIRCLE_SEGMENTS = 64
+    const val MIN_CIRCLE_SEGMENTS = MeshBuilder.MIN_CIRCLE_SEGMENTS
+    const val MAX_CIRCLE_SEGMENTS = MeshBuilder.MAX_CIRCLE_SEGMENTS
 
     /**
      * Turn angle, in radians, past which a sample gets its own disc. Below it the two ribbon quads
@@ -112,15 +108,8 @@ object StrokeTessellator {
     }
 
     /** Segments a circle of [radius] needs to stay within [tolerance] of true. */
-    fun circleSegments(radius: Double, tolerance: Double): Int {
-        if (!radius.isFinite() || radius <= 0.0) return MIN_CIRCLE_SEGMENTS
-        if (!tolerance.isFinite() || tolerance <= 0.0) return MAX_CIRCLE_SEGMENTS
-        if (tolerance >= radius) return MIN_CIRCLE_SEGMENTS
-        // Sagitta of a chord subtending 2a is r(1 - cos a); solve for a and cut the circle by it.
-        val a = acos(1.0 - tolerance / radius)
-        if (a <= 0.0) return MAX_CIRCLE_SEGMENTS
-        return ceil(PI / a).toInt().coerceIn(MIN_CIRCLE_SEGMENTS, MAX_CIRCLE_SEGMENTS)
-    }
+    fun circleSegments(radius: Double, tolerance: Double): Int =
+        MeshBuilder.circleSegments(radius, tolerance)
 
     /** Angle between the ribbon's normal before and after sample [i], in radians. */
     fun turnAngle(g: StrokeGeometry, i: Int): Double {
@@ -153,47 +142,5 @@ object StrokeTessellator {
     private fun estimateIndices(g: StrokeGeometry): Int {
         val n = g.pointCount
         return 6 * maxOf(0, n - 1) + 6 * (MIN_CIRCLE_SEGMENTS + 2) + 48
-    }
-
-    /** Growable position and index arrays, so a stroke tessellates without per-vertex allocation. */
-    private class MeshBuilder(vertexHint: Int, indexHint: Int) {
-        private var pos = DoubleArray(maxOf(8, vertexHint * 2))
-        private var idx = IntArray(maxOf(12, indexHint))
-        private var vertexCount = 0
-        private var indexCount = 0
-
-        fun vertex(x: Double, y: Double): Int {
-            if (2 * vertexCount + 2 > pos.size) pos = pos.copyOf(pos.size * 2)
-            pos[2 * vertexCount] = x
-            pos[2 * vertexCount + 1] = y
-            return vertexCount++
-        }
-
-        fun triangle(a: Int, b: Int, c: Int) {
-            if (indexCount + 3 > idx.size) idx = idx.copyOf(idx.size * 2)
-            idx[indexCount] = a
-            idx[indexCount + 1] = b
-            idx[indexCount + 2] = c
-            indexCount += 3
-        }
-
-        /** A filled disc as a triangle fan around its centre. */
-        fun circle(cx: Double, cy: Double, radius: Double, tolerance: Double) {
-            val segments = circleSegments(radius, tolerance)
-            val centre = vertex(cx, cy)
-            val step = 2.0 * PI / segments
-            var first = -1
-            var prev = -1
-            for (k in 0 until segments) {
-                val a = k * step
-                val v = vertex(cx + radius * cos(a), cy + radius * sin(a))
-                if (first < 0) first = v else triangle(centre, prev, v)
-                prev = v
-            }
-            if (first >= 0 && prev != first) triangle(centre, prev, first)
-        }
-
-        fun build(): MeshData =
-            MeshData(pos.copyOf(2 * vertexCount), idx.copyOf(indexCount))
     }
 }

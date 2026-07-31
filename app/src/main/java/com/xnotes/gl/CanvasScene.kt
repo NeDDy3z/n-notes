@@ -6,6 +6,7 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.MeshData
+import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Rgba
 import java.util.IdentityHashMap
@@ -20,13 +21,18 @@ import kotlin.math.floor
  */
 class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene {
 
+    /** One run of triangles in one colour. An item is one or more, drawn in order. */
+    private class Part(
+        val slice: BufferSlice,
+        val pass: InkPass,
+        val coverColor: Rgba,
+        val coverAlpha: Double,
+    )
+
     private class Record(
         val item: CanvasItem,
-        var slice: BufferSlice,
+        val parts: List<Part>,
         var bounds: Rect,
-        var pass: InkPass,
-        var coverColor: Rgba,
-        var coverAlpha: Double,
         var z: Int,
     )
 
@@ -34,9 +40,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private sealed class Edit {
         class Upsert(
             val item: CanvasItem,
-            val mesh: MeshData,
-            val color: Rgba,
-            val pass: InkPass,
+            val parts: List<MeshPart>,
             val bounds: Rect,
             /**
              * Set on the message that commits the stroke under the pen. Clearing the wet buffer
@@ -46,13 +50,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             val clearsWet: Boolean = false,
         ) : Edit()
 
-        /** The stroke under the pen, re-tessellated as samples arrive; a null mesh clears it. */
-        class Wet(
-            val mesh: MeshData?,
-            val color: Rgba,
-            val pass: InkPass,
-            val bounds: Rect,
-        ) : Edit()
+        /** The item under the pen, re-tessellated as it grows; an empty list clears it. */
+        class Wet(val parts: List<MeshPart>, val bounds: Rect) : Edit()
 
         class Remove(val item: CanvasItem) : Edit()
         class Order(val items: List<CanvasItem>) : Edit()
@@ -67,9 +66,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * cleared and the finished stroke arrives through the normal upsert path.
      */
     private val wetStore = GeometryStore()
-    private var wetSlice: BufferSlice? = null
-    private var wetColor = Rgba(0, 0, 0, 255)
-    private var wetPass = InkPass.OPAQUE
+    private var wetParts: List<Part> = emptyList()
     private var wetBounds = Rect(0.0, 0.0, 0.0, 0.0)
     private val records = IdentityHashMap<CanvasItem, Record>()
 
@@ -86,7 +83,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     /** Reused per frame so drawing allocates nothing. */
     private val visible = ArrayList<Record>()
-    private val deferred = ArrayList<Record>()
+    private val deferred = ArrayList<Pair<Record, Part>>()
 
     /** Items currently drawn, for the debug readout. */
     val itemCount: Int get() = records.size
@@ -111,21 +108,14 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         indexCapacity = store.indexCapacity,
         geometryBytes = store.gpuBytes + wetStore.gpuBytes,
         liveGeometryBytes = store.liveBytes + wetStore.liveBytes,
-        wetVertices = wetSlice?.vertexCount ?: 0,
+        wetVertices = wetParts.sumOf { it.slice.vertexCount },
         lastTessellateMs = lastTessellateMs,
     )
 
     // --- main-thread API ---
 
-    fun upsert(
-        item: CanvasItem,
-        mesh: MeshData,
-        color: Rgba,
-        pass: InkPass,
-        bounds: Rect,
-        clearsWet: Boolean = false,
-    ) {
-        pending.add(Edit.Upsert(item, mesh, color, pass, bounds, clearsWet))
+    fun upsert(item: CanvasItem, parts: List<MeshPart>, bounds: Rect, clearsWet: Boolean = false) {
+        pending.add(Edit.Upsert(item, parts, bounds, clearsWet))
     }
 
     fun remove(item: CanvasItem) {
@@ -139,7 +129,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     /** Publish the in-progress stroke's triangles, or clear it when [mesh] is null. */
     fun setWet(mesh: MeshData?, color: Rgba, pass: InkPass, bounds: Rect) {
-        pending.add(Edit.Wet(mesh, color, pass, bounds))
+        pending.add(Edit.Wet(if (mesh == null) emptyList() else listOf(MeshPart(mesh, color, pass)), bounds))
+    }
+
+    /** Publish an in-progress item made of several runs, which is what a filled shape is. */
+    fun setWetParts(parts: List<MeshPart>, bounds: Rect) {
+        pending.add(Edit.Wet(parts, bounds))
     }
 
     fun reset() {
@@ -167,7 +162,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         drainEdits()
         val program = ink ?: return
         if (program.contextGen != contextGen) return
-        if (records.isEmpty() && wetSlice == null) {
+        if (records.isEmpty() && wetParts.isEmpty()) {
             lastDrawCalls = 0
             lastVisibleItems = 0
             return
@@ -201,45 +196,37 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         var runStart = -1
         var runCount = 0
         for (record in visible) {
-            when (record.pass) {
-                InkPass.MULTIPLY -> {
-                    // Highlighters composite over the finished picture, matching the paged canvas,
-                    // so their multiply darkens everything beneath instead of washing it out.
-                    deferred.add(record)
-                }
-                InkPass.OPAQUE -> {
-                    if (runStart >= 0 && record.slice.indexOffset == runStart + runCount) {
-                        runCount += record.slice.indexCount
-                    } else {
-                        flushRun(runStart, runCount)
-                        runStart = record.slice.indexOffset
-                        runCount = record.slice.indexCount
+            for (part in record.parts) {
+                when (part.pass) {
+                    InkPass.MULTIPLY -> {
+                        // Highlighters composite over the finished picture, matching the paged
+                        // canvas, so their multiply darkens what is beneath instead of washing it out.
+                        deferred.add(record to part)
                     }
-                }
-                InkPass.TRANSLUCENT -> {
-                    flushRun(runStart, runCount)
-                    runStart = -1
-                    runCount = 0
-                    drawMasked(record, frame, multiply = false)
-                    program.begin(
-                        camChunkX, camChunkY,
-                        frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
-                        frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-                        frame.zoom, frame.widthPx, frame.heightPx,
-                    )
+                    InkPass.OPAQUE -> {
+                        if (runStart >= 0 && part.slice.indexOffset == runStart + runCount) {
+                            runCount += part.slice.indexCount
+                        } else {
+                            flushRun(runStart, runCount)
+                            runStart = part.slice.indexOffset
+                            runCount = part.slice.indexCount
+                        }
+                    }
+                    InkPass.TRANSLUCENT -> {
+                        flushRun(runStart, runCount)
+                        runStart = -1
+                        runCount = 0
+                        drawMasked(record, part, frame, multiply = false)
+                        rebind(program, frame, camChunkX, camChunkY)
+                    }
                 }
             }
         }
         flushRun(runStart, runCount)
 
-        for (record in deferred) {
-            drawMasked(record, frame, multiply = true)
-            program.begin(
-                camChunkX, camChunkY,
-                frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
-                frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-                frame.zoom, frame.widthPx, frame.heightPx,
-            )
+        for ((record, part) in deferred) {
+            drawMasked(record, part, frame, multiply = true)
+            rebind(program, frame, camChunkX, camChunkY)
         }
 
         drawWet(program, frame, camChunkX, camChunkY)
@@ -254,23 +241,22 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * committed geometry's allocation is never disturbed while a stroke grows.
      */
     private fun drawWet(program: InkShader, frame: FrameState, camChunkX: Double, camChunkY: Double) {
-        val slice = wetSlice ?: return
+        if (wetParts.isEmpty()) return
         if (!wetStore.bindForDraw(contextGen)) return
         wetStore.bindAttributes(program)
-        if (wetPass == InkPass.OPAQUE) {
-            wetStore.drawRange(slice.indexOffset, slice.indexCount)
-            lastDrawCalls++
-        } else {
-            drawMasked(
-                wetStore, slice, wetBounds, wetColor.withAlpha(255), wetColor.a / 255.0,
-                frame, multiply = wetPass == InkPass.MULTIPLY,
-            )
-            program.begin(
-                camChunkX, camChunkY,
-                frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
-                frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-                frame.zoom, frame.widthPx, frame.heightPx,
-            )
+        for (part in wetParts) {
+            if (part.pass == InkPass.OPAQUE) {
+                wetStore.drawRange(part.slice.indexOffset, part.slice.indexCount)
+                lastDrawCalls++
+            } else {
+                drawMasked(
+                    wetStore, part.slice, wetBounds, part.coverColor, part.coverAlpha,
+                    frame, multiply = part.pass == InkPass.MULTIPLY,
+                )
+                rebind(program, frame, camChunkX, camChunkY)
+                wetStore.bindForDraw(contextGen)
+                wetStore.bindAttributes(program)
+            }
         }
         // Leave the committed buffers bound for the next frame's first draw.
         store.bindForDraw(contextGen)
@@ -287,8 +273,18 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * Stencil the stroke, then paint its colour through the mask exactly once. The cover zeroes the
      * stencil as it draws, so consecutive strokes need no clear between them.
      */
-    private fun drawMasked(record: Record, frame: FrameState, multiply: Boolean) =
-        drawMasked(store, record.slice, record.bounds, record.coverColor, record.coverAlpha, frame, multiply)
+    /** Re-point the ink program after a cover draw took the program and buffer bindings away. */
+    private fun rebind(program: InkShader, frame: FrameState, camChunkX: Double, camChunkY: Double) {
+        program.begin(
+            camChunkX, camChunkY,
+            frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
+            frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
+            frame.zoom, frame.widthPx, frame.heightPx,
+        )
+    }
+
+    private fun drawMasked(record: Record, part: Part, frame: FrameState, multiply: Boolean) =
+        drawMasked(store, part.slice, record.bounds, part.coverColor, part.coverAlpha, frame, multiply)
 
     private fun drawMasked(
         from: GeometryStore,
@@ -367,19 +363,16 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         // arrives as its own message.
         val previousZ = records[edit.item]?.z
         applyRemove(edit.item)
-        // A translucent stroke accumulates at full alpha and gets its alpha back at cover time,
-        // which is what stops its own overlaps from compounding.
-        val baked = if (edit.pass == InkPass.OPAQUE) edit.color else edit.color.withAlpha(255)
-        val slice = store.put(edit.mesh, baked) ?: return
-        val record = Record(
-            item = edit.item,
-            slice = slice,
-            bounds = edit.bounds,
-            pass = edit.pass,
-            coverColor = edit.color.withAlpha(255),
-            coverAlpha = edit.color.a / 255.0,
-            z = previousZ ?: nextZ++,
-        )
+        val parts = ArrayList<Part>(edit.parts.size)
+        for (part in edit.parts) {
+            // A translucent run accumulates at full alpha and gets its alpha back at cover time,
+            // which is what stops its own overlaps from compounding.
+            val baked = if (part.pass == InkPass.OPAQUE) part.color else part.color.withAlpha(255)
+            val slice = store.put(part.mesh, baked) ?: continue
+            parts.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0))
+        }
+        if (parts.isEmpty()) return
+        val record = Record(edit.item, parts, edit.bounds, previousZ ?: nextZ++)
         records[edit.item] = record
         fileRecord(record)
     }
@@ -388,23 +381,26 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         // The whole buffer is rewritten rather than appended to, so a long stroke does not leave a
         // trail of dead allocations behind it.
         clearWetBuffer()
-        val mesh = edit.mesh ?: return
-        wetColor = edit.color
-        wetPass = edit.pass
+        if (edit.parts.isEmpty()) return
         wetBounds = edit.bounds
-        val baked = if (edit.pass == InkPass.OPAQUE) edit.color else edit.color.withAlpha(255)
-        wetSlice = wetStore.put(mesh, baked)
+        val built = ArrayList<Part>(edit.parts.size)
+        for (part in edit.parts) {
+            val baked = if (part.pass == InkPass.OPAQUE) part.color else part.color.withAlpha(255)
+            val slice = wetStore.put(part.mesh, baked) ?: continue
+            built.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0))
+        }
+        wetParts = built
     }
 
     private fun clearWetBuffer() {
         wetStore.clear()
-        wetSlice = null
+        wetParts = emptyList()
     }
 
     private fun applyRemove(item: CanvasItem) {
         val record = records.remove(item) ?: return
         unfileRecord(record)
-        store.free(record.slice)
+        for (part in record.parts) store.free(part.slice)
     }
 
     private fun applyOrder(items: List<CanvasItem>) {

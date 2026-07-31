@@ -3,6 +3,7 @@ package com.xnotes.core.infinite
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.tools.Tool
 
@@ -18,38 +19,57 @@ enum class InkPass {
     MULTIPLY,
 }
 
-/** An item turned into triangles, with everything the renderer needs to draw it. */
-class MeshedItem(
+/** One run of triangles in a single colour. An item is one or more of these, drawn in order. */
+class MeshPart(
     val mesh: MeshData,
-    /** Ink colour including its alpha; the renderer bakes or covers with it depending on [pass]. */
+    /** Ink colour including its alpha; baked into the vertices or used as the cover, per [pass]. */
     val color: Rgba,
     val pass: InkPass,
+)
+
+/** An item turned into triangles, with everything the renderer needs to draw it. */
+class MeshedItem(
+    /** Back to front: a shape's fill, then its outline over it. */
+    val parts: List<MeshPart>,
     /** Content-space region the item paints into, used for culling and for the cover quad. */
     val bounds: Rect,
-)
+) {
+    val isEmpty: Boolean get() = parts.isEmpty()
+}
 
 /**
  * Turns a model item into the triangles the GL canvas draws. Pure Kotlin so the pass choice and
  * the geometry are both unit-testable; the renderer only uploads what comes out.
  *
  * The pass choice is where parity with the paged canvas lives. Opaque ink can simply be drawn,
- * because overlapping the same colour twice is still that colour. Anything translucent cannot: its
+ * because overlapping the same colour twice is still that colour. A translucent stroke cannot: its
  * ribbon and its round ends overlap, and a second blend would leave the crossing darker than the
  * stroke, which the paged canvas avoids by accumulating the stroke opaquely and compositing once.
+ *
+ * Shapes need none of that. A fill is a simple polygon that never overlaps itself, and an outline
+ * is drawn opaque, so both composite correctly drawn straight.
  */
 object ItemMesher {
 
     fun mesh(item: CanvasItem, tolerance: Double = StrokeTessellator.DEFAULT_TOLERANCE): MeshedItem? =
         when (item) {
             is Stroke -> meshStroke(item, tolerance)
-            else -> null // shapes and images arrive at their own stages
+            is ShapeItem -> meshShape(item, tolerance)
+            else -> null // images carry a texture rather than a colour, and take their own path
         }
 
     private fun meshStroke(stroke: Stroke, tolerance: Double): MeshedItem? {
         if (stroke.isEmpty) return null
         val mesh = StrokeTessellator.tessellate(stroke.geometry(), tolerance)
         if (mesh.isEmpty) return null
-        return MeshedItem(mesh, stroke.renderColor, passFor(stroke), stroke.paintBounds())
+        val part = MeshPart(mesh, stroke.renderColor, passFor(stroke))
+        return MeshedItem(listOf(part), stroke.paintBounds())
+    }
+
+    private fun meshShape(shape: ShapeItem, tolerance: Double): MeshedItem? {
+        val parts = ShapeTessellator.tessellate(shape, tolerance)
+        if (parts.isEmpty()) return null
+        return MeshedItem(parts, shape.paintBounds())
     }
 
     /** The pass a stroke has to take, from its tool and its resolved ink alpha. */

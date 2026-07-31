@@ -17,8 +17,10 @@ import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.Waypoint
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.tools.InkPalette
+import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
@@ -61,6 +63,11 @@ class InfiniteEditor(context: Context) {
         onEraseBegin = { EraseSession(document) },
         onEraseEnd = { commitErase(it) },
         onEraserCursor = { at, radius -> view.setEraserCursor(at, radius) },
+        onPendingShape = { publishPendingShape(it) },
+        onCommitShape = { commitItem(it) },
+        shapeConfig = { shapeConfig },
+        inkColor = { inkColor },
+        detectShapes = { detectShapes },
         devicePxPerDp = { devicePxPerDp },
     )
 
@@ -75,6 +82,14 @@ class InfiniteEditor(context: Context) {
 
     /** The active ink colour, used by any tool without a colour override of its own. */
     var inkColor by mutableStateOf(InkPalette.DEFAULT)
+        private set
+
+    /** The shape tool's style. */
+    var shapeConfig by mutableStateOf(ShapeConfig())
+        private set
+
+    /** Whether a held freehand stroke may snap to the shape it looks like. */
+    var detectShapes by mutableStateOf(true)
         private set
 
     /** Live zoom, mirrored into Compose so a readout can follow a pinch frame by frame. */
@@ -162,11 +177,11 @@ class InfiniteEditor(context: Context) {
         val started = System.nanoTime()
         val meshed = ItemMesher.mesh(item)
         scene.lastTessellateMs = (System.nanoTime() - started) / 1_000_000.0
-        if (meshed == null) {
+        if (meshed == null || meshed.isEmpty) {
             scene.remove(item)
             return
         }
-        scene.upsert(item, meshed.mesh, meshed.color, meshed.pass, meshed.bounds, committingWetStroke)
+        scene.upsert(item, meshed.parts, meshed.bounds, committingWetStroke)
     }
 
     /** Re-tessellate the whole document, after a load or a wholesale list replacement. */
@@ -194,6 +209,14 @@ class InfiniteEditor(context: Context) {
         toolConfigs[forTool] = config
     }
 
+    fun armShapeConfig(config: ShapeConfig) {
+        shapeConfig = config
+    }
+
+    fun armDetectShapes(on: Boolean) {
+        detectShapes = on
+    }
+
     fun configFor(forTool: Tool): ToolConfig {
         val base = toolConfigs.getOrPut(forTool) { ToolDefaults.configFor(forTool) }
         // A tool with a colour override always draws in its own colour; the rest follow the
@@ -213,7 +236,31 @@ class InfiniteEditor(context: Context) {
             return
         }
         val meshed = ItemMesher.mesh(stroke) ?: return
-        scene.setWet(meshed.mesh, meshed.color, meshed.pass, meshed.bounds)
+        val part = meshed.parts.firstOrNull() ?: return
+        scene.setWet(part.mesh, part.color, part.pass, meshed.bounds)
+    }
+
+    /** The shape being dragged out, drawn live over the committed geometry like a wet stroke. */
+    private fun publishPendingShape(shape: ShapeItem?) {
+        if (shape == null) {
+            scene.setWet(null, InkPalette.DEFAULT, InkPass.OPAQUE, Rect(0.0, 0.0, 0.0, 0.0))
+            return
+        }
+        val meshed = ItemMesher.mesh(shape) ?: return
+        scene.setWetParts(meshed.parts, meshed.bounds)
+    }
+
+    /** Add a finished item and record the edit, the common tail of every creating tool. */
+    private fun commitItem(item: CanvasItem) {
+        committingWetStroke = true
+        try {
+            document.add(item)
+        } finally {
+            committingWetStroke = false
+        }
+        history.push(AddCanvasItem(document, item))
+        markDirty()
+        refresh()
     }
 
     /** Pen up on an eraser drag: the whole drag is one undoable edit, however much it cut. */
@@ -226,17 +273,7 @@ class InfiniteEditor(context: Context) {
     }
 
     /** Pen up: the finished stroke joins the document, and the edit joins the undo stack. */
-    private fun commitStroke(stroke: Stroke) {
-        committingWetStroke = true
-        try {
-            document.add(stroke)
-        } finally {
-            committingWetStroke = false
-        }
-        history.push(AddCanvasItem(document, stroke))
-        markDirty()
-        refresh()
-    }
+    private fun commitStroke(stroke: Stroke) = commitItem(stroke)
 
     private fun markDirty() {
         document.dirty = true

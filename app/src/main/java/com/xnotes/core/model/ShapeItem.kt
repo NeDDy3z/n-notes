@@ -50,7 +50,7 @@ class ShapeItem(
     val box: Rect get() = Rect.fromPoints(start, end)
 
     /** Polygon/polyline vertices mapped from normalized storage into content space. */
-    private fun absPoints(): List<Pt> {
+    internal fun absPoints(): List<Pt> {
         val pts = points ?: return emptyList()
         val b = box
         return pts.map { Pt(b.left + it.x * b.w, b.top + it.y * b.h) }
@@ -63,7 +63,7 @@ class ShapeItem(
         Pen(color = strokeRgba, width = strokeWidth, cosmetic = false, dashed = dashed, dashOn = dashLength, dashGap = dashGap)
 
     /** Triangle vertices: apex at top-edge midpoint, base along the bottom edge. */
-    private fun triangleVertices(): List<Pt> {
+    internal fun triangleVertices(): List<Pt> {
         val b = box
         return listOf(Pt(b.centerX, b.top), Pt(b.left, b.bottom), Pt(b.right, b.bottom))
     }
@@ -71,7 +71,7 @@ class ShapeItem(
     /** Open ">" arrowhead as the chevron polyline barbLeft -> tip -> barbRight (stroked, not filled),
      *  sized from the stroke width. The tip sits just past [end] so the point clears the shaft's
      *  round cap and reads slightly forward instead of buried under the line end. */
-    private fun arrowHead(): List<Pt> {
+    internal fun arrowHead(): List<Pt> {
         val dir = (end - start).normalized()
         if (dir.length() < 1e-9) return emptyList()
         val headLen = max(12.0, strokeWidth * 3.5)
@@ -81,7 +81,7 @@ class ShapeItem(
         return listOf(back + perp, tip, back - perp)
     }
 
-    private fun ellipsePolygon(segments: Int = 48): List<Pt> {
+    internal fun ellipsePolygon(segments: Int = 48): List<Pt> {
         val b = box
         val cx = b.centerX
         val cy = b.centerY

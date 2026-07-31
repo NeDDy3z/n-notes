@@ -53,17 +53,31 @@ class ItemMesherTest {
     @Test fun aStrokeMeshesWithItsRenderColourAndPaintBounds() {
         val s = stroke(Tool.PEN)
         val m = ItemMesher.mesh(s)!!
-        assertEquals(s.renderColor, m.color)
+        assertEquals(1, m.parts.size)
+        assertEquals(s.renderColor, m.parts[0].color)
         assertEquals(s.paintBounds(), m.bounds)
-        assertEquals(InkPass.OPAQUE, m.pass)
-        assertTrue(!m.mesh.isEmpty)
+        assertEquals(InkPass.OPAQUE, m.parts[0].pass)
+        assertTrue(!m.parts[0].mesh.isEmpty)
     }
 
     @Test fun aHighlighterMeshesWithItsScaledAlpha() {
         val s = stroke(Tool.HIGHLIGHTER)
         val m = ItemMesher.mesh(s)!!
-        assertTrue("the highlighter must arrive translucent", m.color.a < 255)
-        assertEquals(InkPass.MULTIPLY, m.pass)
+        assertTrue("the highlighter must arrive translucent", m.parts[0].color.a < 255)
+        assertEquals(InkPass.MULTIPLY, m.parts[0].pass)
+    }
+
+    @Test fun aShapeMeshesAsFillThenOutline() {
+        val s = com.xnotes.core.model.ShapeItem(
+            com.xnotes.core.tools.ShapeKind.RECTANGLE,
+            com.xnotes.core.geometry.Pt(0.0, 0.0),
+            com.xnotes.core.geometry.Pt(40.0, 20.0),
+            Rgba(1, 2, 3, 255), 3.0, Rgba(9, 9, 9, 64),
+        )
+        val m = ItemMesher.mesh(s)!!
+        assertEquals(2, m.parts.size)
+        assertEquals(Rgba(9, 9, 9, 64), m.parts[0].color)
+        assertEquals(Rgba(1, 2, 3, 255), m.parts[1].color)
     }
 
     @Test fun aNeonStrokeReportsBoundsWiderThanItsInk() {
@@ -77,7 +91,7 @@ class ItemMesherTest {
         assertNull(ItemMesher.mesh(Stroke(Tool.PEN, ToolConfig(), mutableListOf())))
     }
 
-    @Test fun itemKindsWithNoGeometryYetAreSkipped() {
+    @Test fun imagesTakeTheirOwnPathRatherThanTheMeshOne() {
         val image = ImageItem(ImageData(File("none"), 4, 4), Rect(0.0, 0.0, 4.0, 4.0))
         assertNull(ItemMesher.mesh(image))
     }

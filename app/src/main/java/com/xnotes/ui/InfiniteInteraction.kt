@@ -1,23 +1,34 @@
 package com.xnotes.ui
 
+import android.os.Handler
+import android.os.Looper
 import android.view.Choreographer
 import android.view.KeyEvent
 import android.view.MotionEvent
+import com.xnotes.canvas.InteractionController
+import com.xnotes.canvas.StylusButtonLatch
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.infinite.CanvasViewport
 import com.xnotes.core.infinite.EraseSession
-import com.xnotes.core.tools.EraseMode
+import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.stroke.Sample
+import com.xnotes.core.stroke.ShapeRecognizer
 import com.xnotes.core.stroke.StrokeSimplify
+import com.xnotes.core.tools.EraseMode
+import com.xnotes.core.tools.InkPalette
+import com.xnotes.core.tools.ShapeConfig
+import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
-import com.xnotes.canvas.InteractionController
-import com.xnotes.canvas.StylusButtonLatch
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.exp
+import kotlin.math.max
 
 /** What the current gesture is doing. */
-enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE }
+enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE, SHAPE }
 
 /**
  * Gestures on the infinite canvas.
@@ -50,6 +61,15 @@ class InfiniteInteraction(
     private val onEraseEnd: (EraseSession) -> Unit = {},
     /** Where the eraser cursor sits in viewport pixels, and how wide, or null to hide it. */
     private val onEraserCursor: (Pt?, Double) -> Unit = { _, _ -> },
+    /** The shape being dragged out, re-tessellated as it grows, or null to clear the preview. */
+    private val onPendingShape: (ShapeItem?) -> Unit = {},
+    /** A finished shape: add it to the document and push the undo command. */
+    private val onCommitShape: (ShapeItem) -> Unit = {},
+    /** The shape tool's style, and the active ink colour it draws in. */
+    private val shapeConfig: () -> ShapeConfig = { ShapeConfig() },
+    private val inkColor: () -> Rgba = { InkPalette.DEFAULT },
+    /** Whether a held pen stroke may snap to a recognized shape. */
+    private val detectShapes: () -> Boolean = { true },
     /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
     private val devicePxPerDp: () -> Double = { 1.0 },
 ) {
@@ -68,6 +88,15 @@ class InfiniteInteraction(
     private val stylusButtons = StylusButtonLatch()
 
     private var eraseSession: EraseSession? = null
+
+    // The shape being dragged out with the shape tool.
+    private var pendingShape: ShapeItem? = null
+
+    // Hold-still-to-snap: a freehand stroke that stops moving becomes the shape it looks like.
+    private val handler = Handler(Looper.getMainLooper())
+    private var dwellRunnable: Runnable? = null
+    private var dwellEligible = false
+    private var dwellAnchor = Pt.ZERO
 
     var mode = CanvasPointerMode.IDLE
         private set
@@ -149,6 +178,7 @@ class InfiniteInteraction(
         when {
             effective.isStroke -> beginDraw(vx, vy, effective, e)
             effective == Tool.ERASER -> beginErase(vx, vy)
+            effective == Tool.SHAPE -> beginShape(vx, vy)
             else -> beginPan(vx, vy)
         }
     }
@@ -172,6 +202,7 @@ class InfiniteInteraction(
             CanvasPointerMode.PINCH -> updatePinch(e)
             CanvasPointerMode.DRAW -> extendDraw(e)
             CanvasPointerMode.ERASE -> extendErase(e)
+            CanvasPointerMode.SHAPE -> extendShape(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.IDLE -> Unit
         }
     }
@@ -192,6 +223,7 @@ class InfiniteInteraction(
         val wasMoving = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
         if (mode == CanvasPointerMode.DRAW) endDraw(e)
         if (mode == CanvasPointerMode.ERASE) endErase()
+        if (mode == CanvasPointerMode.SHAPE) endShape()
         mode = CanvasPointerMode.IDLE
         setInteractive(false, true)
         if (wasMoving) startFling(panVel)
@@ -202,6 +234,7 @@ class InfiniteInteraction(
     private fun abortGesture() {
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
         if (mode == CanvasPointerMode.ERASE) endErase()
+        if (mode == CanvasPointerMode.SHAPE) abandonShape()
         mode = CanvasPointerMode.IDLE
         setInteractive(false, true)
         stopFling()
@@ -241,6 +274,9 @@ class InfiniteInteraction(
         stroke.addSample(Sample(p.x, p.y, pressureOf(e, 0)))
         liveStroke = stroke
         mode = CanvasPointerMode.DRAW
+        // Only solid pens arm the snap: a highlighter or a straight-line drag never becomes a shape.
+        dwellEligible = detectShapes() && drawTool.isStroke && drawTool != Tool.HIGHLIGHTER && !straight
+        if (dwellEligible) armDwell(Pt(vx, vy))
         onWetStroke(stroke)
         requestRender()
     }
@@ -264,6 +300,12 @@ class InfiniteInteraction(
             pressureOf(e, idx), e.eventTime, force = false,
         )
         onWetStroke(liveStroke)
+        // Real movement restarts the clock; holding within the slop lets it mature, so the snap
+        // fires only once the pen has actually come to rest.
+        if (dwellEligible) {
+            val here = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
+            if (here.distanceTo(dwellAnchor) > InteractionController.SHAPE_DWELL_SLOP) armDwell(here)
+        }
         requestRender()
     }
 
@@ -286,6 +328,8 @@ class InfiniteInteraction(
     }
 
     private fun endDraw(e: MotionEvent) {
+        cancelDwell()
+        dwellEligible = false
         val idx = e.findPointerIndex(drawingPointerId).coerceAtLeast(0)
         addStrokePoint(
             e.getX(idx).toDouble(), e.getY(idx).toDouble(),
@@ -303,6 +347,133 @@ class InfiniteInteraction(
         stroke.finished = true
         simplifyForCommit(stroke)
         onCommitStroke(stroke)
+    }
+
+    // --- shapes ---
+
+    private fun beginShape(vx: Double, vy: Double) {
+        val cfg = shapeConfig()
+        val at = viewport.viewportToContent(Pt(vx, vy))
+        val ink = inkColor()
+        val fill = if (cfg.fill && cfg.shape.isClosed) ink.scaleAlpha(ShapeConfig.FILL_ALPHA) else null
+        pendingShape = ShapeItem(
+            cfg.shape, at, at, ink, cfg.strokeWidth * InteractionController.SHAPE_PEN_PARITY, fill,
+            cfg.neon, cfg.neonStrength,
+            dashed = cfg.dashed, dashLength = cfg.dashLength, dashGap = cfg.dashGap,
+        )
+        mode = CanvasPointerMode.SHAPE
+        setInteractive(false, false)
+        onPendingShape(pendingShape)
+        requestRender()
+    }
+
+    private fun extendShape(vx: Double, vy: Double) {
+        val shape = pendingShape ?: return
+        val raw = viewport.viewportToContent(Pt(vx, vy))
+        shape.end = when {
+            // Line and arrow pin flat when the dragged end lands near an axis.
+            shape.shape.isEndpointShape -> snapAxisEndpoint(shape.start, raw)
+            // Circle keeps its box square, so it stays a circle rather than becoming an ellipse.
+            shape.shape == ShapeKind.CIRCLE -> squareCorner(shape.start, raw)
+            else -> raw
+        }
+        onPendingShape(shape)
+        requestRender()
+    }
+
+    private fun endShape() {
+        val shape = pendingShape
+        pendingShape = null
+        onPendingShape(null)
+        // A tap makes no shape; only a real drag commits one.
+        if (shape != null && shape.start.distanceTo(shape.end) > InteractionController.SHAPE_MIN_DRAG) {
+            onCommitShape(shape)
+        }
+        requestRender()
+    }
+
+    private fun abandonShape() {
+        pendingShape = null
+        onPendingShape(null)
+    }
+
+    /** Constrain a dragged corner to a square box anchored at [anchor], for the perfect circle. */
+    private fun squareCorner(anchor: Pt, p: Pt): Pt {
+        val side = max(abs(p.x - anchor.x), abs(p.y - anchor.y))
+        val sx = if (p.x >= anchor.x) 1.0 else -1.0
+        val sy = if (p.y >= anchor.y) 1.0 else -1.0
+        return Pt(anchor.x + sx * side, anchor.y + sy * side)
+    }
+
+    /** Snap a line or arrow's dragged end to an exact horizontal or vertical run from [anchor]. */
+    private fun snapAxisEndpoint(anchor: Pt, p: Pt): Pt {
+        val dx = p.x - anchor.x
+        val dy = p.y - anchor.y
+        if (dx == 0.0 && dy == 0.0) return p
+        val snap = Math.toRadians(InteractionController.SHAPE_AXIS_SNAP_DEG)
+        val fromHoriz = atan2(abs(dy), abs(dx)) // 0 is horizontal, PI/2 is vertical
+        return when {
+            fromHoriz <= snap -> Pt(p.x, anchor.y)
+            fromHoriz >= Math.PI / 2.0 - snap -> Pt(anchor.x, p.y)
+            else -> p
+        }
+    }
+
+    // --- hold still to snap a freehand stroke into a shape ---
+
+    private fun armDwell(at: Pt) {
+        cancelDwell()
+        dwellAnchor = at
+        val r = Runnable { onDwellElapsed() }
+        dwellRunnable = r
+        handler.postDelayed(r, InteractionController.SHAPE_DWELL_MS)
+    }
+
+    private fun cancelDwell() {
+        dwellRunnable?.let { handler.removeCallbacks(it) }
+        dwellRunnable = null
+    }
+
+    /** The pen has held still: if what it drew reads as a shape, swap the stroke for that shape. */
+    private fun onDwellElapsed() {
+        dwellRunnable = null
+        if (!dwellEligible) return
+        val stroke = liveStroke ?: return
+        if (stroke.samples.size < InteractionController.SHAPE_MIN_SAMPLES) return
+        val rec = ShapeRecognizer.recognize(stroke.samples) ?: return
+        val width = stroke.config.baseWidth * InteractionController.SHAPE_PEN_PARITY
+        val color = stroke.config.rgba // the as-drawn colour, not the alpha-scaled render one
+        val dashed = stroke.tool == Tool.DASHED // a dashed pen snaps to a dashed shape
+        val verts = rec.vertices
+        val shape = if (verts != null) {
+            ShapeItem.poly(
+                rec.kind, verts, color, width, null, stroke.config.neon, stroke.config.neonStrength,
+                dashed, stroke.config.dashLength, stroke.config.dashGap,
+            )
+        } else {
+            ShapeItem(
+                shape = rec.kind,
+                start = rec.start,
+                end = rec.end,
+                strokeRgba = color,
+                strokeWidth = width,
+                fillRgba = null,
+                neon = stroke.config.neon,
+                neonStrength = stroke.config.neonStrength,
+                dashed = dashed,
+                dashLength = stroke.config.dashLength,
+                dashGap = stroke.config.dashGap,
+            )
+        }
+        // The stroke was never committed, so dropping it makes the wet ink vanish the moment it
+        // snaps; the eventual pen up then commits nothing.
+        liveStroke = null
+        onWetStroke(null)
+        dwellEligible = false
+        cancelDwell()
+        onCommitShape(shape)
+        mode = CanvasPointerMode.IDLE
+        requestRender()
     }
 
     // --- erasing ---
