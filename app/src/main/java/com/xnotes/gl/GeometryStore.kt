@@ -1,12 +1,12 @@
 package com.xnotes.gl
 
 import android.opengl.GLES30
+import com.xnotes.core.infinite.CanvasProjection
 import com.xnotes.core.infinite.MeshData
 import com.xnotes.core.infinite.SlotAllocator
 import com.xnotes.core.model.Rgba
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.floor
 
 /** Where a mesh lives inside the shared buffers. */
 class BufferSlice(
@@ -165,6 +165,15 @@ class GeometryStore {
         ibo = names[1]
     }
 
+    /** Hand the GPU buffers back. Only a store that outlives nothing needs this; the scene's dies
+     *  with its context instead. */
+    fun release() {
+        if (vbo != 0 || ibo != 0) GLES30.glDeleteBuffers(2, intArrayOf(vbo, ibo), 0)
+        vbo = 0
+        ibo = 0
+        uploadedGen = -1
+    }
+
     /** Push pending changes to the GPU and bind the buffers. Returns false when there is nothing. */
     fun bindForDraw(gen: Int): Boolean {
         if (gen != uploadedGen || vbo == 0 || ibo == 0) return false
@@ -286,17 +295,13 @@ class GeometryStore {
         ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
 
     companion object {
-        /**
-         * Content pixels a chunk spans. Small enough that every local offset stays far inside
-         * float32's exact range even at the deepest zoom, large enough that the chunk index fits a
-         * signed short across a world of +/- 134 million content pixels.
-         */
-        const val CHUNK_SIZE = 4096.0
+        /** Content pixels a chunk spans; see [CanvasProjection], which the shader agrees with. */
+        const val CHUNK_SIZE = CanvasProjection.CHUNK_SIZE
 
         const val VERTEX_STRIDE = 20
 
         /** Fixed-point steps per content pixel in the stored spine offset. */
-        const val OFFSET_SCALE = 64.0
+        const val OFFSET_SCALE = CanvasProjection.OFFSET_SCALE
 
         /** [v] content pixels as the fixed-point short the vertex format stores. */
         fun quantizeOffset(v: Double): Short {
@@ -309,9 +314,6 @@ class GeometryStore {
         private const val INITIAL_INDICES = 24576
 
         /** Chunk index a content coordinate falls in, clamped to what a short can hold. */
-        fun chunkIndex(v: Double): Double {
-            if (!v.isFinite()) return 0.0
-            return floor(v / CHUNK_SIZE).coerceIn(-32768.0, 32767.0)
-        }
+        fun chunkIndex(v: Double): Double = CanvasProjection.chunkIndex(v)
     }
 }

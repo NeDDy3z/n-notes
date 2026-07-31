@@ -1,0 +1,145 @@
+package com.xnotes.core.infinite
+
+import com.xnotes.core.infinite.CanvasProjection.Camera
+import com.xnotes.core.infinite.CanvasProjection.Vertex
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.math.abs
+
+class CanvasProjectionTest {
+
+    private fun camera(
+        scrollX: Double = 0.0,
+        scrollY: Double = 0.0,
+        zoom: Double = 1.0,
+        widthScale: Double = 1.0,
+    ) = Camera(scrollX, scrollY, zoom, 1000.0, 800.0, widthScale)
+
+    @Test
+    fun `content under the viewport origin lands at the top left`() {
+        val camera = camera(scrollX = 300.0, scrollY = 200.0)
+        val d = CanvasProjection.devicePoint(Vertex.of(300.0, 200.0), camera)
+        assertEquals(0.0, d.x, 1e-9)
+        assertEquals(0.0, d.y, 1e-9)
+    }
+
+    @Test
+    fun `zoom scales the distance from the viewport origin`() {
+        val camera = camera(scrollX = 100.0, scrollY = 100.0, zoom = 2.5)
+        val d = CanvasProjection.devicePoint(Vertex.of(140.0, 180.0), camera)
+        assertEquals(100.0, d.x, 1e-9)
+        assertEquals(200.0, d.y, 1e-9)
+    }
+
+    /** The regression that came back twice: a factor applied once too often. */
+    @Test
+    fun `zoom is applied exactly once`() {
+        val plain = camera(zoom = 1.0)
+        val doubled = camera(zoom = 2.0)
+        val v = Vertex.of(120.0, 90.0)
+        val a = CanvasProjection.devicePoint(v, plain)
+        val b = CanvasProjection.devicePoint(v, doubled)
+        assertEquals(a.x * 2.0, b.x, 1e-9)
+        assertEquals(a.y * 2.0, b.y, 1e-9)
+    }
+
+    @Test
+    fun `clip space puts the viewport centre at the origin and flips y`() {
+        val camera = camera()
+        val c = CanvasProjection.clipPoint(Vertex.of(500.0, 400.0), camera)
+        assertEquals(0.0, c.x, 1e-9)
+        assertEquals(0.0, c.y, 1e-9)
+
+        val topLeft = CanvasProjection.clipPoint(Vertex.of(0.0, 0.0), camera)
+        assertEquals(-1.0, topLeft.x, 1e-9)
+        assertEquals(1.0, topLeft.y, 1e-9)
+
+        val bottomRight = CanvasProjection.clipPoint(Vertex.of(1000.0, 800.0), camera)
+        assertEquals(1.0, bottomRight.x, 1e-9)
+        assertEquals(-1.0, bottomRight.y, 1e-9)
+    }
+
+    /** Splitting a position into chunk plus local must be exactly reversible. */
+    @Test
+    fun `a far away vertex lands where a near one at the same offset does`() {
+        val near = CanvasProjection.devicePoint(
+            Vertex.of(37.5, 12.25), camera(scrollX = 0.0, scrollY = 0.0),
+        )
+        val far = CanvasProjection.devicePoint(
+            Vertex.of(40_000_037.5, 40_000_012.25),
+            camera(scrollX = 40_000_000.0, scrollY = 40_000_000.0),
+        )
+        assertEquals(near.x, far.x, 1e-6)
+        assertEquals(near.y, far.y, 1e-6)
+    }
+
+    @Test
+    fun `the camera chunk absorbs the scroll so nothing large is multiplied`() {
+        val camera = camera(scrollX = 40_000_000.0, scrollY = -9_000_000.0)
+        val localX = CanvasProjection.localScroll(camera.scrollX, camera.camChunkX)
+        val localY = CanvasProjection.localScroll(camera.scrollY, camera.camChunkY)
+        assertTrue(localX >= 0.0 && localX < CanvasProjection.CHUNK_SIZE)
+        assertTrue(localY >= 0.0 && localY < CanvasProjection.CHUNK_SIZE)
+    }
+
+    @Test
+    fun `a negative coordinate takes the chunk below it`() {
+        assertEquals(-1.0, CanvasProjection.chunkIndex(-1.0), 0.0)
+        assertEquals(-1.0, CanvasProjection.chunkIndex(-CanvasProjection.CHUNK_SIZE), 0.0)
+        assertEquals(-2.0, CanvasProjection.chunkIndex(-CanvasProjection.CHUNK_SIZE - 1.0), 0.0)
+        assertEquals(0.0, CanvasProjection.chunkIndex(0.0), 0.0)
+    }
+
+    @Test
+    fun `a fill keeps its full alpha at every zoom`() {
+        val fill = Vertex.of(10.0, 10.0)
+        assertEquals(1.0, CanvasProjection.widthFade(fill, camera(zoom = 0.02)), 0.0)
+        assertEquals(1.0, CanvasProjection.widthFade(fill, camera(zoom = 64.0)), 0.0)
+    }
+
+    @Test
+    fun `a sub-pixel stroke widens to half a pixel and loses the width from its alpha`() {
+        // A rail vertex at x=10 displaced 2 from its spine, so the spine runs down x=8. At 0.05x
+        // that half-width reaches 0.1 device px, a fifth of the floor.
+        val edge = Vertex.of(10.0, 10.0, offsetX = 2.0, offsetY = 0.0)
+        val spine = Vertex.of(8.0, 10.0)
+        val cam = camera(zoom = 0.05)
+        assertEquals(0.2, CanvasProjection.widthFade(edge, cam), 1e-9)
+
+        val d = CanvasProjection.devicePoint(edge, cam)
+        val c = CanvasProjection.devicePoint(spine, cam)
+        assertEquals(CanvasProjection.MIN_HALF_WIDTH_PX, abs(d.x - c.x), 1e-9)
+    }
+
+    @Test
+    fun `a stroke wider than the floor is left alone`() {
+        val edge = Vertex.of(10.0, 10.0, offsetX = 2.0, offsetY = 0.0)
+        val cam = camera(zoom = 4.0)
+        assertEquals(1.0, CanvasProjection.widthFade(edge, cam), 0.0)
+        val d = CanvasProjection.devicePoint(edge, cam)
+        val c = CanvasProjection.devicePoint(Vertex.of(8.0, 10.0), cam)
+        assertEquals(8.0, abs(d.x - c.x), 1e-9)
+    }
+
+    /** Neon's core is the body's own geometry narrowed about its centreline. */
+    @Test
+    fun `the width scale narrows a ribbon about its own centre`() {
+        // Spine at x=6, rail at x=10. A quarter width puts the rail at 7 and leaves the spine put.
+        val edge = Vertex.of(10.0, 10.0, offsetX = 4.0, offsetY = 0.0)
+        val cam = camera(zoom = 1.0, widthScale = 0.25)
+        val d = CanvasProjection.devicePoint(edge, cam)
+        assertEquals(7.0, d.x, 1e-9)
+        assertEquals(10.0, d.y, 1e-9)
+        assertEquals(6.0, CanvasProjection.devicePoint(Vertex.of(6.0, 10.0), cam).x, 1e-9)
+    }
+
+    @Test
+    fun `the width scale leaves the centreline where it was`() {
+        val centre = Vertex.of(10.0, 10.0)
+        val plain = CanvasProjection.devicePoint(centre, camera())
+        val scaled = CanvasProjection.devicePoint(centre, camera(widthScale = 0.25))
+        assertEquals(plain.x, scaled.x, 1e-9)
+        assertEquals(plain.y, scaled.y, 1e-9)
+    }
+}

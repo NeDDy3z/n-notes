@@ -1,6 +1,7 @@
 package com.xnotes.gl
 
 import android.opengl.GLES30
+import com.xnotes.core.infinite.CanvasProjection
 import com.xnotes.core.model.Rgba
 
 /**
@@ -83,7 +84,7 @@ class InkShader(contextGen: Int) {
          * is pushed back out to it and the width it gained is taken out of its alpha, so it fades
          * evenly instead of breaking into a crawling dotted shimmer.
          */
-        const val MIN_HALF_WIDTH_PX = 0.5f
+        val MIN_HALF_WIDTH_PX = CanvasProjection.MIN_HALF_WIDTH_PX.toFloat()
 
         private val VERTEX_SRC = """#version 300 es
             in vec2 aLocal;
