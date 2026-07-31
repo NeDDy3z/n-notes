@@ -20,16 +20,25 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import com.xnotes.R
-import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.Tool
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 
-/** The tools the infinite canvas offers. Text, screenshot and the page tools mean nothing here. */
-private val CANVAS_TOOLS = listOf(
-    Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER,
-    Tool.ERASER, Tool.SHAPE, Tool.SELECT, Tool.LASSO,
+/**
+ * The tools the infinite canvas offers, grouped as the paged bar groups them.
+ *
+ * The order is [com.xnotes.core.tools.ToolbarLayout.DEFAULT]'s with everything pageless removed:
+ * ink and eraser, then navigation and selection, then the shape tool. Text, the screenshot tool and
+ * the page tools mean nothing here, so their groups simply do not appear.
+ */
+private val CANVAS_TOOL_GROUPS = listOf(
+    listOf(
+        Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER,
+        Tool.ERASER,
+    ),
+    listOf(Tool.PAN, Tool.SELECT, Tool.LASSO),
+    listOf(Tool.SHAPE),
 )
 
 /**
@@ -77,29 +86,34 @@ fun InfiniteToolbar(
     ) {
         ToolbarIcon(XnotesIcons.prev, "Home") { onOpenBackstage() }
         Label(editor.title, Modifier.padding(end = 4.dp))
-        Separator()
 
-        for (tool in CANVAS_TOOLS) {
-            val icon = toolIcons[tool] ?: continue
-            Box {
-                // Tapping the armed eraser again opens its settings, exactly as the paged bar does.
-                ToolbarIcon(icon, tool.name, active = editor.tool == tool) {
-                    when {
-                        tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
-                        tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
-                        tool == Tool.SELECT && editor.tool == tool -> selectOpen = true
-                        tool.isStroke && editor.tool == tool -> penOpen = tool
-                        else -> editor.armTool(tool)
+        for (group in CANVAS_TOOL_GROUPS) {
+            Separator()
+            for (tool in group) {
+                val icon = toolIcons[tool] ?: continue
+                Box {
+                    // Tapping the armed eraser again opens its settings, exactly as the paged bar does.
+                    ToolbarIcon(icon, tool.name, active = editor.tool == tool) {
+                        when {
+                            tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
+                            tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
+                            tool == Tool.SELECT && editor.tool == tool -> selectOpen = true
+                            tool.isStroke && editor.tool == tool -> penOpen = tool
+                            else -> editor.armTool(tool)
+                        }
                     }
+                    // The very popups the paged toolbar opens, not lookalikes: same controls, same
+                    // wording, same ranges, and they cannot drift apart.
+                    if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
+                    if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
+                    if (tool == Tool.SELECT && selectOpen) SelectConfigPopup(editor) { selectOpen = false }
+                    if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
                 }
-                // The very popups the paged toolbar opens, not lookalikes: same controls, same
-                // wording, same ranges, and they cannot drift apart.
-                if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
-                if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
-                if (tool == Tool.SELECT && selectOpen) SelectConfigPopup(editor) { selectOpen = false }
-                if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
             }
         }
+        Separator()
+
+        ToolbarIcon(XnotesIcons.image, "Insert image") { onInsertImage() }
         Separator()
 
         for (i in editor.toolbarColors.indices) {
@@ -110,10 +124,12 @@ fun InfiniteToolbar(
         }
         Separator()
 
-        if (editor.hasSelection) {
-            ToolbarIcon(XnotesIcons.trash, "Delete selection") { editor.deleteSelection() }
-        }
-        ToolbarIcon(XnotesIcons.image, "Insert image") { onInsertImage() }
+        ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
+        ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
+        Separator()
+
+        // Where the paged bar keeps its page, styles and view menus. Waypoints take the place of
+        // pagination: on an unbounded canvas, a saved view is what a page number was.
         Box {
             ToolbarIcon(XnotesIcons.sliders, "Styles", active = stylesOpen) { stylesOpen = true }
             if (stylesOpen) CanvasStylesPopup(editor) { stylesOpen = false }
@@ -122,10 +138,12 @@ fun InfiniteToolbar(
             ToolbarIcon(XnotesIcons.bookmark, "Waypoints", active = waypointsOpen) { waypointsOpen = true }
             if (waypointsOpen) CanvasWaypointsPopup(editor) { waypointsOpen = false }
         }
-        ToolbarIcon(XnotesIcons.fit, "Fit all") { editor.zoomToFit() }
+        Separator()
+
+        ToolbarIcon(XnotesIcons.zoomOut, "Zoom out") { editor.zoomBy(1.0 / InfiniteEditor.ZOOM_STEP) }
         Label("${editor.zoomPercent}%")
-        ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
-        ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
+        ToolbarIcon(XnotesIcons.zoomIn, "Zoom in") { editor.zoomBy(InfiniteEditor.ZOOM_STEP) }
+        ToolbarIcon(XnotesIcons.fit, "Fit all") { editor.zoomToFit() }
 
         editor.renderFailure?.let {
             Separator()
