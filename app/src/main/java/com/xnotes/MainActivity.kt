@@ -652,10 +652,16 @@ private fun EditorScreen(
                 // pages, viewing modes and text, none of which mean anything here.
                 BackHandler(enabled = true) { editor.goHome() }
                 val canvas = editor.infinite
+                LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(LocalPalette.current.bg.toComposeColor()),
+                        .background(LocalPalette.current.bg.toComposeColor())
+                        .focusRequester(focusRequester)
+                        .focusable()
+                        .onPreviewKeyEvent { ke ->
+                            ke.type == KeyEventType.KeyDown && editor.handleKeyDown(ke.nativeKeyEvent)
+                        },
                 ) {
                     com.xnotes.ui.InfiniteToolbar(
                         canvas,

@@ -425,6 +425,48 @@ class InfiniteEditor(context: Context) {
         interaction.penButtonTool = penButtonTool
     }
 
+    /** Adopt the configured zoom range, then pull the current zoom back into it. */
+    fun applyZoomRange(minPercent: Int, maxPercent: Int) {
+        viewport.minZoom = (minPercent / 100.0).coerceAtLeast(0.0001)
+        viewport.maxZoom = (maxPercent / 100.0).coerceAtLeast(viewport.minZoom)
+        viewport.clampZoom()
+        onViewChanged()
+        view.publish()
+    }
+
+    /** Keyboard shortcuts. Only the ones that mean something without pages. */
+    fun handleKeyDown(e: android.view.KeyEvent): Boolean {
+        val ctrl = e.isCtrlPressed
+        val shift = e.isShiftPressed
+        when {
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Z && shift -> redo()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> undo()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Y -> redo()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_A -> selectAll()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_0 -> zoomToFit()
+            ctrl && (e.keyCode == android.view.KeyEvent.KEYCODE_PLUS || e.keyCode == android.view.KeyEvent.KEYCODE_EQUALS) -> zoomBy(ZOOM_STEP)
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_MINUS -> zoomBy(1.0 / ZOOM_STEP)
+            e.keyCode == android.view.KeyEvent.KEYCODE_DEL || e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> deleteSelection()
+            e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE -> interaction.clearSelection()
+            else -> return false
+        }
+        return true
+    }
+
+    /** Select everything on the canvas, which on an unbounded one means literally everything. */
+    fun selectAll() {
+        if (document.isEmpty) return
+        selection.select(document.items.toList())
+        armTool(Tool.SELECT)
+        publishOverlay()
+    }
+
+    fun zoomBy(factor: Double) {
+        viewport.zoomAroundCenter(viewport.zoom * factor)
+        onViewChanged()
+        view.publish()
+    }
+
     private var palette: Palette? = null
 
     /** Adopt the chrome's palette, so the paper and the selection accent match the rest of the app. */
@@ -562,5 +604,10 @@ class InfiniteEditor(context: Context) {
         canRedo = history.canRedo
         waypoints = document.waypoints.toList()
         view.contentBounds = document.contentBounds()
+    }
+
+    companion object {
+        /** Zoom step for the keyboard, matching a comfortable notch of a pinch. */
+        const val ZOOM_STEP = 1.25
     }
 }

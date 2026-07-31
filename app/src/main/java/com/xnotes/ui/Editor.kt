@@ -213,6 +213,9 @@ class Editor(context: Context) {
     private var publishedFlowStamp = -1L
     private var publishedPageList: List<Page> = emptyList()
     private val session = com.xnotes.platform.SessionStore(java.io.File(appContext.filesDir, "session"), codec, pdfDir, imageDir)
+    private val canvasSession = com.xnotes.platform.CanvasSessionStore(
+        java.io.File(appContext.filesDir, "session"), canvasCodec, imageDir,
+    )
     private val viewStates = com.xnotes.platform.ViewStateStore(com.xnotes.platform.JsonStore.viewStates(appContext))
     private var lastSessionContentVersion = -1
     private var sessionLoaded = false
@@ -426,6 +429,7 @@ class Editor(context: Context) {
         canvas.replaceDocument(doc)
         canvas.applyPalette(palette)
         canvas.applyInputPrefs(settings.prefs.fingerDraws, controller.penButtonTool)
+        canvas.applyZoomRange(settings.prefs.canvasMinZoomPercent, settings.prefs.canvasMaxZoomPercent)
         canvas.onContentChanged = { scheduleCanvasAutosave() }
         // Only a canvas living under the granted folder autosaves; anything else is left alone,
         // matching how a note opened from outside the root behaves.
@@ -1424,6 +1428,7 @@ class Editor(context: Context) {
         state.palette = palette
         infiniteOrNull?.applyPalette(palette)
         infiniteOrNull?.applyInputPrefs(p.fingerDraws, if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER))
+        infiniteOrNull?.applyZoomRange(p.canvasMinZoomPercent, p.canvasMaxZoomPercent)
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
@@ -1500,14 +1505,26 @@ class Editor(context: Context) {
         // Home never freezes the UI. The process survives to finish them; the debounced autosave during
         // editing bounds any loss on an immediate hard kill.
         flushThen(showOverlay = false) {}
+        flushCanvasAutosave()
         saveSession()
+        saveCanvasSession()
+    }
+
+    /** Persist the open canvas, or clear the stored one when a canvas is not what is open. */
+    private fun saveCanvasSession() {
+        val canvas = infiniteOrNull
+        if (!canvasOpen || canvas == null) {
+            canvasSession.clear()
+            return
+        }
+        canvasSession.save(canvas.document, writeDocument = true)
     }
 
     /** Persist the working session (open document + zoom/scroll) so the next launch
      *  reopens this note where the user left off, unsaved edits included. */
     private fun saveSession() {
         if (!sessionLoaded) return // don't overwrite the saved note before restore has applied
-        if (!noteOpen) { session.clear(); return } // on backstage: nothing open -> wipe any stale session
+        if (!noteOpen || canvasOpen) { session.clear(); return } // nothing paged on top: wipe any stale session
         val contentChanged = contentVersion != lastSessionContentVersion
         lastSessionContentVersion = contentVersion
         // Snapshot a changed document on the main thread, then write the session off-thread, so saving a
@@ -1529,6 +1546,15 @@ class Editor(context: Context) {
      *  main thread; the apply runs on the caller's (main) dispatcher. A no-op when
      *  there is no saved session. Drives the launch loader, so it's safe to await. */
     suspend fun restoreSession() {
+        // A canvas was open last time: it takes precedence, since only one document is ever on top.
+        val canvasDoc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (canvasSession.exists()) canvasSession.load() else null
+        }
+        if (canvasDoc != null) {
+            openCanvasDocument(canvasDoc, canvasDoc.path, canvasDoc.displayName)
+            sessionLoaded = true
+            return
+        }
         val snap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { session.load() }
         if (snap != null) {
             state.document = snap.document
@@ -3462,6 +3488,8 @@ class Editor(context: Context) {
     var keyActions = KeyActions()
 
     fun handleKeyDown(e: android.view.KeyEvent): Boolean {
+        // A canvas is on top: it owns the keyboard, and understands only its own shortcuts.
+        if (canvasOpen) return infinite.handleKeyDown(e)
         // A live flow caret session owns the keyboard first (Ctrl+B means bold here).
         if (flowText.active && handleFlowKey(e)) return true
         // While editing a text box, let the field consume keys (only Escape commits).

@@ -54,6 +54,10 @@ data class Preferences(
     /** User zoom ceiling: when enabled, no zoom path goes above [maxZoomPercent]%. */
     val maxZoomEnabled: Boolean = false,
     val maxZoomPercent: Int = 400,
+    /** Infinite canvas zoom range, as percentages. Far wider than a page's, since a canvas is
+     *  read at both a wall's scale and a hair's. */
+    val canvasMinZoomPercent: Int = 2,
+    val canvasMaxZoomPercent: Int = 6400,
     /** Long-edge cap (px) for the on-screen page cache; higher holds more of the page ready at deep zoom. */
     val maxCacheResolution: Int = 2048,
     /** Open in fullscreen; null ⇒ auto (on unless the display has a camera cutout). */
@@ -112,6 +116,8 @@ data class Preferences(
         .put("min_zoom_percent", minZoomPercent)
         .put("max_zoom_enabled", maxZoomEnabled)
         .put("max_zoom_percent", maxZoomPercent)
+        .put("canvas_min_zoom_percent", canvasMinZoomPercent)
+        .put("canvas_max_zoom_percent", canvasMaxZoomPercent)
         .put("max_cache_resolution", maxCacheResolution)
         .apply {
             materialSeed?.let { put("material_seed", Rgba.toHex(it)) }
@@ -167,6 +173,8 @@ data class Preferences(
                 minZoomPercent = o.optInt("min_zoom_percent", 50).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
                 maxZoomEnabled = o.optBoolean("max_zoom_enabled", false),
                 maxZoomPercent = o.optInt("max_zoom_percent", 400).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
+                canvasMinZoomPercent = o.optInt("canvas_min_zoom_percent", 2).coerceIn(1, 100),
+                canvasMaxZoomPercent = o.optInt("canvas_max_zoom_percent", 6400).coerceIn(200, 100000),
                 maxCacheResolution = o.optInt("max_cache_resolution", 2048).coerceIn(1024, 4096),
                 startFullscreen = if (o.has("start_fullscreen")) o.getBoolean("start_fullscreen") else null,
                 codeThemePath = o.optString("code_theme_path").ifEmpty { null },
