@@ -13,6 +13,20 @@ data class Selected(val pageIndex: Int, val item: CanvasItem)
 object SelectionMath {
 
     /**
+     * Band selection over a flat item list, for a canvas with no pages: every item whose bounds
+     * meet [band]. The paged overloads below are the same test with a page-space translation in
+     * front of it; sharing the rule is the point, so the two canvases select alike.
+     */
+    fun bandMembers(items: List<CanvasItem>, band: Rect): List<CanvasItem> =
+        items.filter { it.bounds().intersects(band) }
+
+    /** Lasso selection over a flat item list: every item whose centroid lies inside [polygon]. */
+    fun lassoMembers(items: List<CanvasItem>, polygon: List<Pt>): List<CanvasItem> {
+        if (polygon.size < 3) return emptyList()
+        return items.filter { Geometry.pointInPolygon(polygon, it.centroid()) }
+    }
+
+    /**
      * Band selection: every item whose content-space bounds intersect [band]. [toContentRect]
      * maps an item's page-space bounds on page i into content space (a plain page-rect
      * translation, plus the display rotation when the view is rotated).

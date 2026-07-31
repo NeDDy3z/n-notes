@@ -29,7 +29,7 @@ import com.xnotes.ui.theme.toComposeColor
 /** The tools the infinite canvas offers. Text, screenshot and the page tools mean nothing here. */
 private val CANVAS_TOOLS = listOf(
     Tool.PAN, Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER,
-    Tool.ERASER, Tool.SHAPE,
+    Tool.ERASER, Tool.SHAPE, Tool.SELECT, Tool.LASSO,
 )
 
 /**
@@ -56,6 +56,8 @@ fun InfiniteToolbar(
         Tool.PAN to XnotesIcons.pan,
         Tool.ERASER to XnotesIcons.eraser,
         Tool.SHAPE to XnotesIcons.shape,
+        Tool.SELECT to XnotesIcons.select,
+        Tool.LASSO to XnotesIcons.lasso,
     )
     var stylesOpen by remember { mutableStateOf(false) }
     var eraserOpen by remember { mutableStateOf(false) }
@@ -96,6 +98,9 @@ fun InfiniteToolbar(
         }
         Separator()
 
+        if (editor.hasSelection) {
+            ToolbarIcon(XnotesIcons.trash, "Delete selection") { editor.deleteSelection() }
+        }
         ToolbarIcon(XnotesIcons.image, "Insert image") { onInsertImage() }
         Box {
             ToolbarIcon(XnotesIcons.sliders, "Styles", active = stylesOpen) { stylesOpen = true }

@@ -9,7 +9,14 @@ import com.xnotes.canvas.InteractionController
 import com.xnotes.canvas.StylusButtonLatch
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.infinite.CanvasViewport
+import com.xnotes.canvas.HandleId
+import com.xnotes.canvas.ResizeMath
+import com.xnotes.canvas.SelectionMath
+import com.xnotes.core.geometry.Rect
+import com.xnotes.core.infinite.CanvasSelection
 import com.xnotes.core.infinite.EraseSession
+import com.xnotes.core.infinite.OverlayTessellator
+import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
@@ -28,7 +35,7 @@ import kotlin.math.exp
 import kotlin.math.max
 
 /** What the current gesture is doing. */
-enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE, SHAPE }
+enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE, SHAPE, BAND, LASSO, MOVE, RESIZE, ROTATE }
 
 /**
  * Gestures on the infinite canvas.
@@ -70,11 +77,27 @@ class InfiniteInteraction(
     private val inkColor: () -> Rgba = { InkPalette.DEFAULT },
     /** Whether a held pen stroke may snap to a recognized shape. */
     private val detectShapes: () -> Boolean = { true },
+    /** The selection, owned by the host so the chrome can read it. */
+    private val selection: () -> CanvasSelection? = { null },
+    /** Items the selection may be drawn from, culled to a rect. */
+    private val itemsIn: (Rect) -> List<CanvasItem> = { emptyList() },
+    /** The selection or its overlay changed: rebuild the chrome geometry. */
+    private val onSelectionChanged: () -> Unit = {},
+    /** A finished selection drag: push its single undo command. */
+    private val onCommitSelection: (com.xnotes.core.history.Command?) -> Unit = {},
     /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
     private val devicePxPerDp: () -> Double = { 1.0 },
 ) {
 
     private val choreographer = Choreographer.getInstance()
+
+    companion object {
+        /** How near a handle a press has to land to grab it, in device pixels. */
+        const val HANDLE_TOUCH_PX = 22.0
+
+        /** Least on-screen distance between lasso vertices, so a slow drag stays cheap. */
+        const val LASSO_MIN_STEP_PX = 3.0
+    }
 
     /** The armed tool. */
     var tool: Tool = Tool.PEN
@@ -91,6 +114,17 @@ class InfiniteInteraction(
 
     // The shape being dragged out with the shape tool.
     private var pendingShape: ShapeItem? = null
+
+    // Band and lasso, in content space, live only while their gesture runs.
+    var bandRect: Rect? = null
+        private set
+    val lassoPoints = ArrayList<Pt>()
+    private var bandAnchor = Pt.ZERO
+
+    // The live transform drag.
+    private var grabHandle: HandleId? = null
+    private var moveAnchor = Pt.ZERO
+    private var movedBy = Pt.ZERO
 
     // Hold-still-to-snap: a freehand stroke that stops moving becomes the shape it looks like.
     private val handler = Handler(Looper.getMainLooper())
@@ -179,6 +213,8 @@ class InfiniteInteraction(
             effective.isStroke -> beginDraw(vx, vy, effective, e)
             effective == Tool.ERASER -> beginErase(vx, vy)
             effective == Tool.SHAPE -> beginShape(vx, vy)
+            effective == Tool.SELECT -> beginSelect(vx, vy)
+            effective == Tool.LASSO -> beginLasso(vx, vy)
             else -> beginPan(vx, vy)
         }
     }
@@ -203,6 +239,11 @@ class InfiniteInteraction(
             CanvasPointerMode.DRAW -> extendDraw(e)
             CanvasPointerMode.ERASE -> extendErase(e)
             CanvasPointerMode.SHAPE -> extendShape(e.getX(0).toDouble(), e.getY(0).toDouble())
+            CanvasPointerMode.BAND -> extendBand(e.getX(0).toDouble(), e.getY(0).toDouble())
+            CanvasPointerMode.LASSO -> extendLasso(e.getX(0).toDouble(), e.getY(0).toDouble())
+            CanvasPointerMode.MOVE -> extendMove(e.getX(0).toDouble(), e.getY(0).toDouble())
+            CanvasPointerMode.RESIZE -> extendResize(e.getX(0).toDouble(), e.getY(0).toDouble())
+            CanvasPointerMode.ROTATE -> extendRotate(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.IDLE -> Unit
         }
     }
@@ -224,6 +265,13 @@ class InfiniteInteraction(
         if (mode == CanvasPointerMode.DRAW) endDraw(e)
         if (mode == CanvasPointerMode.ERASE) endErase()
         if (mode == CanvasPointerMode.SHAPE) endShape()
+        when (mode) {
+            CanvasPointerMode.BAND -> endBand()
+            CanvasPointerMode.LASSO -> endLasso()
+            CanvasPointerMode.MOVE -> endMove()
+            CanvasPointerMode.RESIZE, CanvasPointerMode.ROTATE -> endTransform()
+            else -> Unit
+        }
         mode = CanvasPointerMode.IDLE
         setInteractive(false, true)
         if (wasMoving) startFling(panVel)
@@ -347,6 +395,141 @@ class InfiniteInteraction(
         stroke.finished = true
         simplifyForCommit(stroke)
         onCommitStroke(stroke)
+    }
+
+    // --- selection ---
+
+    /** Clear the selection and its chrome, for a tool change or a document swap. */
+    fun clearSelection() {
+        selection()?.clear()
+        bandRect = null
+        lassoPoints.clear()
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun beginSelect(vx: Double, vy: Double) {
+        val sel = selection() ?: return
+        val at = viewport.viewportToContent(Pt(vx, vy))
+        setInteractive(false, false)
+        // A press on a handle or the grip transforms; inside the box it moves; anywhere else
+        // starts a fresh band, which is what makes an empty patch of canvas deselect.
+        if (!sel.isEmpty) {
+            val tolerance = HANDLE_TOUCH_PX / viewport.zoom
+            val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
+            if (grip != null && at.distanceTo(grip) <= tolerance) {
+                sel.beginTransform()
+                mode = CanvasPointerMode.ROTATE
+                return
+            }
+            val handle = sel.hitHandle(at, tolerance)
+            if (handle != null) {
+                grabHandle = handle
+                sel.beginTransform()
+                mode = CanvasPointerMode.RESIZE
+                return
+            }
+            if (sel.contains(at)) {
+                sel.beginTransform()
+                moveAnchor = at
+                movedBy = Pt.ZERO
+                mode = CanvasPointerMode.MOVE
+                return
+            }
+        }
+        sel.clear()
+        bandAnchor = at
+        bandRect = Rect(at.x, at.y, 0.0, 0.0)
+        mode = CanvasPointerMode.BAND
+        onSelectionChanged()
+    }
+
+    private fun extendBand(vx: Double, vy: Double) {
+        val at = viewport.viewportToContent(Pt(vx, vy))
+        bandRect = Rect.fromPoints(bandAnchor, at)
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun endBand() {
+        val sel = selection()
+        val rect = bandRect
+        bandRect = null
+        if (sel != null && rect != null && (rect.w > 1e-6 || rect.h > 1e-6)) {
+            sel.select(SelectionMath.bandMembers(itemsIn(rect), rect))
+        }
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun beginLasso(vx: Double, vy: Double) {
+        val sel = selection() ?: return
+        setInteractive(false, false)
+        sel.clear()
+        lassoPoints.clear()
+        lassoPoints.add(viewport.viewportToContent(Pt(vx, vy)))
+        mode = CanvasPointerMode.LASSO
+        onSelectionChanged()
+    }
+
+    private fun extendLasso(vx: Double, vy: Double) {
+        val at = viewport.viewportToContent(Pt(vx, vy))
+        val last = lassoPoints.lastOrNull()
+        // Decimate by on-screen spacing, so a slow drag does not pile up thousands of vertices.
+        if (last == null || last.distanceTo(at) * viewport.zoom >= LASSO_MIN_STEP_PX) lassoPoints.add(at)
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun endLasso() {
+        val sel = selection()
+        if (sel != null && lassoPoints.size >= 3) {
+            val bounds = Rect.bounding(lassoPoints)
+            sel.select(SelectionMath.lassoMembers(itemsIn(bounds), lassoPoints.toList()))
+        }
+        lassoPoints.clear()
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun extendMove(vx: Double, vy: Double) {
+        val sel = selection() ?: return
+        val at = viewport.viewportToContent(Pt(vx, vy))
+        movedBy = Pt(at.x - moveAnchor.x, at.y - moveAnchor.y)
+        sel.moveLive(movedBy.x, movedBy.y)
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun endMove() {
+        val sel = selection() ?: return
+        onCommitSelection(sel.buildCommand(movedOnly = true, dx = movedBy.x, dy = movedBy.y))
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun extendResize(vx: Double, vy: Double) {
+        val sel = selection() ?: return
+        val handle = grabHandle ?: return
+        sel.resizeLive(handle, viewport.viewportToContent(Pt(vx, vy)))
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun extendRotate(vx: Double, vy: Double) {
+        val sel = selection() ?: return
+        sel.rotateLive(viewport.viewportToContent(Pt(vx, vy)))
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun endTransform() {
+        val sel = selection() ?: return
+        grabHandle = null
+        onCommitSelection(sel.buildCommand(movedOnly = false))
+        sel.refreshBox()
+        onSelectionChanged()
+        requestRender()
     }
 
     // --- shapes ---

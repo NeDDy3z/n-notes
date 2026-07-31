@@ -9,7 +9,12 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.History
 import com.xnotes.core.infinite.AddCanvasItem
 import com.xnotes.core.infinite.CanvasBackground
+import com.xnotes.core.infinite.CanvasSelection
 import com.xnotes.core.infinite.CanvasViewport
+import com.xnotes.core.infinite.EraseCanvasItems
+import com.xnotes.core.infinite.MeshPart
+import com.xnotes.core.infinite.OverlayTessellator
+import com.xnotes.core.infinite.StrokeTessellator
 import com.xnotes.core.infinite.EraseSession
 import com.xnotes.core.infinite.InfiniteDocument
 import com.xnotes.core.infinite.InkPass
@@ -70,6 +75,10 @@ class InfiniteEditor(context: Context) {
         shapeConfig = { shapeConfig },
         inkColor = { inkColor },
         detectShapes = { detectShapes },
+        selection = { selection },
+        itemsIn = { rect -> document.itemsIn(rect) },
+        onSelectionChanged = { publishOverlay() },
+        onCommitSelection = { commitSelection(it) },
         devicePxPerDp = { devicePxPerDp },
     )
 
@@ -123,6 +132,14 @@ class InfiniteEditor(context: Context) {
         debugVisible = !debugVisible
         view.publish()
     }
+
+    /** What is selected, and the arithmetic of moving, scaling and rotating it. */
+    var selection = CanvasSelection(document)
+        private set
+
+    /** True while anything is selected, so the chrome can offer the actions that need one. */
+    var hasSelection by mutableStateOf(false)
+        private set
 
     /** The GL-side mirror of the document. Fed by [modelListener]; never reads the model itself. */
     private val scene = CanvasScene()
@@ -218,8 +235,22 @@ class InfiniteEditor(context: Context) {
     // --- tools ---
 
     fun armTool(next: Tool) {
+        // Leaving the selection tools drops the selection, so its chrome cannot linger over ink.
+        if (tool != next && (tool == Tool.SELECT || tool == Tool.LASSO)) interaction.clearSelection()
         tool = next
         interaction.tool = next
+    }
+
+    /** Delete whatever is selected, as one undoable edit. */
+    fun deleteSelection() {
+        val items = selection.items
+        if (items.isEmpty()) return
+        val command = EraseCanvasItems.capture(document, items)
+        document.removeAll(items)
+        history.push(command)
+        interaction.clearSelection()
+        markDirty()
+        refresh()
     }
 
     fun armInkColor(color: Rgba) {
@@ -259,6 +290,47 @@ class InfiniteEditor(context: Context) {
         val meshed = ItemMesher.mesh(stroke) ?: return
         val part = meshed.parts.firstOrNull() ?: return
         scene.setWet(part.mesh, part.color, part.pass, meshed.bounds)
+    }
+
+    /**
+     * Rebuild the chrome drawn over the content: the selection box and handles, or whichever
+     * marquee a drag is sweeping out. It goes through the same transient buffer the wet stroke
+     * uses, since inking and selecting can never happen at once.
+     */
+    private fun publishOverlay() {
+        hasSelection = !selection.isEmpty
+        val accent = palette?.accent ?: InkPalette.DEFAULT
+        val zoom = viewport.zoom
+        val parts = ArrayList<MeshPart>(3)
+        var bounds: Rect? = null
+        interaction.bandRect?.let {
+            parts += OverlayTessellator.band(it, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE)
+            bounds = it.outset(4.0 / zoom)
+        }
+        if (interaction.lassoPoints.size >= 2) {
+            val points = interaction.lassoPoints.toList()
+            parts += OverlayTessellator.lasso(points, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE)
+            bounds = Rect.bounding(points).outset(4.0 / zoom)
+        }
+        selection.box?.let { box ->
+            parts += OverlayTessellator.selection(box, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE)
+            val b = OverlayTessellator.selectionBounds(box, zoom)
+            bounds = bounds?.union(b) ?: b
+        }
+        if (parts.isEmpty()) {
+            scene.setWet(null, InkPalette.DEFAULT, InkPass.OPAQUE, Rect(0.0, 0.0, 0.0, 0.0))
+        } else {
+            scene.setWetParts(parts, bounds ?: Rect(0.0, 0.0, 0.0, 0.0))
+        }
+        view.publish()
+    }
+
+    /** A finished selection drag: record it, if it changed anything. */
+    private fun commitSelection(command: com.xnotes.core.history.Command?) {
+        if (command == null) return
+        history.push(command)
+        markDirty()
+        refresh()
     }
 
     /** The shape being dragged out, drawn live over the committed geometry like a wet stroke. */
@@ -336,8 +408,11 @@ class InfiniteEditor(context: Context) {
         interaction.penButtonTool = penButtonTool
     }
 
-    /** Adopt the chrome's palette, so the paper matches the rest of the app. */
+    private var palette: Palette? = null
+
+    /** Adopt the chrome's palette, so the paper and the selection accent match the rest of the app. */
     fun applyPalette(palette: Palette) {
+        this.palette = palette
         view.paperColor = document.background.paperColor ?: palette.paper
     }
 
@@ -351,6 +426,8 @@ class InfiniteEditor(context: Context) {
         document.listener = null
         document = next
         next.listener = modelListener
+        selection = CanvasSelection(next)
+        hasSelection = false
         history.clear()
         interaction.resetGestureState()
         view.background = next.background
