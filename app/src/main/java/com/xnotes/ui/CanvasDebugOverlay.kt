@@ -58,7 +58,15 @@ fun CanvasDebugOverlay(editor: InfiniteEditor) {
 
     val v = editor.viewport
     val lines = buildList {
-        add("%.0f fps   %.1f ms".format(stats.fps, stats.frameMs))
+        // The rate is a count over the last second, and the panel's own rate is next to it, so a
+        // number at the cap is recognizable as the cap rather than as headroom.
+        add("fps       %.0f / %.0f".format(stats.fps, stats.displayHz))
+        add("frame     %.2f ms".format(stats.frameMs))
+        add("worst     %.1f ms".format(stats.worstFrameMs))
+        add("late      ${stats.jankFrames}")
+        add("req/frame %.1f".format(stats.requestsPerFrame))
+        add("step      %.1f px".format(stats.stepPx))
+        add("jitter    %.0f%%".format(stats.stepJitter * 100))
         add("zoom      %.3fx".format(v.zoom))
         add("scroll    %.0f, %.0f".format(v.scrollX, v.scrollY))
         add("viewport  ${v.widthPx} x ${v.heightPx}")

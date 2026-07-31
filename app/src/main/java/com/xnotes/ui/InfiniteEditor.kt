@@ -53,6 +53,7 @@ class InfiniteEditor(context: Context) {
         viewport = view.viewport,
         requestRender = { view.publish() },
         onViewChanged = { onViewChanged() },
+        setInteractive = { active, linger -> view.setInteractive(active, linger) },
         configFor = { configFor(it) },
         onWetStroke = { publishWetStroke(it) },
         onCommitStroke = { commitStroke(it) },

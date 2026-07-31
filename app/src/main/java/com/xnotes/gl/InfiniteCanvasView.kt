@@ -99,12 +99,23 @@ class InfiniteCanvasView @JvmOverloads constructor(
         isFocusableInTouchMode = true
     }
 
+    /** Publish calls so far; the renderer differences them per frame for the debug readout. */
+    private var publishRequests = 0
+
+    private var interactive = false
+    private val idleRunnable = Runnable { stopInteractive() }
+
     /**
-     * Copy the current view onto the render thread and ask for a frame. Called after anything that
-     * changes what a frame would draw. Snapshotting beats locking here: the numbers are few, and a
-     * frame can never catch a gesture's update half applied.
+     * Hand the render thread the newest view. Called after anything that changes what a frame would
+     * draw, and cheap enough to call per pointer event: it is one store of an immutable record, so
+     * a frame can never catch a gesture's update half applied.
+     *
+     * The state is written straight away rather than at the next frame callback. During a gesture
+     * the render thread is already running, and it should draw the freshest pointer position that
+     * has landed rather than one sampled a frame earlier.
      */
     fun publish() {
+        publishRequests++
         glRenderer.frame = FrameState(
             zoom = viewport.zoom,
             scrollX = viewport.scrollX,
@@ -114,11 +125,63 @@ class InfiniteCanvasView @JvmOverloads constructor(
             background = background,
             paper = paperColor,
         )
+        glRenderer.publishRequests = publishRequests
+        // In continuous mode the render thread is already drawing every refresh; otherwise ask for
+        // a frame now. GLSurfaceView collapses a burst of requests into one draw by itself.
+        if (!interactive) requestRender()
+    }
+
+    /**
+     * Draw every refresh while the view is being moved, and only on demand otherwise.
+     *
+     * This is a deliberate trade, measured on the target tablet. Drawing on demand wakes the render
+     * thread from the main thread once per event, and the resulting frames land unevenly: intervals
+     * scattered by about 1.4 ms with occasional dropped frames, which is exactly what a pan that
+     * "does not feel smooth" is made of. Leaving the render thread running removes the hop, and
+     * `eglSwapBuffers` then paces it against the display: intervals tighten to about 0.07 ms with
+     * no drops at all.
+     *
+     * The cost is latency. A continuously running thread keeps the buffer queue full, which pushed
+     * the time from a finished frame to it being shown from about 15 ms to about 26 ms. That is a
+     * good trade while panning, where evenness is the whole of the feel, and a bad one while
+     * inking, where the gap between the nib and the line is. So this is turned on for pan, pinch
+     * and the glide after them, and left off while a stroke is being drawn.
+     */
+    fun setInteractive(active: Boolean, linger: Boolean = true) {
+        removeCallbacks(idleRunnable)
+        if (active) {
+            if (!interactive) {
+                interactive = true
+                renderMode = RENDERMODE_CONTINUOUSLY
+            }
+            return
+        }
+        // Normally linger, so a drag that pauses mid-gesture does not pay the wake cost to resume.
+        // Inking asks for it at once, because every frame it stays up is a frame of lag under the pen.
+        if (linger) postDelayed(idleRunnable, IDLE_LINGER_MS) else stopInteractive()
+    }
+
+    /** Stop drawing every refresh. Called by [idleRunnable] once the canvas has been still. */
+    private fun stopInteractive() {
+        if (!interactive) return
+        interactive = false
+        renderMode = RENDERMODE_WHEN_DIRTY
         requestRender()
     }
 
     /** Run [work] on the GL thread, for GPU state that must be touched with the context current. */
     fun onGlThread(work: () -> Unit) = queueEvent(work)
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // A frame count only means something next to the rate the panel can actually show.
+        glRenderer.displayHz = (display?.refreshRate ?: 60f).toDouble()
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(idleRunnable)
+        super.onDetachedFromWindow()
+    }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -227,5 +290,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
         /** Furthest the four fingers may drift and still count as a tap, in viewport px. */
         private const val TAP_SLOP = 40.0
+
+        /** How long the render thread keeps running after a gesture ends. */
+        private const val IDLE_LINGER_MS = 250L
     }
 }

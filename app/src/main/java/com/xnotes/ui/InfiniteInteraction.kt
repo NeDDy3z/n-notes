@@ -34,6 +34,8 @@ class InfiniteInteraction(
     private val requestRender: () -> Unit,
     /** Called whenever the view moved, so the host can refresh a zoom readout or schedule a save. */
     private val onViewChanged: () -> Unit = {},
+    /** True while a gesture or a glide is live, so the renderer can keep drawing every refresh. */
+    private val setInteractive: (Boolean, Boolean) -> Unit = { _, _ -> },
     /** The style the armed tool draws with, including the toolbar's active ink colour. */
     private val configFor: (Tool) -> ToolConfig = { ToolConfig() },
     /** The wet stroke changed: re-tessellate it into the dynamic buffer, or clear it when null. */
@@ -172,6 +174,7 @@ class InfiniteInteraction(
         val wasMoving = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
         if (mode == CanvasPointerMode.DRAW) endDraw(e)
         mode = CanvasPointerMode.IDLE
+        setInteractive(false, true)
         if (wasMoving) startFling(panVel)
         onViewChanged()
         requestRender()
@@ -180,6 +183,7 @@ class InfiniteInteraction(
     private fun abortGesture() {
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
         mode = CanvasPointerMode.IDLE
+        setInteractive(false, true)
         stopFling()
         requestRender()
     }
@@ -209,6 +213,9 @@ class InfiniteInteraction(
         )
         // Live until the pen lifts, so lift-time rules cannot fire mid-draw.
         stroke.finished = false
+        // Inking wants the shortest path from nib to pixel, so it draws on demand: a render thread
+        // left running keeps the buffer queue full and puts a frame of lag under the pen.
+        setInteractive(false, false)
         strokeStartTimeMs = e.eventTime
         val p = viewport.viewportToContent(Pt(vx, vy))
         stroke.addSample(Sample(p.x, p.y, pressureOf(e, 0)))
@@ -303,6 +310,8 @@ class InfiniteInteraction(
 
     private fun beginPan(vx: Double, vy: Double) {
         mode = CanvasPointerMode.PAN
+        // Moving the view is paced by the display, so the render thread stays up for it.
+        setInteractive(true, true)
         startTrackingVelocity(vx, vy)
     }
 
@@ -318,6 +327,7 @@ class InfiniteInteraction(
 
     private fun beginPinch(e: MotionEvent) {
         mode = CanvasPointerMode.PINCH
+        setInteractive(true, true)
         val a = Pt(e.getX(0).toDouble(), e.getY(0).toDouble())
         val b = Pt(e.getX(1).toDouble(), e.getY(1).toDouble())
         val mid = (a + b) * 0.5
@@ -365,6 +375,7 @@ class InfiniteInteraction(
 
     private fun startFling(fingerVel: Pt) {
         if (fingerVel.length() < InteractionController.FLING_MIN_START) return
+        setInteractive(true, true) // the glide is still motion, so the render thread stays up for it
         flingVel = fingerVel
         flinging = true
         lastFlingMs = System.nanoTime() / 1_000_000L
@@ -388,6 +399,7 @@ class InfiniteInteraction(
         // Nothing bounds an infinite canvas, so a glide only ever ends by running out of speed.
         if (flingVel.length() < InteractionController.FLING_MIN_STOP) {
             flinging = false
+            setInteractive(false, true)
         } else {
             choreographer.postFrameCallback(flingFrame)
         }
