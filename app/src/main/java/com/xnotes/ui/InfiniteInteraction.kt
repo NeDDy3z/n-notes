@@ -134,11 +134,12 @@ class InfiniteInteraction(
     private var moveAnchor = Pt.ZERO
     private var movedBy = Pt.ZERO
 
-    // Where the rotate grip is being dragged to, and whether the renderer is doing the turning.
-    // Only ink and shapes rotate faithfully in the shader: an image or a text box has no rotation in
-    // the model either, so a selection holding one is turned the slow way and stays honest.
-    private var rotatePointer = Pt.ZERO
-    private var liftedRotate = false
+    // Where a handle or the rotate grip is being dragged to, and whether the renderer is doing the
+    // work. Only ink and shapes map faithfully in the shader: an image or a text box is rebuilt by
+    // the model rather than mapped, so a selection holding one is transformed the slow way and stays
+    // honest.
+    private var transformPointer = Pt.ZERO
+    private var liftedTransform = false
 
     // A finger press landed off a live selection and became a pan; a tap there dismisses it, a
     // real drag pans and leaves it alone.
@@ -203,7 +204,7 @@ class InfiniteInteraction(
         mode = CanvasPointerMode.IDLE
         panVel = Pt.ZERO
         liveStroke = null
-        liftedRotate = false
+        liftedTransform = false
         onWetStroke(null)
         onLiftSelection(emptyList(), LiftTransform.NONE)
         stylusButtons.reset()
@@ -341,10 +342,10 @@ class InfiniteInteraction(
             onLiftSelection(emptyList(), LiftTransform.NONE)
             onSelectionChanged()
         }
-        if (mode == CanvasPointerMode.ROTATE && liftedRotate) {
-            selection()?.previewRotateBack()
+        if ((mode == CanvasPointerMode.ROTATE || mode == CanvasPointerMode.RESIZE) && liftedTransform) {
+            selection()?.previewBack()
             onLiftSelection(emptyList(), LiftTransform.NONE)
-            liftedRotate = false
+            liftedTransform = false
             onSelectionChanged()
         }
         mode = CanvasPointerMode.IDLE
@@ -502,16 +503,15 @@ class InfiniteInteraction(
             val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
             if (grip != null && at.distanceTo(grip) <= tolerance) {
                 sel.beginTransform(at)
-                rotatePointer = at
-                liftedRotate = sel.items.all { it is Stroke || it is ShapeItem }
+                beginLiftedTransform(sel, at)
                 mode = CanvasPointerMode.ROTATE
-                if (liftedRotate) onLiftSelection(sel.items, LiftTransform.NONE)
                 return
             }
             val handle = sel.hitHandle(at, tolerance)
             if (handle != null) {
                 grabHandle = handle
                 sel.beginTransform()
+                beginLiftedTransform(sel, at)
                 mode = CanvasPointerMode.RESIZE
                 return
             }
@@ -589,7 +589,7 @@ class InfiniteInteraction(
         val at = viewport.viewportToContent(Pt(vx, vy))
         movedBy = Pt(at.x - moveAnchor.x, at.y - moveAnchor.y)
         sel.previewMove(movedBy.x, movedBy.y)
-        onLiftSelection(sel.items, LiftTransform(movedBy.x, movedBy.y))
+        onLiftSelection(sel.items, LiftTransform.shift(movedBy.x, movedBy.y))
         onSelectionChanged()
         requestRender()
     }
@@ -604,27 +604,45 @@ class InfiniteInteraction(
         requestRender()
     }
 
+    /**
+     * Arm a handle or grip drag to be drawn by the renderer rather than baked by the model, when
+     * everything selected maps faithfully. Ink and shapes do: their geometry is mapped through the
+     * transform, which is exactly what the shader does. An image or a text box is rebuilt instead of
+     * mapped, so those keep the slow path and stay honest.
+     */
+    private fun beginLiftedTransform(sel: CanvasSelection, at: Pt) {
+        transformPointer = at
+        liftedTransform = sel.items.all { it is Stroke || it is ShapeItem }
+        if (liftedTransform) onLiftSelection(sel.items, LiftTransform.NONE)
+    }
+
+    /**
+     * A resize in progress. The model is left alone and the renderer is handed the map, so a handle
+     * drag costs a few uniforms however much is selected.
+     */
     private fun extendResize(vx: Double, vy: Double) {
         val sel = selection() ?: return
         val handle = grabHandle ?: return
-        sel.resizeLive(handle, viewport.viewportToContent(Pt(vx, vy)))
+        val at = viewport.viewportToContent(Pt(vx, vy))
+        transformPointer = at
+        if (liftedTransform) {
+            val map = sel.previewResize(handle, at) ?: return
+            onLiftSelection(sel.items, LiftTransform.of(map, sel.transformPivot ?: Pt.ZERO))
+        } else {
+            sel.resizeLive(handle, at)
+        }
         onSelectionChanged()
         requestRender()
     }
 
-    /**
-     * A turn in progress. Where the whole selection rotates faithfully, the model is left alone and
-     * the renderer is told the angle, so a turn costs two uniforms however much is selected. A
-     * rotation is exact that way because it leaves stroke widths alone, which a resize does not.
-     */
+    /** A turn in progress, drawn the same way a resize is. */
     private fun extendRotate(vx: Double, vy: Double) {
         val sel = selection() ?: return
         val at = viewport.viewportToContent(Pt(vx, vy))
-        rotatePointer = at
-        if (liftedRotate) {
+        transformPointer = at
+        if (liftedTransform) {
             val swept = sel.previewRotate(at)
-            val pivot = sel.transformPivot ?: Pt.ZERO
-            onLiftSelection(sel.items, LiftTransform(pivot = pivot, angle = swept))
+            onLiftSelection(sel.items, LiftTransform.turn(sel.transformPivot ?: Pt.ZERO, swept))
         } else {
             sel.rotateLive(at)
         }
@@ -634,14 +652,16 @@ class InfiniteInteraction(
 
     private fun endTransform() {
         val sel = selection() ?: return
-        val wasResize = grabHandle != null
+        val handle = grabHandle
+        val wasResize = handle != null
         grabHandle = null
-        // Finger up on a lifted turn: apply the whole thing to the model once, then hand the drawing
+        // Finger up on a lifted drag: apply the whole thing to the model once, then hand the drawing
         // back to it.
-        if (liftedRotate) {
-            sel.rotateLive(rotatePointer)
+        if (liftedTransform) {
+            if (handle != null) sel.resizeLive(handle, transformPointer)
+            else sel.rotateLive(transformPointer)
             onLiftSelection(emptyList(), LiftTransform.NONE)
-            liftedRotate = false
+            liftedTransform = false
         }
         onCommitSelection(sel.buildCommand(movedOnly = false))
         // A resize of an upright box snaps onto the real bounds, which is what keeps the chrome

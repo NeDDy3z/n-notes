@@ -29,6 +29,10 @@ class GlProgram private constructor(val id: Int, val contextGen: Int) {
     fun set(name: String, x: Float, y: Float, z: Float, w: Float) =
         GLES30.glUniform4f(uniform(name), x, y, z, w)
 
+    /** A 2x2 in column-major order: the columns are (a, b) and (c, d). */
+    fun setMat2(name: String, a: Float, b: Float, c: Float, d: Float) =
+        GLES30.glUniformMatrix2fv(uniform(name), 1, false, floatArrayOf(a, b, c, d), 0)
+
     fun release() {
         if (id != 0) GLES30.glDeleteProgram(id)
     }

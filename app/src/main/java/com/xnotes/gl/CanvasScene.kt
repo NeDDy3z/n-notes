@@ -438,8 +438,13 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         val key = "$revision|${frame.zoom}|${frame.scrollX}|${frame.scrollY}|${frame.widthPx}x${frame.heightPx}"
         val since = liftAt.since(liftHaloAt)
         val driftPx = kotlin.math.hypot(since.dx, since.dy) * frame.zoom
-        val turned = kotlin.math.abs(since.angle)
-        if (key != liftHaloKey || driftPx > LIFT_HALO_REBUILD_PX || turned > LIFT_HALO_REBUILD_RAD) {
+        val turned = kotlin.math.abs(kotlin.math.atan2(since.b, since.a))
+        // A scale is only exactly a read of the blurred picture while it stays uniform, so a
+        // stretched halo is re-blurred once it has strayed far enough to show.
+        val stretched = since.linearScale !in LIFT_HALO_KEEP_SCALE..(1.0 / LIFT_HALO_KEEP_SCALE)
+        if (key != liftHaloKey || driftPx > LIFT_HALO_REBUILD_PX ||
+            turned > LIFT_HALO_REBUILD_RAD || stretched
+        ) {
             liftHaloAt = liftAt
             glowTarget.bind(glowTarget.liftLayerIndex)
             GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
@@ -466,10 +471,14 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         val slideY = (rest.dy * frame.zoom / frame.heightPx).toFloat()
         val pivotDeviceX = (rest.pivot.x - frame.scrollX) * frame.zoom
         val pivotDeviceY = (rest.pivot.y - frame.scrollY) * frame.zoom
+        // A texture read runs destination to source, so the map goes in inverted. The buffer's v
+        // axis runs up while the device's y runs down, which flips the two off-diagonal terms.
+        val inv = rest.inverseLinear()
         shader.compositeOver(
             glowTarget.texture(glowTarget.liftLayerIndex), 1.0,
             uvOffsetX = -slideX, uvOffsetY = slideY,
-            uvRotCos = rest.cos.toFloat(), uvRotSin = rest.sin.toFloat(),
+            uvMapA = inv[0].toFloat(), uvMapB = (-inv[1]).toFloat(),
+            uvMapC = (-inv[2]).toFloat(), uvMapD = inv[3].toFloat(),
             uvPivotX = (pivotDeviceX / frame.widthPx).toFloat(),
             uvPivotY = (1.0 - pivotDeviceY / frame.heightPx).toFloat(),
             uvSizeX = frame.widthPx.toFloat(), uvSizeY = frame.heightPx.toFloat(),
@@ -780,7 +789,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         program.setLift(
             lift.pivot.x - camChunkX * GeometryStore.CHUNK_SIZE,
             lift.pivot.y - camChunkY * GeometryStore.CHUNK_SIZE,
-            lift.cos, lift.sin, lift.dx, lift.dy,
+            lift.a, lift.b, lift.c, lift.d, lift.linearScale, lift.dx, lift.dy,
         )
     }
 
@@ -1055,6 +1064,9 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
         /** And how far it can turn, for the same reason: about a sixth of a full turn. */
         private const val LIFT_HALO_REBUILD_RAD = 1.0
+
+        /** Smallest residual scale a stretched halo is still read rather than blurred again. */
+        private const val LIFT_HALO_KEEP_SCALE = 0.85
 
         /** Identity for the wet item's stand-in record; never filed or drawn as itself. */
         private val WET_KEY: CanvasItem = object : CanvasItem {

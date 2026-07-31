@@ -81,19 +81,30 @@ object CanvasProjection {
         var spineX = v.offsetX * camera.widthScale
         var spineY = v.offsetY * camera.widthScale
 
-        // A dragged selection can be turned as well as shifted. The spine turns by the same angle,
-        // which leaves its length alone, so the width the vertex encodes survives the rotation and
-        // the sub-pixel rule below still measures the right thing.
+        // A dragged selection is mapped here rather than in the model. The centre goes straight
+        // through the map. The spine cannot: the model scales every width by one scalar and lays it
+        // across the mapped ribbon, so the shader recovers the ribbon's direction from the spine,
+        // maps that, and re-lays the spine across it at the scaled length. For a turn this reduces
+        // to turning the spine, and for the identity it changes nothing at all.
         var posX = (v.chunkX - camera.camChunkX) * CHUNK_SIZE + centreX
         var posY = (v.chunkY - camera.camChunkY) * CHUNK_SIZE + centreY
         val relX = posX - camera.pivotX
         val relY = posY - camera.pivotY
-        posX = camera.pivotX + relX * camera.rotCos - relY * camera.rotSin
-        posY = camera.pivotY + relX * camera.rotSin + relY * camera.rotCos
-        val turnedX = spineX * camera.rotCos - spineY * camera.rotSin
-        val turnedY = spineX * camera.rotSin + spineY * camera.rotCos
-        spineX = turnedX
-        spineY = turnedY
+        posX = camera.pivotX + camera.linA * relX + camera.linC * relY
+        posY = camera.pivotY + camera.linB * relX + camera.linD * relY
+        val spineLen = hypot(spineX, spineY)
+        if (spineLen > 0.0) {
+            val mappedX = camera.linA * spineY - camera.linC * spineX
+            val mappedY = camera.linB * spineY - camera.linD * spineX
+            val acrossX = -mappedY
+            val acrossY = mappedX
+            val acrossLen = hypot(acrossX, acrossY)
+            if (acrossLen > 0.0) {
+                val out = spineLen * camera.linearScale / acrossLen
+                spineX = acrossX * out
+                spineY = acrossY * out
+            }
+        }
 
         val reach = hypot(spineX, spineY) * camera.zoom
         if (reach > 0.0 && reach < MIN_HALF_WIDTH_PX) {
@@ -141,14 +152,19 @@ object CanvasProjection {
          */
         val translateX: Double = 0.0,
         val translateY: Double = 0.0,
-        /** The turn a dragged selection is drawn at, about a pivot in the camera's own chunk frame. */
-        val rotCos: Double = 1.0,
-        val rotSin: Double = 0.0,
+        /** The map a dragged selection is drawn through, about a pivot in the camera's chunk frame. */
+        val linA: Double = 1.0,
+        val linB: Double = 0.0,
+        val linC: Double = 0.0,
+        val linD: Double = 1.0,
         val pivotX: Double = 0.0,
         val pivotY: Double = 0.0,
     ) {
         val camChunkX: Double get() = floor(scrollX / CHUNK_SIZE)
         val camChunkY: Double get() = floor(scrollY / CHUNK_SIZE)
+
+        /** The one factor the model scales every stroke width by under this map. */
+        val linearScale: Double get() = kotlin.math.sqrt(kotlin.math.abs(linA * linD - linB * linC))
     }
 
     data class Point(val x: Double, val y: Double)

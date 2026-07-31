@@ -158,7 +158,7 @@ class CanvasProjectionTest {
     fun `a live rotation matches turning the content itself`() {
         val cam = camera(scrollX = 100.0, scrollY = 50.0, zoom = 1.5)
         // A quarter turn about (200, 100) sends (260, 100) to (200, 160).
-        val turned = cam.copy(rotCos = 0.0, rotSin = 1.0, pivotX = 200.0, pivotY = 100.0)
+        val turned = cam.copy(linA = 0.0, linB = 1.0, linC = -1.0, linD = 0.0, pivotX = 200.0, pivotY = 100.0)
         val live = CanvasProjection.devicePoint(Vertex.of(260.0, 100.0), turned)
         val baked = CanvasProjection.devicePoint(Vertex.of(200.0, 160.0), cam)
         assertEquals(baked.x, live.x, 1e-9)
@@ -169,7 +169,7 @@ class CanvasProjectionTest {
     @Test
     fun `a live rotation keeps the ribbon its own width`() {
         val cam = camera(zoom = 1.0)
-        val turned = cam.copy(rotCos = 0.0, rotSin = 1.0, pivotX = 10.0, pivotY = 10.0)
+        val turned = cam.copy(linA = 0.0, linB = 1.0, linC = -1.0, linD = 0.0, pivotX = 10.0, pivotY = 10.0)
         val rail = Vertex.of(10.0, 14.0, offsetX = 0.0, offsetY = 4.0)
         val spine = Vertex.of(10.0, 10.0)
         val railAt = CanvasProjection.devicePoint(rail, turned)
@@ -184,11 +184,48 @@ class CanvasProjectionTest {
     @Test
     fun `a live rotation leaves its own pivot alone`() {
         val cam = camera(scrollX = 20.0, scrollY = 30.0, zoom = 2.0)
-        val turned = cam.copy(rotCos = 0.6, rotSin = 0.8, pivotX = 90.0, pivotY = 70.0)
+        val turned = cam.copy(linA = 0.6, linB = 0.8, linC = -0.8, linD = 0.6, pivotX = 90.0, pivotY = 70.0)
         val plain = CanvasProjection.devicePoint(Vertex.of(90.0, 70.0), cam)
         val spun = CanvasProjection.devicePoint(Vertex.of(90.0, 70.0), turned)
         assertEquals(plain.x, spun.x, 1e-6)
         assertEquals(plain.y, spun.y, 1e-6)
+    }
+
+    /**
+     * The one that lets a resize be a uniform. The model maps every sample and scales the width by
+     * `sqrt(sx*sy)`, so a ribbon squashed along its own length must come out that much wider, not
+     * squashed across.
+     */
+    @Test
+    fun `a live scale widens the ribbon by what the model would`() {
+        val cam = camera(zoom = 1.0)
+        // A horizontal ribbon: the spine runs along x, so the rail is displaced along y.
+        val stretched = cam.copy(linA = 4.0, linD = 1.0, pivotX = 0.0, pivotY = 0.0)
+        val rail = CanvasProjection.devicePoint(Vertex.of(10.0, 13.0, offsetY = 3.0), stretched)
+        val spine = CanvasProjection.devicePoint(Vertex.of(10.0, 10.0), stretched)
+        assertEquals("the centreline follows the map", 40.0, spine.x, 1e-9)
+        assertEquals(10.0, spine.y, 1e-9)
+        assertEquals("the rail stays across the ribbon", 0.0, rail.x - spine.x, 1e-9)
+        assertEquals("width scales by sqrt of the area factor", 6.0, rail.y - spine.y, 1e-9)
+    }
+
+    @Test
+    fun `a uniform live scale scales the ribbon and its width alike`() {
+        val cam = camera(zoom = 1.0)
+        val bigger = cam.copy(linA = 3.0, linD = 3.0, pivotX = 0.0, pivotY = 0.0)
+        val rail = CanvasProjection.devicePoint(Vertex.of(10.0, 12.0, offsetY = 2.0), bigger)
+        val spine = CanvasProjection.devicePoint(Vertex.of(10.0, 10.0), bigger)
+        assertEquals(30.0, spine.x, 1e-9)
+        assertEquals(30.0, spine.y, 1e-9)
+        assertEquals(6.0, rail.y - spine.y, 1e-9)
+    }
+
+    @Test
+    fun `a live scale leaves a fill with no spine to widen`() {
+        val cam = camera(zoom = 1.0).copy(linA = 2.0, linD = 0.5, pivotX = 0.0, pivotY = 0.0)
+        val d = CanvasProjection.devicePoint(Vertex.of(30.0, 40.0), cam)
+        assertEquals(60.0, d.x, 1e-9)
+        assertEquals(20.0, d.y, 1e-9)
     }
 
     @Test

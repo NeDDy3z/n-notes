@@ -67,8 +67,10 @@ class GlowShader(contextGen: Int) {
         uvScaleY: Float = 1f,
         uvOffsetX: Float = 0f,
         uvOffsetY: Float = 0f,
-        uvRotCos: Float = 1f,
-        uvRotSin: Float = 0f,
+        uvMapA: Float = 1f,
+        uvMapB: Float = 0f,
+        uvMapC: Float = 0f,
+        uvMapD: Float = 1f,
         uvPivotX: Float = 0f,
         uvPivotY: Float = 0f,
         uvSizeX: Float = 1f,
@@ -85,9 +87,11 @@ class GlowShader(contextGen: Int) {
         // Slide the whole blurred picture, which is how a dragged selection's halo follows its ink
         // without being blurred again: a blur commutes with a translation.
         composite.set("uUvOffset", uvOffsetX, uvOffsetY)
-        // And turn it, for the same reason: an isotropic Gaussian commutes with a rotation too, so
-        // a selection being rotated also gets one blur for the whole gesture rather than one a frame.
-        composite.set("uUvRot", uvRotCos, uvRotSin)
+        // And map it, for the same reason: an isotropic Gaussian commutes with a rotation, and with
+        // a uniform scale once the radius goes along for the ride, so a selection being turned or
+        // resized also gets one blur for the whole gesture rather than one a frame. A single-axis
+        // scale is the one case this only approximates, and the caller re-blurs past a threshold.
+        composite.setMat2("uUvMap", uvMapA, uvMapB, uvMapC, uvMapD)
         composite.set("uUvPivot", uvPivotX, uvPivotY)
         composite.set("uUvSize", uvSizeX, uvSizeY)
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -143,22 +147,21 @@ class GlowShader(contextGen: Int) {
             uniform float uAlpha;
             uniform vec2 uUvScale;
             uniform vec2 uUvOffset;
-            uniform vec2 uUvRot;
+            uniform mat2 uUvMap;
             uniform vec2 uUvPivot;
             uniform vec2 uUvSize;
             in vec2 vUv;
             out vec4 fragColor;
             void main() {
-                // The slide goes on before the turn, which is the inverse of turning the picture and
+                // The slide goes on before the map, which is the inverse of mapping the picture and
                 // then sliding it. Applied after, a drag that both turned and moved would slide
                 // along the wrong axes.
                 vec2 uv = vUv * uUvScale + uUvOffset;
-                // Turn about the pivot in pixels, not in uv: uv is normalized per axis, so turning
-                // it directly would shear a non-square buffer. Identity for everything but a
-                // selection being rotated.
+                // Map about the pivot in pixels, not in uv: uv is normalized per axis, so a turn
+                // applied to it directly would shear a non-square buffer. Identity for everything
+                // but a selection being turned or resized.
                 vec2 d = (uv - uUvPivot) * uUvSize;
-                d = vec2(d.x * uUvRot.x - d.y * uUvRot.y, d.x * uUvRot.y + d.y * uUvRot.x);
-                uv = uUvPivot + d / uUvSize;
+                uv = uUvPivot + (uUvMap * d) / uUvSize;
                 // A slid buffer runs off its own edge, and clamping there would smear the last row
                 // of texels across the gap. Nothing outside the buffer was ever drawn, so it reads
                 // as nothing.

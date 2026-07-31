@@ -54,7 +54,7 @@ class InkShader(contextGen: Int) {
     }
 
     /**
-     * Draw this batch turned and shifted, for a selection being dragged.
+     * Draw this batch mapped, for a selection being dragged.
      *
      * A drag used to move the model itself, which meant re-tessellating and re-uploading every
      * selected item on every touch sample. The vertices never needed to move: the whole design puts
@@ -63,13 +63,28 @@ class InkShader(contextGen: Int) {
      * [pivotX]/[pivotY] are in the camera's own chunk frame, the same frame the vertices rebuild
      * themselves in, so nothing large is ever subtracted from anything large.
      */
-    fun setLift(pivotX: Double, pivotY: Double, cos: Double, sin: Double, dx: Double, dy: Double) {
+    fun setLift(
+        pivotX: Double,
+        pivotY: Double,
+        a: Double,
+        b: Double,
+        c: Double,
+        d: Double,
+        linearScale: Double,
+        dx: Double,
+        dy: Double,
+    ) {
         program.set("uPivot", pivotX.toFloat(), pivotY.toFloat())
-        program.set("uRot", cos.toFloat(), sin.toFloat())
+        program.setMat2("uLin", a.toFloat(), b.toFloat(), c.toFloat(), d.toFloat())
+        program.set("uLinScale", linearScale.toFloat())
+        program.set("uLifted", 1f)
         program.set("uTranslate", dx.toFloat(), dy.toFloat())
     }
 
-    fun clearLift() = setLift(0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
+    fun clearLift() {
+        program.set("uLifted", 0f)
+        program.set("uTranslate", 0f, 0f)
+    }
 
     /**
      * Narrow the ribbon about its own centreline. Neon's white-hot core is the body's very
@@ -121,7 +136,9 @@ class InkShader(contextGen: Int) {
             uniform float uWidthScale;
             uniform vec2 uTranslate;
             uniform vec2 uPivot;
-            uniform vec2 uRot;
+            uniform mat2 uLin;
+            uniform float uLinScale;
+            uniform float uLifted;
             uniform vec4 uOverride;
             uniform float uOverrideMix;
 
@@ -136,14 +153,23 @@ class InkShader(contextGen: Int) {
                 vec2 centre = aLocal - spine;
                 spine *= uWidthScale;
 
-                // A dragged selection can be turned as well as shifted. The spine turns with it,
-                // which leaves its length alone, so the width the vertex encodes survives the turn
-                // and the sub-pixel rule below still measures the right thing. uRot is (1, 0) for
-                // everything not under a drag, and the pivot is then zero, so this is exact.
+                // A dragged selection is mapped here rather than in the model. The centre goes
+                // straight through the map. The spine cannot: the model scales every width by one
+                // scalar and lays it across the mapped ribbon, so recover the ribbon's direction
+                // from the spine, map that, and re-lay the spine across it at the scaled length.
+                // Nothing under a drag has uLifted set, and that path is untouched.
                 vec2 pos = (aChunk - uCamChunk) * uChunkSize + centre;
-                vec2 rel = pos - uPivot;
-                pos = uPivot + vec2(rel.x * uRot.x - rel.y * uRot.y, rel.x * uRot.y + rel.y * uRot.x);
-                spine = vec2(spine.x * uRot.x - spine.y * uRot.y, spine.x * uRot.y + spine.y * uRot.x);
+                if (uLifted > 0.5) {
+                    vec2 rel = pos - uPivot;
+                    pos = uPivot + uLin * rel;
+                    float spineLen = length(spine);
+                    if (spineLen > 0.0) {
+                        vec2 mapped = uLin * vec2(spine.y, -spine.x);
+                        vec2 across = vec2(-mapped.y, mapped.x);
+                        float acrossLen = length(across);
+                        if (acrossLen > 0.0) spine = across * (spineLen * uLinScale / acrossLen);
+                    }
+                }
                 vec2 world = pos + spine + uTranslate;
 
                 // Zoomed out far enough a stroke is thinner than a pixel, and a sub-pixel line does

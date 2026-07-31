@@ -135,6 +135,17 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     }
 
     /**
+     * Scale the box alone and report the map, for a drag the renderer is scaling rather than the
+     * model. The counterpart of [previewMove] and [previewRotate].
+     */
+    fun previewResize(handle: HandleId, pointer: Pt): Affine? {
+        val from = startBox ?: return null
+        val result = ResizeMath.obbResize(from, handle, pointer)
+        box = result.obb
+        return result.transform
+    }
+
+    /**
      * Turn the selection about its own centre by the angle the pointer has swept since the grab.
      *
      * Swept, not absolute: pointing the box's local up straight at the pointer means a press that
@@ -160,8 +171,8 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         return swept
     }
 
-    /** Put the box back where the turn started, for a gesture that was cancelled rather than ended. */
-    fun previewRotateBack() {
+    /** Put the box back where the drag started, for a gesture that was cancelled rather than ended. */
+    fun previewBack() {
         startBox?.let { box = it }
     }
 
