@@ -61,6 +61,9 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         /** The item under the pen, re-tessellated as it grows; an empty list clears it. */
         class Wet(val parts: List<MeshPart>, val bounds: Rect) : Edit()
 
+        /** Items being dragged, and how far from where their triangles sit. Empty ends the drag. */
+        class Lift(val items: List<CanvasItem>, val dx: Double, val dy: Double) : Edit()
+
         class Remove(val item: CanvasItem) : Edit()
         class Order(val items: List<CanvasItem>) : Edit()
         object Reset : Edit()
@@ -77,6 +80,18 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private var wetParts: List<Part> = emptyList()
     private var wetBounds = Rect(0.0, 0.0, 0.0, 0.0)
     private val records = IdentityHashMap<CanvasItem, Record>()
+
+    /**
+     * The selection under a drag. Its triangles stay exactly where they were tessellated and the
+     * drag reaches the shader as a translation, so moving a selection costs one uniform rather than
+     * a re-tessellation and a re-upload of every selected item on every touch sample.
+     *
+     * A lifted item draws above the rest for the length of the drag, which is what the paged canvas
+     * does with its own lifted selection.
+     */
+    private val lifted = ArrayList<CanvasItem>()
+    private var liftDx = 0.0
+    private var liftDy = 0.0
 
     /** Records bucketed by content chunk, so a frame only visits what the viewport overlaps. */
     private val buckets = HashMap<Long, ArrayList<Record>>()
@@ -167,6 +182,11 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     /** Publish an in-progress item made of several runs, which is what a filled shape is. */
     fun setWetParts(parts: List<MeshPart>, bounds: Rect) {
         pending.add(Edit.Wet(parts, bounds))
+    }
+
+    /** Draw [items] shifted by ([dx], [dy]) until this is called again with an empty list. */
+    fun setLift(items: List<CanvasItem>, dx: Double, dy: Double) {
+        pending.add(Edit.Lift(ArrayList(items), dx, dy))
     }
 
     fun reset() {
@@ -297,6 +317,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             rebind(program, frame, camChunkX, camChunkY)
         }
 
+        drawLifted(program, frame, camChunkX, camChunkY)
         drawWet(program, frame, camChunkX, camChunkY)
         if (frame.minimapVisible) drawMinimap(frame)
 
@@ -334,6 +355,64 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         )
         lastDrawCalls += 9
     }
+
+    /**
+     * The selection under a drag, drawn above the rest with the drag pushed in as a uniform.
+     *
+     * Nothing is re-tessellated and nothing is re-uploaded, which is the whole point: the cost of
+     * dragging is the same for one stroke and for a hundred. The opaque batching the main loop does
+     * is skipped, since a selection is a handful of items rather than a screenful.
+     */
+    private fun drawLifted(program: InkShader, frame: FrameState, camChunkX: Double, camChunkY: Double) {
+        if (lifted.isEmpty()) return
+        val view = viewRect(frame)
+        applyView(program, frame, camChunkX, camChunkY, liftDx, liftDy)
+        if (!store.bindForDraw(contextGen)) return
+        store.bindAttributes(program)
+        for (item in lifted) {
+            val record = records[item] ?: continue
+            val bounds = record.bounds.translate(liftDx, liftDy)
+            if (!bounds.intersects(view)) continue
+            if (record.image != null) {
+                drawImage(record, record.image, frame, liftDx, liftDy)
+                applyView(program, frame, camChunkX, camChunkY, liftDx, liftDy)
+                store.bindForDraw(contextGen)
+                store.bindAttributes(program)
+                continue
+            }
+            for (part in record.parts) {
+                when (part.pass) {
+                    InkPass.OPAQUE -> {
+                        store.drawRange(part.slice.indexOffset, part.slice.indexCount)
+                        lastDrawCalls++
+                    }
+                    InkPass.TRANSLUCENT, InkPass.MULTIPLY -> {
+                        drawMasked(
+                            store, part.slice, bounds, part.coverColor, part.coverAlpha,
+                            frame, multiply = part.pass == InkPass.MULTIPLY,
+                        )
+                        applyView(program, frame, camChunkX, camChunkY, liftDx, liftDy)
+                        store.bindForDraw(contextGen)
+                        store.bindAttributes(program)
+                    }
+                    InkPass.GLOW -> {
+                        drawGlow(
+                            program, store, record, part, frame, camChunkX, camChunkY,
+                            offsetX = liftDx, offsetY = liftDy,
+                        )
+                        applyView(program, frame, camChunkX, camChunkY, liftDx, liftDy)
+                        store.bindForDraw(contextGen)
+                        store.bindAttributes(program)
+                    }
+                }
+            }
+        }
+        rebind(program, frame, camChunkX, camChunkY)
+    }
+
+    private fun viewRect(frame: FrameState) = Rect(
+        frame.scrollX, frame.scrollY, frame.widthPx / frame.zoom, frame.heightPx / frame.zoom,
+    )
 
     /**
      * The stroke under the pen, drawn last because it is the newest thing on the canvas. It lives
@@ -374,9 +453,15 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * A placed image as one textured quad. The corners are worked out in double precision here and
      * handed over in clip space, so an image a long way from the origin is placed exactly.
      */
-    private fun drawImage(record: Record, image: ImageItem, frame: FrameState) {
+    private fun drawImage(
+        record: Record,
+        image: ImageItem,
+        frame: FrameState,
+        offsetX: Double = 0.0,
+        offsetY: Double = 0.0,
+    ) {
         val shader = imageShader ?: return
-        val rect = image.rect
+        val rect = image.rect.translate(offsetX, offsetY)
         // Decode for the size the image actually occupies on screen right now.
         val onScreenEdge = (maxOf(rect.w, rect.h) * frame.zoom).toInt().coerceAtLeast(1)
         val texture = textures.textureFor(image.image, onScreenEdge, decodeOn)
@@ -485,11 +570,13 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         camChunkX: Double,
         camChunkY: Double,
         intoLayer: Boolean = false,
+        offsetX: Double = 0.0,
+        offsetY: Double = 0.0,
     ) {
         val shader = glowShader ?: return
         val spec = part.glow ?: return
         if (!glowTarget.ready) return
-        val scale = glowTarget.downscale
+        val bounds = record.bounds.translate(offsetX, offsetY)
 
         for (halo in 0 until 2) {
             val radius = if (halo == 0) spec.wideRadius else spec.tightRadius
@@ -504,7 +591,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             // Only the stroke's own patch of screen is touched, grown by the blur's reach. A halo
             // is a small thing on a large display, and clearing and blurring the whole buffer for
             // each one is what made inking with neon crawl.
-            val patch = glowPatch(record.bounds, radiusPx / bufferRatioX(frame), frame) ?: continue
+            val patch = glowPatch(bounds, radiusPx / bufferRatioX(frame), frame) ?: continue
             GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
 
             scissorInBuffer(patch, frame)
@@ -517,14 +604,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             // applied the downscale twice and put the halo down at half size in the corner, which
             // is what a halo sitting away from its stroke looks like. It also means the whole
             // buffer is exactly the whole screen, so nothing has to be cropped on the way back.
-            program.begin(
-                camChunkX, camChunkY,
-                frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
-                frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-                frame.zoom,
-                frame.widthPx.toDouble(),
-                frame.heightPx.toDouble(),
-            )
+            applyView(program, frame, camChunkX, camChunkY, offsetX, offsetY)
             from.bindForDraw(contextGen)
             from.bindAttributes(program)
             GLES30.glDisable(GLES30.GL_BLEND)
@@ -553,7 +633,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         // The lit body and the white core, both from the very same triangles: the shader overrides
         // the colour and scales the stored spine offset, so neon costs one tessellation and one
         // copy in the buffer rather than three of each.
-        rebind(program, frame, camChunkX, camChunkY)
+        applyView(program, frame, camChunkX, camChunkY, offsetX, offsetY)
         from.bindForDraw(contextGen)
         from.bindAttributes(program)
         drawGlowBody(program, from, part)
@@ -605,13 +685,25 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * stencil as it draws, so consecutive strokes need no clear between them.
      */
     /** Re-point the ink program after a cover draw took the program and buffer bindings away. */
-    private fun rebind(program: InkShader, frame: FrameState, camChunkX: Double, camChunkY: Double) {
+    private fun rebind(program: InkShader, frame: FrameState, camChunkX: Double, camChunkY: Double) =
+        applyView(program, frame, camChunkX, camChunkY)
+
+    /** Bind the ink program for this frame's view, optionally shifted for a dragged selection. */
+    private fun applyView(
+        program: InkShader,
+        frame: FrameState,
+        camChunkX: Double,
+        camChunkY: Double,
+        offsetX: Double = 0.0,
+        offsetY: Double = 0.0,
+    ) {
         program.begin(
             camChunkX, camChunkY,
             frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
             frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
             frame.zoom, frame.widthPx.toDouble(), frame.heightPx.toDouble(),
         )
+        if (offsetX != 0.0 || offsetY != 0.0) program.setTranslate(offsetX, offsetY)
     }
 
     private fun drawMasked(record: Record, part: Part, frame: FrameState, multiply: Boolean) =
@@ -679,6 +771,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             when (val edit = pending.poll() ?: return) {
                 is Edit.Upsert -> applyUpsert(edit)
                 is Edit.Wet -> applyWet(edit)
+                is Edit.Lift -> applyLift(edit)
                 is Edit.Remove -> applyRemove(edit.item)
                 is Edit.Order -> applyOrder(edit.items)
                 Edit.Reset -> applyReset()
@@ -724,6 +817,16 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         wetParts = built
     }
 
+    private fun applyLift(edit: Edit.Lift) {
+        // The halo layer is keyed on the view and the content, neither of which a drag changes, so
+        // it has to be told that what is on screen moved.
+        if (lifted.isNotEmpty() || edit.items.isNotEmpty()) revision++
+        lifted.clear()
+        lifted.addAll(edit.items)
+        liftDx = edit.dx
+        liftDy = edit.dy
+    }
+
     /** A stand-in record for the wet item, so the glow pass can read its bounds like any other. */
     private fun wetRecord(): Record = Record(WET_KEY, emptyList(), wetBounds, 0)
 
@@ -747,6 +850,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private fun applyReset() {
         revision++
         nextZ = 0
+        lifted.clear()
         records.clear()
         buckets.clear()
         oversized.clear()
@@ -757,12 +861,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     private fun collectVisible(frame: FrameState) {
         visible.clear()
-        val view = Rect(
-            frame.scrollX,
-            frame.scrollY,
-            frame.widthPx / frame.zoom,
-            frame.heightPx / frame.zoom,
-        )
+        val view = viewRect(frame)
         for (record in oversized) if (record.bounds.intersects(view)) visible.add(record)
         val x0 = chunkOf(view.left)
         val y0 = chunkOf(view.top)
@@ -785,17 +884,27 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         dedupeSorted()
     }
 
-    /** Drop the repeats a record filed in several chunks produced; the list is already z sorted. */
+    /**
+     * Drop the repeats a record filed in several chunks produced, and anything a drag has lifted;
+     * the list is already z sorted. A lifted record draws in its own pass, from where it is being
+     * dragged to rather than from where its triangles sit.
+     */
     private fun dedupeSorted() {
-        if (visible.size < 2) return
-        var write = 1
-        for (read in 1 until visible.size) {
-            if (visible[read] !== visible[write - 1]) {
-                visible[write] = visible[read]
-                write++
-            }
+        if (visible.isEmpty()) return
+        var write = 0
+        for (read in visible.indices) {
+            val record = visible[read]
+            if (write > 0 && record === visible[write - 1]) continue
+            if (isLifted(record.item)) continue
+            visible[write] = record
+            write++
         }
         while (visible.size > write) visible.removeAt(visible.size - 1)
+    }
+
+    private fun isLifted(item: CanvasItem): Boolean {
+        for (i in lifted.indices) if (lifted[i] === item) return true
+        return false
     }
 
     private fun fileRecord(record: Record) {

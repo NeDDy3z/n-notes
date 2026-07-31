@@ -87,8 +87,8 @@ object CanvasProjection {
             spineY *= push
         }
         return Point(
-            (v.chunkX - camera.camChunkX) * CHUNK_SIZE + centreX + spineX,
-            (v.chunkY - camera.camChunkY) * CHUNK_SIZE + centreY + spineY,
+            (v.chunkX - camera.camChunkX) * CHUNK_SIZE + centreX + spineX + camera.translateX,
+            (v.chunkY - camera.camChunkY) * CHUNK_SIZE + centreY + spineY + camera.translateY,
         )
     }
 
@@ -119,6 +119,13 @@ object CanvasProjection {
         val viewportW: Double,
         val viewportH: Double,
         val widthScale: Double = 1.0,
+        /**
+         * Content pixels to shift this draw by, for a selection being dragged. The vertices stay
+         * where they were tessellated and the drag is a uniform, so moving a selection costs the
+         * same whether it is one stroke or a thousand.
+         */
+        val translateX: Double = 0.0,
+        val translateY: Double = 0.0,
     ) {
         val camChunkX: Double get() = floor(scrollX / CHUNK_SIZE)
         val camChunkY: Double get() = floor(scrollY / CHUNK_SIZE)

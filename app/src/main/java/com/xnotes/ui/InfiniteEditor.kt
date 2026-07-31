@@ -81,6 +81,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost {
         itemsIn = { rect -> document.itemsIn(rect) },
         onSelectionChanged = { publishOverlay() },
         onCommitSelection = { commitSelection(it) },
+        onLiftSelection = { items, dx, dy -> scene.setLift(items, dx, dy) },
         devicePxPerDp = { devicePxPerDp },
         onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
     )

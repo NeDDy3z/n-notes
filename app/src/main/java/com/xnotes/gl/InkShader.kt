@@ -49,7 +49,19 @@ class InkShader(contextGen: Int) {
         program.set("uOffsetScale", (1.0 / GeometryStore.OFFSET_SCALE).toFloat())
         program.set("uMinHalfPx", MIN_HALF_WIDTH_PX)
         setWidthScale(1.0)
+        setTranslate(0.0, 0.0)
         clearOverride()
+    }
+
+    /**
+     * Shift this draw by content pixels, for a selection being dragged.
+     *
+     * A drag used to move the model itself, which meant re-tessellating and re-uploading every
+     * selected item on every touch sample. The vertices never needed to move: the whole design puts
+     * the view in a uniform, and a drag is the same kind of thing.
+     */
+    fun setTranslate(dx: Double, dy: Double) {
+        program.set("uTranslate", dx.toFloat(), dy.toFloat())
     }
 
     /**
@@ -100,6 +112,7 @@ class InkShader(contextGen: Int) {
             uniform float uOffsetScale;
             uniform float uMinHalfPx;
             uniform float uWidthScale;
+            uniform vec2 uTranslate;
             uniform vec4 uOverride;
             uniform float uOverrideMix;
 
@@ -113,7 +126,7 @@ class InkShader(contextGen: Int) {
                 vec2 spine = aOffset * uOffsetScale;
                 vec2 centre = aLocal - spine;
                 spine *= uWidthScale;
-                vec2 world = (aChunk - uCamChunk) * uChunkSize + centre + spine;
+                vec2 world = (aChunk - uCamChunk) * uChunkSize + centre + spine + uTranslate;
 
                 // Zoomed out far enough a stroke is thinner than a pixel, and a sub-pixel line does
                 // not simply get fainter: it breaks into a dotted shimmer that crawls as the canvas

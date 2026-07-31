@@ -91,6 +91,17 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         doc.itemsChanged(items)
     }
 
+    /**
+     * Move the box alone, for a drag the renderer is offsetting rather than the model.
+     *
+     * A drag used to move the items themselves on every touch sample, which meant re-tessellating
+     * and re-uploading every selected item several times a frame. The model now stays put until the
+     * finger lifts, and [moveLive] applies the whole move once.
+     */
+    fun previewMove(dx: Double, dy: Double) {
+        startBox?.let { box = it.translate(dx, dy) }
+    }
+
     /** Move by a delta from the gesture start, restoring first so the drag cannot compound. */
     fun moveLive(dx: Double, dy: Double) {
         for (i in items.indices) items[i].restoreGeometry(startSnapshots[i])

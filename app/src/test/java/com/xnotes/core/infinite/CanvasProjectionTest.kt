@@ -134,6 +134,25 @@ class CanvasProjectionTest {
         assertEquals(6.0, CanvasProjection.devicePoint(Vertex.of(6.0, 10.0), cam).x, 1e-9)
     }
 
+    /** Dragging a selection is a uniform, so it must land exactly where moving the model would. */
+    @Test
+    fun `a live translation matches moving the content itself`() {
+        val cam = camera(scrollX = 100.0, scrollY = 50.0, zoom = 1.5)
+        val dragged = cam.copy(translateX = 17.0, translateY = -9.0)
+        val live = CanvasProjection.devicePoint(Vertex.of(220.0, 130.0), dragged)
+        val moved = CanvasProjection.devicePoint(Vertex.of(237.0, 121.0), cam)
+        assertEquals(moved.x, live.x, 1e-9)
+        assertEquals(moved.y, live.y, 1e-9)
+    }
+
+    @Test
+    fun `a live translation scales with the zoom like everything else`() {
+        val at = Vertex.of(10.0, 10.0)
+        val plain = CanvasProjection.devicePoint(at, camera(zoom = 3.0))
+        val shifted = CanvasProjection.devicePoint(at, camera(zoom = 3.0).copy(translateX = 4.0))
+        assertEquals(12.0, shifted.x - plain.x, 1e-9)
+    }
+
     @Test
     fun `the width scale leaves the centreline where it was`() {
         val centre = Vertex.of(10.0, 10.0)

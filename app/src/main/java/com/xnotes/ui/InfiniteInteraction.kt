@@ -85,6 +85,8 @@ class InfiniteInteraction(
     private val onSelectionChanged: () -> Unit = {},
     /** A finished selection drag: push its single undo command. */
     private val onCommitSelection: (com.xnotes.core.history.Command?) -> Unit = {},
+    /** Draw [items] shifted by the drag so far, rather than moving them. An empty list ends it. */
+    private val onLiftSelection: (List<CanvasItem>, Double, Double) -> Unit = { _, _, _ -> },
     /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
     private val devicePxPerDp: () -> Double = { 1.0 },
     /** A press that landed on the minimap; returns true when it was consumed as navigation. */
@@ -290,6 +292,13 @@ class InfiniteInteraction(
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
         if (mode == CanvasPointerMode.ERASE) endErase()
         if (mode == CanvasPointerMode.SHAPE) abandonShape()
+        // A cancelled drag never happened: the model was never touched, so putting the box back and
+        // dropping the lift is the whole undo.
+        if (mode == CanvasPointerMode.MOVE) {
+            selection()?.previewMove(0.0, 0.0)
+            onLiftSelection(emptyList(), 0.0, 0.0)
+            onSelectionChanged()
+        }
         mode = CanvasPointerMode.IDLE
         setInteractive(false, true)
         stopFling()
@@ -412,6 +421,7 @@ class InfiniteInteraction(
         selection()?.clear()
         bandRect = null
         lassoPoints.clear()
+        onLiftSelection(emptyList(), 0.0, 0.0)
         onSelectionChanged()
         requestRender()
     }
@@ -442,6 +452,7 @@ class InfiniteInteraction(
                 moveAnchor = at
                 movedBy = Pt.ZERO
                 mode = CanvasPointerMode.MOVE
+                onLiftSelection(sel.items, 0.0, 0.0)
                 return
             }
         }
@@ -500,17 +511,26 @@ class InfiniteInteraction(
         requestRender()
     }
 
+    /**
+     * A drag in progress. The model is left exactly where it was and the renderer is told to draw
+     * the selection offset, so a drag costs one uniform however much is selected. The box follows
+     * so the chrome tracks the finger.
+     */
     private fun extendMove(vx: Double, vy: Double) {
         val sel = selection() ?: return
         val at = viewport.viewportToContent(Pt(vx, vy))
         movedBy = Pt(at.x - moveAnchor.x, at.y - moveAnchor.y)
-        sel.moveLive(movedBy.x, movedBy.y)
+        sel.previewMove(movedBy.x, movedBy.y)
+        onLiftSelection(sel.items, movedBy.x, movedBy.y)
         onSelectionChanged()
         requestRender()
     }
 
+    /** Finger up: apply the whole move to the model once, then hand the drawing back to it. */
     private fun endMove() {
         val sel = selection() ?: return
+        sel.moveLive(movedBy.x, movedBy.y)
+        onLiftSelection(emptyList(), 0.0, 0.0)
         onCommitSelection(sel.buildCommand(movedOnly = true, dx = movedBy.x, dy = movedBy.y))
         onSelectionChanged()
         requestRender()
