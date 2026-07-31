@@ -85,6 +85,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     /** Next unseen depth, for an item that arrives before its order message. */
     private var nextZ = 0
 
+    /** Bumped by any change to the records, so the cached halo layer knows it is stale. */
+    private var revision = 0
+
+    /** What the cached halo layer was built for; a mismatch means rebuild it. */
+    private var haloKey: String? = null
+
     private var ink: InkShader? = null
     private var cover: CoverShader? = null
     private var imageShader: ImageShader? = null
@@ -226,6 +232,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         lastVisibleItems = visible.size
         lastDrawCalls = 0
 
+        // Halos of everything already committed go into a layer that is rebuilt only when the view
+        // or the content moves. Re-blurring each of them every frame made the cost of neon scale
+        // with how much of it was on screen: nine strokes took the canvas to a fifth of the
+        // refresh rate, while none of them had actually changed.
+        drawCommittedHalos(program, frame, camChunkX, camChunkY)
+
         // Back to front, batching every run of opaque items that happens to be contiguous in the
         // buffer into one call. Freshly loaded content is laid down in z order, so a screenful of
         // it is usually a single draw.
@@ -268,13 +280,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                         rebind(program, frame, camChunkX, camChunkY)
                     }
                     InkPass.GLOW -> {
+                        // The halo is already on screen from the cached layer; this draws the lit
+                        // body and the white core over it, from the very same triangles.
                         flushRun(runStart, runCount)
                         runStart = -1
                         runCount = 0
-                        drawGlow(program, store, part, frame, camChunkX, camChunkY)
-                        rebind(program, frame, camChunkX, camChunkY)
-                        store.bindForDraw(contextGen)
-                        store.bindAttributes(program)
+                        drawGlowBody(program, store, part)
                     }
                 }
             }
@@ -335,7 +346,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         wetStore.bindAttributes(program)
         for (part in wetParts) {
             if (part.pass == InkPass.GLOW) {
-                drawGlow(program, wetStore, part, frame, camChunkX, camChunkY)
+                drawGlow(program, wetStore, wetRecord(), part, frame, camChunkX, camChunkY)
                 rebind(program, frame, camChunkX, camChunkY)
                 wetStore.bindForDraw(contextGen)
                 wetStore.bindAttributes(program)
@@ -392,18 +403,97 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * at, and each halo composites once rather than per overlap, so a self-crossing scribble cannot
      * pile up into a brighter blob.
      */
-    private fun drawGlow(
+    /**
+     * Composite every committed item's halo, rebuilding the layer they share only when the view or
+     * the content has actually moved. While a stroke is being drawn neither has, so this is one
+     * textured quad however much neon is on screen.
+     *
+     * The halos land under all the ink rather than each under its own item. They are soft and
+     * diffuse, so the difference shows only where a neon stroke sits beneath other content, which
+     * is a small price for not paying a blur per item per frame.
+     */
+    private fun drawCommittedHalos(
         program: InkShader,
-        from: GeometryStore,
-        part: Part,
         frame: FrameState,
         camChunkX: Double,
         camChunkY: Double,
     ) {
         val shader = glowShader ?: return
+        if (!glowTarget.ready) return
+        val glowing = visible.filter { record -> record.parts.any { it.pass == InkPass.GLOW } }
+        if (glowing.isEmpty()) {
+            haloKey = null
+            return
+        }
+        val key = "$revision|${frame.zoom}|${frame.scrollX}|${frame.scrollY}|${frame.widthPx}x${frame.heightPx}"
+        if (key != haloKey) {
+            buildHaloLayer(program, glowing, frame, camChunkX, camChunkY)
+            haloKey = key
+            rebind(program, frame, camChunkX, camChunkY)
+            store.bindForDraw(contextGen)
+            store.bindAttributes(program)
+        }
+        shader.compositeOver(
+            glowTarget.texture(glowTarget.layerIndex), 1.0,
+            glowTarget.usedFractionX(frame.widthPx), glowTarget.usedFractionY(frame.heightPx),
+        )
+        lastDrawCalls++
+        rebind(program, frame, camChunkX, camChunkY)
+        store.bindForDraw(contextGen)
+        store.bindAttributes(program)
+    }
+
+    /** Blur every committed halo into the shared layer, once, for this view. */
+    private fun buildHaloLayer(
+        program: InkShader,
+        glowing: List<Record>,
+        frame: FrameState,
+        camChunkX: Double,
+        camChunkY: Double,
+    ) {
+        glowTarget.bind(glowTarget.layerIndex)
+        GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
+        GLES30.glClearColor(0f, 0f, 0f, 0f)
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+        for (record in glowing) {
+            for (part in record.parts) {
+                if (part.pass != InkPass.GLOW) continue
+                drawGlow(program, store, record, part, frame, camChunkX, camChunkY, intoLayer = true)
+            }
+        }
+        glowTarget.unbind(frame.widthPx, frame.heightPx)
+    }
+
+    /** Neon's lit body and white core, both from the same triangles the halo came from. */
+    private fun drawGlowBody(program: InkShader, from: GeometryStore, part: Part) {
+        val spec = part.glow ?: return
+        GLES30.glEnable(GLES30.GL_BLEND)
+        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        program.setOverride(spec.bodyColor)
+        from.drawRange(part.slice.indexOffset, part.slice.indexCount)
+        program.setOverride(spec.coreColor)
+        program.setWidthScale(spec.coreScale)
+        from.drawRange(part.slice.indexOffset, part.slice.indexCount)
+        program.setWidthScale(1.0)
+        program.clearOverride()
+        lastDrawCalls += 2
+    }
+
+    private fun drawGlow(
+        program: InkShader,
+        from: GeometryStore,
+        record: Record,
+        part: Part,
+        frame: FrameState,
+        camChunkX: Double,
+        camChunkY: Double,
+        intoLayer: Boolean = false,
+    ) {
+        val shader = glowShader ?: return
         val spec = part.glow ?: return
         if (!glowTarget.ready) return
         val scale = glowTarget.downscale
+
         for (halo in 0 until 2) {
             val radius = if (halo == 0) spec.wideRadius else spec.tightRadius
             val alpha = if (halo == 0) spec.wideAlpha else spec.tightAlpha
@@ -413,12 +503,21 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             val radiusPx = (radius * frame.zoom / scale).coerceAtMost(GlowShader.MAX_TAPS.toDouble() * 2.0)
             if (radiusPx < 0.4) continue
 
-            glowTarget.bindAndClear(0)
+            // Only the stroke's own patch of screen is touched, grown by the blur's reach. A halo
+            // is a small thing on a large display, and clearing and blurring the whole buffer for
+            // each one is what made inking with neon crawl.
+            val patch = glowPatch(record.bounds, radiusPx * scale, frame) ?: continue
+            GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
+
+            scissorInBuffer(patch, scale)
+            glowTarget.bind(0)
+            GLES30.glClearColor(0f, 0f, 0f, 0f)
+            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
             // The buffer is a fraction of the viewport, so the zoom has to shrink by the same
             // fraction: drawing at full device scale into a smaller buffer would put the halo down
-            // magnified and anchored at the corner, which is exactly what a shifted glow looks
-            // like. The viewport passed is the fractional size rather than the buffer's rounded-up
-            // pixel count, so an odd viewport still maps to the same clip space as the real pass.
+            // magnified and anchored at the corner. The viewport passed is the fractional size
+            // rather than the buffer's rounded-up pixel count, so an odd viewport still maps to the
+            // same clip space as the real pass.
             program.begin(
                 camChunkX, camChunkY,
                 frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
@@ -431,20 +530,66 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             from.bindAttributes(program)
             GLES30.glDisable(GLES30.GL_BLEND)
             from.drawRange(part.slice.indexOffset, part.slice.indexCount)
-
             program.disableAttributes()
-            glowTarget.bindAndClear(1)
-            shader.blur(glowTarget.texture(0), radiusPx, horizontal = true, bufferW = glowTarget.bufferWidth, bufferH = glowTarget.bufferHeight)
-            glowTarget.bindAndClear(0)
-            shader.blur(glowTarget.texture(1), radiusPx, horizontal = false, bufferW = glowTarget.bufferWidth, bufferH = glowTarget.bufferHeight)
 
-            glowTarget.unbind(frame.widthPx, frame.heightPx)
+            glowTarget.bind(1)
+            shader.blur(glowTarget.texture(0), radiusPx, true, glowTarget.bufferWidth, glowTarget.bufferHeight)
+            glowTarget.bind(0)
+            shader.blur(glowTarget.texture(1), radiusPx, false, glowTarget.bufferWidth, glowTarget.bufferHeight)
+
+            if (intoLayer) {
+                glowTarget.bind(glowTarget.layerIndex)
+                scissorInBuffer(patch, scale)
+            } else {
+                glowTarget.unbind(frame.widthPx, frame.heightPx)
+                GLES30.glScissor(patch[0], frame.heightPx - patch[1] - patch[3], patch[2], patch[3])
+            }
             shader.compositeOver(
                 glowTarget.texture(0), alpha,
                 glowTarget.usedFractionX(frame.widthPx), glowTarget.usedFractionY(frame.heightPx),
             )
+            GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
             lastDrawCalls += 4
         }
+        if (intoLayer) return
+
+        // The lit body and the white core, both from the very same triangles: the shader overrides
+        // the colour and scales the stored spine offset, so neon costs one tessellation and one
+        // copy in the buffer rather than three of each.
+        rebind(program, frame, camChunkX, camChunkY)
+        from.bindForDraw(contextGen)
+        from.bindAttributes(program)
+        drawGlowBody(program, from, part)
+    }
+
+    /**
+     * The item's patch of screen, in device pixels with y down, grown by the blur's reach and
+     * clipped to the viewport. Null when it falls entirely off screen.
+     */
+    private fun glowPatch(bounds: Rect, reachPx: Double, frame: FrameState): IntArray? {
+        val pad = reachPx * 2.0 + 4.0
+        val x0 = ((bounds.left - frame.scrollX) * frame.zoom - pad).toInt().coerceIn(0, frame.widthPx)
+        val y0 = ((bounds.top - frame.scrollY) * frame.zoom - pad).toInt().coerceIn(0, frame.heightPx)
+        val x1 = ((bounds.right - frame.scrollX) * frame.zoom + pad).toInt().coerceIn(0, frame.widthPx)
+        val y1 = ((bounds.bottom - frame.scrollY) * frame.zoom + pad).toInt().coerceIn(0, frame.heightPx)
+        if (x1 <= x0 || y1 <= y0) return null
+        return intArrayOf(x0, y0, x1 - x0, y1 - y0)
+    }
+
+    /** Set the scissor for a glow-buffer pass, converting the device patch into buffer pixels. */
+    private fun scissorInBuffer(patch: IntArray, scale: Int) {
+        val x = patch[0] / scale
+        val w = (patch[2] + scale - 1) / scale + 1
+        val h = (patch[3] + scale - 1) / scale + 1
+        // The buffer shares the framebuffer's y-up convention, so the patch flips into it.
+        val yTop = patch[1] / scale
+        val y = (glowTarget.bufferHeight - yTop - h).coerceAtLeast(0)
+        GLES30.glScissor(
+            x.coerceIn(0, glowTarget.bufferWidth),
+            y,
+            w.coerceAtMost(glowTarget.bufferWidth - x.coerceIn(0, glowTarget.bufferWidth)),
+            h.coerceAtMost(glowTarget.bufferHeight - y),
+        )
     }
 
     private fun flushRun(start: Int, count: Int) {
@@ -540,6 +685,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     }
 
     private fun applyUpsert(edit: Edit.Upsert) {
+        revision++
         // Committing the wet stroke is one step, not two: the buffer is released and the finished
         // stroke takes its place within a single frame's drain, so nothing can be drawn between.
         if (edit.clearsWet) clearWetBuffer()
@@ -576,22 +722,28 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         wetParts = built
     }
 
+    /** A stand-in record for the wet item, so the glow pass can read its bounds like any other. */
+    private fun wetRecord(): Record = Record(WET_KEY, emptyList(), wetBounds, 0)
+
     private fun clearWetBuffer() {
         wetStore.clear()
         wetParts = emptyList()
     }
 
     private fun applyRemove(item: CanvasItem) {
+        revision++
         val record = records.remove(item) ?: return
         unfileRecord(record)
         for (part in record.parts) store.free(part.slice)
     }
 
     private fun applyOrder(items: List<CanvasItem>) {
+        revision++
         for (i in items.indices) records[items[i]]?.z = i
     }
 
     private fun applyReset() {
+        revision++
         nextZ = 0
         records.clear()
         buckets.clear()
@@ -695,5 +847,21 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
         /** Smallest a minimap marker is drawn, so one thin stroke is still visible. */
         private const val MINIMAP_DOT_PX = 1.5
+
+        /** Identity for the wet item's stand-in record; never filed or drawn as itself. */
+        private val WET_KEY: CanvasItem = object : CanvasItem {
+            override val kind = "wet"
+            override val resizable = false
+            override fun paint(r: com.xnotes.core.pal.Renderer) = Unit
+            override fun bounds() = Rect(0.0, 0.0, 0.0, 0.0)
+            override fun translate(dx: Double, dy: Double) = Unit
+            override fun contains(p: com.xnotes.core.geometry.Pt) = false
+            override fun centroid() = com.xnotes.core.geometry.Pt.ZERO
+            override fun intersectsCircle(cx: Double, cy: Double, radius: Double) = false
+            override fun snapshotGeometry(): com.xnotes.core.model.GeometrySnapshot =
+                throw UnsupportedOperationException()
+            override fun restoreGeometry(snap: com.xnotes.core.model.GeometrySnapshot) = Unit
+            override fun applyTransform(t: com.xnotes.core.geometry.Affine) = Unit
+        }
     }
 }

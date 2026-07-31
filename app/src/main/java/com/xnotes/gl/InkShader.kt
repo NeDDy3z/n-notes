@@ -47,7 +47,27 @@ class InkShader(contextGen: Int) {
         program.set("uViewport", viewportW.toFloat(), viewportH.toFloat())
         program.set("uOffsetScale", (1.0 / GeometryStore.OFFSET_SCALE).toFloat())
         program.set("uMinHalfPx", MIN_HALF_WIDTH_PX)
-        setTint(NO_TINT)
+        setWidthScale(1.0)
+        clearOverride()
+    }
+
+    /**
+     * Narrow the ribbon about its own centreline. Neon's white-hot core is the body's very
+     * geometry at a fraction of the width, so scaling the stored spine offset draws it from the
+     * same vertices rather than from a second tessellation and a second copy in the buffer.
+     */
+    fun setWidthScale(scale: Double) {
+        program.set("uWidthScale", scale.toFloat())
+    }
+
+    /** Draw with [color] instead of the baked vertex colour, for neon's body and core layers. */
+    fun setOverride(color: Rgba) {
+        program.set("uOverride", color.r / 255f, color.g / 255f, color.b / 255f, color.a / 255f)
+        program.set("uOverrideMix", 1f)
+    }
+
+    fun clearOverride() {
+        program.set("uOverrideMix", 0f)
     }
 
     /**
@@ -89,20 +109,27 @@ class InkShader(contextGen: Int) {
             uniform vec2 uViewport;
             uniform float uOffsetScale;
             uniform float uMinHalfPx;
+            uniform float uWidthScale;
+            uniform vec4 uOverride;
+            uniform float uOverrideMix;
 
             out vec4 vColor;
 
             void main() {
                 // Rebuild the position relative to the camera's own chunk, so nothing large is ever
                 // subtracted from anything large.
-                vec2 world = (aChunk - uCamChunk) * uChunkSize + aLocal;
+                // The vertex sits its own offset out from the line's centre, so the centre is
+                // recoverable and the width can be scaled without touching the buffer.
+                vec2 spine = aOffset * uOffsetScale;
+                vec2 centre = aLocal - spine;
+                spine *= uWidthScale;
+                vec2 world = (aChunk - uCamChunk) * uChunkSize + centre + spine;
 
                 // Zoomed out far enough a stroke is thinner than a pixel, and a sub-pixel line does
                 // not simply get fainter: it breaks into a dotted shimmer that crawls as the canvas
                 // pans. Push the vertex back out to a pixel and take the width it gained straight
                 // out of the alpha, so the line stays a line and only its weight drops. A fill has
                 // no spine, so its offset is zero and none of this touches it.
-                vec2 spine = aOffset * uOffsetScale;
                 float fade = 1.0;
                 float reach = length(spine) * uZoom;
                 if (reach > 0.0 && reach < uMinHalfPx) {
@@ -115,7 +142,8 @@ class InkShader(contextGen: Int) {
                     device.x / uViewport.x * 2.0 - 1.0,
                     1.0 - device.y / uViewport.y * 2.0,
                     0.0, 1.0);
-                vColor = vec4(aColor.rgb, aColor.a * fade);
+                vec4 base = mix(aColor, uOverride, uOverrideMix);
+                vColor = vec4(base.rgb, base.a * fade);
             }
         """.trimIndent()
 

@@ -14,8 +14,13 @@ import android.opengl.GLES30
  */
 class GlowTarget {
 
-    private val framebuffers = IntArray(2)
-    private val textures = IntArray(2)
+    /**
+     * Three buffers, not two: the ping and pong a blur needs, plus a layer the finished halos of
+     * everything already committed accumulate into. That layer is what stops the cost of neon
+     * scaling with how much of it is on screen.
+     */
+    private val framebuffers = IntArray(3)
+    private val textures = IntArray(3)
     private var width = 0
     private var height = 0
     private var contextGen = -1
@@ -27,13 +32,16 @@ class GlowTarget {
 
     fun onContextCreated(gen: Int) {
         contextGen = gen
-        framebuffers[0] = 0
-        framebuffers[1] = 0
-        textures[0] = 0
-        textures[1] = 0
+        for (i in framebuffers.indices) {
+            framebuffers[i] = 0
+            textures[i] = 0
+        }
         width = 0
         height = 0
     }
+
+    /** The buffer finished halos accumulate into, reused until the view or the content moves. */
+    val layerIndex: Int get() = 2
 
     /** Size the buffers for a viewport, rebuilding only when the size actually changed. */
     fun resize(viewportW: Int, viewportH: Int, gen: Int) {
@@ -46,9 +54,9 @@ class GlowTarget {
         release()
         width = w
         height = h
-        GLES30.glGenFramebuffers(2, framebuffers, 0)
-        GLES30.glGenTextures(2, textures, 0)
-        for (i in 0 until 2) {
+        GLES30.glGenFramebuffers(framebuffers.size, framebuffers, 0)
+        GLES30.glGenTextures(textures.size, textures, 0)
+        for (i in textures.indices) {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[i])
             GLES30.glTexImage2D(
                 GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, w, h, 0,
@@ -67,12 +75,10 @@ class GlowTarget {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
     }
 
-    /** Bind buffer [index] and clear it, ready to be drawn into. */
-    fun bindAndClear(index: Int) {
+    /** Bind buffer [index] for drawing. The caller clears whatever region it is about to touch. */
+    fun bind(index: Int) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, framebuffers[index])
         GLES30.glViewport(0, 0, width, height)
-        GLES30.glClearColor(0f, 0f, 0f, 0f)
-        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
     }
 
     fun texture(index: Int): Int = textures[index]
@@ -98,8 +104,8 @@ class GlowTarget {
     }
 
     fun release() {
-        if (framebuffers[0] != 0) GLES30.glDeleteFramebuffers(2, framebuffers, 0)
-        if (textures[0] != 0) GLES30.glDeleteTextures(2, textures, 0)
+        if (framebuffers[0] != 0) GLES30.glDeleteFramebuffers(framebuffers.size, framebuffers, 0)
+        if (textures[0] != 0) GLES30.glDeleteTextures(textures.size, textures, 0)
         framebuffers[0] = 0
         textures[0] = 0
         width = 0

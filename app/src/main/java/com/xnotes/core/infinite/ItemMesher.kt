@@ -22,12 +22,25 @@ enum class InkPass {
     GLOW,
 }
 
-/** The two blurred halos a neon item sits inside: a wide faint one under a tight bright one. */
+/**
+ * Everything neon needs, from one run of triangles.
+ *
+ * All four layers are the same geometry: two blurred halos, the lit body, and the white core at a
+ * fraction of the width. The renderer draws them from a single buffer slice by overriding the
+ * colour and scaling the stored spine offset, so a neon stroke costs one tessellation and one copy
+ * rather than three of each. That matters most while the pen is down, when the whole thing is
+ * rebuilt on every sample.
+ */
 class GlowSpec(
     val wideRadius: Double,
     val wideAlpha: Double,
     val tightRadius: Double,
     val tightAlpha: Double,
+    /** The lit tube, drawn over the halos. */
+    val bodyColor: Rgba,
+    /** The white-hot core, at [coreScale] of the body's width. */
+    val coreColor: Rgba,
+    val coreScale: Double,
 )
 
 /** One run of triangles in a single colour. An item is one or more of these, drawn in order. */
@@ -106,14 +119,15 @@ object ItemMesher {
             wideAlpha = Stroke.NEON_BLOOM_WIDE_ALPHA_MIN + Stroke.NEON_BLOOM_WIDE_ALPHA_SPAN * strength,
             tightRadius = tightRadius,
             tightAlpha = Stroke.NEON_BLOOM_TIGHT_ALPHA_MIN + Stroke.NEON_BLOOM_TIGHT_ALPHA_SPAN * strength,
+            bodyColor = Stroke.lighten(body, Stroke.NEON_BODY_LIGHTEN),
+            coreColor = Rgba(255, 255, 255, 255),
+            coreScale = Stroke.NEON_CORE_FRAC,
         )
-        val core = StrokeTessellator.tessellate(stroke.geometry(), tolerance, Stroke.NEON_CORE_FRAC)
-        val parts = listOf(
-            MeshPart(ribbon, body, InkPass.GLOW, glow),
-            MeshPart(ribbon, Stroke.lighten(body, Stroke.NEON_BODY_LIGHTEN), InkPass.OPAQUE),
-            MeshPart(core, Rgba(255, 255, 255, 255), InkPass.OPAQUE),
+        return MeshedItem(
+            listOf(MeshPart(ribbon, body, InkPass.GLOW, glow)),
+            stroke.paintBounds(),
+            narrowestHalfWidth(stroke) * Stroke.NEON_CORE_FRAC,
         )
-        return MeshedItem(parts, stroke.paintBounds(), narrowestHalfWidth(stroke) * Stroke.NEON_CORE_FRAC)
     }
 
     /**
