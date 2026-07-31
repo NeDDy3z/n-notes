@@ -276,6 +276,55 @@ class CanvasSelectionTest {
         assertEquals(once, s.samples.map { it.x to it.y })
     }
 
+    @Test fun grabbingTheGripOffCentreDoesNotSnapTheSelection() {
+        val a = box(0.0, 0.0, 100.0, 60.0)
+        val sel = CanvasSelection(docOf(a))
+        sel.select(listOf(a))
+        val grip = sel.rotateGrip(34.0)!!
+        // A press at the far edge of the grip's touch target, then no movement at all.
+        val grab = Pt(grip.x + 22.0, grip.y)
+        sel.beginTransform(grab)
+        sel.rotateLive(grab)
+        assertEquals("a press alone must not turn anything", 0.0, sel.box!!.angle, 1e-9)
+    }
+
+    @Test fun aRotationTurnsByWhatTheFingerSwept() {
+        val a = box(0.0, 0.0, 100.0, 60.0)
+        val sel = CanvasSelection(docOf(a))
+        sel.select(listOf(a))
+        val centre = sel.box!!.center
+        val grab = Pt(centre.x + 22.0, centre.y - 100.0)
+        sel.beginTransform(grab)
+        // A quarter turn of the grab point about the centre must turn the box a quarter turn.
+        val swept = Pt(centre.x + 100.0, centre.y + 22.0)
+        sel.rotateLive(swept)
+        assertEquals(Math.PI / 2.0, sel.box!!.angle, 1e-9)
+    }
+
+    @Test fun aRotatedBoxKeepsItsOwnShape() {
+        val s = line(0.0, 0.0)
+        val sel = CanvasSelection(docOf(s))
+        sel.select(listOf(s))
+        val wide = sel.box!!.halfW
+        val thin = sel.box!!.halfH
+        val centre = sel.box!!.center
+        sel.beginTransform(Pt(centre.x, centre.y - 100.0))
+        sel.rotateLive(Pt(centre.x + 100.0, centre.y))
+        assertEquals("a turn must not resize the box", wide, sel.box!!.halfW, 1e-9)
+        assertEquals(thin, sel.box!!.halfH, 1e-9)
+    }
+
+    @Test fun refreshingTheBoxBringsItBackUpright() {
+        val s = line(0.0, 0.0)
+        val sel = CanvasSelection(docOf(s))
+        sel.select(listOf(s))
+        val centre = sel.box!!.center
+        sel.beginTransform(Pt(centre.x, centre.y - 100.0))
+        sel.rotateLive(Pt(centre.x + 100.0, centre.y))
+        sel.refreshBox()
+        assertEquals("item bounds cannot say what angle the ink is at", 0.0, sel.box!!.angle, 1e-9)
+    }
+
     // --- overlay geometry ---
 
     @Test fun theOverlayScalesItsOutlineWithTheZoom() {

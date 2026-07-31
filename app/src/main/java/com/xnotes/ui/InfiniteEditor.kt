@@ -761,8 +761,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
 
     // --- history ---
 
+    // History moves geometry the selection box cannot follow: an undone rotation puts the ink back
+    // upright and leaves the box turned over it. The paged editor drops the selection for the same
+    // reason, so both surfaces behave alike.
     fun undo() {
         history.undo()
+        interaction.clearSelection()
         markDirty()
         refresh()
         view.publish()
@@ -770,6 +774,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
 
     fun redo() {
         history.redo()
+        interaction.clearSelection()
         markDirty()
         refresh()
         view.publish()

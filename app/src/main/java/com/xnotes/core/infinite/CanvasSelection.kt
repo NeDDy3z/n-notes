@@ -41,6 +41,9 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     private var startSnapshots: List<GeometrySnapshot> = emptyList()
     private var startBox: Obb? = null
 
+    /** Where the finger came down, as an angle about the box's centre. Null when it was not given. */
+    private var startGrabAngle: Double? = null
+
     fun select(next: List<CanvasItem>) {
         items = next
         box = boundsOf(next)?.let { Obb.fromAabb(it) }
@@ -51,13 +54,19 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         box = null
         startSnapshots = emptyList()
         startBox = null
+        startGrabAngle = null
     }
 
-    /** Re-derive the box from the items, after something outside a drag changed them. */
+    /**
+     * Re-derive the box from the items, after something outside a drag changed them.
+     *
+     * The box comes back upright, because item bounds are axis aligned and cannot say what angle
+     * the content is at. Keeping the old angle and tilting the fresh bounds was worse than useless:
+     * every rotation grew the box by its own turn, so a selection ballooned and skewed the moment
+     * the finger came off the grip.
+     */
     fun refreshBox() {
-        val angle = box?.angle ?: 0.0
-        val bounds = boundsOf(items)
-        box = if (bounds == null) null else Obb.fromAabb(bounds).copy(angle = angle)
+        box = boundsOf(items)?.let { Obb.fromAabb(it) }
     }
 
     /** True when [p] is inside the selection, so a press there grabs it rather than starting a band. */
@@ -75,10 +84,17 @@ class CanvasSelection(private val doc: InfiniteDocument) {
 
     // --- transforms ---
 
-    /** Capture the state a drag will be measured against. Call once, at pointer down. */
-    fun beginTransform() {
+    /**
+     * Capture the state a drag will be measured against. Call once, at pointer down. [grabAt] is
+     * where the finger actually landed, which a rotation needs: it turns by the angle swept from
+     * there, so a press a few pixels off the grip's centre no longer snaps the selection.
+     */
+    fun beginTransform(grabAt: Pt? = null) {
         startSnapshots = items.map { it.snapshotGeometry() }
         startBox = box
+        val centre = box?.center
+        startGrabAngle = if (grabAt == null || centre == null) null
+        else kotlin.math.atan2(grabAt.y - centre.y, grabAt.x - centre.x)
     }
 
     /**
@@ -118,13 +134,22 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         applyLive(result.transform)
     }
 
-    /** Turn the selection about its own centre so its local up points at [pointer]. */
+    /**
+     * Turn the selection about its own centre by the angle the pointer has swept since the grab.
+     *
+     * Swept, not absolute: pointing the box's local up straight at the pointer means a press that
+     * lands anywhere but the grip's exact centre jerks the selection round before the finger has
+     * moved, and the grip is a 22 device pixel target 34 pixels out from the box.
+     */
     fun rotateLive(pointer: Pt) {
         val from = startBox ?: return
         val centre = from.center
-        val angle = kotlin.math.atan2(pointer.y - centre.y, pointer.x - centre.x) + Math.PI / 2.0
-        box = from.copy(angle = angle)
-        applyLive(Affine.rotateAbout(centre, angle - from.angle))
+        // Without a recorded grab, fall back to the grip's own direction, which is the box's local
+        // up: that reduces to pointing up at the pointer.
+        val grab = startGrabAngle ?: (from.angle - Math.PI / 2.0)
+        val swept = kotlin.math.atan2(pointer.y - centre.y, pointer.x - centre.x) - grab
+        box = from.copy(angle = from.angle + swept)
+        applyLive(Affine.rotateAbout(centre, swept))
     }
 
     /**

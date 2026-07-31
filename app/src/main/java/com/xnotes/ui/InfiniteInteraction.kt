@@ -486,7 +486,7 @@ class InfiniteInteraction(
             val tolerance = HANDLE_TOUCH_PX / viewport.zoom
             val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
             if (grip != null && at.distanceTo(grip) <= tolerance) {
-                sel.beginTransform()
+                sel.beginTransform(at)
                 mode = CanvasPointerMode.ROTATE
                 return
             }
@@ -603,9 +603,15 @@ class InfiniteInteraction(
 
     private fun endTransform() {
         val sel = selection() ?: return
+        val wasResize = grabHandle != null
         grabHandle = null
         onCommitSelection(sel.buildCommand(movedOnly = false))
-        sel.refreshBox()
+        // A resize of an upright box snaps onto the real bounds, which is what keeps the chrome
+        // honest around a text box that refused to shrink past its own text. A turned box cannot be
+        // re-derived at all: item bounds are axis aligned, so measuring one and then tilting the
+        // result grew the box by its own rotation and made every release jump.
+        val upright = sel.box?.let { kotlin.math.abs(it.angle) < 1e-9 } == true
+        if (wasResize && upright) sel.refreshBox()
         onSelectionChanged()
         requestRender()
     }
