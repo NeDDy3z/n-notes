@@ -523,8 +523,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                 frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
                 frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
                 frame.zoom / scale,
-                frame.widthPx.toDouble() / scale,
-                frame.heightPx.toDouble() / scale,
+                glowTarget.bufferWidth.toDouble() * scale,
+                glowTarget.bufferHeight.toDouble() * scale,
             )
             from.bindForDraw(contextGen)
             from.bindAttributes(program)
@@ -538,16 +538,19 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             shader.blur(glowTarget.texture(1), radiusPx, false, glowTarget.bufferWidth, glowTarget.bufferHeight)
 
             if (intoLayer) {
+                // Buffer to buffer, so the mapping is one to one; only the final hop to the screen
+                // crops away the sliver the rounded-up buffer added.
                 glowTarget.bind(glowTarget.layerIndex)
                 scissorInBuffer(patch, scale)
+                shader.compositeOver(glowTarget.texture(0), alpha)
             } else {
                 glowTarget.unbind(frame.widthPx, frame.heightPx)
                 GLES30.glScissor(patch[0], frame.heightPx - patch[1] - patch[3], patch[2], patch[3])
+                shader.compositeOver(
+                    glowTarget.texture(0), alpha,
+                    glowTarget.usedFractionX(frame.widthPx), glowTarget.usedFractionY(frame.heightPx),
+                )
             }
-            shader.compositeOver(
-                glowTarget.texture(0), alpha,
-                glowTarget.usedFractionX(frame.widthPx), glowTarget.usedFractionY(frame.heightPx),
-            )
             GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
             lastDrawCalls += 4
         }

@@ -46,7 +46,20 @@ class GlowShader(contextGen: Int) {
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
     }
 
-    /** Draw [texture] over the picture at [alpha], which is the halo's own brightness. */
+    /**
+     * Draw [texture] over whatever is bound, at [alpha], with premultiplied alpha.
+     *
+     * Premultiplied, not straight, and that is load bearing. A halo now passes through an
+     * intermediate layer on its way to the screen, and straight alpha cannot survive two
+     * compositing steps: the colour is scaled by the alpha at each one, so a halo at 0.42 arrives
+     * at roughly 0.07 and reads as absent. Premultiplied composites the same however many hops it
+     * takes. It also fixes what blurring straight alpha does to the edges, where averaging against
+     * transparent black dragged the halo toward black rather than toward nothing.
+     *
+     * The source is already premultiplied by construction: the halo geometry goes into the buffer
+     * at full alpha, so a texel is the colour inside the ribbon and zero outside, and blurring that
+     * gives colour times coverage alongside coverage, which is exactly premultiplied.
+     */
     fun compositeOver(texture: Int, alpha: Double, uvScaleX: Float = 1f, uvScaleY: Float = 1f) {
         composite.use()
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
@@ -57,7 +70,7 @@ class GlowShader(contextGen: Int) {
         // cannot stretch the halo away from the stroke it belongs to.
         composite.set("uUvScale", uvScaleX, uvScaleY)
         GLES30.glEnable(GLES30.GL_BLEND)
-        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
     }
 
@@ -111,8 +124,9 @@ class GlowShader(contextGen: Int) {
             in vec2 vUv;
             out vec4 fragColor;
             void main() {
-                vec4 c = texture(uTexture, vUv * uUvScale);
-                fragColor = vec4(c.rgb, c.a * uAlpha);
+                // Already premultiplied, so scaling the whole texel by the halo's brightness is
+                // the whole of the operation; the blend function does the rest.
+                fragColor = texture(uTexture, vUv * uUvScale) * uAlpha;
             }
         """.trimIndent()
     }

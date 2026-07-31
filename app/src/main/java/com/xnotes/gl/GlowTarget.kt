@@ -92,10 +92,10 @@ class GlowTarget {
      * halo by that fraction and slide it off the stroke.
      */
     fun usedFractionX(viewportW: Int): Float =
-        if (width <= 0) 1f else (viewportW.toFloat() / DOWNSCALE / width)
+        if (width <= 0) 1f else (viewportW.toFloat() / (width * DOWNSCALE))
 
     fun usedFractionY(viewportH: Int): Float =
-        if (height <= 0) 1f else (viewportH.toFloat() / DOWNSCALE / height)
+        if (height <= 0) 1f else (viewportH.toFloat() / (height * DOWNSCALE))
 
     /** Go back to drawing on screen at [viewportW] by [viewportH]. */
     fun unbind(viewportW: Int, viewportH: Int) {
