@@ -287,11 +287,16 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
     /** Re-anchor the floating menu over the settled selection, or take it away. */
     private fun refreshSelectionMenu() {
         val box = selection.box
-        selectionMenuRect = if (box == null || interaction.mode != CanvasPointerMode.IDLE) {
-            null
-        } else {
-            Rect.bounding(box.corners().map { viewport.contentToViewport(it) })
+        if (box == null || interaction.mode != CanvasPointerMode.IDLE) {
+            selectionMenuRect = null
+            return
         }
+        val bounds = Rect.bounding(box.corners().map { viewport.contentToViewport(it) })
+        // Lift the anchor's top clear of the rotate grip, which is drawn its arm plus its own
+        // radius above the box. Without this the bar lands on the grip and buries it. The bottom
+        // stays put, so the fallback placement below the selection is unchanged.
+        val clearance = OverlayTessellator.GRIP_ARM_PX + OverlayTessellator.GRIP_PX / 2.0
+        selectionMenuRect = Rect(bounds.x, bounds.y - clearance, bounds.w, bounds.h + clearance)
     }
 
     override fun dismissSelectionMenu() {
