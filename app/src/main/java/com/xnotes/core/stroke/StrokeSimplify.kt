@@ -10,10 +10,14 @@ import kotlin.math.hypot
  * at load for files written before it shipped (see DocumentCodec).
  *
  * The core is Ramer–Douglas–Peucker over the sample polyline with the rendered half-width as an
- * extra channel, plus three guards for the renderer's *index-based* EMA smoothing (which would
- * otherwise re-smooth a decimated stroke differently — rounder corners, shorter tails):
- * [MAX_GAP] bounds the arc between kept samples, sharp corners keep their original neighborhood
- * density, and the first/last [END_KEEP] samples survive verbatim (they carry the end-width hold).
+ * extra channel, plus three guards that bound what the reduction can move: [MAX_GAP] caps the arc
+ * between kept samples, sharp corners keep their original neighborhood density, and the first/last
+ * [END_KEEP] samples survive verbatim (they carry the end-width hold).
+ *
+ * The guards used to carry the whole weight, because the ribbon's low-pass was indexed by sample
+ * and re-smoothed a thinned stroke into a visibly different curve — rounder corners, shorter tails.
+ * It now smooths per unit of travel ([StrokeEngine.emaByArc]), so the curve no longer depends on
+ * how many samples describe it, and the guards are left holding only the chord error itself.
  */
 object StrokeSimplify {
 
@@ -23,8 +27,8 @@ object StrokeSimplify {
     /** Longest arc (content px) the reducer may open between kept samples. */
     const val MAX_GAP = 3.0
 
-    /** Original samples within this arc of a sharp corner are kept, so the EMA smoothing rounds
-     *  the corner exactly as it did at full density. */
+    /** Original samples within this arc of a sharp corner are kept, so the chord the reducer would
+     *  otherwise draw across it cannot square the turn off. */
     const val CORNER_KEEP_ARC = 2.0
 
     /** A kept vertex whose chords bend past this cosine (30°) is a sharp corner. Gentle curves
@@ -32,8 +36,7 @@ object StrokeSimplify {
     const val CORNER_COS = 0.866
 
     /** Samples kept verbatim at each end: covers [StrokeEngine.CAP_HOLD_SAMPLES] (the end-width
-     *  hold reads the settled pressure this many samples in) and the dense pen-up tail whose
-     *  spacing keeps the EMA lag at the tip invisible. */
+     *  hold reads the settled pressure this many samples in) and the dense pen-up tail. */
     const val END_KEEP = StrokeEngine.CAP_HOLD_SAMPLES + 1
 
     /** Strokes at/below this arc (content px) are never reduced: the calligraphy dot rule

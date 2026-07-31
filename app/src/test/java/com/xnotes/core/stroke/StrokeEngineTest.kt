@@ -4,6 +4,9 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
 
 /**
  * Conformance vectors from spec 03 §6. `width` below means `2 × half_width`. Geometry is stored
@@ -32,6 +35,49 @@ class StrokeEngineTest {
 
     @Test fun emaEmpty() {
         assertEquals(emptyList<Double>(), StrokeEngine.ema(emptyList()))
+    }
+
+    // --- Smoothing is measured in travel, not in samples ---
+    @Test fun smoothedCurveSurvivesPenUpSampleReduction() {
+        // A hand-sized curve at the spacing a stylus actually reports. What gets committed is the
+        // reduced stroke, so its smoothed centreline has to land on the drawn one's at every
+        // sample they share. Under a per-sample low-pass it would not: the lag there is one
+        // spacing, so thinning the samples pulls the curve in and the ink visibly changes at
+        // pen-up. Here the lag is a distance, and the reduction cannot move it.
+        val drawnSamples = ArrayList<Sample>()
+        var arc = 0.0
+        while (arc <= 120.0) {
+            drawnSamples.add(Sample(40.0 * sin(arc / 40.0), 40.0 * (1 - cos(arc / 40.0)), 1.0, arc * 5.0))
+            arc += 1.2
+        }
+        val drawn = StrokeEngine.build(drawnSamples, 3.0, false, 1.0, 0.0)
+        val kept = StrokeSimplify.simplify(drawnSamples, drawn.halfWidths, StrokeSimplify.LEGACY_EPS)
+        assertTrue("the reduction has to actually drop samples", kept.size < drawnSamples.size)
+        val committed = StrokeEngine.build(kept, 3.0, false, 1.0, 0.0)
+
+        var worst = 0.0
+        var j = 0
+        for (i in drawnSamples.indices) {
+            if (j >= kept.size || drawnSamples[i] !== kept[j]) continue
+            val dx = drawn.cx(i) - committed.cx(j)
+            val dy = drawn.cy(i) - committed.cy(j)
+            worst = maxOf(worst, hypot(dx, dy))
+            j++
+        }
+        assertEquals("every kept sample should have been matched", kept.size, j)
+        // Measured at 0.008 px; the bound leaves room for tuning without letting a regression past.
+        assertTrue("centreline moved $worst content px under reduction", worst < 0.05)
+    }
+
+    @Test fun smoothingLagIsADistanceNotASampleCount() {
+        // The same straight ramp at two sample densities settles to the same trailing distance.
+        val dense = (0..60).map { Sample(it * 1.0, 0.0, 1.0) }
+        val sparse = (0..20).map { Sample(it * 3.0, 0.0, 1.0) }
+        val gd = StrokeEngine.build(dense, 3.0, false, 1.0, 0.0)
+        val gs = StrokeEngine.build(sparse, 3.0, false, 1.0, 0.0)
+        // Both end at x = 60; the smoothed tip trails it by SMOOTH_LEN either way.
+        assertEquals(60.0 - StrokeEngine.SMOOTH_LEN, gd.cx(gd.pointCount - 1), 1e-6)
+        assertEquals(60.0 - StrokeEngine.SMOOTH_LEN, gs.cx(gs.pointCount - 1), 1e-6)
     }
 
     // --- Width formula ---

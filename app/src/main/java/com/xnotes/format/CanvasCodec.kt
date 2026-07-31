@@ -189,6 +189,9 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         }
         j.endArray()
         if (withTime) j.name("speed_scale").value(s.speedScale)
+        // The zoom the stroke was drawn at, as the scale on the ink low-pass lengths, so it
+        // re-smooths on load exactly as it did under the pen.
+        if (s.smoothScale != 1.0) j.name("smooth_scale").value(s.smoothScale)
         // Straight-line strokes must reload un-smoothed, else the EMA pulls their far end inward.
         if (s.straight) j.name("straight").value(true)
         j.endObject()
@@ -415,6 +418,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         var config: ConfigScratch? = null
         var samples: MutableList<Sample>? = null
         var speedScale = 1.0
+        var smoothScale = 1.0
         var straight = false
         var asset: String? = null
         var rect: Rect? = null
@@ -463,6 +467,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
                 "config" -> s.config = parseConfig(p)
                 "samples" -> s.samples = parseSamples(p)
                 "speed_scale" -> s.speedScale = doubleOr(p, 1.0)
+                "smooth_scale" -> s.smoothScale = doubleOr(p, 1.0)
                 "straight" -> s.straight = boolOr(p, false)
                 "asset" -> s.asset = stringOr(p, "")
                 "rect" -> s.rect = rectOrNull(p)
@@ -517,7 +522,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             dashGap = c?.dashGap ?: def.dashGap,
             highlighterAlpha = c?.highlighterAlpha ?: def.highlighterAlpha,
         )
-        return Stroke(tool, config, s.samples ?: mutableListOf(), s.speedScale, s.straight)
+        return Stroke(tool, config, s.samples ?: mutableListOf(), s.speedScale, s.straight, s.smoothScale)
     }
 
     private fun buildShape(s: ItemScratch): ShapeItem {

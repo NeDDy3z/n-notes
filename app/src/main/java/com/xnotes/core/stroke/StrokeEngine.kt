@@ -12,11 +12,16 @@ import kotlin.math.min
  * All math runs in doubles; only the packed [StrokeGeometry] output is floats.
  */
 object StrokeEngine {
-    /** EMA low-pass smoothing factor (1.0 = passthrough, ->0 = heavy lag). */
+    /** EMA low-pass smoothing factor (1.0 = passthrough, ->0 = heavy lag). Per *sample*: the
+     *  ribbon smooths per unit of travel instead (see [emaByArc] and [SMOOTH_LEN]), and this is
+     *  what that is tuned to reproduce at [REFERENCE_SPACING]. */
     const val ALPHA = 0.5
 
     /** Below this difference length a sample is degenerate; reuse last tangent. */
     const val MIN_TANGENT_LEN = 1e-6
+
+    /** Below this travel a step carries no arc for [emaByArc] to integrate over. */
+    const val MIN_STEP = 1e-9
 
     /** Floor on the calligraphic direction term so width stays positive. */
     const val MIN_DIRECTION = 0.1
@@ -34,6 +39,19 @@ object StrokeEngine {
      *  its width the same spirit via a windowed velocity (see [speedFactors]); only the width
      *  magnitude is smoothed, not the ribbon's orientation. */
     const val DIR_ALPHA = 0.25
+
+    /** Sample spacing (content px) the smoothing lengths below are tuned at: about what a stylus
+     *  reports while writing at normal speed at 100% zoom, through the capture gate. */
+    const val REFERENCE_SPACING = 1.5
+
+    /** Low-pass length (content px) for position and pressure: the distance [emaByArc] leaves the
+     *  smoothed centreline trailing the raw path by, whatever the spacing. Set to the lag the
+     *  per-sample [ALPHA] produced at [REFERENCE_SPACING], `d · (1 - alpha) / alpha`, so ink drawn
+     *  at 100% zoom looks as it always has. */
+    val SMOOTH_LEN = REFERENCE_SPACING * (1.0 - ALPHA) / ALPHA
+
+    /** [SMOOTH_LEN]'s counterpart for the calligraphy direction channel, from [DIR_ALPHA]. */
+    val DIR_SMOOTH_LEN = REFERENCE_SPACING * (1.0 - DIR_ALPHA) / DIR_ALPHA
 
     /** Calligraphy pen: the broad/thick face of the nib is only allowed in once the stroke has held
      *  that heading for this many content px of travel (see [confirmThickening] in [build]). Long
@@ -118,6 +136,41 @@ object StrokeEngine {
     /** [ema] over a boxed list — the spec-vector form; [build] runs on the array one. */
     fun ema(values: List<Double>, alpha: Double = ALPHA): List<Double> =
         ema(values.toDoubleArray(), alpha).asList()
+
+    /**
+     * The same one-pole low-pass as [ema], measured in travel rather than in samples: the
+     * continuous filter `dy/ds = (x(s) - y) / lambda` over arc length `s`, integrated exactly
+     * across each step with the input read as a straight line between the two samples. [steps]
+     * holds each sample's distance from the one before it; `steps[0]` is unused.
+     *
+     * This is what lets a committed stroke match the wet one. Pen-up sample reduction
+     * ([StrokeSimplify]) changes the spacing, and a fixed per-sample factor turns that into a
+     * different curve: its lag is one sample spacing, so a thinned stroke trails less and cuts its
+     * corners deeper than the one that was drawn. Here the lag is [lambda] whatever the spacing,
+     * so dropping a sample leaves the curve where it was. It also makes the ink independent of the
+     * pen's report rate, and of how fast the hand was moving when the samples were spaced out.
+     *
+     * Reading the input as a line across the step rather than as a constant is what buys the last
+     * of it. A constant would hold each sample over the whole step it ends, which biases the lag by
+     * half a spacing, and half a spacing is exactly the quantity the reduction changes.
+     */
+    fun emaByArc(values: DoubleArray, steps: DoubleArray, lambda: Double): DoubleArray {
+        if (values.isEmpty()) return values
+        if (lambda <= 0.0) return values.copyOf() // no smoothing length: pass the samples through
+        val out = DoubleArray(values.size)
+        out[0] = values[0]
+        for (i in 1 until values.size) {
+            val d = steps[i]
+            if (d <= MIN_STEP) {
+                out[i] = out[i - 1] // the pen did not move: no arc to integrate over
+                continue
+            }
+            val decay = exp(-d / lambda)
+            val slope = (values[i] - values[i - 1]) * lambda * (1.0 - decay) / d
+            out[i] = decay * out[i - 1] + values[i] - decay * values[i - 1] - slope
+        }
+        return out
+    }
 
     /**
      * Half-width at a point (spec 03 step 5), given smoothed [pressure] and the
@@ -296,6 +349,7 @@ object StrokeEngine {
         smooth: Boolean = true,
         holdEnds: Boolean = false,
         finished: Boolean = true,
+        smoothScale: Double = 1.0,
     ): StrokeGeometry {
         val n = samples.size
         if (n == 0) return StrokeGeometry.EMPTY
@@ -310,15 +364,21 @@ object StrokeEngine {
             rawP[i] = s.pressure
         }
 
+        // Travel between consecutive samples: what the low-pass measures itself against, so the
+        // smoothing is set by the path and not by how many samples describe it.
+        val steps = DoubleArray(n)
+        for (i in 1 until n) steps[i] = hypot(rawX[i] - rawX[i - 1], rawY[i] - rawY[i - 1])
+        val smoothLen = SMOOTH_LEN * max(smoothScale, 0.0)
+
         // 2. Smooth each channel independently. Straight-line strokes skip the position low-pass
         //    so the ribbon spans the raw samples exactly (EMA would pull a 2-point line's far end
         //    toward the midpoint, leaving it short of the pointer).
-        val sx = if (smooth) ema(rawX) else rawX
-        val sy = if (smooth) ema(rawY) else rawY
+        val sx = if (smooth) emaByArc(rawX, steps, smoothLen) else rawX
+        val sy = if (smooth) emaByArc(rawY, steps, smoothLen) else rawY
         // The pens that hold their ends (pen, highlighter) land and lift light, so the swept end
         // disc would shrink to a thin tip; hold the body width out to each end so it meets the line
         // at full width. The other ribbon pens take their ends at the raw pressure.
-        val sp = ema(rawP)
+        val sp = emaByArc(rawP, steps, smoothLen)
         if (holdEnds && pressureEnabled) holdEndPressure(sp)
 
         fun hw(i: Int, ty: Double) = halfWidth(baseWidth, pressureEnabled, m, ds, sp[i], ty)
@@ -377,7 +437,16 @@ object StrokeEngine {
             var arc = 0.0
             for (i in 1 until n) arc += hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
             if (finished && arc <= DOT_MAX_LEN) DoubleArray(n) { DOT_DIR_Y }
-            else ema(confirmThickening(ty, sx, sy, DIR_CONFIRM_LEN), DIR_ALPHA)
+            else {
+                // Along the smoothed path, which is the one confirmThickening measures its window on.
+                val dirSteps = DoubleArray(n)
+                for (i in 1 until n) dirSteps[i] = hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
+                emaByArc(
+                    confirmThickening(ty, sx, sy, DIR_CONFIRM_LEN),
+                    dirSteps,
+                    DIR_SMOOTH_LEN * max(smoothScale, 0.0),
+                )
+            }
         } else null
 
         // 5–8. Half-widths, normals, and the two ribbon edges, packed straight into the output:

@@ -32,6 +32,11 @@ class Stroke(
      *  exactly from the first sample to the last — the EMA low-pass otherwise pulls a 2-point
      *  stroke's far end to the midpoint, lagging it behind the stylus. */
     val straight: Boolean = false,
+    /** Scale on the ink low-pass lengths ([StrokeEngine.SMOOTH_LEN]), captured at pen-down as
+     *  1 ÷ zoom and capped at 1. The smoothing is then a fixed size on screen rather than on the
+     *  page, so writing small at high zoom follows the nib as closely as writing at 100% does.
+     *  1.0 = drawn at 100% zoom, and the default for anything built without a pen. */
+    val smoothScale: Double = 1.0,
 ) : CanvasItem {
 
     override val kind = KIND
@@ -75,6 +80,7 @@ class Stroke(
             smooth = !straight,
             holdEnds = tool == Tool.PEN || tool == Tool.HIGHLIGHTER,
             finished = finished,
+            smoothScale = smoothScale,
         ).also { cachedGeometry = it }
     }
 
@@ -402,7 +408,7 @@ class Stroke(
 
     /** A new stroke from samples `[from, to)`, copied so it shares no backing storage. */
     private fun fragment(from: Int, to: Int): Stroke =
-        Stroke(tool, config, samples.subList(from, to).toMutableList(), speedScale, straight)
+        Stroke(tool, config, samples.subList(from, to).toMutableList(), speedScale, straight, smoothScale)
 
     companion object {
         const val KIND = "stroke"

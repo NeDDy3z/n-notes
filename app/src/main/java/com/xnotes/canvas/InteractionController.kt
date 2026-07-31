@@ -789,7 +789,10 @@ class InteractionController(
             )
         }
         val straight = drawTool == Tool.HIGHLIGHTER && cfg.straightLine
-        val stroke = Stroke(drawTool, cfg, speedScale = speedScale, straight = straight)
+        val stroke = Stroke(
+            drawTool, cfg, speedScale = speedScale, straight = straight,
+            smoothScale = smoothScaleFor(state.zoom),
+        )
         // Live until pen-up, so lift-time rules (the calligraphy dot swell) can't fire mid-draw.
         stroke.finished = false
         strokeStartTimeMs = timeMs
@@ -2879,6 +2882,14 @@ class InteractionController(
 
         /** Pen-up reduction tolerance, viewport px at the draw zoom (see [simplifyForCommit]). */
         const val SIMPLIFY_EPS = 0.2
+
+        /** Scale on the ink low-pass lengths for a stroke drawn at [zoom], captured at pen-down
+         *  and carried on the stroke. Screen-space like the capture gate and the pen-up tolerance:
+         *  the smoothing hides the digitizer's jitter, which is a fixed size on screen, so writing
+         *  small at high zoom must not be smoothed as if it were written large. Capped at 1 so
+         *  zooming out cannot smear content detail the page will keep. */
+        fun smoothScaleFor(zoom: Double): Double =
+            if (zoom.isFinite() && zoom > 0.0) (1.0 / zoom).coerceAtMost(1.0) else 1.0
 
         const val MOVE_EPS = 0.01
 
