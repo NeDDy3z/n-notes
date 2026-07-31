@@ -60,7 +60,14 @@ class GlowShader(contextGen: Int) {
      * at full alpha, so a texel is the colour inside the ribbon and zero outside, and blurring that
      * gives colour times coverage alongside coverage, which is exactly premultiplied.
      */
-    fun compositeOver(texture: Int, alpha: Double, uvScaleX: Float = 1f, uvScaleY: Float = 1f) {
+    fun compositeOver(
+        texture: Int,
+        alpha: Double,
+        uvScaleX: Float = 1f,
+        uvScaleY: Float = 1f,
+        uvOffsetX: Float = 0f,
+        uvOffsetY: Float = 0f,
+    ) {
         composite.use()
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
@@ -69,6 +76,9 @@ class GlowShader(contextGen: Int) {
         // Sample only the part of the buffer the viewport occupied, so rounding the buffer up
         // cannot stretch the halo away from the stroke it belongs to.
         composite.set("uUvScale", uvScaleX, uvScaleY)
+        // Slide the whole blurred picture, which is how a dragged selection's halo follows its ink
+        // without being blurred again: a blur commutes with a translation.
+        composite.set("uUvOffset", uvOffsetX, uvOffsetY)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
@@ -121,12 +131,18 @@ class GlowShader(contextGen: Int) {
             uniform sampler2D uTexture;
             uniform float uAlpha;
             uniform vec2 uUvScale;
+            uniform vec2 uUvOffset;
             in vec2 vUv;
             out vec4 fragColor;
             void main() {
+                vec2 uv = vUv * uUvScale + uUvOffset;
+                // A slid buffer runs off its own edge, and clamping there would smear the last row
+                // of texels across the gap. Nothing outside the buffer was ever drawn, so it reads
+                // as nothing.
+                vec2 within = step(vec2(0.0), uv) * step(uv, vec2(1.0));
                 // Already premultiplied, so scaling the whole texel by the halo's brightness is
                 // the whole of the operation; the blend function does the rest.
-                fragColor = texture(uTexture, vUv * uUvScale) * uAlpha;
+                fragColor = texture(uTexture, uv) * uAlpha * within.x * within.y;
             }
         """.trimIndent()
     }

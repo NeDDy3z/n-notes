@@ -15,12 +15,15 @@ import android.opengl.GLES30
 class GlowTarget {
 
     /**
-     * Three buffers, not two: the ping and pong a blur needs, plus a layer the finished halos of
-     * everything already committed accumulate into. That layer is what stops the cost of neon
-     * scaling with how much of it is on screen.
+     * Four buffers: the ping and pong a blur needs, a layer the finished halos of everything
+     * already committed accumulate into, and a second layer for the halos of a selection being
+     * dragged. Those two are what stop the cost of neon scaling with how much of it is on screen.
+     *
+     * The dragged selection needs its own because a drag moves it and leaves the rest alone; a blur
+     * is translation invariant, so its layer is built once and then composited at an offset.
      */
-    private val framebuffers = IntArray(3)
-    private val textures = IntArray(3)
+    private val framebuffers = IntArray(4)
+    private val textures = IntArray(4)
     private var width = 0
     private var height = 0
     private var contextGen = -1
@@ -42,6 +45,9 @@ class GlowTarget {
 
     /** The buffer finished halos accumulate into, reused until the view or the content moves. */
     val layerIndex: Int get() = 2
+
+    /** The buffer a dragged selection's halos accumulate into, composited at the drag's offset. */
+    val liftLayerIndex: Int get() = 3
 
     /** Size the buffers for a viewport, rebuilding only when the size actually changed. */
     fun resize(viewportW: Int, viewportH: Int, gen: Int) {

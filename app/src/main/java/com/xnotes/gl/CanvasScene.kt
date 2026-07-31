@@ -106,6 +106,11 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     /** What the cached halo layer was built for; a mismatch means rebuild it. */
     private var haloKey: String? = null
 
+    /** The same for the dragged selection's halos, plus the drag offset they were built at. */
+    private var liftHaloKey: String? = null
+    private var liftHaloAtX = 0.0
+    private var liftHaloAtY = 0.0
+
     private var ink: InkShader? = null
     private var cover: CoverShader? = null
     private var imageShader: ImageShader? = null
@@ -366,6 +371,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private fun drawLifted(program: InkShader, frame: FrameState, camChunkX: Double, camChunkY: Double) {
         if (lifted.isEmpty()) return
         val view = viewRect(frame)
+        drawLiftedHalos(program, frame, camChunkX, camChunkY)
         applyView(program, frame, camChunkX, camChunkY, liftDx, liftDy)
         if (!store.bindForDraw(contextGen)) return
         store.bindAttributes(program)
@@ -395,19 +401,70 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                         store.bindForDraw(contextGen)
                         store.bindAttributes(program)
                     }
-                    InkPass.GLOW -> {
-                        drawGlow(
-                            program, store, record, part, frame, camChunkX, camChunkY,
-                            offsetX = liftDx, offsetY = liftDy,
-                        )
-                        applyView(program, frame, camChunkX, camChunkY, liftDx, liftDy)
-                        store.bindForDraw(contextGen)
-                        store.bindAttributes(program)
-                    }
+                    // The halo is already down from the layer above; this is the lit body and core.
+                    InkPass.GLOW -> drawGlowBody(program, store, part)
                 }
             }
         }
         rebind(program, frame, camChunkX, camChunkY)
+    }
+
+    /**
+     * The dragged selection's halos, blurred once and then slid to follow the finger.
+     *
+     * A blur commutes with a translation, so a drag never needs a second one: the layer is built
+     * with the selection where it was when the drag began, and every frame after that is one
+     * textured quad at an offset. Re-blurring per frame is what made dragging neon crawl, the same
+     * way it once made inking with it crawl.
+     *
+     * It is rebuilt when the drag has travelled far enough that content could have entered from off
+     * screen, which a screen-sized buffer cannot have captured.
+     */
+    private fun drawLiftedHalos(
+        program: InkShader,
+        frame: FrameState,
+        camChunkX: Double,
+        camChunkY: Double,
+    ) {
+        val shader = glowShader ?: return
+        if (!glowTarget.ready) return
+        val glowing = lifted.mapNotNull { records[it] }
+            .filter { record -> record.parts.any { it.pass == InkPass.GLOW } }
+        if (glowing.isEmpty()) {
+            liftHaloKey = null
+            return
+        }
+        val key = "$revision|${frame.zoom}|${frame.scrollX}|${frame.scrollY}|${frame.widthPx}x${frame.heightPx}"
+        val driftPx = kotlin.math.hypot(liftDx - liftHaloAtX, liftDy - liftHaloAtY) * frame.zoom
+        if (key != liftHaloKey || driftPx > LIFT_HALO_REBUILD_PX) {
+            liftHaloAtX = liftDx
+            liftHaloAtY = liftDy
+            glowTarget.bind(glowTarget.liftLayerIndex)
+            GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
+            GLES30.glClearColor(0f, 0f, 0f, 0f)
+            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+            for (record in glowing) {
+                for (part in record.parts) {
+                    if (part.pass != InkPass.GLOW) continue
+                    drawGlow(
+                        program, store, record, part, frame, camChunkX, camChunkY,
+                        targetLayer = glowTarget.liftLayerIndex,
+                        offsetX = liftHaloAtX, offsetY = liftHaloAtY,
+                    )
+                }
+            }
+            glowTarget.unbind(frame.widthPx, frame.heightPx)
+            liftHaloKey = key
+        }
+        // What is left of the drag since the layer was built, as a slide of the finished picture.
+        // Device y runs down and the buffer's runs up, so the vertical term changes sign.
+        val slideX = ((liftDx - liftHaloAtX) * frame.zoom / frame.widthPx).toFloat()
+        val slideY = ((liftDy - liftHaloAtY) * frame.zoom / frame.heightPx).toFloat()
+        shader.compositeOver(
+            glowTarget.texture(glowTarget.liftLayerIndex), 1.0,
+            uvOffsetX = -slideX, uvOffsetY = slideY,
+        )
+        lastDrawCalls++
     }
 
     private fun viewRect(frame: FrameState) = Rect(
@@ -540,7 +597,10 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         for (record in glowing) {
             for (part in record.parts) {
                 if (part.pass != InkPass.GLOW) continue
-                drawGlow(program, store, record, part, frame, camChunkX, camChunkY, intoLayer = true)
+                drawGlow(
+                    program, store, record, part, frame, camChunkX, camChunkY,
+                    targetLayer = glowTarget.layerIndex,
+                )
             }
         }
         glowTarget.unbind(frame.widthPx, frame.heightPx)
@@ -569,7 +629,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         frame: FrameState,
         camChunkX: Double,
         camChunkY: Double,
-        intoLayer: Boolean = false,
+        /** Glow buffer to accumulate into, or -1 to composite straight onto the screen. */
+        targetLayer: Int = -1,
         offsetX: Double = 0.0,
         offsetY: Double = 0.0,
     ) {
@@ -617,8 +678,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             shader.blur(glowTarget.texture(1), radiusPx, false, glowTarget.bufferWidth, glowTarget.bufferHeight)
 
             // The buffer is the screen, so every hop samples it one to one.
-            if (intoLayer) {
-                glowTarget.bind(glowTarget.layerIndex)
+            if (targetLayer >= 0) {
+                glowTarget.bind(targetLayer)
                 scissorInBuffer(patch, frame)
             } else {
                 glowTarget.unbind(frame.widthPx, frame.heightPx)
@@ -628,7 +689,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
             lastDrawCalls += 4
         }
-        if (intoLayer) return
+        if (targetLayer >= 0) return
 
         // The lit body and the white core, both from the very same triangles: the shader overrides
         // the colour and scales the stored spine offset, so neon costs one tessellation and one
@@ -818,13 +879,23 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     }
 
     private fun applyLift(edit: Edit.Lift) {
-        // The halo layer is keyed on the view and the content, neither of which a drag changes, so
-        // it has to be told that what is on screen moved.
-        if (lifted.isNotEmpty() || edit.items.isNotEmpty()) revision++
-        lifted.clear()
-        lifted.addAll(edit.items)
+        // Only which items are lifted can stale the shared halo layer, since a lifted item is left
+        // out of it. How far the drag has got cannot: that is drawn separately. Bumping the
+        // revision for the offset too rebuilt every committed halo on screen on every touch
+        // sample, which is the cost the layer exists to avoid.
+        if (!sameItems(lifted, edit.items)) {
+            revision++
+            lifted.clear()
+            lifted.addAll(edit.items)
+        }
         liftDx = edit.dx
         liftDy = edit.dy
+    }
+
+    private fun sameItems(a: List<CanvasItem>, b: List<CanvasItem>): Boolean {
+        if (a.size != b.size) return false
+        for (i in a.indices) if (a[i] !== b[i]) return false
+        return true
     }
 
     /** A stand-in record for the wet item, so the glow pass can read its bounds like any other. */
@@ -958,6 +1029,13 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
         /** Smallest a minimap marker is drawn, so one thin stroke is still visible. */
         private const val MINIMAP_DOT_PX = 1.5
+
+        /**
+         * Device pixels a drag may slide its halo layer before it is blurred again. The layer only
+         * holds what was on screen when it was built, so a long drag has to refresh it to pick up
+         * anything that has since come into view.
+         */
+        private const val LIFT_HALO_REBUILD_PX = 96.0
 
         /** Identity for the wet item's stand-in record; never filed or drawn as itself. */
         private val WET_KEY: CanvasItem = object : CanvasItem {
