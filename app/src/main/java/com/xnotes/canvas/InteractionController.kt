@@ -940,7 +940,10 @@ class InteractionController(
     private fun simplifyForCommit(stroke: Stroke) {
         if (stroke.straight) return
         val eps = (SIMPLIFY_EPS / state.zoom).coerceAtMost(SIMPLIFY_EPS)
-        val slim = StrokeSimplify.simplify(stroke.samples, stroke.geometry().halfWidths, eps)
+        val slim = StrokeSimplify.simplify(
+            stroke.samples, stroke.geometry().halfWidths, eps,
+            StrokeSimplify.dirArcFor(stroke.config.directionStrength),
+        )
         if (slim.size == stroke.samples.size) return
         stroke.samples.clear()
         stroke.samples.addAll(slim)

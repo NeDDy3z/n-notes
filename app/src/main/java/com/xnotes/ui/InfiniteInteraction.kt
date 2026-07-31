@@ -721,7 +721,10 @@ class InfiniteInteraction(
         if (stroke.straight) return
         val eps = (InteractionController.SIMPLIFY_EPS / viewport.zoom)
             .coerceAtMost(InteractionController.SIMPLIFY_EPS)
-        val slim = StrokeSimplify.simplify(stroke.samples, stroke.geometry().halfWidths, eps)
+        val slim = StrokeSimplify.simplify(
+            stroke.samples, stroke.geometry().halfWidths, eps,
+            StrokeSimplify.dirArcFor(stroke.config.directionStrength),
+        )
         if (slim.size == stroke.samples.size) return
         stroke.samples.clear()
         stroke.samples.addAll(slim)

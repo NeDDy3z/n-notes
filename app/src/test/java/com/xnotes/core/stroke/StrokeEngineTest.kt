@@ -4,6 +4,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -78,6 +79,36 @@ class StrokeEngineTest {
         // Both end at x = 60; the smoothed tip trails it by SMOOTH_LEN either way.
         assertEquals(60.0 - StrokeEngine.SMOOTH_LEN, gd.cx(gd.pointCount - 1), 1e-6)
         assertEquals(60.0 - StrokeEngine.SMOOTH_LEN, gs.cx(gs.pointCount - 1), 1e-6)
+    }
+
+    @Test fun calligraphyNibWidthSurvivesPenUpSampleReduction() {
+        // A nib stroke that runs thin, turns through the nib's edge, then runs broad: the shape the
+        // thick/thin decision is actually made on, sampled densely enough that the reduction can
+        // bite (the gap cap alone floors it at ordinary spacing). That decision is a window minimum,
+        // not a filter, so it does not care how far the reduction moves the curve, only whether the
+        // sample holding a window down is still there. Unguarded this same stroke drifts 0.59 px on
+        // a nib that only spans 1.7 to 4.3, which reads as the stroke changing weight at pen-up.
+        val ds = 0.6
+        val step = 0.3
+        val pts = (0..160).map { Sample(it * step, -it * step, 1.0) } +
+            (1..160).map { Sample(48.0 + it * step, -48.0 + it * step, 1.0) }
+        val drawn = StrokeEngine.build(pts, 6.0, false, 1.0, ds)
+        val kept = StrokeSimplify.simplify(
+            pts, drawn.halfWidths, StrokeSimplify.LEGACY_EPS, StrokeSimplify.dirArcFor(ds),
+        )
+        assertTrue("the reduction has to actually drop samples", kept.size < pts.size)
+        val committed = StrokeEngine.build(kept, 6.0, false, 1.0, ds)
+
+        var worst = 0.0
+        var j = 0
+        for (i in pts.indices) {
+            if (j >= kept.size || pts[i] !== kept[j]) continue
+            worst = maxOf(worst, abs(drawn.hw(i) - committed.hw(j)))
+            j++
+        }
+        assertEquals("every kept sample should have been matched", kept.size, j)
+        // Exact but for the packed-float geometry: what is left is a few ulps of the stored width.
+        assertEquals("nib half-width moved under reduction", 0.0, worst, 1e-5)
     }
 
     // --- Width formula ---

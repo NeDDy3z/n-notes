@@ -361,7 +361,10 @@ class DocumentCodec(
             for (page in doc.pages) {
                 for (item in page.items) {
                     if (item !is Stroke || item.straight) continue
-                    val slim = StrokeSimplify.simplify(item.samples, item.geometry().halfWidths, StrokeSimplify.LEGACY_EPS)
+                    val slim = StrokeSimplify.simplify(
+                        item.samples, item.geometry().halfWidths, StrokeSimplify.LEGACY_EPS,
+                        StrokeSimplify.dirArcFor(item.config.directionStrength),
+                    )
                     if (slim.size != item.samples.size) {
                         item.samples.clear()
                         item.samples.addAll(slim)
