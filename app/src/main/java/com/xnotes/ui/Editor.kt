@@ -121,7 +121,7 @@ private const val SIDECAR_DIR = ".xnote"
 private const val SIDECAR_FILE = "colors.json"
 
 @Stable
-class Editor(context: Context) {
+class Editor(context: Context) : ToolPopupHost {
 
     private val appContext = context.applicationContext
     private val settingsRepo = SettingsRepository(context)
@@ -281,6 +281,9 @@ class Editor(context: Context) {
         private set
     var canRedo by mutableStateOf(false)
         private set
+    /** Set when a canvas edit changed a persisted style, so the next pause writes it out. */
+    private var settingsDirty = false
+
     var activeColorIndex by mutableStateOf(0)
         private set
     var toolbarColors by mutableStateOf(InkPalette.presets)
@@ -388,6 +391,13 @@ class Editor(context: Context) {
             it.applyPalette(palette)
             // Both editors write inserted images into the same purged-on-launch temp dir.
             it.imageDir = imageDir
+            for (t in ToolDefaults.persistedTools) it.setToolConfig(t, settings.configFor(t))
+            it.armShapeConfig(settings.shapeConfig)
+            it.toolbarColors = toolbarColors
+            it.recentColors = recentColors
+            it.pickColor(activeColorIndex)
+            // A style tuned on the canvas is the same style, so it persists through this editor.
+            it.onToolStyleChanged = { settingsDirty = true }
         }
 
     /** The canvas's autosave binding, the sibling of [autosaveUri] for the paged note. */
@@ -1388,6 +1398,7 @@ class Editor(context: Context) {
         controller.shapeConfig = settings.shapeConfig
         for (t in ToolDefaults.persistedTools) controller.setToolConfig(t, settings.configFor(t))
         controller.inkColor = toolbarColors[activeColorIndex]
+        pushToolsToCanvas()
         applyPagePrefsToState(settings.prefs)
     }
 
@@ -1487,8 +1498,30 @@ class Editor(context: Context) {
         settingsRepo.save(settings)
     }
 
+    /**
+     * Hand the canvas the same persisted pen styles, shape style and ink the paged editor uses, so
+     * a pen tuned on one surface is that pen on the other rather than a second one that happens to
+     * look similar.
+     */
+    private fun pushToolsToCanvas() {
+        val canvas = infiniteOrNull ?: return
+        for (t in ToolDefaults.persistedTools) canvas.setToolConfig(t, settings.configFor(t))
+        canvas.armShapeConfig(settings.shapeConfig)
+        canvas.toolbarColors = toolbarColors
+        canvas.recentColors = recentColors
+        canvas.pickColor(activeColorIndex)
+    }
+
     /** Snapshot live state into settings and save (call on pause/stop). */
     fun persist() {
+        // A style tuned on the canvas is the same style, so whichever surface was last used wins.
+        val fromCanvas = infiniteOrNull
+        if (fromCanvas != null && canvasOpen) {
+            for (t in ToolDefaults.persistedTools) controller.setToolConfig(t, fromCanvas.toolConfig(t))
+            controller.shapeConfig = fromCanvas.shapeConfig
+            shapeConfig = fromCanvas.shapeConfig
+            activeColorIndex = fromCanvas.activeColorIndex
+        }
         val tools = ToolDefaults.persistedTools.associateWith { controller.configFor(it) }
         settings = settings.copy(
             tools = tools,
@@ -3132,16 +3165,21 @@ class Editor(context: Context) {
         controller.shapeConfig = shapeConfig
     }
 
-    fun updateShapeConfig(config: ShapeConfig) {
+    override fun updateShapeConfig(config: ShapeConfig) {
         shapeConfig = config
         controller.shapeConfig = config
     }
 
     /** The live config for a stroke tool (read by its config popup). */
-    fun toolConfig(t: Tool): com.xnotes.core.tools.ToolConfig = controller.configFor(t)
+    override fun toolConfig(tool: Tool): com.xnotes.core.tools.ToolConfig = controller.configFor(tool)
 
-    fun updateToolConfig(t: Tool, config: com.xnotes.core.tools.ToolConfig) {
-        controller.setToolConfig(t, config.copy(rgba = controller.inkColor))
+    override val hostShapeConfig: ShapeConfig get() = shapeConfig
+    override val hostToolbarColors: List<Rgba> get() = toolbarColors
+    override val hostActiveColorIndex: Int get() = activeColorIndex
+    override val hostRecentColors: List<Rgba> get() = recentColors
+
+    override fun updateToolConfig(tool: Tool, config: com.xnotes.core.tools.ToolConfig) {
+        controller.setToolConfig(tool, config.copy(rgba = controller.inkColor))
     }
 
     val recentColors: List<Rgba> get() = settings.recentColors

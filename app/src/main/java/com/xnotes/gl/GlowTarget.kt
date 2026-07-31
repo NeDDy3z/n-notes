@@ -38,8 +38,10 @@ class GlowTarget {
     /** Size the buffers for a viewport, rebuilding only when the size actually changed. */
     fun resize(viewportW: Int, viewportH: Int, gen: Int) {
         if (gen != contextGen) return
-        val w = (viewportW / DOWNSCALE).coerceAtLeast(1)
-        val h = (viewportH / DOWNSCALE).coerceAtLeast(1)
+        // Round up, so an odd viewport still has a whole buffer pixel for its last fraction. The
+        // extra sliver is never drawn into and never sampled; see [usedFraction].
+        val w = ((viewportW + DOWNSCALE - 1) / DOWNSCALE).coerceAtLeast(1)
+        val h = ((viewportH + DOWNSCALE - 1) / DOWNSCALE).coerceAtLeast(1)
         if (w == width && h == height && framebuffers[0] != 0) return
         release()
         width = w
@@ -77,6 +79,17 @@ class GlowTarget {
 
     val bufferWidth: Int get() = width
     val bufferHeight: Int get() = height
+
+    /**
+     * The fraction of the buffer the viewport actually occupies. Rounding the buffer up leaves a
+     * sliver on the right and bottom that was never drawn into, and sampling it would stretch the
+     * halo by that fraction and slide it off the stroke.
+     */
+    fun usedFractionX(viewportW: Int): Float =
+        if (width <= 0) 1f else (viewportW.toFloat() / DOWNSCALE / width)
+
+    fun usedFractionY(viewportH: Int): Float =
+        if (height <= 0) 1f else (viewportH.toFloat() / DOWNSCALE / height)
 
     /** Go back to drawing on screen at [viewportW] by [viewportH]. */
     fun unbind(viewportW: Int, viewportH: Int) {

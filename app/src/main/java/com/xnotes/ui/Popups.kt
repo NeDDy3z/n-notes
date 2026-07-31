@@ -67,7 +67,7 @@ import kotlin.math.roundToInt
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ToolConfigPopup(editor: Editor, tool: Tool, onDismiss: () -> Unit) {
+fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
     val base = remember { editor.toolConfig(tool) }
     var pressure by remember { mutableStateOf(base.pressureEnabled) }
     var sensitivity by remember { mutableStateOf(ToolConversions.minFactorToSensitivity(base.pressureMinFactor).toFloat()) }
@@ -126,8 +126,8 @@ fun ToolConfigPopup(editor: Editor, tool: Tool, onDismiss: () -> Unit) {
                     dismissOnPick = false,
                 ) { d, p ->
                     ColorPickerPopup(
-                        initial = colorOverride ?: editor.toolbarColors.getOrNull(editor.activeColorIndex),
-                        recents = editor.recentColors,
+                        initial = colorOverride ?: editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex),
+                        recents = editor.hostRecentColors,
                         onDismiss = d,
                         onPick = p,
                     )
@@ -546,7 +546,7 @@ private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: 
 
 /** Eraser configuration popup: a STROKE/AREA mode picker and a SIZE slider (the eraser radius). */
 @Composable
-fun EraserConfigPopup(editor: Editor, onDismiss: () -> Unit) {
+fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     val base = remember { editor.toolConfig(Tool.ERASER) }
     var area by remember { mutableStateOf(base.eraseMode == EraseMode.AREA) }
     var size by remember { mutableStateOf(base.baseWidth.toFloat()) }
@@ -583,7 +583,7 @@ fun EraserConfigPopup(editor: Editor, onDismiss: () -> Unit) {
 
 /** Select-tool configuration popup: just a SWITCH BACK toggle, mirroring the eraser's. */
 @Composable
-fun SelectConfigPopup(editor: Editor, onDismiss: () -> Unit) {
+fun SelectConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     val base = remember { editor.toolConfig(Tool.SELECT) }
     var switchBack by remember { mutableStateOf(base.switchBackAfterSelect) }
 
@@ -601,15 +601,15 @@ fun SelectConfigPopup(editor: Editor, onDismiss: () -> Unit) {
 
 /** Shape-tool configuration popup (spec 10 §3 / 04 §6): kind picker, WIDTH, FILL, DASHED, NEON. */
 @Composable
-fun ShapeConfigPopup(editor: Editor, onDismiss: () -> Unit) {
-    var kind by remember { mutableStateOf(editor.shapeConfig.shape) }
-    var width by remember { mutableStateOf(editor.shapeConfig.strokeWidth.toFloat()) }
-    var fill by remember { mutableStateOf(editor.shapeConfig.fill) }
-    var glow by remember { mutableStateOf(editor.shapeConfig.neon) }
-    var glowIntensity by remember { mutableStateOf(ToolConversions.neonStrengthToIntensity(editor.shapeConfig.neonStrength).toFloat()) }
-    var dashed by remember { mutableStateOf(editor.shapeConfig.dashed) }
-    var dashLen by remember { mutableStateOf(editor.shapeConfig.dashLength.toFloat()) }
-    var gapLen by remember { mutableStateOf(editor.shapeConfig.dashGap.toFloat()) }
+fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
+    var kind by remember { mutableStateOf(editor.hostShapeConfig.shape) }
+    var width by remember { mutableStateOf(editor.hostShapeConfig.strokeWidth.toFloat()) }
+    var fill by remember { mutableStateOf(editor.hostShapeConfig.fill) }
+    var glow by remember { mutableStateOf(editor.hostShapeConfig.neon) }
+    var glowIntensity by remember { mutableStateOf(ToolConversions.neonStrengthToIntensity(editor.hostShapeConfig.neonStrength).toFloat()) }
+    var dashed by remember { mutableStateOf(editor.hostShapeConfig.dashed) }
+    var dashLen by remember { mutableStateOf(editor.hostShapeConfig.dashLength.toFloat()) }
+    var gapLen by remember { mutableStateOf(editor.hostShapeConfig.dashGap.toFloat()) }
 
     fun emit() = editor.updateShapeConfig(
         ShapeConfig(
@@ -648,7 +648,7 @@ fun ShapeConfigPopup(editor: Editor, onDismiss: () -> Unit) {
 fun ColorSwitcherPopup(editor: Editor, index: Int, onDismiss: () -> Unit) {
     ColorPickerPopup(
         initial = editor.toolbarColors.getOrNull(index),
-        recents = editor.recentColors,
+        recents = editor.hostRecentColors,
         onDismiss = { editor.rememberSwatchColor(index); onDismiss() },
         onPick = { editor.setSwatchColor(index, it) },
     )

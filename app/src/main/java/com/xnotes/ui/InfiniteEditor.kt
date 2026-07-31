@@ -48,7 +48,7 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
-class InfiniteEditor(context: Context) {
+class InfiniteEditor(context: Context) : ToolPopupHost {
 
     private val appContext = context.applicationContext
 
@@ -274,6 +274,14 @@ class InfiniteEditor(context: Context) {
         inkColor = color
     }
 
+    /** Arm swatch [index], the same way the paged toolbar picks its ink. */
+    fun pickColor(index: Int) {
+        if (index !in toolbarColors.indices) return
+        activeColorIndex = index
+        inkColor = toolbarColors[index]
+        onToolStyleChanged?.invoke()
+    }
+
     fun setToolConfig(forTool: Tool, config: ToolConfig) {
         toolConfigs[forTool] = config
     }
@@ -293,6 +301,37 @@ class InfiniteEditor(context: Context) {
         return base.copy(rgba = base.colorOverride ?: inkColor)
     }
 
+    /**
+     * The stored style for [tool], without the ink colour folded in. The popups edit this, and it
+     * is what gets persisted, so a pen tuned here is the same pen on a note.
+     */
+    override fun toolConfig(tool: Tool): ToolConfig =
+        toolConfigs.getOrPut(tool) { ToolDefaults.configFor(tool) }
+
+    override fun updateToolConfig(tool: Tool, config: ToolConfig) {
+        toolConfigs[tool] = config
+        onToolStyleChanged?.invoke()
+    }
+
+    override val hostShapeConfig: ShapeConfig get() = shapeConfig
+
+    override fun updateShapeConfig(config: ShapeConfig) {
+        shapeConfig = config
+        onToolStyleChanged?.invoke()
+    }
+
+    override val hostToolbarColors: List<Rgba> get() = toolbarColors
+    override val hostActiveColorIndex: Int get() = activeColorIndex
+    override val hostRecentColors: List<Rgba> get() = recentColors
+
+    /** The toolbar's swatches and recents, handed over by the host so both surfaces share them. */
+    var toolbarColors by mutableStateOf(InkPalette.presets)
+    var activeColorIndex by mutableStateOf(0)
+    var recentColors by mutableStateOf<List<Rgba>>(emptyList())
+
+    /** Fired when a tool's style changed here, so the host can persist it. */
+    var onToolStyleChanged: (() -> Unit)? = null
+
     /** Latch a stylus side button that arrived as a key event, so the pen behaves as on a note. */
     fun onStylusButtonKey(keyCode: Int, down: Boolean): Boolean =
         interaction.onStylusButtonKey(keyCode, down)
@@ -301,12 +340,13 @@ class InfiniteEditor(context: Context) {
 
     private fun publishWetStroke(stroke: Stroke?) {
         if (stroke == null) {
-            scene.setWet(null, InkPalette.DEFAULT, InkPass.OPAQUE, Rect(0.0, 0.0, 0.0, 0.0))
+            scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
             return
         }
         val meshed = ItemMesher.mesh(stroke) ?: return
-        val part = meshed.parts.firstOrNull() ?: return
-        scene.setWet(part.mesh, part.color, part.pass, meshed.bounds)
+        // Every run, not just the first: a neon stroke is a halo, a lit body and a white core, and
+        // keeping only one of them left the wet stroke invisible until the pen lifted.
+        scene.setWetParts(meshed.parts, meshed.bounds)
     }
 
     /**

@@ -211,7 +211,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             camChunkX, camChunkY,
             frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
             frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-            frame.zoom, frame.widthPx, frame.heightPx,
+            frame.zoom, frame.widthPx.toDouble(), frame.heightPx.toDouble(),
         )
         if (!store.bindForDraw(contextGen)) return
         store.bindAttributes(program)
@@ -339,7 +339,9 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                 rebind(program, frame, camChunkX, camChunkY)
                 wetStore.bindForDraw(contextGen)
                 wetStore.bindAttributes(program)
-            } else if (part.pass == InkPass.OPAQUE) {
+                continue
+            }
+            if (part.pass == InkPass.OPAQUE) {
                 wetStore.drawRange(part.slice.indexOffset, part.slice.indexCount)
                 lastDrawCalls++
             } else {
@@ -412,11 +414,18 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             if (radiusPx < 0.4) continue
 
             glowTarget.bindAndClear(0)
+            // The buffer is a fraction of the viewport, so the zoom has to shrink by the same
+            // fraction: drawing at full device scale into a smaller buffer would put the halo down
+            // magnified and anchored at the corner, which is exactly what a shifted glow looks
+            // like. The viewport passed is the fractional size rather than the buffer's rounded-up
+            // pixel count, so an odd viewport still maps to the same clip space as the real pass.
             program.begin(
                 camChunkX, camChunkY,
                 frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
                 frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-                frame.zoom, glowTarget.bufferWidth, glowTarget.bufferHeight,
+                frame.zoom / scale,
+                frame.widthPx.toDouble() / scale,
+                frame.heightPx.toDouble() / scale,
             )
             from.bindForDraw(contextGen)
             from.bindAttributes(program)
@@ -430,7 +439,10 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             shader.blur(glowTarget.texture(1), radiusPx, horizontal = false, bufferW = glowTarget.bufferWidth, bufferH = glowTarget.bufferHeight)
 
             glowTarget.unbind(frame.widthPx, frame.heightPx)
-            shader.compositeOver(glowTarget.texture(0), alpha)
+            shader.compositeOver(
+                glowTarget.texture(0), alpha,
+                glowTarget.usedFractionX(frame.widthPx), glowTarget.usedFractionY(frame.heightPx),
+            )
             lastDrawCalls += 4
         }
     }
@@ -451,7 +463,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             camChunkX, camChunkY,
             frame.scrollX - camChunkX * GeometryStore.CHUNK_SIZE,
             frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
-            frame.zoom, frame.widthPx, frame.heightPx,
+            frame.zoom, frame.widthPx.toDouble(), frame.heightPx.toDouble(),
         )
     }
 

@@ -47,12 +47,15 @@ class GlowShader(contextGen: Int) {
     }
 
     /** Draw [texture] over the picture at [alpha], which is the halo's own brightness. */
-    fun compositeOver(texture: Int, alpha: Double) {
+    fun compositeOver(texture: Int, alpha: Double, uvScaleX: Float = 1f, uvScaleY: Float = 1f) {
         composite.use()
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
         composite.set("uTexture", 0)
         composite.set("uAlpha", alpha.coerceIn(0.0, 1.0).toFloat())
+        // Sample only the part of the buffer the viewport occupied, so rounding the buffer up
+        // cannot stretch the halo away from the stroke it belongs to.
+        composite.set("uUvScale", uvScaleX, uvScaleY)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
@@ -104,10 +107,11 @@ class GlowShader(contextGen: Int) {
             precision mediump float;
             uniform sampler2D uTexture;
             uniform float uAlpha;
+            uniform vec2 uUvScale;
             in vec2 vUv;
             out vec4 fragColor;
             void main() {
-                vec4 c = texture(uTexture, vUv);
+                vec4 c = texture(uTexture, vUv * uUvScale);
                 fragColor = vec4(c.rgb, c.a * uAlpha);
             }
         """.trimIndent()

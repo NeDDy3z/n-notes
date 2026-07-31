@@ -64,6 +64,7 @@ fun InfiniteToolbar(
     var shapeOpen by remember { mutableStateOf(false) }
     var waypointsOpen by remember { mutableStateOf(false) }
     var penOpen by remember { mutableStateOf<Tool?>(null) }
+    var selectOpen by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -86,19 +87,26 @@ fun InfiniteToolbar(
                     when {
                         tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
                         tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
+                        tool == Tool.SELECT && editor.tool == tool -> selectOpen = true
                         tool.isStroke && editor.tool == tool -> penOpen = tool
                         else -> editor.armTool(tool)
                     }
                 }
-                if (tool == Tool.ERASER && eraserOpen) CanvasEraserPopup(editor) { eraserOpen = false }
-                if (tool == Tool.SHAPE && shapeOpen) CanvasShapePopup(editor) { shapeOpen = false }
-                if (penOpen == tool) CanvasPenPopup(editor, tool) { penOpen = null }
+                // The very popups the paged toolbar opens, not lookalikes: same controls, same
+                // wording, same ranges, and they cannot drift apart.
+                if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
+                if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
+                if (tool == Tool.SELECT && selectOpen) SelectConfigPopup(editor) { selectOpen = false }
+                if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
             }
         }
         Separator()
 
-        for (color in InkPalette.presets) {
-            Swatch(color.toComposeColor(), active = editor.inkColor == color) { editor.armInkColor(color) }
+        for (i in editor.toolbarColors.indices) {
+            val color = editor.toolbarColors[i]
+            Swatch(color.toComposeColor(), active = editor.activeColorIndex == i) {
+                editor.pickColor(i)
+            }
         }
         Separator()
 

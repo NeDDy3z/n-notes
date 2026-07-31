@@ -36,8 +36,8 @@ class InkShader(contextGen: Int) {
         localScrollX: Double,
         localScrollY: Double,
         zoom: Double,
-        viewportW: Int,
-        viewportH: Int,
+        viewportW: Double,
+        viewportH: Double,
     ) {
         program.use()
         program.set("uCamChunk", camChunkX.toFloat(), camChunkY.toFloat())
