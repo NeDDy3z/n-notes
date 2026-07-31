@@ -84,6 +84,11 @@ class GlRenderer : GLSurfaceView.Renderer {
     var failure: String? = null
         private set
 
+    /** What the self check made of this context, for the debug readout. */
+    @Volatile
+    var selfCheck: String = ""
+        private set
+
     private var background: BackgroundShader? = null
     private var cursor: CursorShader? = null
 
@@ -145,6 +150,11 @@ class GlRenderer : GLSurfaceView.Renderer {
         }
         GLES30.glDisable(GLES30.GL_DITHER)
         GLES30.glDisable(GLES30.GL_CULL_FACE)
+        // Before the scene rebuilds anything, so a driver that gets the arithmetic or the blending
+        // wrong is reported as that rather than as a canvas that looks a bit off.
+        val checked = GlSelfCheck().run(contextGen)
+        selfCheck = checked.summary
+        if (!checked.ok) failure = listOfNotNull(failure, checked.summary).joinToString("; ")
         scene?.onContextCreated(contextGen)
         onContextReady?.invoke(contextGen)
     }
@@ -254,6 +264,7 @@ class GlRenderer : GLSurfaceView.Renderer {
             msaaSamples = msaaSamples(),
             renderer = rendererName,
             glVersion = glVersionName,
+            selfCheck = selfCheck,
         )
         stats = scene?.describe(base) ?: base
     }

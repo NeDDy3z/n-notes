@@ -88,6 +88,7 @@ fun CanvasDebugOverlay(editor: InfiniteEditor) {
         add("msaa      ${if (stats.msaaSamples >= 2) "${stats.msaaSamples}x" else "none"}")
         add("ctx gen   ${stats.contextGen}")
         add("gpu       ${stats.renderer.take(28)}")
+        add("check     ${stats.selfCheck.take(28)}")
         add("")
         add("heap  %.0f / %.0f MB".format(memory.heapUsedMb, memory.heapMaxMb))
         add("pss    %.0f MB".format(memory.pssMb))

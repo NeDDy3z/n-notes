@@ -37,6 +37,8 @@ data class GlStats(
     val msaaSamples: Int = 0,
     val renderer: String = "",
     val glVersion: String = "",
+    /** What the once-per-context self check found, or "ok". */
+    val selfCheck: String = "",
     /** Items the scene holds geometry for. */
     val items: Int = 0,
     /** Items that survived the cull this frame. */
