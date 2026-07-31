@@ -41,6 +41,7 @@ private val CANVAS_TOOLS = listOf(
 fun InfiniteToolbar(
     editor: InfiniteEditor,
     onOpenBackstage: () -> Unit,
+    onInsertImage: () -> Unit = {},
 ) {
     val palette = LocalPalette.current
     // The stroke tools use the same designed drawables the paged toolbar does, so a pen looks like
@@ -95,6 +96,7 @@ fun InfiniteToolbar(
         }
         Separator()
 
+        ToolbarIcon(XnotesIcons.image, "Insert image") { onInsertImage() }
         Box {
             ToolbarIcon(XnotesIcons.sliders, "Styles", active = stylesOpen) { stylesOpen = true }
             if (stylesOpen) CanvasStylesPopup(editor) { stylesOpen = false }

@@ -52,6 +52,11 @@ data class GlStats(
     /** Bytes live geometry actually references; the gap to [geometryBytes] is fragmentation. */
     val liveGeometryBytes: Long = 0,
     val wetVertices: Int = 0,
+    /** Image textures resident on the GPU. */
+    val textures: Int = 0,
+    val textureBytes: Long = 0,
+    /** Images whose decode has been asked for and has not arrived yet. */
+    val texturesPending: Int = 0,
     /** Milliseconds the last tessellation took, on whichever thread produced it. */
     val lastTessellateMs: Double = 0.0,
 )

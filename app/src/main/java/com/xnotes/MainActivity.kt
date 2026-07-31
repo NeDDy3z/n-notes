@@ -423,6 +423,19 @@ private fun EditorScreen(
         }
     }
 
+    // An image picked for the infinite canvas: read the bytes and hand them straight over.
+    val insertCanvasImageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { resolver.openInputStream(uri)?.use { input -> input.readBytes() } }.getOrNull()
+            }
+            if (bytes != null) editor.infinite.insertImage(bytes)
+        }
+    }
+
     fun openTreeFile(uriStr: String) {
         val name = displayNameOf(resolver, Uri.parse(uriStr))
         // The extension picks the editor: the two document types share the explorer but not much else.
@@ -644,7 +657,11 @@ private fun EditorScreen(
                         .fillMaxSize()
                         .background(LocalPalette.current.bg.toComposeColor()),
                 ) {
-                    com.xnotes.ui.InfiniteToolbar(canvas, onOpenBackstage = { editor.goHome() })
+                    com.xnotes.ui.InfiniteToolbar(
+                        canvas,
+                        onOpenBackstage = { editor.goHome() },
+                        onInsertImage = { insertCanvasImageLauncher.launch(arrayOf("image/*")) },
+                    )
                     Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                         AndroidView(
                             factory = { canvas.view },

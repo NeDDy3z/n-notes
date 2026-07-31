@@ -383,6 +383,8 @@ class Editor(context: Context) {
         get() = infiniteOrNull ?: InfiniteEditor(appContext).also {
             infiniteOrNull = it
             it.applyPalette(palette)
+            // Both editors write inserted images into the same purged-on-launch temp dir.
+            it.imageDir = imageDir
         }
 
     /** The canvas's autosave binding, the sibling of [autosaveUri] for the paged note. */

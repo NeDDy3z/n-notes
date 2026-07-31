@@ -8,6 +8,7 @@ import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.MeshData
 import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
 import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -34,6 +35,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         val parts: List<Part>,
         var bounds: Rect,
         var z: Int,
+        /** Set for a placed image, which is drawn as a texture rather than as coloured triangles. */
+        val image: ImageItem? = null,
     )
 
     /** An edit handed over from the main thread. */
@@ -42,6 +45,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             val item: CanvasItem,
             val parts: List<MeshPart>,
             val bounds: Rect,
+            /** Non-null for an image, which draws from a texture rather than from the parts. */
+            val image: ImageItem? = null,
             /**
              * Set on the message that commits the stroke under the pen. Clearing the wet buffer
              * and adding the committed stroke have to land in the same message: as two, a frame
@@ -79,6 +84,13 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     private var ink: InkShader? = null
     private var cover: CoverShader? = null
+    private var imageShader: ImageShader? = null
+
+    /** Textures for placed images, decoded at the size the current zoom needs. */
+    val textures = TextureCache()
+
+    /** Runs a decode off the render thread; installed by the host. */
+    var decodeOn: (Runnable) -> Unit = { it.run() }
     private var contextGen = -1
 
     /** Reused per frame so drawing allocates nothing. */
@@ -109,13 +121,21 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         geometryBytes = store.gpuBytes + wetStore.gpuBytes,
         liveGeometryBytes = store.liveBytes + wetStore.liveBytes,
         wetVertices = wetParts.sumOf { it.slice.vertexCount },
+        textures = textures.textureCount,
+        textureBytes = textures.residentBytes,
+        texturesPending = textures.pendingCount,
         lastTessellateMs = lastTessellateMs,
     )
 
     // --- main-thread API ---
 
     fun upsert(item: CanvasItem, parts: List<MeshPart>, bounds: Rect, clearsWet: Boolean = false) {
-        pending.add(Edit.Upsert(item, parts, bounds, clearsWet))
+        pending.add(Edit.Upsert(item, parts, bounds, null, clearsWet))
+    }
+
+    /** File a placed image. It carries no geometry: the renderer draws it as a textured quad. */
+    fun upsertImage(item: ImageItem, bounds: Rect) {
+        pending.add(Edit.Upsert(item, emptyList(), bounds, item, false))
     }
 
     fun remove(item: CanvasItem) {
@@ -147,12 +167,15 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         this.contextGen = contextGen
         ink = null
         cover = null
+        imageShader = null
         try {
             ink = InkShader(contextGen)
             cover = CoverShader(contextGen)
+            imageShader = ImageShader(contextGen)
         } catch (e: GlShaderException) {
             Log.e(TAG, "ink shaders unavailable", e)
         }
+        textures.onContextCreated(contextGen)
         // The mirrors survived, so the whole document re-uploads without re-tessellating anything.
         store.onContextCreated(contextGen)
         wetStore.onContextCreated(contextGen)
@@ -160,6 +183,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     override fun drawContent(frame: FrameState) {
         drainEdits()
+        textures.beginFrame()
+        textures.uploadPending()
         val program = ink ?: return
         if (program.contextGen != contextGen) return
         if (records.isEmpty() && wetParts.isEmpty()) {
@@ -196,7 +221,18 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         var runStart = -1
         var runCount = 0
         for (record in visible) {
+            if (record.image != null) {
+                flushRun(runStart, runCount)
+                runStart = -1
+                runCount = 0
+                drawImage(record, record.image, frame)
+                rebind(program, frame, camChunkX, camChunkY)
+                store.bindForDraw(contextGen)
+                store.bindAttributes(program)
+                continue
+            }
             for (part in record.parts) {
+                @Suppress("UNUSED_EXPRESSION")
                 when (part.pass) {
                     InkPass.MULTIPLY -> {
                         // Highlighters composite over the finished picture, matching the paged
@@ -261,6 +297,30 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         // Leave the committed buffers bound for the next frame's first draw.
         store.bindForDraw(contextGen)
         store.bindAttributes(program)
+    }
+
+    /**
+     * A placed image as one textured quad. The corners are worked out in double precision here and
+     * handed over in clip space, so an image a long way from the origin is placed exactly.
+     */
+    private fun drawImage(record: Record, image: ImageItem, frame: FrameState) {
+        val shader = imageShader ?: return
+        val rect = image.rect
+        // Decode for the size the image actually occupies on screen right now.
+        val onScreenEdge = (maxOf(rect.w, rect.h) * frame.zoom).toInt().coerceAtLeast(1)
+        val texture = textures.textureFor(image.image, onScreenEdge, decodeOn)
+        if (texture == 0) return
+        val corners = FloatArray(8)
+        val xs = doubleArrayOf(rect.left, rect.right, rect.left, rect.right)
+        val ys = doubleArrayOf(rect.top, rect.top, rect.bottom, rect.bottom)
+        for (i in 0 until 4) {
+            val dx = (xs[i] - frame.scrollX) * frame.zoom
+            val dy = (ys[i] - frame.scrollY) * frame.zoom
+            corners[2 * i] = (dx / frame.widthPx * 2.0 - 1.0).toFloat()
+            corners[2 * i + 1] = (1.0 - dy / frame.heightPx * 2.0).toFloat()
+        }
+        shader.draw(corners, texture, image.orientation / 90)
+        lastDrawCalls++
     }
 
     private fun flushRun(start: Int, count: Int) {
@@ -371,8 +431,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             val slice = store.put(part.mesh, baked) ?: continue
             parts.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0))
         }
-        if (parts.isEmpty()) return
-        val record = Record(edit.item, parts, edit.bounds, previousZ ?: nextZ++)
+        if (parts.isEmpty() && edit.image == null) return
+        val record = Record(edit.item, parts, edit.bounds, previousZ ?: nextZ++, edit.image)
         records[edit.item] = record
         fileRecord(record)
     }

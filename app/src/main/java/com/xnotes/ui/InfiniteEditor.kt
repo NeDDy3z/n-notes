@@ -16,6 +16,8 @@ import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.Waypoint
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.ImageData
+import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
@@ -72,6 +74,7 @@ class InfiniteEditor(context: Context) {
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
+    private val imageCodec = com.xnotes.platform.AndroidImageCodec()
 
     /** Per-tool style, with the toolbar's active ink colour folded in at draw time. */
     private val toolConfigs = HashMap<Tool, ToolConfig>()
@@ -124,6 +127,17 @@ class InfiniteEditor(context: Context) {
     /** The GL-side mirror of the document. Fed by [modelListener]; never reads the model itself. */
     private val scene = CanvasScene()
 
+    /** One low-priority thread decoding images, so a big photo never stalls a frame. */
+    private val decodeExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "xnotes-canvas-decode").apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+        }
+    }
+
+    /** Where inserted images are written; supplied by the host so both editors share one dir. */
+    var imageDir: java.io.File? = null
+
     /**
      * Keeps the renderer in step with the model. Every mutation goes through [InfiniteDocument],
      * including the ones history performs, so undo and redo repaint through exactly this path with
@@ -163,6 +177,9 @@ class InfiniteEditor(context: Context) {
         view.onContextReady = { renderFailure = view.failure }
         view.onFourFingerTap = { toggleDebug() }
         view.scene = scene
+        // Decoding reads a file and can take tens of milliseconds, so it never runs on the render
+        // thread; the finished bitmap is picked up and uploaded at the start of the next frame.
+        scene.decodeOn = { work -> decodeExecutor.execute(work) }
         document.listener = modelListener
     }
 
@@ -174,6 +191,10 @@ class InfiniteEditor(context: Context) {
 
     /** Tessellate [item] and hand the triangles to the renderer, or drop it if it draws nothing. */
     private fun pushItem(item: CanvasItem) {
+        if (item is ImageItem) {
+            scene.upsertImage(item, item.paintBounds())
+            return
+        }
         val started = System.nanoTime()
         val meshed = ItemMesher.mesh(item)
         scene.lastTessellateMs = (System.nanoTime() - started) / 1_000_000.0
@@ -261,6 +282,35 @@ class InfiniteEditor(context: Context) {
         history.push(AddCanvasItem(document, item))
         markDirty()
         refresh()
+    }
+
+    /**
+     * Insert an encoded image, centred on [atContent] or on the middle of the view. The bytes are
+     * written to a file and the item keeps only that path, so a canvas full of photographs never
+     * holds their pixels: each is decoded when drawn, at the size the screen can show.
+     */
+    fun insertImage(bytes: ByteArray, atContent: com.xnotes.core.geometry.Pt? = null): Boolean {
+        val dir = imageDir ?: return false
+        val file = runCatching {
+            java.io.File.createTempFile("img", null, dir).apply { writeBytes(bytes) }
+        }.getOrNull()
+        val size = file?.let { imageCodec.probeFile(it.path) }
+        if (file == null || size == null || size.width <= 0 || size.height <= 0) {
+            file?.delete()
+            return false
+        }
+        // Land it at a comfortable size for the current view rather than at its pixel size, which
+        // on an unbounded canvas would be arbitrary.
+        val visible = viewport.visibleContentRect()
+        val maxW = visible.w * 0.6
+        val maxH = visible.h * 0.6
+        val scale = minOf(1.0, maxW / size.width, maxH / size.height)
+        val w = size.width * scale
+        val h = size.height * scale
+        val centre = atContent ?: viewport.centerContent
+        val rect = Rect(centre.x - w / 2.0, centre.y - h / 2.0, w, h)
+        commitItem(ImageItem(ImageData(file, size.width, size.height), rect))
+        return true
     }
 
     /** Pen up on an eraser drag: the whole drag is one undoable edit, however much it cut. */
