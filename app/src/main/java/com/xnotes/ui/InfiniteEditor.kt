@@ -367,10 +367,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost {
     override fun bringToFront() {
         if (selection.isEmpty) return
         val before = document.items.toList()
-        val moved = selection.items
-        val kept = before.filter { item -> moved.none { it === item } }
-        val after = kept + moved
-        if (after.size == before.size && after.indices.all { after[it] === before[it] }) return
+        val after = com.xnotes.core.infinite.bringToFrontOrder(before, selection.items)
+        if (com.xnotes.core.infinite.sameOrder(before, after)) return
         document.replaceAll(after)
         history.push(ReplaceCanvasItems(document, before, after))
         markDirty()

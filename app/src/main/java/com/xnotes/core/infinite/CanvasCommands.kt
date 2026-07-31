@@ -85,6 +85,25 @@ class ReplaceCanvasItems(
 }
 
 /**
+ * The item list with [selected] moved to the end, keeping the order within each part.
+ *
+ * On a flat canvas, bringing something to the front is only this: z order is list order. Items are
+ * compared by identity, never by equality, because two strokes with the same samples are still two
+ * strokes.
+ */
+fun bringToFrontOrder(all: List<CanvasItem>, selected: List<CanvasItem>): List<CanvasItem> {
+    if (selected.isEmpty()) return all
+    val moved = all.filter { item -> selected.any { it === item } }
+    if (moved.isEmpty()) return all
+    val kept = all.filter { item -> moved.none { it === item } }
+    return kept + moved
+}
+
+/** True when [a] and [b] hold the very same items in the very same order. */
+fun sameOrder(a: List<CanvasItem>, b: List<CanvasItem>): Boolean =
+    a.size == b.size && a.indices.all { a[it] === b[it] }
+
+/**
  * One area-erase drag: each item the eraser cut, swapped for the fragments that survived it.
  *
  * The paged canvas records this as a before and after snapshot of the whole page's item list, which
