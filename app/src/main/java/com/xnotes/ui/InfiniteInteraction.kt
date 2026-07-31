@@ -101,6 +101,9 @@ class InfiniteInteraction(
 
         /** Least on-screen distance between lasso vertices, so a slow drag stays cheap. */
         const val LASSO_MIN_STEP_PX = 3.0
+
+        /** How far a press may wander and still count as a tap, in device pixels. */
+        const val TAP_SLOP_PX = 12.0
     }
 
     /** The armed tool. */
@@ -129,6 +132,11 @@ class InfiniteInteraction(
     private var grabHandle: HandleId? = null
     private var moveAnchor = Pt.ZERO
     private var movedBy = Pt.ZERO
+
+    // A finger press landed off a live selection and became a pan; a tap there dismisses it, a
+    // real drag pans and leaves it alone.
+    private var panMayDismiss = false
+    private var panDownAt = Pt.ZERO
 
     // Hold-still-to-snap: a freehand stroke that stops moving becomes the shape it looks like.
     private val handler = Handler(Looper.getMainLooper())
@@ -211,11 +219,25 @@ class InfiniteInteraction(
         // the paged canvas so a pen behaves the same on either surface.
         val toolType = e.getToolType(0)
         val buttonHeld = stylusButtons.heldFor(e)
+        val onSelection = hitsSelection(viewport.viewportToContent(Pt(vx, vy)))
         val effective: Tool = when {
             toolType == MotionEvent.TOOL_TYPE_ERASER -> Tool.ERASER
             buttonHeld && penButtonTool != null -> penButtonTool!!
+            // While something is selected, a press on it grabs it rather than inking through it,
+            // and a finger may grab it even with finger-draw off. Both are the paged canvas's
+            // rules; without them a selection could only be handled by a stylus.
+            onSelection && (tool.isStroke || tool == Tool.SHAPE) &&
+                toolType != MotionEvent.TOOL_TYPE_FINGER -> Tool.SELECT
+            toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff &&
+                onSelection -> Tool.SELECT
             toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff -> Tool.PAN
             else -> tool
+        }
+        // A press that lands off the selection with anything but the selection tools dismisses it,
+        // which is what makes an empty tap put the chrome away.
+        panMayDismiss = false
+        if (!onSelection && effective != Tool.SELECT && effective != Tool.LASSO) {
+            if (effective == Tool.PAN) panMayDismiss = hasSelection() else clearSelection()
         }
 
         when {
@@ -271,6 +293,14 @@ class InfiniteInteraction(
 
     private fun handleUp(e: MotionEvent) {
         val wasMoving = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
+        // A finger tap off the selection puts it away; a tap is the only way to say so with a
+        // finger, since a drag there is a pan.
+        if (mode == CanvasPointerMode.PAN && panMayDismiss &&
+            panWasTap(e.getX(0).toDouble(), e.getY(0).toDouble())
+        ) {
+            clearSelection()
+        }
+        panMayDismiss = false
         if (mode == CanvasPointerMode.DRAW) endDraw(e)
         if (mode == CanvasPointerMode.ERASE) endErase()
         if (mode == CanvasPointerMode.SHAPE) endShape()
@@ -418,6 +448,23 @@ class InfiniteInteraction(
     }
 
     // --- selection ---
+
+    fun hasSelection(): Boolean = selection()?.isEmpty == false
+
+    /**
+     * Whether [at] grabs the settled selection: its rotate grip, one of its handles, or its body.
+     * A press that does is routed to the selection whatever tool is armed and whatever is touching,
+     * which is what lets a finger drag a selection while finger-draw is off.
+     */
+    private fun hitsSelection(at: Pt): Boolean {
+        val sel = selection() ?: return false
+        if (sel.isEmpty) return false
+        val tolerance = HANDLE_TOUCH_PX / viewport.zoom
+        val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
+        if (grip != null && at.distanceTo(grip) <= tolerance) return true
+        if (sel.hitHandle(at, tolerance) != null) return true
+        return sel.contains(at)
+    }
 
     /** Clear the selection and its chrome, for a tool change or a document swap. */
     fun clearSelection() {
@@ -761,10 +808,15 @@ class InfiniteInteraction(
 
     private fun beginPan(vx: Double, vy: Double) {
         mode = CanvasPointerMode.PAN
+        panDownAt = Pt(vx, vy)
         // Moving the view is paced by the display, so the render thread stays up for it.
         setInteractive(true, true)
         startTrackingVelocity(vx, vy)
     }
+
+    /** True when the pan never really moved, so it reads as a tap rather than a scroll. */
+    private fun panWasTap(vx: Double, vy: Double): Boolean =
+        Pt(vx, vy).distanceTo(panDownAt) <= TAP_SLOP_PX
 
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
