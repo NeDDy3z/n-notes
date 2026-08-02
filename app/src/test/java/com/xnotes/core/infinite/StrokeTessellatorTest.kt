@@ -118,6 +118,44 @@ class StrokeTessellatorTest {
         }
     }
 
+    // --- the dashed pen ---
+
+    /** Midpoint of every centerline segment, which is where a gap is easiest to probe for. */
+    private fun midpoints(g: StrokeGeometry): List<Pair<Double, Double>> =
+        (0 until g.pointCount - 1).map {
+            (g.cx(it) + g.cx(it + 1)) / 2.0 to (g.cy(it) + g.cy(it + 1)) / 2.0
+        }
+
+    @Test fun aDashedLineIsDrawnInPiecesRatherThanSolid() {
+        val g = line(40, 5.0)
+        val m = StrokeTessellator.tessellateDashed(g, 12.0, 12.0, 1.5)
+        val probes = midpoints(g)
+        assertTrue("dashes must be drawn", probes.any { covers(m, it.first, it.second) })
+        assertTrue("gaps must be left", probes.any { !covers(m, it.first, it.second) })
+    }
+
+    @Test fun aDashedLineStaysOnItsOwnCenterline() {
+        val g = geometryOf(0.0 to 0.0, 20.0 to 12.0, 44.0 to 8.0, 70.0 to 30.0)
+        val m = StrokeTessellator.tessellateDashed(g, 6.0, 5.0, 1.5)
+        assertTrue(meshBounds(m).w <= meshBounds(StrokeTessellator.tessellate(g)).w + 1e-6)
+    }
+
+    @Test fun aDegenerateDashDrawsTheWholeLine() {
+        val g = line(40, 5.0)
+        val m = StrokeTessellator.tessellateDashed(g, 12.0, 0.0, 1.5)
+        for ((x, y) in midpoints(g)) assertTrue("gap at $x", covers(m, x, y))
+    }
+
+    @Test fun aDashedDotIsStillADisc() {
+        val g = geometryOf(5.0 to 7.0)
+        val m = StrokeTessellator.tessellateDashed(g, 10.0, 8.0, 1.5)
+        assertTrue(covers(m, 5.0, 7.0))
+    }
+
+    @Test fun aDashWithNoWidthDrawsNothing() {
+        assertTrue(StrokeTessellator.tessellateDashed(line(10), 10.0, 8.0, 0.0).isEmpty)
+    }
+
     // --- mesh shape ---
 
     @Test fun anEmptyGeometryTessellatesToNothing() {

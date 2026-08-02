@@ -92,6 +92,7 @@ object ItemMesher {
 
     private fun meshStroke(stroke: Stroke, tolerance: Double): MeshedItem? {
         if (stroke.isEmpty) return null
+        if (stroke.tool == Tool.DASHED) return meshDashed(stroke, tolerance)
         val mesh = StrokeTessellator.tessellate(stroke.geometry(), tolerance)
         if (mesh.isEmpty) return null
         if (stroke.config.neon && stroke.tool != Tool.HIGHLIGHTER) {
@@ -99,6 +100,24 @@ object ItemMesher {
         }
         val part = MeshPart(mesh, stroke.renderColor, passFor(stroke))
         return MeshedItem(listOf(part), stroke.paintBounds(), narrowestHalfWidth(stroke))
+    }
+
+    /**
+     * The dashed pen draws a broken, constant-width line down its centreline rather than a solid
+     * ribbon, and that beats neon in [Stroke]'s own painter, so it does here too. The full ribbon is
+     * still what bounds and hit-tests the stroke, so it stays selectable through the gaps.
+     */
+    private fun meshDashed(stroke: Stroke, tolerance: Double): MeshedItem? {
+        val half = stroke.config.baseWidth / 2.0
+        val mesh = StrokeTessellator.tessellateDashed(
+            stroke.geometry(),
+            stroke.config.dashLength,
+            stroke.config.dashGap,
+            half,
+            tolerance,
+        )
+        if (mesh.isEmpty) return null
+        return MeshedItem(listOf(MeshPart(mesh, stroke.renderColor, passFor(stroke))), stroke.bounds(), half)
     }
 
     /**

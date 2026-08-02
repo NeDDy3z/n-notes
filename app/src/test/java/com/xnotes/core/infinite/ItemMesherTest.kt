@@ -87,6 +87,31 @@ class ItemMesherTest {
         assertTrue("the halo must be inside the culled bounds", m.bounds.w > s.bounds().w)
     }
 
+    @Test fun aDashedStrokeMeshesAsDashesNotASolidRibbon() {
+        val s = dashedStroke()
+        val m = ItemMesher.mesh(s)!!
+        val dashes = StrokeTessellator.tessellateDashed(
+            s.geometry(), s.config.dashLength, s.config.dashGap, s.config.baseWidth / 2.0,
+        )
+        assertEquals(dashes.vertexCount, m.parts[0].mesh.vertexCount)
+        assertTrue(
+            "a dashed line must not be the solid ribbon",
+            m.parts[0].mesh.vertexCount != StrokeTessellator.tessellate(s.geometry()).vertexCount,
+        )
+        assertEquals(s.config.baseWidth / 2.0, m.minHalfWidth, 1e-9)
+    }
+
+    @Test fun aDashedStrokeNeverGlows() {
+        val s = dashedStroke(ToolDefaults.configFor(Tool.DASHED).copy(neon = true))
+        val m = ItemMesher.mesh(s)!!
+        assertEquals(1, m.parts.size)
+        assertEquals(InkPass.OPAQUE, m.parts[0].pass)
+        assertNull(m.parts[0].glow)
+    }
+
+    private fun dashedStroke(config: ToolConfig = ToolDefaults.configFor(Tool.DASHED)): Stroke =
+        Stroke(Tool.DASHED, config, (0..30).map { Sample(it * 5.0, 0.0, 1.0) }.toMutableList())
+
     @Test fun anEmptyStrokeMeshesToNothing() {
         assertNull(ItemMesher.mesh(Stroke(Tool.PEN, ToolConfig(), mutableListOf())))
     }

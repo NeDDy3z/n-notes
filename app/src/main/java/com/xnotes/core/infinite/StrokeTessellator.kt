@@ -1,5 +1,6 @@
 package com.xnotes.core.infinite
 
+import com.xnotes.core.geometry.Pt
 import com.xnotes.core.stroke.StrokeGeometry
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -120,6 +121,33 @@ object StrokeTessellator {
             val h = g.hw(i)
             if (h <= MIN_HALF_WIDTH) continue
             if (turnAngle(g, i) > JOIN_DISC_ANGLE) b.circle(g.cx(i), g.cy(i), h, tolerance)
+        }
+        return b.build()
+    }
+
+    /**
+     * The dashed pen: the smoothed centreline cut into on/off runs, each drawn as a constant-width
+     * ribbon with round ends. Same runs, same width and same round caps the paged renderer's dashed
+     * pen paints, so a dashed stroke breaks in the same places on either canvas.
+     *
+     * A stroke too short to have a line is left to [tessellate], which draws it as the dot the paged
+     * painter falls back to.
+     */
+    fun tessellateDashed(
+        g: StrokeGeometry,
+        dashLength: Double,
+        dashGap: Double,
+        halfWidth: Double,
+        tolerance: Double = DEFAULT_TOLERANCE,
+    ): MeshData {
+        val n = g.pointCount
+        if (n < 2) return tessellate(g, tolerance)
+        if (halfWidth <= MIN_HALF_WIDTH) return MeshData.EMPTY
+        val path = ArrayList<Pt>(n)
+        for (i in 0 until n) path.add(Pt(g.cx(i), g.cy(i)))
+        val b = MeshBuilder(estimateVertices(g), estimateIndices(g))
+        for (run in MeshBuilder.dashRuns(path, dashLength, dashGap, closed = false)) {
+            b.polylineRibbon(run, halfWidth, closed = false, tolerance = tolerance)
         }
         return b.build()
     }
