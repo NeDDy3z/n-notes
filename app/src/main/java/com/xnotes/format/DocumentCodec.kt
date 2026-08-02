@@ -863,7 +863,7 @@ class DocumentCodec(
 
         /** The com.xnotes versionCode stamped into manifests this build writes ("writer"), kept
          *  in step with the release that carries it. Old readers ignore the unknown key. */
-        const val WRITER = 43
+        const val WRITER = 47
 
         /** Writers at/after this versionCode reduce ink samples at pen-up; ink from older
          *  writers (or files with no "writer" at all) is compacted once at load instead. */
