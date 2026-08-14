@@ -45,8 +45,8 @@ object StrokeEngine {
 
     /** Calligraphy pen: the travel that decides the stroke's **head**, the one stretch no causal
      *  rule can judge, because at pen-down the samples that would tell a jitter from a genuinely
-     *  broad opening have not arrived yet. Every sample inside it is drawn at the thinnest heading
-     *  the window holds (see [headDirection]). Long enough to outvote a pen-down flick, short enough
+     *  broad opening have not arrived yet. Every sample inside it is drawn at the direction of the
+     *  chord across it (see [headDirection]). Long enough to outvote a pen-down flick, short enough
      *  that a stroke which really starts broad opens broad. It is the dot threshold too: a finished
      *  stroke that never fills the window is a tap. The tail borrows it as well, as the travel a
      *  widening has to hold before the pen lifts to count (see [capTail]). */
@@ -300,30 +300,42 @@ object StrokeEngine {
     }
 
     /**
-     * The calligraphy nib's **head**: the thinnest heading over the stroke's first [headLen] of
-     * travel, paired with the last sample inside that window. Every sample in the window takes that
-     * one value, so a pen-down jitter loses to the run that follows it inside the same window, and a
-     * stroke that really starts broad keeps its broad head because its own minimum is broad.
+     * The calligraphy nib's **head**: the direction of the straight line from where the pen landed to
+     * where the stroke first passes [headLen] of travel, paired with the last sample inside that
+     * window. Every sample in the window takes that one value.
      *
-     * A minimum rather than a mean because the nib is asymmetric: a head that comes out too thin is
-     * a soft error, a head that comes out too thick is a blob the writer has already seen.
+     * A chord and not a statistic over the samples, because it asks the only question the head has to
+     * answer, which way the stroke actually went, and answers it in the units that matter. A wobble
+     * at pen-down displaces the far end by exactly its own half-pixel and no more. A per-sample rule
+     * cannot do that: a tangent is only as trustworthy as the distance it was measured over, and at
+     * pen-down the smoothed centreline is still catching up, so its first steps run a tenth as long
+     * as the ones just after and their tangents are mostly digitiser noise.
+     *
+     * What it gives up is the deliberate flick that goes out and comes back. The chord reads only the
+     * net displacement, so a pen-down flick longer than half the window leaves a net heading its own
+     * way and opens broader than it should. Under half the window, which is the ordinary case, the
+     * run that follows still wins the net.
      *
      * Until the window fills there is no answer, so a live stroke draws the safe value (thin) and is
      * rewritten once, when it fills. A *finished* stroke that never fills it is a dot and takes
-     * [DOT_DIR_Y]. [cum] is cumulative arc along the smoothed centreline; [headLen] is already
-     * scaled to the stroke's draw zoom.
+     * [DOT_DIR_Y]. [sx], [sy] and [cum] are the smoothed centreline and its cumulative arc;
+     * [headLen] is already scaled to the stroke's draw zoom.
      */
     private fun headDirection(
-        ty: DoubleArray,
+        sx: DoubleArray,
+        sy: DoubleArray,
         cum: DoubleArray,
         headLen: Double,
         finished: Boolean,
     ): Pair<Double, Int> {
         val k = cum.indexOfFirst { it >= headLen }
-        if (k < 0) return (if (finished) DOT_DIR_Y else -1.0) to ty.lastIndex
-        var m = ty[0]
-        for (i in 1..k) if (ty[i] < m) m = ty[i]
-        return m to k
+        if (k < 0) return (if (finished) DOT_DIR_Y else -1.0) to cum.lastIndex
+        val dx = sx[k] - sx[0]
+        val dy = sy[k] - sy[0]
+        val len = hypot(dx, dy)
+        // A stroke that came back to where it started has no net direction to read, so take the safe
+        // value rather than a heading made of rounding.
+        return (if (len < MIN_TANGENT_LEN) -1.0 else dy / len) to k
     }
 
     /**
@@ -516,7 +528,7 @@ object StrokeEngine {
         // magnitude is held back. A no-op when ds = 0.
         val dirY = if (ds > 0.0) {
             val window = headLen(smoothScale)
-            val (head, holdUntil) = headDirection(ty, cum, window, finished)
+            val (head, holdUntil) = headDirection(sx, sy, cum, window, finished)
             val d = nibDirection(ty, dirSteps, openLen(smoothScale), closeLen(smoothScale), head, holdUntil)
             if (finished) capTail(d, cum, window)
             d
