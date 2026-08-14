@@ -436,7 +436,9 @@ class DocumentCodecTest {
     @Test fun manifestBytesMatchTheHistoricalForm() {
         // The streaming writer must emit the form the org.json DOM produced on Android
         // (key order, integral doubles as longs, escaped slashes); the only departure is
-        // that sample values serialize rounded (x/y 2dp, pressure 3dp).
+        // that sample values serialize rounded (x/y 2dp, pressure 3dp). The writer stamp is
+        // the versionCode, so it is read from the codec rather than typed in: spelled out it
+        // turns every release bump into a failing test.
         val doc = Document(dpi = 150)
         doc.style = PageStyle(pattern = PagePattern.LINES, spacing = 48.0)
         doc.bookmarks.add(Bookmark(0, "Intro"))
@@ -465,7 +467,7 @@ class DocumentCodecTest {
             }
         }
         assertEquals(
-            "{\"format\":\"xnote\",\"version\":1,\"writer\":43,\"dpi\":150,\"has_pdf\":false," +
+            "{\"format\":\"xnote\",\"version\":1,\"writer\":${DocumentCodec.WRITER},\"dpi\":150,\"has_pdf\":false," +
                 "\"bookmarks\":[{\"page\":0,\"label\":\"Intro\"}]," +
                 "\"pages\":[{\"width\":100,\"height\":200,\"pdf_page\":null,\"items\":[" +
                 "{\"kind\":\"stroke\",\"tool\":\"speed\",\"config\":{\"base_width\":3.5," +
