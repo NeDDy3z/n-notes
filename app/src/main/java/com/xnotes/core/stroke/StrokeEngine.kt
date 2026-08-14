@@ -48,7 +48,8 @@ object StrokeEngine {
      *  broad opening have not arrived yet. Every sample inside it is drawn at the thinnest heading
      *  the window holds (see [headDirection]). Long enough to outvote a pen-down flick, short enough
      *  that a stroke which really starts broad opens broad. It is the dot threshold too: a finished
-     *  stroke that never fills the window is a tap. */
+     *  stroke that never fills the window is a tap. The tail borrows it as well, as the travel a
+     *  widening has to hold before the pen lifts to count (see [capTail]). */
     const val HEAD_LEN = 8.0
 
     /** Calligraphy pen: the travel the nib takes to widen across its whole range, thin face to broad
@@ -341,6 +342,40 @@ object StrokeEngine {
      * start, having no travel behind it to measure. [steps] is travel along the smoothed centreline,
      * and both lengths are already scaled to the stroke's draw zoom.
      */
+    /**
+     * [headDirection]'s mirror at the other end, run once the pen has lifted. Across the stroke's
+     * last [window] of travel the nib may thin but not widen: a lift-off skid and a downstroke that
+     * began one sample ago are the same signal, and the stroke ended before either could hold it.
+     * The last sample is the worst of it, since its tangent is one-sided and nothing follows to spend
+     * the width back. Everything before the window keeps whatever it earned.
+     *
+     * A ceiling rather than the head's flat pin, because the tail is not short of information the way
+     * the start is. Only the widening is unconfirmable. The thinning either side of it was measured
+     * against real travel, so a stroke that curves out of the broad face still thins across the tail
+     * exactly as it did before, and one that was already broad the whole way is untouched.
+     *
+     * Only for a *finished* stroke: while the pen is down the last sample is the pen itself, and
+     * capping it would stop the ink widening at all.
+     *
+     * The ceiling is read at exactly [window] back from the end, between samples rather than at one,
+     * so where the window opens does not depend on how densely the pen happened to report. Anchored
+     * at a sample instead, the same gesture drawn faster would cap at a different width.
+     */
+    private fun capTail(dir: DoubleArray, cum: DoubleArray, window: Double) {
+        val n = dir.size
+        val start = cum[n - 1] - window
+        var i = 1
+        while (i < n - 1 && cum[i] < start) i++
+        var ceiling = dir[i - 1]
+        val span = cum[i] - cum[i - 1]
+        if (start > cum[i - 1] && span > MIN_STEP) {
+            ceiling += (dir[i] - dir[i - 1]) * (start - cum[i - 1]) / span
+        }
+        for (j in i until n) {
+            if (dir[j] > ceiling) dir[j] = ceiling else ceiling = dir[j]
+        }
+    }
+
     private fun nibDirection(
         ty: DoubleArray,
         steps: DoubleArray,
@@ -470,16 +505,21 @@ object StrokeEngine {
         val sf = if (speedStrength > 0.0) speedFactors(samples, steps, speedStrength, speedScale) else null
         val tf = if (taperEnabled) taperFactors(cum, taperMinFactor, smoothScale) else null
 
-        // Calligraphy: the tangent-y that sets nib width, in two pieces. The head is decided once
+        // Calligraphy: the tangent-y that sets nib width, in three pieces. The head is decided once
         // over the first HEAD_LEN of travel and pinned flat across it (a pen-down jitter loses to the
-        // run that follows it, and a finished stroke too short to fill the window is a dot). After
-        // that a slew limiter caps how fast the width may change per px travelled, OPEN_LEN to widen
-        // and CLOSE_LEN to thin, so a stray sample only buys its own fraction of the range. Nothing
-        // here looks ahead past the head, and nothing reads time. Orientation still follows the true
-        // tangent; only the width magnitude is held back. A no-op when ds = 0.
+        // run that follows it, and a finished stroke too short to fill the window is a dot). The body
+        // is a slew limiter capping how fast the width may change per px travelled, OPEN_LEN to widen
+        // and CLOSE_LEN to thin, so a stray sample only buys its own fraction of the range. The tail
+        // is the head's mirror at pen-up: over the last HEAD_LEN the nib may thin but not widen,
+        // since a lift-off skid ends before it can hold. Nothing here looks ahead past the two ends,
+        // and nothing reads time. Orientation still follows the true tangent; only the width
+        // magnitude is held back. A no-op when ds = 0.
         val dirY = if (ds > 0.0) {
-            val (head, holdUntil) = headDirection(ty, cum, headLen(smoothScale), finished)
-            nibDirection(ty, dirSteps, openLen(smoothScale), closeLen(smoothScale), head, holdUntil)
+            val window = headLen(smoothScale)
+            val (head, holdUntil) = headDirection(ty, cum, window, finished)
+            val d = nibDirection(ty, dirSteps, openLen(smoothScale), closeLen(smoothScale), head, holdUntil)
+            if (finished) capTail(d, cum, window)
+            d
         } else null
 
         // 5–8. Half-widths, normals, and the two ribbon edges, packed straight into the output:

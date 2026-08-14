@@ -352,23 +352,70 @@ class StrokeEngineTest {
             g.hw(0) < 1.5)
     }
 
-    @Test fun calligraphyStrayLiftOffSampleBuysOnlyItsOwnTravel() {
+    @Test fun calligraphyStrayLiftOffSampleDoesNotSwellTheEnd() {
         // Travel in the thin (nib-edge) direction, then a single stray sample jumps the other way as
-        // the pen lifts. The limiter bounds a rate rather than deleting short runs, so the stray does
-        // widen the end, but only by the travel it brought: 3 px of a 8 px OPEN_LEN is 3/8 of the
-        // direction channel's 2.0 span. Nothing before it moves, and one more sample of thin travel
-        // would take it all back.
+        // the pen lifts. The limiter alone would let that widen the end, since a rate bounds how fast
+        // the width moves and cannot delete a short run: 3 px of an 8 px OPEN_LEN buys 3/8 of the
+        // direction channel, which is 1.35 px of half-width against a 1.2 px body. The tail rule is
+        // what stops it. Over the last HEAD_LEN the nib may only thin, so the skid gets nothing.
         val ds = 0.6
         val up = (0..20).map { Sample(0.0, -it * 4.0, 1.0) }   // travel -y: thin (1 - ds)
         val stray = Sample(0.0, -20 * 4.0 + 3.0, 1.0)          // one sample back down (+y): thick
         val g = StrokeEngine.build(up + stray, 6.0, false, 1.0, ds, smooth = false)
         var body = 0.0
         for (i in 0 until g.pointCount - 1) if (g.hw(i) > body) body = g.hw(i)
-        // Half-width the stray can earn: (baseWidth / 2) · ds · its share of the channel.
-        val cap = (6.0 / 2.0) * ds * (3.0 * 2.0 / StrokeEngine.OPEN_LEN)
         assertEquals("the thin body is untouched", 3.0 * (1.0 - ds), body, 1e-6)
-        assertTrue("a stray lift-off sample cannot swell past one sample's allowance",
-            g.hw(g.pointCount - 1) <= body + cap + 1e-6)
+        assertTrue("a stray lift-off sample must not swell past the body width",
+            g.hw(g.pointCount - 1) <= body + 1e-6)
+    }
+
+    @Test fun calligraphyTailRuleSurvivesPenUpSampleReduction() {
+        // The reducer runs straight after the tail rule, on a stroke whose tail it has just flattened.
+        // A flat channel is what the reducer drops most freely, so this is the same shape of risk the
+        // head guard covers. It needs no guard of its own: the ceiling is a minimum over the window
+        // and every sample in the window carries it, while the skid itself is inside END_KEEP.
+        val ds = 0.6
+        val up = (0..200).map { Sample(0.0, -it * 0.3, 1.0) }
+        val stray = Sample(0.0, -200 * 0.3 + 3.0, 1.0)
+        val pts = up + stray
+        val drawn = StrokeEngine.build(pts, 6.0, false, 1.0, ds)
+        val kept = StrokeSimplify.simplify(pts, drawn.halfWidths, StrokeSimplify.LEGACY_EPS, 1.0, ds)
+        assertTrue("the reduction has to actually drop samples", kept.size < pts.size)
+        val committed = StrokeEngine.build(kept, 6.0, false, 1.0, ds)
+        val body = 3.0 * (1.0 - ds)
+        assertTrue("the drawn end is held to the body width", drawn.hw(drawn.pointCount - 1) <= body + 1e-6)
+        assertTrue("and so is the committed one",
+            committed.hw(committed.pointCount - 1) <= body + 1e-6)
+    }
+
+    @Test fun calligraphyLiftOffSwellIsOnlyTakenBackAtPenUp() {
+        // The tail rule is a lift-time rule, and it has to be. While the pen is down the last sample
+        // is the pen itself, so capping it would stop the ink widening at all: every downstroke would
+        // draw thin under its own tip. Mid-draw the same stray move is a real heading and widens.
+        val ds = 0.6
+        val up = (0..20).map { Sample(0.0, -it * 4.0, 1.0) }
+        val stray = Sample(0.0, -20 * 4.0 + 3.0, 1.0)
+        val g = StrokeEngine.build(up + stray, 6.0, false, 1.0, ds, smooth = false, finished = false)
+        // Its own travel and no more: 3 px of OPEN_LEN, times (baseWidth / 2) · ds.
+        val earned = (6.0 / 2.0) * ds * (3.0 * 2.0 / StrokeEngine.OPEN_LEN)
+        assertEquals(3.0 * (1.0 - ds) + earned, g.hw(g.pointCount - 1), 1e-6)
+    }
+
+    @Test fun calligraphyTailRuleLeavesAThinningEndAlone() {
+        // The tail caps widening, it does not flatten. A stroke that curves out of the broad face on
+        // its way to the pen-up still thins across the tail at the CLOSE_LEN rate, one value per
+        // sample, instead of collapsing to the thinnest heading in the window.
+        val ds = 0.6
+        val down = (0..19).map { Sample(0.0, it * 1.5, 1.0) }            // +y: broad
+        val out = (1..2).map { Sample(it * 1.5, 28.5, 1.0) }             // +x: mid
+        val g = StrokeEngine.build(down + out, 6.0, false, 1.0, ds, smooth = false)
+        val last = g.pointCount - 1
+        assertEquals("the end settles at the mid width", 3.0, g.hw(last), 1e-6)
+        assertTrue("the sample before it is still broader", g.hw(last - 1) > 3.5)
+        assertTrue("and the one before that broader still", g.hw(last - 2) > g.hw(last - 1))
+        // The window reaches 5 px back into the downstroke, and every bit of that stays broad: the
+        // ceiling opens at the width the stroke already had, so only the widening is capped.
+        assertEquals("nothing already earned is taken back", 3.0 * (1.0 + ds), g.hw(last - 3), 1e-6)
     }
 
     @Test fun calligraphyStrayPenDownSampleDoesNotSwellTheStart() {
