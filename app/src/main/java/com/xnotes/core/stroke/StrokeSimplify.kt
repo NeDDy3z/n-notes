@@ -41,15 +41,11 @@ object StrokeSimplify {
     const val END_KEEP = StrokeEngine.CAP_HOLD_SAMPLES + 1
 
     /** Strokes at/below this arc are never reduced: the calligraphy dot rule
-     *  ([StrokeEngine.DOT_MAX_LEN]) judges the smoothed arc, which must not shift near it. Scaled by
+     *  ([StrokeEngine.HEAD_LEN]) judges the smoothed arc, which must not shift near it. Scaled by
      *  the draw zoom, since the rule it is protecting is scaled by it too. */
     const val MIN_ARC = 10.0
 
     private const val MIN_SAMPLES = 2 * END_KEEP + 3
-
-    /** Confirm windows a direction-critical stretch spans: the erosion's own, plus the dilation's
-     *  on either side of it, plus one for the tangent's finite differences to land in. */
-    const val DIR_REACH = 3.0
 
     /**
      * The samples the ribbon actually needs. A sample survives when its position or its rendered
@@ -60,8 +56,8 @@ object StrokeSimplify {
      *
      * [scale] is the stroke's `smoothScale`: every arc below is quoted at 100% zoom and scaled by it,
      * so a stroke drawn zoomed in is reduced by the same amounts on screen as one drawn at 100%.
-     * [directionStrength] is the pen's, and picks up the nib guard for a stroke whose width follows
-     * its heading; see [keepDirectionCritical] for what that protects and why nothing else can.
+     * [directionStrength] is the pen's, and picks up the nib's head guard for a stroke whose width
+     * follows its heading; see [keepHead] for what that protects and why nothing else can.
      */
     fun simplify(
         samples: List<Sample>,
@@ -86,12 +82,9 @@ object StrokeSimplify {
             keep[n - 1 - i] = true
         }
 
-        // The nib's guard reads its arc straight from the engine, since a guard protecting a
-        // different stretch than the one being confirmed would protect the wrong samples.
-        val dirArc = if (directionStrength > 0.0) StrokeEngine.dirConfirmLen(k) else 0.0
         rdp(samples, halfWidths, keep, END_KEEP - 1, n - END_KEEP, eps)
         keepCornerNeighborhoods(samples, keep, cum, k)
-        if (dirArc > 0.0) keepDirectionCritical(samples, keep, cum, dirArc, k)
+        if (directionStrength > 0.0) keepHead(keep, cum, k)
         capGaps(keep, cum, k)
 
         var kept = 0
@@ -176,60 +169,23 @@ object StrokeSimplify {
     }
 
     /**
-     * Calligraphy: keep the original density wherever the nib's thick/thin decision is made.
+     * Calligraphy: keep every sample the nib's **head** is decided from.
      *
-     * That decision is not a filter but an order statistic. [StrokeEngine.confirmThickening] erodes
-     * the heading with a trailing-window minimum and dilates it with a leading-window maximum, and a
-     * minimum changes the moment a candidate leaves its window. So it is not enough to bound how far
-     * the reduction moves the curve, which is all the other guards do, and all the arc-length
-     * smoothing does: drop the one thin sample that was holding a window down and the whole run
-     * confirms thick, which reads as the stroke changing weight at pen-up.
+     * The rest of the nib needs no guard. Past the head the width is a slew limiter integrating over
+     * arc, so it moves continuously with its input and the width channel [rdp] already reads catches
+     * any sample that mattered to it. The head does not work that way: it is
+     * the minimum heading over the stroke's first [StrokeEngine.HEAD_LEN], pinned flat across the
+     * whole window, and a flat run is exactly where a width channel has nothing to flag. Drop the
+     * sample that won the minimum and the head comes back broader with no deviation to have caught
+     * it, which reads as the stroke changing weight at pen-up.
      *
-     * Two places qualify. The run-in at each end, because the start floor reads its window at
-     * exactly [arc] of travel and [END_KEEP] samples do not reach that far. And every crossover
-     * where the path turns through the nib's edge, since that is where the heading a window
-     * minimises over is actually changing; a steady run has nothing to lose, however thinned.
+     * The reach runs past the window itself, because [cum] is raw travel while the engine measures
+     * the head on the smoothed centreline, which trails it, and the last sample's tangent reads one
+     * kept sample further still.
      */
-    private fun keepDirectionCritical(
-        samples: List<Sample>,
-        keep: BooleanArray,
-        cum: DoubleArray,
-        arc: Double,
-        scale: Double,
-    ) {
-        val n = samples.size
-        val total = cum[n - 1]
-        // The opening erodes and then dilates, so one confirmed value is a minimum of minima and
-        // reaches a window each way on top of its own: protecting a single window either side left
-        // the dilation still reading thinned ink just outside it, and a visible step with it.
-        val reach = DIR_REACH * arc
-        for (i in 0 until n) if (cum[i] <= reach || total - cum[i] <= reach) keep[i] = true
-        // The heading over a short chord rather than between neighbours: consecutive samples on a
-        // near-horizontal run flip sign on jitter alone, and that would protect the whole stroke.
-        var previous = 0.0
-        for (i in 1 until n) {
-            val dy = headingY(samples, cum, i, scale)
-            if (dy == 0.0) continue
-            if (previous != 0.0 && (dy > 0.0) != (previous > 0.0)) {
-                var a = i
-                while (a > 0 && cum[i] - cum[a - 1] <= reach) a--
-                var b = i
-                while (b < n - 1 && cum[b + 1] - cum[i] <= reach) b++
-                for (t in a..b) keep[t] = true
-            }
-            previous = dy
-        }
-    }
-
-    /** The y of the path's heading at [i], over a chord of about [CORNER_KEEP_ARC] either side. */
-    private fun headingY(samples: List<Sample>, cum: DoubleArray, i: Int, scale: Double): Double {
-        val n = samples.size
-        val chord = CORNER_KEEP_ARC * scale
-        var a = i
-        while (a > 0 && cum[i] - cum[a - 1] <= chord) a--
-        var b = i
-        while (b < n - 1 && cum[b] - cum[i] <= chord) b++
-        return samples[b].y - samples[a].y
+    private fun keepHead(keep: BooleanArray, cum: DoubleArray, scale: Double) {
+        val headArc = StrokeEngine.headLen(scale) + (StrokeEngine.SMOOTH_LEN + MAX_GAP) * scale
+        for (i in keep.indices) if (cum[i] <= headArc) keep[i] = true else break
     }
 
     /** Re-keep samples so every kept-to-kept arc is at most [MAX_GAP] — or a single raw segment,

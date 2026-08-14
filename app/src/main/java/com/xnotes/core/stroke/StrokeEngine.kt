@@ -33,13 +33,6 @@ object StrokeEngine {
      *  response; higher = a sharper S. */
     const val PRESSURE_CURVE_K = 8.0
 
-    /** Calligraphy pen: a heavier low-pass on the direction channel (the tangent's y that
-     *  drives nib width) than [ALPHA] (position), so the width eases between thick and thin
-     *  as the stroke curves instead of snapping when the tangent turns. The speed pen smooths
-     *  its width the same spirit via a windowed velocity (see [speedFactors]); only the width
-     *  magnitude is smoothed, not the ribbon's orientation. */
-    const val DIR_ALPHA = 0.25
-
     /** Sample spacing (content px) the smoothing lengths below are tuned at: about what a stylus
      *  reports while writing at normal speed at 100% zoom, through the capture gate. */
     const val REFERENCE_SPACING = 1.5
@@ -50,32 +43,34 @@ object StrokeEngine {
      *  at 100% zoom looks as it always has. */
     val SMOOTH_LEN = REFERENCE_SPACING * (1.0 - ALPHA) / ALPHA
 
-    /** [SMOOTH_LEN]'s counterpart for the calligraphy direction channel, from [DIR_ALPHA]. */
-    val DIR_SMOOTH_LEN = REFERENCE_SPACING * (1.0 - DIR_ALPHA) / DIR_ALPHA
+    /** Calligraphy pen: the travel that decides the stroke's **head**, the one stretch no causal
+     *  rule can judge, because at pen-down the samples that would tell a jitter from a genuinely
+     *  broad opening have not arrived yet. Every sample inside it is drawn at the thinnest heading
+     *  the window holds (see [headDirection]). Long enough to outvote a pen-down flick, short enough
+     *  that a stroke which really starts broad opens broad. It is the dot threshold too: a finished
+     *  stroke that never fills the window is a tap. */
+    const val HEAD_LEN = 8.0
 
-    /** Calligraphy pen: the broad/thick face of the nib is only allowed in once the stroke has held
-     *  that heading for this many content px of travel (see [confirmThickening] in [build]). Long
-     *  enough to outvote a pen-down or lift-off jitter or a one/two-pixel wobble, short enough that a
-     *  real downstroke still swells almost at once. Scaled by the stroke's draw zoom like the
-     *  smoothing lengths, so it is that much *hand* travel and not that much page. */
-    const val DIR_CONFIRM_LEN = 8.0
+    /** Calligraphy pen: the travel the nib takes to widen across its whole range, thin face to broad
+     *  (see [nibDirection]). A rate, not a threshold: a stray sample only buys its own fraction of
+     *  it, while a real downstroke reaches full width within a letter's height. */
+    const val OPEN_LEN = 8.0
 
-    /** Calligraphy pen: a *finished* stroke whose whole arc is at most this many content px is a
-     *  dot, and takes the nib's broad face outright — the thin face would leave a tap nearly
-     *  invisible (a dot can never travel far enough to confirm a thick heading). Judged only once
-     *  the pen has lifted ([build]'s `finished`), so the live preview never opens thick. Scaled with
-     *  [DIR_CONFIRM_LEN]: the dot rule is the escape hatch for a stroke too short to confirm, so the
-     *  two have to move together or there is a band that is neither. */
-    const val DOT_MAX_LEN = 5.0
+    /** [OPEN_LEN]'s counterpart for thinning, so the two directions can be tuned apart: ink that
+     *  swells too eagerly reads as a blot, ink that thins too slowly reads as a smear. */
+    const val CLOSE_LEN = 8.0
 
-    /** The arc constants above are hand gestures, so they are quoted at 100% zoom and scaled by the
+    /** The nib's arc constants are hand gestures, so they are quoted at 100% zoom and scaled by the
      *  stroke's [smoothScale] to the page. Without it a nib drawn at 4x had to be dragged four times
      *  as far across the glass before it would thicken, since the page it was writing on was a
      *  quarter the size. */
-    fun dirConfirmLen(smoothScale: Double): Double = DIR_CONFIRM_LEN * max(smoothScale, 0.0)
+    fun headLen(smoothScale: Double): Double = HEAD_LEN * max(smoothScale, 0.0)
 
-    /** [DOT_MAX_LEN] at the stroke's draw zoom; see [dirConfirmLen]. */
-    fun dotMaxLen(smoothScale: Double): Double = DOT_MAX_LEN * max(smoothScale, 0.0)
+    /** [OPEN_LEN] at the stroke's draw zoom; see [headLen]. */
+    fun openLen(smoothScale: Double): Double = OPEN_LEN * max(smoothScale, 0.0)
+
+    /** [CLOSE_LEN] at the stroke's draw zoom; see [headLen]. */
+    fun closeLen(smoothScale: Double): Double = CLOSE_LEN * max(smoothScale, 0.0)
 
     /** Calligraphy pen: the direction-y a dot is built at. Past the broad face's 1.0 on purpose,
      *  so a dot lands slightly bigger than the thickest line and reads as a deliberate mark. */
@@ -237,9 +232,14 @@ object StrokeEngine {
      * read a false slow-down there. Summing distance and time over a fixed *time* span (not a
      * fixed sample count) rejects per-sample jitter and keeps slow corners and ends from
      * collapsing the window onto themselves and ballooning the width. Returns all-`1.0` when off
-     * or the samples carry no usable timing.
+     * or the samples carry no usable timing. [steps] is [build]'s raw per-sample travel.
      */
-    fun speedFactors(samples: List<Sample>, speedStrength: Double, speedScale: Double): DoubleArray {
+    fun speedFactors(
+        samples: List<Sample>,
+        steps: DoubleArray,
+        speedStrength: Double,
+        speedScale: Double,
+    ): DoubleArray {
         val n = samples.size
         val out = DoubleArray(n) { 1.0 }
         if (speedStrength <= 0.0 || n < 2) return out
@@ -247,9 +247,7 @@ object StrokeEngine {
         val tN = samples.last().t
         if (tN - t0 <= 0.0) return out
         val cum = DoubleArray(n)
-        for (i in 1 until n) {
-            cum[i] = cum[i - 1] + hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y)
-        }
+        for (i in 1 until n) cum[i] = cum[i - 1] + steps[i]
         val half = SPEED_WINDOW_MS
         var lo = 0
         var hi = 0
@@ -278,20 +276,17 @@ object StrokeEngine {
      * Per-point width multipliers in `[taperMinFactor, 1]` for the **taper pen**: the width eases
      * across the **whole stroke**, full at the head and easing down to [taperMinFactor] of full at
      * the tip (a sharp point when that is 0). Longer strokes just stretch the same profile. Returns
-     * all-`1.0` when [taperEnabled] is false or the stroke is too short ([TAPER_MIN_LEN]).
+     * all-`1.0` when the stroke is too short ([TAPER_MIN_LEN]). [cum] is cumulative arc along the
+     * smoothed centreline, from [build].
      */
     fun taperFactors(
-        cx: DoubleArray,
-        cy: DoubleArray,
-        taperEnabled: Boolean,
+        cum: DoubleArray,
         taperMinFactor: Double,
         smoothScale: Double = 1.0,
     ): DoubleArray {
-        val n = cx.size
+        val n = cum.size
         val out = DoubleArray(n) { 1.0 }
-        if (!taperEnabled || n < 2) return out
-        val cum = DoubleArray(n)
-        for (i in 1 until n) cum[i] = cum[i - 1] + hypot(cx[i] - cx[i - 1], cy[i] - cy[i - 1])
+        if (n < 2) return out
         val total = cum[n - 1]
         if (total < TAPER_MIN_LEN * max(smoothScale, 0.0)) return out
         for (i in 0 until n) {
@@ -303,49 +298,69 @@ object StrokeEngine {
         return out
     }
 
-    /** Confirms a calligraphy nib's thick (high direction-y) runs with a morphological opening over
-     *  an arc-length [window]: an erosion (trailing-window minimum) drops any thick run shorter than
-     *  the window — a jitter, or a stray sample as the pen lands or lifts — back to thin, then a
-     *  dilation (leading-window maximum) grows every run that survived back to its full length. So a
-     *  real downstroke is thick along its whole length, including the lead-in the erosion shaved off,
-     *  not only after the window has passed; a brief spike is gone for good. The path before the
-     *  pen-down counts as the thin extreme, so a stroke that *starts* broad is confirmed exactly like
-     *  one that turns broad mid-way. A drop is never delayed, so the line still thins the instant the
-     *  stroke turns toward the nib edge. */
-    private fun confirmThickening(ty: DoubleArray, cx: DoubleArray, cy: DoubleArray, window: Double): DoubleArray {
-        val n = ty.size
-        if (n < 2) return ty
-        val cum = DoubleArray(n)
-        for (i in 1 until n) cum[i] = cum[i - 1] + hypot(cx[i] - cx[i - 1], cy[i] - cy[i - 1])
-        // Erosion: the trailing-window minimum, so a thick value survives only where it has held for
-        // the whole window back. Before pen-down (the window underruns the start) the path counts as
-        // the thin extreme (-1), so a thick pen-down must also hold for the window before it wins.
-        val eroded = DoubleArray(n)
-        for (i in 0 until n) {
-            var v = if (cum[i] < window) -1.0 else ty[i]
-            var j = i
-            while (j >= 0 && cum[i] - cum[j] <= window) { if (ty[j] < v) v = ty[j]; j-- }
-            eroded[i] = v
-        }
-        // Dilation: the leading-window maximum, so each surviving run grows forward over the lead-in
-        // the erosion ate, ending up thick along its full original length.
-        val out = DoubleArray(n)
-        for (i in 0 until n) {
-            var v = eroded[i]
-            var j = i
-            while (j < n && cum[j] - cum[i] <= window) { if (eroded[j] > v) v = eroded[j]; j++ }
-            out[i] = v
-        }
-        // Start floor: the dilation's forward window can't always reach back over a sparse first
-        // sample to restore the lead, so once a full window has been travelled, floor everything
-        // before it at that first confirmed value (the opening's minimum over the window). A run
-        // that held the broad heading the whole way lifts the floor to thick; a jitter leaves it
-        // thin; a mid/thin start keeps its own width.
-        var confirm = -1
-        for (i in 0 until n) if (cum[i] >= window) { confirm = i; break }
-        if (confirm > 0) {
-            val floor = eroded[confirm]
-            for (i in 0 until confirm) if (out[i] < floor) out[i] = floor
+    /**
+     * The calligraphy nib's **head**: the thinnest heading over the stroke's first [headLen] of
+     * travel, paired with the last sample inside that window. Every sample in the window takes that
+     * one value, so a pen-down jitter loses to the run that follows it inside the same window, and a
+     * stroke that really starts broad keeps its broad head because its own minimum is broad.
+     *
+     * A minimum rather than a mean because the nib is asymmetric: a head that comes out too thin is
+     * a soft error, a head that comes out too thick is a blob the writer has already seen.
+     *
+     * Until the window fills there is no answer, so a live stroke draws the safe value (thin) and is
+     * rewritten once, when it fills. A *finished* stroke that never fills it is a dot and takes
+     * [DOT_DIR_Y]. [cum] is cumulative arc along the smoothed centreline; [headLen] is already
+     * scaled to the stroke's draw zoom.
+     */
+    private fun headDirection(
+        ty: DoubleArray,
+        cum: DoubleArray,
+        headLen: Double,
+        finished: Boolean,
+    ): Pair<Double, Int> {
+        val k = cum.indexOfFirst { it >= headLen }
+        if (k < 0) return (if (finished) DOT_DIR_Y else -1.0) to ty.lastIndex
+        var m = ty[0]
+        for (i in 1..k) if (ty[i] < m) m = ty[i]
+        return m to k
+    }
+
+    /**
+     * The calligraphy nib's direction channel: a slew limiter over the raw heading. Widening is
+     * earned over [openLen] of travel and thinning is spent over [closeLen], so the width can never
+     * change faster than the writer has earned. This bounds the *rate*, not the duration: a short
+     * heading change is flattened in proportion to how sharp it is, and a gentle one passes through.
+     *
+     * The channel spans 2.0 (thin face -1 to broad face +1), so the per-sample cap is
+     * `step · 2 / rate`, and travelling exactly [openLen] at full cap carries the width from one
+     * extreme to the other. Nothing here reads time: a fast stroke reports sparser samples, each
+     * step is longer, and each gets a proportionally larger allowance, so the same path draws the
+     * same widths however fast it was written.
+     *
+     * Samples up to [holdUntil] are pinned to [seed], which is the head: a rate cannot decide the
+     * start, having no travel behind it to measure. [steps] is travel along the smoothed centreline,
+     * and both lengths are already scaled to the stroke's draw zoom.
+     */
+    private fun nibDirection(
+        ty: DoubleArray,
+        steps: DoubleArray,
+        openLen: Double,
+        closeLen: Double,
+        seed: Double,
+        holdUntil: Int,
+    ): DoubleArray {
+        val out = DoubleArray(ty.size)
+        var d = seed
+        for (i in ty.indices) {
+            if (i <= holdUntil) {
+                out[i] = seed
+                continue
+            }
+            val step = if (i == 0) 0.0 else steps[i]
+            val rate = if (ty[i] > d) openLen else closeLen
+            val limit = if (rate > 0.0) step * 2.0 / rate else Double.MAX_VALUE
+            d += (ty[i] - d).coerceIn(-limit, limit)
+            out[i] = d
         }
         return out
     }
@@ -438,34 +453,33 @@ object StrokeEngine {
             }
         }
 
-        // Optional width multipliers: speed thins fast travel, taper points the ends.
-        val sf = speedFactors(samples, speedStrength, speedScale)
-        val tf = taperFactors(sx, sy, taperEnabled, taperMinFactor, smoothScale)
-
-        // Calligraphy: the tangent-y that sets nib width, with the broad (thick) face held back
-        // until the stroke commits to that heading. confirmThickening opens the signal over
-        // DIR_CONFIRM_LEN px (a jitter or a stray lift-off sample is dropped to thin, while a run
-        // that holds is kept thick along its whole length, lead-in included), then a low-pass keeps
-        // the confirmed transition gliding instead of stepping. The line still thins the instant the
-        // stroke turns toward the nib edge. Orientation still follows the true tangent; only the
-        // width magnitude is held back. A no-op when ds = 0.
-        // Exception: a finished dot-sized stroke (DOT_MAX_LEN) can never confirm a heading, so it
-        // takes the dot width (DOT_DIR_Y, past the broad face) whole rather than collapsing to the
-        // near-invisible thin extreme.
-        val dirY = if (ds > 0.0) {
-            var arc = 0.0
-            for (i in 1 until n) arc += hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
-            if (finished && arc <= dotMaxLen(smoothScale)) DoubleArray(n) { DOT_DIR_Y }
-            else {
-                // Along the smoothed path, which is the one confirmThickening measures its window on.
-                val dirSteps = DoubleArray(n)
-                for (i in 1 until n) dirSteps[i] = hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
-                emaByArc(
-                    confirmThickening(ty, sx, sy, dirConfirmLen(smoothScale)),
-                    dirSteps,
-                    DIR_SMOOTH_LEN * max(smoothScale, 0.0),
-                )
+        // Travel along the smoothed centreline and its running total: the path the ink follows, and
+        // what every arc-length rule below is measured in. Only the nib and the taper read it.
+        val arc = ds > 0.0 || taperEnabled
+        val dirSteps = DoubleArray(if (arc) n else 0)
+        val cum = DoubleArray(dirSteps.size)
+        if (arc) {
+            for (i in 1 until n) {
+                dirSteps[i] = hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
+                cum[i] = cum[i - 1] + dirSteps[i]
             }
+        }
+
+        // Optional width multipliers: speed thins fast travel, taper points the ends. Neither pen is
+        // the common one, so the arrays are built only for the strokes that use them.
+        val sf = if (speedStrength > 0.0) speedFactors(samples, steps, speedStrength, speedScale) else null
+        val tf = if (taperEnabled) taperFactors(cum, taperMinFactor, smoothScale) else null
+
+        // Calligraphy: the tangent-y that sets nib width, in two pieces. The head is decided once
+        // over the first HEAD_LEN of travel and pinned flat across it (a pen-down jitter loses to the
+        // run that follows it, and a finished stroke too short to fill the window is a dot). After
+        // that a slew limiter caps how fast the width may change per px travelled, OPEN_LEN to widen
+        // and CLOSE_LEN to thin, so a stray sample only buys its own fraction of the range. Nothing
+        // here looks ahead past the head, and nothing reads time. Orientation still follows the true
+        // tangent; only the width magnitude is held back. A no-op when ds = 0.
+        val dirY = if (ds > 0.0) {
+            val (head, holdUntil) = headDirection(ty, cum, headLen(smoothScale), finished)
+            nibDirection(ty, dirSteps, openLen(smoothScale), closeLen(smoothScale), head, holdUntil)
         } else null
 
         // 5–8. Half-widths, normals, and the two ribbon edges, packed straight into the output:
@@ -476,7 +490,12 @@ object StrokeEngine {
         val halfWidths = FloatArray(n)
         val outline = FloatArray(4 * n)
         for (i in 0 until n) {
-            val h = hw(i, dirY?.get(i) ?: ty[i]) * sf[i] * tf[i]
+            // Clamped to [-1, DOT_DIR_Y], not to [-1, 1]: a dot is 1.5 on purpose, past the broad
+            // face, so a cap at 1.0 would quietly shrink every tap.
+            val dir = if (dirY != null) dirY[i].coerceIn(-1.0, DOT_DIR_Y) else ty[i]
+            var h = hw(i, dir)
+            if (sf != null) h *= sf[i]
+            if (tf != null) h *= tf[i]
             halfWidths[i] = h.toFloat()
             centerline[2 * i] = sx[i].toFloat()
             centerline[2 * i + 1] = sy[i].toFloat()

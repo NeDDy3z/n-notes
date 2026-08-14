@@ -33,7 +33,7 @@ class Stroke(
      *  stroke's far end to the midpoint, lagging it behind the stylus. */
     val straight: Boolean = false,
     /** Scale on every arc-length constant the engine measures the hand against: the low-pass
-     *  lengths, the nib's direction-confirm window, the calligraphy dot rule. Captured at pen-down
+     *  lengths, the nib's head window and its widen/thin rates. Captured at pen-down
      *  as 1 ÷ zoom and capped at 1, so they are lengths of *gesture* rather than of page, and
      *  writing small at high zoom behaves as writing at 100% does. 1.0 = drawn at 100% zoom, and
      *  the default for anything built without a pen. */
@@ -48,8 +48,9 @@ class Stroke(
     private var cachedBounds: Rect? = null
 
     /** False only while the pen is still down on this stroke: lift-time rules (the calligraphy
-     *  dot swell, [StrokeEngine.DOT_MAX_LEN]) are held off so the live preview can't open thick
-     *  at every pen-down. Loaded, cloned and eraser-split strokes are complete. */
+     *  dot swell, a stroke that never fills [StrokeEngine.HEAD_LEN]) are held off so the live
+     *  preview can't open thick at every pen-down. Loaded, cloned and eraser-split strokes are
+     *  complete. */
     var finished = true
         set(value) {
             if (field == value) return

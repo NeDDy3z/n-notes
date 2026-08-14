@@ -84,10 +84,10 @@ class StrokeEngineTest {
     @Test fun calligraphyNibWidthSurvivesPenUpSampleReduction() {
         // A nib stroke that runs thin, turns through the nib's edge, then runs broad: the shape the
         // thick/thin decision is actually made on, sampled densely enough that the reduction can
-        // bite (the gap cap alone floors it at ordinary spacing). That decision is a window minimum,
-        // not a filter, so it does not care how far the reduction moves the curve, only whether the
-        // sample holding a window down is still there. Unguarded this same stroke drifts 0.59 px on
-        // a nib that only spans 1.7 to 4.3, which reads as the stroke changing weight at pen-up.
+        // bite (the gap cap alone floors it at ordinary spacing). Past the head that decision is an
+        // integrator over travel, so it moves continuously with its input and the width channel the
+        // reducer already reads catches any sample that mattered. What is left is the drift from the
+        // reduction moving the curve at all, and on a nib spanning 1.7 to 4.3 that is 0.006 px.
         val ds = 0.6
         val step = 0.3
         val pts = (0..160).map { Sample(it * step, -it * step, 1.0) } +
@@ -107,16 +107,44 @@ class StrokeEngineTest {
             j++
         }
         assertEquals("every kept sample should have been matched", kept.size, j)
-        // Exact but for the packed-float geometry: what is left is a few ulps of the stored width.
-        assertEquals("nib half-width moved under reduction", 0.0, worst, 1e-5)
+        // Measured at 0.006 px; the bound leaves room for tuning without letting a regression past.
+        assertEquals("nib half-width moved under reduction", 0.0, worst, 0.02)
+    }
+
+    @Test fun calligraphyHeadSurvivesPenUpSampleReduction() {
+        // The head is the one part of the nib the width channel cannot protect: it is the minimum
+        // heading over the stroke's first HEAD_LEN, pinned flat across the whole window, and a run
+        // that is flat by construction has no width deviation for the reducer to notice. So the
+        // samples it is decided from have to be kept outright. A gently rotating dense stroke, where
+        // the winning sample sits mid-window with nothing else keeping it: unguarded the reduction
+        // drops 33 of the 43 samples in the window and the rebuilt head lands 0.025 px off.
+        val ds = 0.6
+        val pts = ArrayList<Sample>()
+        var x = 0.0
+        var y = 0.0
+        var arc = 0.0
+        while (arc <= 60.0) {
+            pts.add(Sample(x, y, 1.0, arc))
+            val angle = 1.0 - arc / 30.0
+            x += 0.3 * cos(angle)
+            y += 0.3 * sin(angle)
+            arc += 0.3
+        }
+        val drawn = StrokeEngine.build(pts, 6.0, false, 1.0, ds)
+        val kept = StrokeSimplify.simplify(pts, drawn.halfWidths, StrokeSimplify.LEGACY_EPS, 1.0, ds)
+        assertTrue("the reduction has to actually drop samples", kept.size < pts.size)
+        val rebuilt = StrokeEngine.build(kept, 6.0, false, 1.0, ds)
+        for (i in 0 until 6) {
+            assertEquals("head half-width at $i", drawn.hw(i), rebuilt.hw(i), 1e-6)
+        }
     }
 
     @Test fun theSameGestureAtAnyZoomIsAScaledCopy() {
         // Drawing at 4x lays the same hand movement onto a quarter as much page, so the ink has to
-        // come out a quarter the size and otherwise identical. It did not: the nib's confirm window
-        // was quoted in page pixels, so at 4x the pen had to be dragged four times as far across the
-        // glass before it would thicken. Every arc constant now scales with the draw zoom, and this
-        // pins the whole width pipeline to it, confirm window and dot rule included.
+        // come out a quarter the size and otherwise identical. It did not: the nib's arc constants
+        // were quoted in page pixels, so at 4x the pen had to be dragged four times as far across the
+        // glass before it would thicken. Every one of them now scales with the draw zoom, and this
+        // pins the whole width pipeline to it, head window and widening rate included.
         val ds = 0.6
         val k = 0.25
         // A thin lead-in across the nib's edge, then a long broad downstroke.
@@ -324,25 +352,30 @@ class StrokeEngineTest {
             g.hw(0) < 1.5)
     }
 
-    @Test fun calligraphyStrayLiftOffSampleDoesNotSwellTheEnd() {
+    @Test fun calligraphyStrayLiftOffSampleBuysOnlyItsOwnTravel() {
         // Travel in the thin (nib-edge) direction, then a single stray sample jumps the other way as
-        // the pen lifts. The direction-confirm window still sees the thin ink just before it, so the
-        // last half-width stays at the thin body width instead of ballooning into a fat end dot.
+        // the pen lifts. The limiter bounds a rate rather than deleting short runs, so the stray does
+        // widen the end, but only by the travel it brought: 3 px of a 8 px OPEN_LEN is 3/8 of the
+        // direction channel's 2.0 span. Nothing before it moves, and one more sample of thin travel
+        // would take it all back.
         val ds = 0.6
         val up = (0..20).map { Sample(0.0, -it * 4.0, 1.0) }   // travel -y: thin (1 - ds)
         val stray = Sample(0.0, -20 * 4.0 + 3.0, 1.0)          // one sample back down (+y): thick
         val g = StrokeEngine.build(up + stray, 6.0, false, 1.0, ds, smooth = false)
         var body = 0.0
         for (i in 0 until g.pointCount - 1) if (g.hw(i) > body) body = g.hw(i)
-        assertTrue("a stray lift-off sample must not swell past the body width",
-            g.hw(g.pointCount - 1) <= body + 1e-6)
+        // Half-width the stray can earn: (baseWidth / 2) · ds · its share of the channel.
+        val cap = (6.0 / 2.0) * ds * (3.0 * 2.0 / StrokeEngine.OPEN_LEN)
+        assertEquals("the thin body is untouched", 3.0 * (1.0 - ds), body, 1e-6)
+        assertTrue("a stray lift-off sample cannot swell past one sample's allowance",
+            g.hw(g.pointCount - 1) <= body + cap + 1e-6)
     }
 
     @Test fun calligraphyStrayPenDownSampleDoesNotSwellTheStart() {
-        // The mirror of the lift-off case: a stray first move in the broad (thick) direction at
-        // pen-down, then the real stroke travels thin. The start is confirmed just like the end, so
-        // the lone thick pen-down move is dropped and the first half-width stays at the thin body
-        // width instead of opening with a fat dot.
+        // A stray first move in the broad (thick) direction at pen-down, then the real stroke travels
+        // thin. This is what the head rule is for: the window takes the thinnest heading it holds, so
+        // the lone thick pen-down move loses to the run that follows it inside the same window and the
+        // first half-width stays at the thin body width instead of opening with a fat dot.
         val ds = 0.6
         val stray = Sample(0.0, -3.0, 1.0)                     // first move jumps +y: thick
         val up = (0..20).map { Sample(0.0, -it * 4.0, 1.0) }   // then travel -y: thin (1 - ds)
@@ -354,25 +387,27 @@ class StrokeEngineTest {
     }
 
     @Test fun calligraphySustainedThickStrokeReachesFullWidth() {
-        // The confirmation only delays the onset of thickening, it does not cap it: a long stroke in
-        // the broad direction still reaches full thick width by the end.
+        // The limiter only bounds how fast the width may change, it does not cap the width: a long
+        // stroke in the broad direction still reaches full thick width. Here it opens thick too,
+        // since the head window's own heading is broad all the way through.
         val ds = 0.6
         val pts = (0..40).map { Sample(0.0, it * 4.0, 1.0) }   // travel +y (thick) for 160 px
         val g = StrokeEngine.build(pts, 6.0, false, 1.0, ds, smooth = false)
         assertEquals(3.0 * (1.0 + ds), g.hw(g.pointCount - 1), 1e-6) // half = 3 · direction, thick = 1 + ds
+        assertEquals("a stroke that starts broad opens broad", 3.0 * (1.0 + ds), g.hw(0), 1e-6)
     }
 
-    @Test fun calligraphyConfirmedThickeningFillsTheLeadIn() {
+    @Test fun calligraphyThickeningSwellsInOverOpenLen() {
         // A mid (horizontal) lead-in, then a long sustained turn into the broad (thick, +y) face.
-        // Once the heading is confirmed the opening grows the thick width back over the lead-in, so
-        // the start of the downstroke is already thick rather than thin for the first few px. A few
-        // px into the run the half-width is near full thick (≈4.8 here); without the lead-in fill it
-        // would still sit at the mid width (3.0).
+        // The lead-in is not rewritten once the downstroke proves itself, which is what the old
+        // opening's dilation did: the width swells in from the corner at the OPEN_LEN rate instead,
+        // one quarter of the channel per px here, and tops out 4 px past it.
         val horizontal = (0..8).map { Sample(it.toDouble(), 0.0, 1.0) }   // travel +x: mid
         val down = (1..40).map { Sample(8.0, it.toDouble(), 1.0) }        // travel +y: thick
         val g = StrokeEngine.build(horizontal + down, 6.0, false, 1.0, 0.6, smooth = false)
-        assertTrue("the start of a confirmed downstroke must be thick, not a thin lead-in",
-            g.hw(15) > 4.0)   // index 15 is the 7th downstroke sample, ~6 px past the corner
+        assertEquals("the lead-in keeps its own mid width", 3.0, g.hw(7), 1e-6)
+        assertEquals("one px past the corner: a quarter of the way over", 3.45, g.hw(9), 1e-6)
+        assertEquals("full thick within OPEN_LEN of the corner", 4.8, g.hw(12), 1e-6)
     }
 
     @Test fun highlighterEndsHeldToBodyWidth() {
@@ -417,9 +452,9 @@ class StrokeEngineTest {
     }
 
     @Test fun calligraphyDotTakesTheDotWidth() {
-        // A finished dot-sized stroke (4 px, under DOT_MAX_LEN) can never confirm a thick heading,
-        // so it takes the dot width whole: every half-width is 3 · (1 + ds · DOT_DIR_Y), slightly
-        // past the broad face, not the near-invisible thin extreme the confirm window would
+        // A finished stroke too short to fill the head window (4 px, under HEAD_LEN) never gives the
+        // head anything to measure, so it is a tap: every half-width is 3 · (1 + ds · DOT_DIR_Y),
+        // slightly past the broad face, not the near-invisible thin extreme an unfilled window would
         // otherwise pin it to.
         val pts = listOf(Sample(0.0, 0.0, 1.0), Sample(2.0, 0.0, 1.0), Sample(4.0, 0.0, 1.0))
         val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6, smooth = false)
@@ -427,8 +462,9 @@ class StrokeEngineTest {
     }
 
     @Test fun calligraphyDotStaysThinWhileThePenIsDown() {
-        // The same dot-sized stroke mid-draw (finished = false) keeps the confirmed-thin width, so
-        // the live preview never opens thick at pen-down and snaps back once the stroke grows.
+        // The same short stroke mid-draw (finished = false) keeps the thin width: with the window
+        // unfilled there is no head yet, so it draws the safe value and the live preview never opens
+        // thick at pen-down. It is rewritten once, when the window fills.
         val pts = listOf(Sample(0.0, 0.0, 1.0), Sample(2.0, 0.0, 1.0), Sample(4.0, 0.0, 1.0))
         val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6, smooth = false, finished = false)
         for (i in 0 until g.pointCount) assertEquals(3.0 * 0.4, g.hw(i), 1e-6)
@@ -442,30 +478,105 @@ class StrokeEngineTest {
     }
 
     @Test fun calligraphyShortTickPastTheDotLengthStaysThin() {
-        // Just past DOT_MAX_LEN the dot rule no longer applies: a 6 px tick is still shorter than
-        // the confirm window, so it keeps the unconfirmed thin width as before.
-        val pts = listOf(Sample(0.0, 0.0, 1.0), Sample(0.0, 3.0, 1.0), Sample(0.0, 6.0, 1.0))
+        // Past HEAD_LEN the tap rule no longer applies: a 12 px upward tick fills the head window, so
+        // the head reads the thin heading actually travelled and the whole tick is thin. There is no
+        // band between the two rules any more, since the dot threshold is the head window itself.
+        val pts = (0..4).map { Sample(0.0, -it * 3.0, 1.0) }
         val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6, smooth = false)
         for (i in 0 until g.pointCount) assertEquals(3.0 * 0.4, g.hw(i), 1e-6)
     }
 
     @Test fun calligraphyWidthGlidesAcrossADirectionChange() {
-        // The nib width is low-passed, so when an L-stroke turns from a long rightward run
-        // (thick horizontal regime) into a long upward run (thin vertical regime), the width
-        // keeps easing down for several samples past the corner instead of snapping the
-        // instant the tangent flips. Without the direction low-pass the upward samples would
-        // all sit at the thin regime immediately.
-        val pts = (0..9).map { Sample(it * 10.0, 0.0, 1.0) } +
-            (1..14).map { Sample(90.0, -it * 10.0, 1.0) }
-        val g = StrokeEngine.build(pts, 6.0, true, 0.40, 0.60)
-        val corner = 10 // first sample of the upward run
+        // An L-stroke turning from a long rightward run (mid width) into a long upward run (thin):
+        // the width eases down over several samples instead of snapping the instant the tangent
+        // flips. What paces it is CLOSE_LEN, a travel rather than a filter, so each sample may move
+        // the width by exactly its own share of the range and no more. At 1.5 px spacing that is
+        // 3/8 of the 2.0 channel per sample, three samples to cross a right-angle turn.
+        val ds = 0.6
+        val pts = (0..19).map { Sample(it * 1.5, 0.0, 1.0) } +
+            (1..19).map { Sample(28.5, -it * 1.5, 1.0) }
+        val g = StrokeEngine.build(pts, 6.0, false, 1.0, ds, smooth = false)
+        val corner = 19 // the corner vertex; the tangent starts turning here
         val settled = g.hw(g.pointCount - 1)
-        assertTrue("width should still be mid-transition just past the corner",
-            g.hw(corner + 1) > settled + 1e-6)
-        assertTrue("width should still be easing several samples past the corner",
-            g.hw(corner + 3) > settled + 1e-6)
-        assertTrue("and the transition is monotone (no snap-back)",
-            g.hw(corner + 1) >= g.hw(corner + 3) - 1e-6)
+        val cap = 3.0 * ds * (1.5 * 2.0 / StrokeEngine.CLOSE_LEN) // half-width one sample may spend
+        assertEquals("the run into the corner is at the mid width", 3.0, g.hw(corner - 1), 1e-6)
+        assertEquals("thinning starts at the corner and is capped", 3.0 - cap, g.hw(corner), 1e-6)
+        assertEquals("still mid-transition a sample past it", 3.0 - 2 * cap, g.hw(corner + 1), 1e-6)
+        assertEquals("thin two samples past it", settled, g.hw(corner + 2), 1e-6)
         assertTrue("ends thinner than it started", settled < g.hw(0))
+    }
+
+    @Test fun calligraphyHeadIgnoresAPenDownFlick() {
+        // The case the head rule exists for. The pen lands with a 4 px downward flick and the writer
+        // then draws 40 px upward: the flick is the broad face and the upstroke is the thin one, and
+        // no causal rule can tell them apart at pen-down, because at pen-down only the flick has
+        // happened. The head takes the thinnest heading over the whole first HEAD_LEN, so the flick
+        // loses to the upstroke that shares its window and the stroke opens thin, with no blob.
+        val ds = 0.6
+        val flick = (0..3).map { Sample(0.0, it * 1.0, 1.0) }       // +y: the broad face
+        val up = (1..40).map { Sample(0.0, 3.0 - it * 1.0, 1.0) }   // -y: what was meant
+        val g = StrokeEngine.build(flick + up, 6.0, false, 1.0, ds, smooth = false)
+        val thin = 3.0 * (1.0 - ds)
+        for (i in 0 until 9) assertEquals("head half-width at $i", thin, g.hw(i), 1e-6)
+        assertEquals("nothing anywhere on the stroke is broader", thin, g.halfWidths.max().toDouble(), 1e-6)
+    }
+
+    @Test fun calligraphyWidthNeedsOpenLenToCrossItsRange() {
+        // The rate itself: a thin diagonal run turning into a broad one, both at 45°, so the heading
+        // moves 1.414 of the direction channel's 2.0 span. OPEN_LEN carries the whole span, so this
+        // crossing takes 1.414/2 of it, 5.66 px of travel, and every sample in between moves by
+        // exactly its own share.
+        val ds = 0.6
+        val thin = (0..30).map { Sample(it * 1.0, -it * 1.0, 1.0) }
+        val broad = (1..40).map { Sample(30.0 + it * 1.0, -30.0 + it * 1.0, 1.0) }
+        val pts = thin + broad
+        val g = StrokeEngine.build(pts, 6.0, false, 1.0, ds, smooth = false)
+        val cum = DoubleArray(pts.size)
+        for (i in 1 until pts.size) {
+            cum[i] = cum[i - 1] + hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+        }
+        val thinHw = g.hw(10)
+        val broadHw = g.hw(60)
+        var from = -1.0
+        var to = -1.0
+        for (i in pts.indices) {
+            if (from < 0 && g.hw(i) > thinHw + 1e-6) from = cum[i - 1]
+            if (to < 0 && g.hw(i) >= broadHw - 1e-6 && from >= 0) to = cum[i]
+        }
+        val span = StrokeEngine.OPEN_LEN * (broadHw - thinHw) / (3.0 * ds * 2.0)
+        assertEquals("the crossing is paced by OPEN_LEN", span, to - from, 1.5)
+    }
+
+    @Test fun calligraphyWidthIsTheSameAtAnySampleSpacing() {
+        // Nothing in the nib reads time. A fast pen reports sparser samples, each step is longer, and
+        // each gets a proportionally larger allowance, so the same path drawn at five times the speed
+        // has to come out the same width. Measured at 0.042 px, worst near where the head window ends.
+        fun run(spacing: Double): Pair<DoubleArray, DoubleArray> {
+            val pts = ArrayList<Sample>()
+            var arc = 0.0
+            while (arc <= 60.0) {
+                val a = arc / 20.0
+                pts.add(Sample(20.0 * a, 12.0 * sin(a * 2), 1.0, arc))
+                arc += spacing
+            }
+            val g = StrokeEngine.build(pts, 6.0, false, 1.0, 0.6)
+            val cum = DoubleArray(pts.size)
+            for (i in 1 until pts.size) {
+                cum[i] = cum[i - 1] + hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+            }
+            return cum to DoubleArray(pts.size) { g.hw(it) }
+        }
+        val (denseArc, denseHw) = run(0.3)
+        val (sparseArc, sparseHw) = run(1.5)
+        var worst = 0.0
+        for (j in sparseArc.indices) {
+            val s = sparseArc[j]
+            if (s < 2.0 || s > denseArc.last() - 2.0) continue
+            var i = 0
+            while (i < denseArc.size - 2 && denseArc[i + 1] < s) i++
+            val t = (s - denseArc[i]) / (denseArc[i + 1] - denseArc[i])
+            worst = maxOf(worst, abs(denseHw[i] + (denseHw[i + 1] - denseHw[i]) * t - sparseHw[j]))
+        }
+        assertTrue("half-width moved $worst px with the sample spacing", worst < 0.05)
     }
 }
