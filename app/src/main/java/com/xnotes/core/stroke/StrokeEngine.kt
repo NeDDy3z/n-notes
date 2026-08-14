@@ -455,10 +455,10 @@ object StrokeEngine {
 
         // Travel along the smoothed centreline and its running total: the path the ink follows, and
         // what every arc-length rule below is measured in. Only the nib and the taper read it.
-        val arc = ds > 0.0 || taperEnabled
-        val dirSteps = DoubleArray(if (arc) n else 0)
+        val needArc = ds > 0.0 || taperEnabled
+        val dirSteps = DoubleArray(if (needArc) n else 0)
         val cum = DoubleArray(dirSteps.size)
-        if (arc) {
+        if (needArc) {
             for (i in 1 until n) {
                 dirSteps[i] = hypot(sx[i] - sx[i - 1], sy[i] - sy[i - 1])
                 cum[i] = cum[i - 1] + dirSteps[i]
