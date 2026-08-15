@@ -72,6 +72,7 @@ fun Toolbar(
     onAddStamps: () -> Unit,
     onPresent: () -> Unit,
     modifier: Modifier = Modifier,
+    onClosePane: (() -> Unit)? = null,
 ) {
     val palette = LocalPalette.current
     // The five stroke tools use the designed vector drawables (res/drawable/ic_stroke_*),
@@ -96,36 +97,41 @@ fun Toolbar(
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
     var renaming by remember { mutableStateOf(false) }
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(50.dp)
-            .background(palette.panel.toComposeColor())
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp),
+        modifier = modifier.fillMaxWidth().height(50.dp).background(palette.panel.toComposeColor()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The bar is driven by the user-customisable layout; separators sit between non-empty
-        // sections, and each item dispatches to its renderer (see ToolbarItemView).
-        editor.toolbarLayout.visibleSections.forEachIndexed { si, section ->
-            if (si > 0) Separator()
-            section.visibleEntries.forEach { entry ->
-                ToolbarItemView(
-                    editor = editor,
-                    item = entry.item,
-                    toolIcons = toolIcons,
-                    configForTool = configForTool,
-                    setConfigForTool = { configForTool = it },
-                    switcherIndex = switcherIndex,
-                    setSwitcherIndex = { switcherIndex = it },
-                    onRename = { renaming = true },
-                    onOpenBackstage = onOpenBackstage,
-                    onInsertImage = onInsertImage,
-                    onAddStamps = onAddStamps,
-                    onPresent = onPresent,
-                    onToggleFullscreen = onToggleFullscreen,
-                )
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The bar is driven by the user-customisable layout; separators sit between non-empty
+            // sections, and each item dispatches to its renderer (see ToolbarItemView).
+            editor.toolbarLayout.visibleSections.forEachIndexed { si, section ->
+                if (si > 0) Separator()
+                section.visibleEntries.forEach { entry ->
+                    ToolbarItemView(
+                        editor = editor,
+                        item = entry.item,
+                        toolIcons = toolIcons,
+                        configForTool = configForTool,
+                        setConfigForTool = { configForTool = it },
+                        switcherIndex = switcherIndex,
+                        setSwitcherIndex = { switcherIndex = it },
+                        onRename = { renaming = true },
+                        onOpenBackstage = onOpenBackstage,
+                        onInsertImage = onInsertImage,
+                        onAddStamps = onAddStamps,
+                        onPresent = onPresent,
+                        onToggleFullscreen = onToggleFullscreen,
+                    )
+                }
             }
         }
+        // Pinned outside the scrolling row so closing a split pane is always one tap away.
+        onClosePane?.let { ClosePaneButton(it) }
     }
 
     if (renaming) {
@@ -352,6 +358,19 @@ internal fun ToolbarIcon(
             Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))
         }
     }
+}
+
+/** Closes this pane of a split, leaving the other one to fill the window. Shown on both toolbars. */
+@Composable
+internal fun ClosePaneButton(onClose: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier
+            .width(1.dp)
+            .height(26.dp)
+            .background(palette.border.toComposeColor()),
+    )
+    ToolbarIcon(XnotesIcons.close, "Close this pane", onClick = onClose)
 }
 
 @Composable

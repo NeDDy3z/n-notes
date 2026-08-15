@@ -4144,9 +4144,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** True while two panes are open together. */
     val inSplit: Boolean get() = secondary?.noteOpen == true && noteOpen
 
-    /** The editor a note-scoped action should run against: the focused pane of a split, else this one. */
+    /** The editor a note-scoped action should run against: the focused pane while both are open,
+     *  otherwise whichever pane still has a note. */
     val active: Editor
-        get() = if (focusedPane == Pane.SECONDARY) secondary?.takeIf { it.noteOpen } ?: this else this
+        get() {
+            val other = secondary ?: return this
+            if (focusedPane == Pane.SECONDARY && other.noteOpen) return other
+            if (!noteOpen && other.noteOpen) return other
+            return this
+        }
+
+    /** Every pane with a note open, first pane first. Empty on the backstage. */
+    val openPanes: List<Editor>
+        get() = listOfNotNull(takeIf { it.noteOpen }, secondary?.takeIf { it.noteOpen })
 
     /** Build the second pane on first use. It shares the temp dirs and the live settings with this
      *  one, and keeps its own document, history, canvas and session slot. */
@@ -4154,7 +4164,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         it.keyActions = keyActions // the shortcuts already resolve their target pane themselves
         it.sibling = this
         sibling = it
+        secondaryStarted = false
         secondary = it
+    }
+
+    /** Give up on a second pane whose file never opened, so a failed split leaves no stray editor. */
+    fun abandonSecondary() {
+        val other = secondary ?: return
+        if (other.noteOpen) return
+        secondaryStarted = true // it is not coming, so let the release go through
+        releaseClosedSecondary()
     }
 
     /** Give [pane] the keyboard and the file actions. */
@@ -4162,18 +4181,30 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (focusedPane != pane) focusedPane = pane
     }
 
+    /** Set once the second pane has actually had a document pushed onto it, so it is not released in
+     *  the moment between being built and its file finishing its off-thread read. */
+    private var secondaryStarted = false
+
     /**
      * Drop the second pane once it has no note open, releasing its canvas and GL surfaces. Called by
-     * the shell after a pane closes; a no-op while the split is live.
+     * the shell after a pane closes; a no-op while the split is live or still loading.
      */
     fun releaseClosedSecondary() {
         val other = secondary ?: return
-        if (other.noteOpen) return
+        if (other.noteOpen) { secondaryStarted = true; return }
+        if (!secondaryStarted) return
+        secondaryStarted = false
         other.stopPresentation()
         other.sibling = null
         sibling = null
         secondary = null
         focusedPane = Pane.PRIMARY
+    }
+
+    /** Close every open pane, so the backstage is what's left. */
+    fun goHomeAll() {
+        secondary?.goHome()
+        goHome()
     }
 
     /** Pop back to backstage: detach the current note (flush autosave, drop the binding) and clear

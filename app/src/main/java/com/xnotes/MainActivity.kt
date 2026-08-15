@@ -19,11 +19,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -48,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -55,6 +60,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.FocusRequester
@@ -62,7 +68,12 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.IntentCompat
 import androidx.core.view.WindowInsetsCompat
@@ -152,7 +163,8 @@ class MainActivity : ComponentActivity() {
     // before Compose focus routing, so the controller sees both press and release regardless of
     // which view holds focus. Other keys fall through to the normal dispatch.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (editor?.onStylusButtonKey(event) == true) return true
+        // The pen writes in whichever pane has the focus, so its button belongs to that pane too.
+        if (editor?.active?.onStylusButtonKey(event) == true) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -240,11 +252,13 @@ private fun EditorScreen(
     // (editor.noteOpen). Every launch starts on backstage.
     var backstageView by remember { mutableStateOf(com.xnotes.ui.BackstageView.HOME) }
     var showShareChooser by remember { mutableStateOf(false) }
-    var guardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var guardAction by remember { mutableStateOf<GuardRequest?>(null) }
     var pendingAfterSave by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var pendingInsertContent by remember { mutableStateOf<com.xnotes.core.geometry.Pt?>(null) }
-    // The same, for the infinite canvas: where a long-press menu asked the image to land.
-    var pendingCanvasInsertContent by remember { mutableStateOf<com.xnotes.core.geometry.Pt?>(null) }
+    // The pane an image was picked for, and where a long-press menu asked it to land. Held together
+    // so the picker's result lands in the pane that opened it, whatever the focus does meanwhile.
+    var pendingInsert by remember { mutableStateOf<PendingInsert?>(null) }
+    // The same, for the infinite canvas.
+    var pendingCanvasInsert by remember { mutableStateOf<PendingInsert?>(null) }
     var pendingShareUri by remember { mutableStateOf<String?>(null) }
     var pendingSaveCopyUri by remember { mutableStateOf<String?>(null) }
     // A finished PDF render awaiting a SAF "Save as" destination (open-note / file / pages export).
@@ -255,8 +269,8 @@ private fun EditorScreen(
     // export can abort the previous one (set its flag, then join it) without un-cancelling itself.
     var exportJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var exportCancel by remember { mutableStateOf<java.util.concurrent.atomic.AtomicBoolean?>(null) }
-    // Page indices awaiting a SAF "Save as" destination (side-panel page export).
-    var pendingExportPages by remember { mutableStateOf<List<Int>>(emptyList()) }
+    // The pane whose page indices await a SAF "Save as" destination (side-panel page export).
+    var pendingExportPages by remember { mutableStateOf<PendingPages?>(null) }
     val scope = rememberCoroutineScope()
     val resolver = context.contentResolver
     val rwFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -267,16 +281,18 @@ private fun EditorScreen(
             val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Note")
             editor.requestImport(com.xnotes.ui.ImportKind.OPEN, stem, u.toString())
             backstageView = com.xnotes.ui.BackstageView.HOME
-            editor.goHome() // land on backstage to name/place the pending import
+            editor.goHomeAll() // land on backstage to name/place the pending import
         }
     }
+    // Which pane a "Save as" writes: the focused one at the moment the picker opened.
+    var savePane by remember { mutableStateOf(editor) }
     val createLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
         uri?.let {
             runCatching { resolver.takePersistableUriPermission(it, rwFlags) }
             val name = displayNameOf(resolver, it)
-            runCatching { resolver.openOutputStream(it, "wt")?.use { o -> editor.save(o, it.toString(), name) } }
+            runCatching { resolver.openOutputStream(it, "wt")?.use { o -> savePane.save(o, it.toString(), name) } }
                 .onSuccess { val p = pendingAfterSave; pendingAfterSave = null; p?.invoke() }
                 .onFailure { editor.message = "Could not save the note."; pendingAfterSave = null }
         }
@@ -289,7 +305,7 @@ private fun EditorScreen(
             val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Document")
             editor.requestImport(com.xnotes.ui.ImportKind.PDF, stem, u.toString())
             backstageView = com.xnotes.ui.BackstageView.HOME
-            editor.goHome() // land on backstage to name/place the pending import
+            editor.goHomeAll() // land on backstage to name/place the pending import
         }
     }
     // A PDF "Save as" destination. The note is already rendered into [pendingExportTemp]
@@ -323,12 +339,12 @@ private fun EditorScreen(
     val savePageImageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("image/png"),
     ) { uri ->
-        val pages = pendingExportPages; pendingExportPages = emptyList()
-        val index = pages.firstOrNull()
-        if (uri != null && index != null) {
+        val pending = pendingExportPages; pendingExportPages = null
+        val index = pending?.pages?.firstOrNull()
+        if (uri != null && pending != null && index != null) {
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 val ok = runCatching {
-                    val png = editor.pageImagePng(index) ?: return@runCatching false
+                    val png = pending.editor.pageImagePng(index) ?: return@runCatching false
                     resolver.openOutputStream(uri)?.use { it.write(png) } != null
                 }.getOrDefault(false)
                 if (!ok) editor.message = "Could not save the image."
@@ -340,17 +356,17 @@ private fun EditorScreen(
     val savePagesImagesTreeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { treeUri ->
-        val pages = pendingExportPages; pendingExportPages = emptyList()
-        if (treeUri != null && pages.isNotEmpty()) {
+        val pending = pendingExportPages; pendingExportPages = null
+        if (treeUri != null && pending != null && pending.pages.isNotEmpty()) {
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val stem = editor.title
+                val stem = pending.editor.title
                 val saved = runCatching {
                     val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(
                         treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri),
                     )
                     var n = 0
-                    for (index in pages) {
-                        val png = editor.pageImagePng(index) ?: continue
+                    for (index in pending.pages) {
+                        val png = pending.editor.pageImagePng(index) ?: continue
                         val name = "%s-p%02d.png".format(stem, index + 1)
                         val file = android.provider.DocumentsContract.createDocument(resolver, parent, "image/png", name) ?: continue
                         resolver.openOutputStream(file)?.use { it.write(png) }
@@ -364,12 +380,12 @@ private fun EditorScreen(
     }
 
     val insertImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
+        val pending = pendingInsert; pendingInsert = null
+        if (uri != null && pending != null) {
             runCatching {
-                resolver.openInputStream(it)?.use { s -> editor.insertImageAt(s.readBytes(), pendingInsertContent) }
+                resolver.openInputStream(uri)?.use { s -> pending.editor.insertImageAt(s.readBytes(), pending.at) }
             }.onFailure { editor.message = "Could not read the image." }
         }
-        pendingInsertContent = null
     }
 
     // Images picked for the stamp library (multi-select), stored on disk by the editor.
@@ -408,46 +424,80 @@ private fun EditorScreen(
         }
     }
 
+    /** Open the "Save as" picker for [target], remembering which pane its result belongs to. */
+    fun launchSaveAs(target: Editor) {
+        savePane = target
+        createLauncher.launch("${target.title}.xnote")
+    }
+
     fun saveOrPrompt() {
-        val uri = editor.currentUri
-        if (uri != null) {
-            if (!editor.saveTo(uri)) createLauncher.launch("${editor.title}.xnote")
-        } else {
-            createLauncher.launch("${editor.title}.xnote")
+        val target = editor.active
+        val uri = target.currentUri
+        if (uri == null || !target.saveTo(uri)) launchSaveAs(target)
+    }
+
+    // The prompt is about one pane's note, so it asks about — and saves — the pane being acted on.
+    fun guarded(target: Editor = editor.active, action: () -> Unit) {
+        when {
+            target.autosaveUri != null -> action() // autosaved notes are flushed on doc-swap; no prompt
+            target.dirty -> guardAction = GuardRequest(target, action)
+            else -> action()
         }
     }
 
-    fun guarded(action: () -> Unit) {
-        when {
-            editor.autosaveUri != null -> action() // autosaved notes are flushed on doc-swap; no prompt
-            editor.dirty -> guardAction = action
-            else -> action()
+    /** Run [action] once every open pane has settled its unsaved changes, prompting one at a time. */
+    fun guardedAll(action: () -> Unit) {
+        val panes = editor.openPanes
+        fun step(i: Int) {
+            if (i >= panes.size) action() else guarded(panes[i]) { step(i + 1) }
         }
+        step(0)
     }
 
     // An image picked for the infinite canvas: read the bytes and hand them straight over.
     val insertCanvasImageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        val pending = pendingCanvasInsert; pendingCanvasInsert = null
+        if (uri == null || pending == null) return@rememberLauncherForActivityResult
         scope.launch {
             val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { resolver.openInputStream(uri)?.use { input -> input.readBytes() } }.getOrNull()
             }
-            if (bytes != null) editor.infinite.insertImage(bytes, pendingCanvasInsertContent)
-            pendingCanvasInsertContent = null
+            if (bytes != null) pending.editor.infinite.insertImage(bytes, pending.at)
+        }
+    }
+
+    /** Read the file at [uriStr] into [target]. The extension picks the surface: the two document
+     *  types share the explorer but not much else. Reads off-thread behind the "Opening note…"
+     *  spinner so a big embedded PDF doesn't freeze the UI. */
+    suspend fun openInto(target: Editor, uriStr: String) {
+        val name = displayNameOf(resolver, Uri.parse(uriStr))
+        if (com.xnotes.core.util.DocumentKind.ofName(name ?: "") == com.xnotes.core.util.DocumentKind.CANVAS) {
+            target.openCanvasAsync(uriStr, name)
+        } else {
+            target.openAsync(uriStr, name)
         }
     }
 
     fun openTreeFile(uriStr: String) {
-        val name = displayNameOf(resolver, Uri.parse(uriStr))
-        // The extension picks the editor: the two document types share the explorer but not much else.
-        if (com.xnotes.core.util.DocumentKind.ofName(name ?: "") == com.xnotes.core.util.DocumentKind.CANVAS) {
-            scope.launch { editor.openCanvasAsync(uriStr, name) }
-            return
+        scope.launch { openInto(editor, uriStr) }
+    }
+
+    /** Open two picked files together, one per pane, and start the split focused on the first. */
+    fun openSplit(firstUri: String, secondUri: String) {
+        editor.splitRatio = 0.5f
+        editor.focusPane(com.xnotes.ui.Pane.PRIMARY)
+        val second = editor.secondaryPane()
+        scope.launch {
+            openInto(editor, firstUri)
+            openInto(second, secondUri)
+            // A file that would not open leaves no half-built pane behind; the other stays as it is.
+            if (!second.noteOpen) {
+                editor.abandonSecondary()
+                editor.message = "Could not open the second note."
+            }
         }
-        // Read off-thread behind the "Opening note…" spinner so a big embedded PDF doesn't freeze the UI.
-        scope.launch { editor.openAsync(uriStr, name) }
     }
 
     fun stemOf(uriStr: String): String =
@@ -526,12 +576,12 @@ private fun EditorScreen(
     }
 
     // Share the selected side-panel pages: as one PDF, or as one/many PNGs (ACTION_SEND_MULTIPLE).
-    fun sharePages(pages: List<Int>, asPdf: Boolean) {
+    fun sharePages(from: Editor, pages: List<Int>, asPdf: Boolean) {
         if (pages.isEmpty()) return
-        val stem = editor.title
+        val stem = from.title
         if (asPdf) {
             runPdfExport(stem, shareDir = true,
-                render = { o, prog, cancel -> editor.exportPagesToPdf(pages, o, prog, cancel) },
+                render = { o, prog, cancel -> from.exportPagesToPdf(pages, o, prog, cancel) },
                 onReady = { temp -> runCatching { launchShare(temp, stem, "application/pdf") }.onFailure { editor.message = "Could not share the pages." } })
             return
         }
@@ -542,7 +592,7 @@ private fun EditorScreen(
                 dir.listFiles()?.forEach { it.delete() }
                 val uris = ArrayList<Uri>()
                 for (index in pages) {
-                    val png = editor.pageImagePng(index) ?: continue
+                    val png = from.pageImagePng(index) ?: continue
                     val file = java.io.File(dir, "%s-p%02d.png".format(stem, index + 1))
                     java.io.FileOutputStream(file).use { it.write(png) }
                     uris.add(androidx.core.content.FileProvider.getUriForFile(context, auth, file))
@@ -559,47 +609,55 @@ private fun EditorScreen(
         }
     }
 
-    fun savePagesAsPdf(pages: List<Int>) {
+    fun savePagesAsPdf(from: Editor, pages: List<Int>) {
         if (pages.isEmpty()) return
-        runPdfExport(editor.title, shareDir = false,
-            render = { o, prog, cancel -> editor.exportPagesToPdf(pages, o, prog, cancel) },
-            onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${editor.title}.pdf") })
+        runPdfExport(from.title, shareDir = false,
+            render = { o, prog, cancel -> from.exportPagesToPdf(pages, o, prog, cancel) },
+            onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${from.title}.pdf") })
     }
 
     // One page -> a single PNG (CreateDocument); several -> a folder the user picks (one PNG per page).
-    fun savePagesAsImages(pages: List<Int>) {
+    fun savePagesAsImages(from: Editor, pages: List<Int>) {
         if (pages.isEmpty()) return
-        pendingExportPages = pages
-        if (pages.size == 1) savePageImageLauncher.launch("%s-p%02d.png".format(editor.title, pages[0] + 1))
+        pendingExportPages = PendingPages(from, pages)
+        if (pages.size == 1) savePageImageLauncher.launch("%s-p%02d.png".format(from.title, pages[0] + 1))
         else savePagesImagesTreeLauncher.launch(null)
     }
 
-    val focusRequester = remember { FocusRequester() }
-    // The editor owns keyboard focus while it's on top; (re)grab it each time a note is pushed.
-    LaunchedEffect(editor.noteOpen) { if (editor.noteOpen) runCatching { focusRequester.requestFocus() } }
+    // Every shortcut acts on the focused pane, so the same KeyActions serve both of them.
     editor.keyActions = remember {
         Editor.KeyActions(
-            newNote = { guarded { editor.newNote() } },
+            newNote = { guarded { editor.active.newNote() } },
             open = {
                 if (editor.browseRoot != null) openLauncher.launch(arrayOf("*/*"))
-                else { backstageView = com.xnotes.ui.BackstageView.HOME; guarded { editor.goHome() } }
+                else { backstageView = com.xnotes.ui.BackstageView.HOME; guardedAll { editor.goHomeAll() } }
             },
             save = { saveOrPrompt() },
-            saveAs = { createLauncher.launch("${editor.title}.xnote") },
+            saveAs = { launchSaveAs(editor.active) },
             exportPdf = {
-                runPdfExport(editor.title, shareDir = false,
-                    render = { o, prog, cancel -> editor.exportPdf(o, prog, cancel) },
-                    onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${editor.title}.pdf") })
+                val from = editor.active
+                runPdfExport(from.title, shareDir = false,
+                    render = { o, prog, cancel -> from.exportPdf(o, prog, cancel) },
+                    onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${from.title}.pdf") })
             },
-            preferences = { backstageView = com.xnotes.ui.BackstageView.PREFERENCES; guarded { editor.goHome() } },
+            preferences = { backstageView = com.xnotes.ui.BackstageView.PREFERENCES; guardedAll { editor.goHomeAll() } },
             fullscreen = onToggleFullscreen,
         )
     }
+    editor.secondary?.keyActions = editor.keyActions
 
     LaunchedEffect(editor.message) {
         editor.message?.let {
             snackbar.showSnackbar(it)
             editor.message = null
+        }
+    }
+    // The second pane raises its own messages; surface them through the same snackbar.
+    val secondaryMessage = editor.secondary?.message
+    LaunchedEffect(secondaryMessage) {
+        if (secondaryMessage != null) {
+            snackbar.showSnackbar(secondaryMessage)
+            editor.secondary?.message = null
         }
     }
 
@@ -610,11 +668,11 @@ private fun EditorScreen(
         val src = importPdfUri ?: return@LaunchedEffect
         onImportConsumed() // consume once; the body has no suspend point so it runs to completion
         val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, src) ?: "Document")
-        guarded {
+        guardedAll {
             if (editor.browseRoot == null) editor.useInternalStorage()
             editor.requestImport(com.xnotes.ui.ImportKind.PDF, stem, src.toString())
             backstageView = com.xnotes.ui.BackstageView.HOME
-            editor.goHome()
+            editor.goHomeAll()
         }
     }
 
@@ -637,7 +695,7 @@ private fun EditorScreen(
                 onImportFont = { importFontLauncher.launch(arrayOf("*/*")) },
                 onOpenSystem = { openLauncher.launch(arrayOf("*/*")) },
                 onImportPdf = { importPdfLauncher.launch(arrayOf("application/pdf")) },
-                onOpenFile = { uri -> guarded { openTreeFile(uri) } },
+                onOpenFile = { uri -> guarded(editor) { openTreeFile(uri) } },
                 onPickRoot = { pickRootLauncher.launch(null) },
                 onShareFile = { uri -> pendingShareUri = uri; showShareChooser = true },
                 onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}.xnote") },
@@ -646,107 +704,48 @@ private fun EditorScreen(
                         render = { o, prog, cancel -> editor.exportFileToPdf(uri, o, prog, cancel) },
                         onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${stemOf(uri)}.pdf") })
                 },
+                onOpenSplit = { first, second -> guardedAll { openSplit(first, second) } },
             )
 
-            // TOP LAYER: the editor (toolbar + canvas), pushed only when a note is open. Its
-            // BackHandlers live here so — composed after backstage — they take priority while open.
-            if (editor.noteOpen && editor.canvasOpen) {
-                // The infinite canvas has its own chrome: the paged toolbar is almost entirely
-                // pages, viewing modes and text, none of which mean anything here.
-                BackHandler(enabled = true) { editor.goHome() }
-                val canvas = editor.infinite
-                LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(LocalPalette.current.bg.toComposeColor())
-                        .focusRequester(focusRequester)
-                        .focusable()
-                        .onPreviewKeyEvent { ke ->
-                            ke.type == KeyEventType.KeyDown && editor.handleKeyDown(ke.nativeKeyEvent)
-                        },
-                ) {
-                    com.xnotes.ui.InfiniteToolbar(
-                        canvas,
-                        onOpenBackstage = { editor.goHome() },
-                        onInsertImage = { insertCanvasImageLauncher.launch(arrayOf("image/*")) },
-                    )
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-                        AndroidView(
-                            factory = { canvas.view },
-                            modifier = Modifier.fillMaxSize(),
-                            update = { it.publish() },
-                        )
-                        com.xnotes.ui.SelectionMenu(canvas)
-                        com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c ->
-                            pendingCanvasInsertContent = c
-                            insertCanvasImageLauncher.launch(arrayOf("image/*"))
-                        })
-                        com.xnotes.ui.CanvasDebugOverlay(canvas)
-                    }
-                }
-            } else if (editor.noteOpen) {
+            // TOP LAYER: the open panes (toolbar + canvas each), pushed over backstage. Back acts on
+            // the focused pane; its handlers live here so — composed after backstage — they win while
+            // a note is open.
+            val focused = editor.active
+            if (focused.noteOpen) {
                 // While a text box is open, Back commits-or-dismisses it (and hides the keyboard).
-                BackHandler(enabled = editor.editingField != null) { editor.commitText() }
+                BackHandler(enabled = focused.editingField != null) { focused.commitText() }
                 // A live flow caret session ends first (flushing its typing burst).
-                BackHandler(enabled = editor.flowEditingActive) { editor.flowText.endSession() }
-                // Otherwise Back closes the note and pops to backstage (guarded for unsaved edits).
-                BackHandler(enabled = editor.editingField == null && !editor.flowEditingActive) {
-                    guarded { editor.goHome() }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(LocalPalette.current.bg.toComposeColor())
-                        .focusRequester(focusRequester)
-                        .focusable()
-                        .onPreviewKeyEvent { ke ->
-                            ke.type == KeyEventType.KeyDown && editor.handleKeyDown(ke.nativeKeyEvent)
-                        },
-                ) {
-                    Toolbar(
-                        editor,
-                        onToggleFullscreen = onToggleFullscreen,
-                        onOpenBackstage = { backstageView = com.xnotes.ui.BackstageView.HOME; guarded { editor.goHome() } },
-                        onInsertImage = { pendingInsertContent = null; insertImageLauncher.launch(arrayOf("image/*")) },
-                        onAddStamps = { addStampsLauncher.launch(arrayOf("image/*")) },
-                        onPresent = { showPresentation = true },
-                    )
-                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        if (editor.sidebarVisible) {
-                            com.xnotes.ui.SidePanel(
-                                editor,
-                                onSharePages = { pages, asPdf -> sharePages(pages, asPdf) },
-                                onSavePagesAsPdf = { pages -> savePagesAsPdf(pages) },
-                                onSavePagesAsImages = { pages -> savePagesAsImages(pages) },
-                            )
-                        }
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
-                            AndroidView(
-                                factory = { editor.view },
-                                modifier = Modifier.fillMaxSize(),
-                                update = { it.requestRender() }, // repaint on (re)attach so a push never flashes blank
-                            )
-                            editor.editingField?.let { field ->
-                                com.xnotes.ui.TextEditorOverlay(editor, field)
-                            }
-                            com.xnotes.ui.SelectionMenu(editor)
-                            com.xnotes.ui.ScreenshotMenu(editor)
-                            com.xnotes.ui.TextStyleBar(editor)
-                            com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c ->
-                                pendingInsertContent = c
-                                insertImageLauncher.launch(arrayOf("image/*"))
-                            })
-                            com.xnotes.ui.FlowEditMenu(editor)
-                            ZoomLockHint(editor)
-                            RefiningPdfHint(editor)
-                        }
-                    }
-                    // Last child of the resized column: rides directly above the soft keyboard.
-                    com.xnotes.ui.TextFormatBar(editor)
+                BackHandler(enabled = focused.flowEditingActive) { focused.flowText.endSession() }
+                // Otherwise Back closes that pane (guarded for unsaved edits); the other one stays.
+                BackHandler(enabled = focused.editingField == null && !focused.flowEditingActive) {
+                    if (focused.canvasOpen) focused.goHome() else guarded(focused) { focused.goHome() }
                 }
             }
+
+            val actions = PaneActions(
+                onToggleFullscreen = onToggleFullscreen,
+                onOpenBackstage = {
+                    backstageView = com.xnotes.ui.BackstageView.HOME
+                    guardedAll { editor.goHomeAll() }
+                },
+                onClosePane = { pane ->
+                    if (pane.canvasOpen) pane.goHome() else guarded(pane) { pane.goHome() }
+                },
+                onInsertImage = { pane, at ->
+                    pendingInsert = PendingInsert(pane, at)
+                    insertImageLauncher.launch(arrayOf("image/*"))
+                },
+                onInsertCanvasImage = { pane, at ->
+                    pendingCanvasInsert = PendingInsert(pane, at)
+                    insertCanvasImageLauncher.launch(arrayOf("image/*"))
+                },
+                onAddStamps = { addStampsLauncher.launch(arrayOf("image/*")) },
+                onPresent = { showPresentation = true },
+                onSharePages = { pane, pages, asPdf -> sharePages(pane, pages, asPdf) },
+                onSavePagesAsPdf = { pane, pages -> savePagesAsPdf(pane, pages) },
+                onSavePagesAsImages = { pane, pages -> savePagesAsImages(pane, pages) },
+            )
+            SplitHost(editor, actions)
         }
     }
     if (showShareChooser) {
@@ -775,21 +774,23 @@ private fun EditorScreen(
     if (showPresentation) {
         com.xnotes.ui.PresentationDialog(editor = editor, onDismiss = { showPresentation = false })
     }
-    guardAction?.let { action ->
+    guardAction?.let { request ->
+        val guarded = request.editor
+        val action = request.action
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { guardAction = null },
             title = { androidx.compose.material3.Text("Unsaved changes") },
-            text = { androidx.compose.material3.Text("Save changes to “${editor.title}” before continuing?") },
+            text = { androidx.compose.material3.Text("Save changes to “${guarded.title}” before continuing?") },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     guardAction = null
-                    val uri = editor.currentUri
+                    val uri = guarded.currentUri
                     if (uri != null) {
-                        editor.saveTo(uri)
+                        guarded.saveTo(uri)
                         action()
                     } else {
                         pendingAfterSave = action
-                        createLauncher.launch("${editor.title}.xnote")
+                        launchSaveAs(guarded)
                     }
                 }) { androidx.compose.material3.Text("Save") }
             },
@@ -838,6 +839,274 @@ private fun EditorScreen(
     }
     if (showSaving && editor.savingNote) SavingDialog()
 }
+
+/** A pending "unsaved changes" prompt: the pane it asks about, and what to run once it's settled. */
+private class GuardRequest(val editor: Editor, val action: () -> Unit)
+
+/** A picked image on its way into [editor], at [at] when a long-press chose the spot. */
+private class PendingInsert(val editor: Editor, val at: com.xnotes.core.geometry.Pt?)
+
+/** Side-panel pages of [editor] waiting on a SAF "Save as" destination. */
+private class PendingPages(val editor: Editor, val pages: List<Int>)
+
+/**
+ * What a pane can ask the screen around it to do: open a SAF picker, run an export, or change the
+ * window. Each callback takes the pane it is acting for, because in a split there are two of them
+ * and a picker's result has to come back to the one that opened it.
+ */
+private class PaneActions(
+    val onToggleFullscreen: () -> Unit,
+    /** Leave for the backstage, closing every open pane. */
+    val onOpenBackstage: () -> Unit,
+    /** Close just this pane, leaving the other one to fill the window. */
+    val onClosePane: (Editor) -> Unit,
+    val onInsertImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
+    val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
+    val onAddStamps: () -> Unit,
+    val onPresent: () -> Unit,
+    val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
+    val onSavePagesAsPdf: (Editor, List<Int>) -> Unit,
+    val onSavePagesAsImages: (Editor, List<Int>) -> Unit,
+)
+
+/** Neither pane of a split may be squeezed below this share of the split axis. */
+private const val MIN_PANE_RATIO = 0.18f
+
+/** The draggable bar between two panes. */
+private val DIVIDER = 12.dp
+
+/**
+ * Lays the open panes over the backstage. Both open is a split: side by side in landscape, stacked
+ * in portrait, with a draggable divider between them. One open is that pane full-screen, and none
+ * leaves the backstage showing.
+ *
+ * The panes are placed by offset and size inside one Box rather than by a Row that becomes a Column,
+ * so a pane keeps its composition node — and with it its canvas view, raster caches and GL context —
+ * when the split opens, closes or the device turns.
+ */
+@Composable
+private fun SplitHost(editor: Editor, actions: PaneActions) {
+    val second = editor.secondary
+    val split = editor.noteOpen && second?.noteOpen == true
+    // A pane that closed on its own leaves the other one full-screen; once neither is open the
+    // second editor is released, freeing its canvas and GL surfaces.
+    LaunchedEffect(editor.noteOpen, second?.noteOpen) {
+        if (second != null && !second.noteOpen) editor.releaseClosedSecondary()
+    }
+    if (!editor.noteOpen && second?.noteOpen != true) return
+
+    val sideBySide = LocalConfiguration.current.orientation ==
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val ratio = editor.splitRatio.coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val fullW = maxWidth
+        val fullH = maxHeight
+        val full = if (sideBySide) fullW else fullH
+        // Along the split axis the panes share what the divider leaves; across it they run full.
+        val firstExtent = if (split) (full - DIVIDER) * ratio else full
+        val secondExtent = if (split) full - DIVIDER - firstExtent else full
+        val secondOffset = if (split) firstExtent + DIVIDER else 0.dp
+
+        /** Sizes a pane to [extent] along the split axis and the whole window across it. */
+        fun paneSize(extent: Dp) = Modifier.size(
+            if (sideBySide) extent else fullW,
+            if (sideBySide) fullH else extent,
+        )
+
+        /** Offsets a pane [along] the split axis from the top-left of the editor area. */
+        fun paneOffset(along: Dp) = Modifier.offset(
+            x = if (sideBySide) along else 0.dp,
+            y = if (sideBySide) 0.dp else along,
+        )
+
+        if (editor.noteOpen) {
+            EditorPane(
+                editor = editor,
+                app = editor,
+                actions = actions,
+                closable = split,
+                modifier = paneSize(firstExtent),
+            )
+        }
+        if (split) {
+            SplitDivider(
+                sideBySide = sideBySide,
+                extentPx = with(LocalDensity.current) { full.toPx() },
+                ratio = editor.splitRatio,
+                onRatio = { editor.splitRatio = it },
+                modifier = paneOffset(firstExtent).then(paneSize(DIVIDER)),
+            )
+        }
+        if (second?.noteOpen == true) {
+            EditorPane(
+                editor = second,
+                app = editor,
+                actions = actions,
+                closable = split,
+                modifier = paneOffset(secondOffset).then(paneSize(secondExtent)),
+            )
+        }
+    }
+}
+
+/**
+ * One pane: its toolbar over its canvas, with the menus and overlays that belong to that document.
+ * A paged note and an infinite canvas get different chrome, since the paged toolbar is mostly pages,
+ * viewing modes and text, none of which mean anything on a canvas.
+ *
+ * [app] is the primary editor, which owns the split; [editor] is this pane's own. Touching anywhere
+ * in the pane gives it the focus, so the keyboard and the file actions follow the pen.
+ */
+@Composable
+private fun EditorPane(
+    editor: Editor,
+    app: Editor,
+    actions: PaneActions,
+    closable: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalPalette.current
+    val focusRequester = remember { FocusRequester() }
+    val focused = app.active === editor
+    // This pane owns the keyboard while it is the focused one; (re)grab it as that changes.
+    LaunchedEffect(focused, editor.noteOpen) {
+        if (focused && editor.noteOpen) runCatching { focusRequester.requestFocus() }
+    }
+    val takeFocus = Modifier.pointerInput(editor) {
+        awaitPointerEventScope {
+            while (true) {
+                // Initial pass and never consumed: the pane notices the touch, the canvas still gets it.
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.type == PointerEventType.Press) app.focusPane(editor.pane)
+            }
+        }
+    }
+    Column(
+        modifier = modifier
+            .background(palette.bg.toComposeColor())
+            .then(takeFocus)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ke ->
+                ke.type == KeyEventType.KeyDown && editor.handleKeyDown(ke.nativeKeyEvent)
+            },
+    ) {
+        val onClose = if (closable) ({ actions.onClosePane(editor) }) else null
+        if (editor.canvasOpen) {
+            val canvas = editor.infinite
+            com.xnotes.ui.InfiniteToolbar(
+                canvas,
+                onOpenBackstage = actions.onOpenBackstage,
+                onInsertImage = { actions.onInsertCanvasImage(editor, null) },
+                onClosePane = onClose,
+            )
+            Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                AndroidView(
+                    factory = { detached(canvas.view) },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { it.publish() },
+                )
+                com.xnotes.ui.SelectionMenu(canvas)
+                com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
+                com.xnotes.ui.CanvasDebugOverlay(canvas)
+            }
+        } else {
+            Toolbar(
+                editor,
+                onToggleFullscreen = actions.onToggleFullscreen,
+                onOpenBackstage = actions.onOpenBackstage,
+                onInsertImage = { actions.onInsertImage(editor, null) },
+                onAddStamps = actions.onAddStamps,
+                onPresent = actions.onPresent,
+                onClosePane = onClose,
+            )
+            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (editor.sidebarVisible) {
+                    com.xnotes.ui.SidePanel(
+                        editor,
+                        onSharePages = { pages, asPdf -> actions.onSharePages(editor, pages, asPdf) },
+                        onSavePagesAsPdf = { pages -> actions.onSavePagesAsPdf(editor, pages) },
+                        onSavePagesAsImages = { pages -> actions.onSavePagesAsImages(editor, pages) },
+                    )
+                }
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+                    AndroidView(
+                        factory = { detached(editor.view) },
+                        modifier = Modifier.fillMaxSize(),
+                        update = { it.requestRender() }, // repaint on (re)attach so a push never flashes blank
+                    )
+                    editor.editingField?.let { field ->
+                        com.xnotes.ui.TextEditorOverlay(editor, field)
+                    }
+                    com.xnotes.ui.SelectionMenu(editor)
+                    com.xnotes.ui.ScreenshotMenu(editor)
+                    com.xnotes.ui.TextStyleBar(editor)
+                    com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
+                    com.xnotes.ui.FlowEditMenu(editor)
+                    ZoomLockHint(editor)
+                    RefiningPdfHint(editor)
+                }
+            }
+            // Last child of the resized column: rides directly above the soft keyboard.
+            com.xnotes.ui.TextFormatBar(editor)
+        }
+    }
+}
+
+/**
+ * The bar between two split panes. Dragging it moves the divider along the split axis, keeping both
+ * panes at least [MIN_PANE_RATIO] of it; double-tapping puts it back in the middle.
+ */
+@Composable
+private fun SplitDivider(
+    sideBySide: Boolean,
+    extentPx: Float,
+    ratio: Float,
+    onRatio: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalPalette.current
+    // Read inside the long-lived drag gesture, which does not restart as the ratio moves.
+    val ratioNow = rememberUpdatedState(ratio)
+    val onRatioNow = rememberUpdatedState(onRatio)
+    var dragged by remember { mutableStateOf(0f) }
+    Box(
+        modifier = modifier
+            .background(palette.panel.toComposeColor())
+            .pointerInput(sideBySide, extentPx) {
+                detectDragGestures(
+                    onDragStart = { dragged = ratioNow.value },
+                    onDrag = { change, drag ->
+                        change.consume()
+                        if (extentPx <= 0f) return@detectDragGestures
+                        val along = if (sideBySide) drag.x else drag.y
+                        dragged = (dragged + along / extentPx).coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
+                        onRatioNow.value(dragged)
+                    },
+                )
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = { onRatioNow.value(0.5f) })
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        // A short grip in the middle of the bar, so it reads as something to drag.
+        Box(
+            Modifier
+                .size(if (sideBySide) 3.dp else 40.dp, if (sideBySide) 40.dp else 3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(palette.textDim.toComposeColor()),
+        )
+    }
+}
+
+/**
+ * Hands a reused View back to [AndroidView]. A pane's canvas can move to a fresh composition node
+ * when the split opens or closes, and the new node parents the view itself, so it has to leave the
+ * old parent first rather than throw.
+ */
+private fun <T : android.view.View> detached(view: T): T =
+    view.also { (it.parent as? android.view.ViewGroup)?.removeView(it) }
 
 /**
  * Wraps a PDF export's output stream and throws the instant [cancelled] turns true, so PdfBox's

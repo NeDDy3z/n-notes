@@ -181,6 +181,8 @@ fun Backstage(
     onImportCodeTheme: () -> Unit = {},
     /** Preferences asked to import a font file. */
     onImportFont: () -> Unit = {},
+    /** Two picked files are to be opened together, one per pane of a split view. */
+    onOpenSplit: (String, String) -> Unit = { _, _ -> },
 ) {
     // Below this width the sidebar becomes a slide-over drawer instead of a persistent pane.
     val compact = LocalConfiguration.current.screenWidthDp < COMPACT_WIDTH_DP
@@ -189,6 +191,7 @@ fun Backstage(
     BackstageContent(
         editor, compact, view, onSelectView, onOpenSystem, onImportPdf,
         onOpenFile, onPickRoot, onShareFile, onSaveCopyFile, onExportFilePdf, onExitApp, onImportCodeTheme, onImportFont,
+        onOpenSplit,
     )
 }
 
@@ -219,6 +222,7 @@ private fun BackstageContent(
     onExitApp: () -> Unit,
     onImportCodeTheme: () -> Unit,
     onImportFont: () -> Unit,
+    onOpenSplit: (String, String) -> Unit,
 ) {
     val palette = LocalPalette.current
     var createMode by remember { mutableStateOf(CreateMode.NONE) }
@@ -272,6 +276,7 @@ private fun BackstageContent(
             BackstageMain(
                 Modifier.fillMaxSize(), editor, view, compact, sidebarOpen, { animateClose = true; sidebarOpen = true }, { selectView(BackstageView.HOME) },
                 onOpenFile, onPickRoot, importPdf, onShareFile, onSaveCopyFile, onExportFilePdf, createMode, { createMode = it }, onImportCodeTheme, onImportFont,
+                onOpenSplit,
             )
             AnimatedVisibility(
                 visible = sidebarOpen,
@@ -301,6 +306,7 @@ private fun BackstageContent(
             BackstageMain(
                 Modifier.weight(1f).fillMaxHeight(), editor, view, compact, sidebarOpen, { sidebarOpen = true }, { selectView(BackstageView.HOME) },
                 onOpenFile, onPickRoot, importPdf, onShareFile, onSaveCopyFile, onExportFilePdf, createMode, { createMode = it }, onImportCodeTheme, onImportFont,
+                onOpenSplit,
             )
         }
     }
@@ -365,6 +371,7 @@ private fun BackstageMain(
     onCreateMode: (CreateMode) -> Unit,
     onImportCodeTheme: () -> Unit,
     onImportFont: () -> Unit,
+    onOpenSplit: (String, String) -> Unit,
 ) {
     val palette = LocalPalette.current
     Column(modifier) {
@@ -391,6 +398,7 @@ private fun BackstageMain(
                 BackstageView.HOME -> HomePane(
                     editor, onOpenFile, onPickRoot, onImportPdf,
                     onShareFile, onSaveCopyFile, onExportFilePdf, createMode, onCreateMode, sidebarOpen, onShowSidebar,
+                    onOpenSplit,
                 )
                 BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont)
                 BackstageView.ABOUT -> AboutPane()
@@ -476,6 +484,7 @@ private fun HomePane(
     onCreateMode: (CreateMode) -> Unit,
     sidebarOpen: Boolean,
     onShowSidebar: () -> Unit,
+    onOpenSplit: (String, String) -> Unit,
 ) {
     val palette = LocalPalette.current
     val focusManager = LocalFocusManager.current
@@ -513,7 +522,7 @@ private fun HomePane(
             ExplorerSection(
                 editor, onOpenFile, onPickRoot, onImportPdf,
                 onShareFile, onSaveCopyFile, onExportFilePdf, createMode, onCreateMode,
-                searchQuery = query, onSearchChange = { query = it },
+                searchQuery = query, onSearchChange = { query = it }, onOpenSplit = onOpenSplit,
             )
             // A round quick-create button for a new note in the current folder. Only when a folder is
             // granted — otherwise the explorer shows the folder-picker prompt and there's nowhere to create.
@@ -548,6 +557,7 @@ private fun ExplorerSection(
     onCreateMode: (CreateMode) -> Unit,
     searchQuery: String = "",
     onSearchChange: (String) -> Unit = {},
+    onOpenSplit: (String, String) -> Unit = { _, _ -> },
 ) {
     val palette = LocalPalette.current
     val root = editor.browseRoot
@@ -728,6 +738,19 @@ private fun ExplorerSection(
                     IconAction(XnotesIcons.edit, "Rename") {
                         renaming = sel
                         selection.clear()
+                    }
+                }
+                // Exactly two picked files open together, a pane each. Folders have nothing to show
+                // in a pane, and the same file twice would be two editors racing over one document.
+                val splitPair = selection.takeIf { it.size == 2 }
+                    ?.filterNot { it.isDir }
+                    ?.map { it.documentUri }
+                    ?.distinct()
+                    ?.takeIf { it.size == 2 }
+                if (splitPair != null) {
+                    IconAction(XnotesIcons.split, "Open side by side") {
+                        selection.clear()
+                        onOpenSplit(splitPair[0], splitPair[1])
                     }
                 }
                 IconAction(XnotesIcons.copy, "Copy") { clipboard = ClipItem(selection.toList(), currentDocId, false); selection.clear() }

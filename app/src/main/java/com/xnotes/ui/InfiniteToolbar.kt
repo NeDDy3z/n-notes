@@ -55,6 +55,7 @@ fun InfiniteToolbar(
     editor: InfiniteEditor,
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit = {},
+    onClosePane: (() -> Unit)? = null,
 ) {
     val palette = LocalPalette.current
     // The stroke tools use the same designed drawables the paged toolbar does, so a pen looks like
@@ -80,94 +81,99 @@ fun InfiniteToolbar(
     var selectOpen by remember { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .background(palette.panel.toComposeColor())
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp),
+        modifier = Modifier.fillMaxWidth().height(48.dp).background(palette.panel.toComposeColor()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val sections = editor.toolbarLayout.visibleSections
-        sections.forEachIndexed { index, section ->
-            if (index > 0) Separator()
-            for (entry in section.visibleEntries) {
-                when (val item = entry.item) {
-                    ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, "Home") { onOpenBackstage() }
-                    ToolbarItem.TITLE -> Label(editor.title, Modifier.padding(end = 4.dp))
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val sections = editor.toolbarLayout.visibleSections
+            sections.forEachIndexed { index, section ->
+                if (index > 0) Separator()
+                for (entry in section.visibleEntries) {
+                    when (val item = entry.item) {
+                        ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, "Home") { onOpenBackstage() }
+                        ToolbarItem.TITLE -> Label(editor.title, Modifier.padding(end = 4.dp))
 
-                    in CANVAS_TOOL_OF -> {
-                        val tool = CANVAS_TOOL_OF.getValue(item)
-                        val icon = toolIcons[tool]
-                        if (icon != null) {
-                            Box {
-                                // Tapping the armed tool again opens its settings, as the paged bar does.
-                                ToolbarIcon(icon, tool.name, active = editor.tool == tool) {
-                                    when {
-                                        tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
-                                        tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
-                                        tool == Tool.SELECT && editor.tool == tool -> selectOpen = true
-                                        tool.isStroke && editor.tool == tool -> penOpen = tool
-                                        else -> editor.armTool(tool)
+                        in CANVAS_TOOL_OF -> {
+                            val tool = CANVAS_TOOL_OF.getValue(item)
+                            val icon = toolIcons[tool]
+                            if (icon != null) {
+                                Box {
+                                    // Tapping the armed tool again opens its settings, as the paged bar does.
+                                    ToolbarIcon(icon, tool.name, active = editor.tool == tool) {
+                                        when {
+                                            tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
+                                            tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
+                                            tool == Tool.SELECT && editor.tool == tool -> selectOpen = true
+                                            tool.isStroke && editor.tool == tool -> penOpen = tool
+                                            else -> editor.armTool(tool)
+                                        }
                                     }
+                                    // The very popups the paged toolbar opens, not lookalikes: same
+                                    // controls, same wording, same ranges, and they cannot drift apart.
+                                    if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
+                                    if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
+                                    if (tool == Tool.SELECT && selectOpen) SelectConfigPopup(editor) { selectOpen = false }
+                                    if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
                                 }
-                                // The very popups the paged toolbar opens, not lookalikes: same
-                                // controls, same wording, same ranges, and they cannot drift apart.
-                                if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
-                                if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
-                                if (tool == Tool.SELECT && selectOpen) SelectConfigPopup(editor) { selectOpen = false }
-                                if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
-                            }
-                        }
-                    }
-
-                    ToolbarItem.IMAGE -> ToolbarIcon(XnotesIcons.image, "Insert image") { onInsertImage() }
-
-                    ToolbarItem.COLORS ->
-                        editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->
-                            Swatch(color.toComposeColor(), active = editor.activeColorIndex == i) {
-                                editor.pickColor(i)
                             }
                         }
 
-                    ToolbarItem.UNDO ->
-                        ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
-                    ToolbarItem.REDO ->
-                        ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
+                        ToolbarItem.IMAGE -> ToolbarIcon(XnotesIcons.image, "Insert image") { onInsertImage() }
 
-                    // Where the paged bar keeps its page, styles and view menus. Waypoints take the
-                    // place of pagination: on an unbounded canvas, a saved view is what a page
-                    // number was.
-                    ToolbarItem.STYLES -> Box {
-                        ToolbarIcon(XnotesIcons.sliders, "Styles", active = stylesOpen) { stylesOpen = true }
-                        if (stylesOpen) CanvasStylesPopup(editor) { stylesOpen = false }
-                    }
-                    ToolbarItem.WAYPOINTS -> Box {
-                        ToolbarIcon(XnotesIcons.bookmark, "Waypoints", active = waypointsOpen) { waypointsOpen = true }
-                        if (waypointsOpen) CanvasWaypointsPopup(editor) { waypointsOpen = false }
-                    }
-                    ToolbarItem.MINIMAP ->
-                        ToolbarIcon(XnotesIcons.map, "Minimap", active = editor.minimapVisible) {
-                            editor.toggleMinimap()
+                        ToolbarItem.COLORS ->
+                            editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->
+                                Swatch(color.toComposeColor(), active = editor.activeColorIndex == i) {
+                                    editor.pickColor(i)
+                                }
+                            }
+
+                        ToolbarItem.UNDO ->
+                            ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
+                        ToolbarItem.REDO ->
+                            ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
+
+                        // Where the paged bar keeps its page, styles and view menus. Waypoints take the
+                        // place of pagination: on an unbounded canvas, a saved view is what a page
+                        // number was.
+                        ToolbarItem.STYLES -> Box {
+                            ToolbarIcon(XnotesIcons.sliders, "Styles", active = stylesOpen) { stylesOpen = true }
+                            if (stylesOpen) CanvasStylesPopup(editor) { stylesOpen = false }
                         }
+                        ToolbarItem.WAYPOINTS -> Box {
+                            ToolbarIcon(XnotesIcons.bookmark, "Waypoints", active = waypointsOpen) { waypointsOpen = true }
+                            if (waypointsOpen) CanvasWaypointsPopup(editor) { waypointsOpen = false }
+                        }
+                        ToolbarItem.MINIMAP ->
+                            ToolbarIcon(XnotesIcons.map, "Minimap", active = editor.minimapVisible) {
+                                editor.toggleMinimap()
+                            }
 
-                    ToolbarItem.ZOOM -> {
-                        ToolbarIcon(XnotesIcons.zoomOut, "Zoom out") { editor.zoomBy(1.0 / InfiniteEditor.ZOOM_STEP) }
-                        Label("${editor.zoomPercent}%")
-                        ToolbarIcon(XnotesIcons.zoomIn, "Zoom in") { editor.zoomBy(InfiniteEditor.ZOOM_STEP) }
+                        ToolbarItem.ZOOM -> {
+                            ToolbarIcon(XnotesIcons.zoomOut, "Zoom out") { editor.zoomBy(1.0 / InfiniteEditor.ZOOM_STEP) }
+                            Label("${editor.zoomPercent}%")
+                            ToolbarIcon(XnotesIcons.zoomIn, "Zoom in") { editor.zoomBy(InfiniteEditor.ZOOM_STEP) }
+                        }
+                        ToolbarItem.FIT -> ToolbarIcon(XnotesIcons.fit, "Fit all") { editor.zoomToFit() }
+
+                        // Everything else belongs to the paged bar; a canvas layout never holds one.
+                        else -> Unit
                     }
-                    ToolbarItem.FIT -> ToolbarIcon(XnotesIcons.fit, "Fit all") { editor.zoomToFit() }
-
-                    // Everything else belongs to the paged bar; a canvas layout never holds one.
-                    else -> Unit
                 }
             }
-        }
 
-        editor.renderFailure?.let {
-            Separator()
-            Label("GL unavailable")
+            editor.renderFailure?.let {
+                Separator()
+                Label("GL unavailable")
+            }
+            Spacer(Modifier.padding(horizontal = 2.dp))
         }
-        Spacer(Modifier.padding(horizontal = 2.dp))
+        // Pinned outside the scrolling row so closing a split pane is always one tap away.
+        onClosePane?.let { ClosePaneButton(it) }
     }
 }
