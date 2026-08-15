@@ -910,16 +910,21 @@ class InfiniteInteraction(
 
     /** Shed the samples the ribbon does not need, at the tolerance the draw zoom justifies. */
     private fun simplifyForCommit(stroke: Stroke) {
-        if (!StrokeSimplify.enabled || stroke.straight) return
-        val eps = (InteractionController.SIMPLIFY_EPS / viewport.zoom)
-            .coerceAtMost(InteractionController.SIMPLIFY_EPS)
-        val slim = StrokeSimplify.simplify(
-            stroke.samples, stroke.geometry().halfWidths, eps,
-            stroke.smoothScale, stroke.config.directionStrength,
-        )
-        if (slim.size == stroke.samples.size) return
-        stroke.setSamples(slim)
-        stroke.invalidate()
+        if (StrokeSimplify.enabled && !stroke.straight) {
+            val eps = (InteractionController.SIMPLIFY_EPS / viewport.zoom)
+                .coerceAtMost(InteractionController.SIMPLIFY_EPS)
+            val slim = StrokeSimplify.simplify(
+                stroke.samples, stroke.geometry().halfWidths, eps,
+                stroke.smoothScale, stroke.config.directionStrength,
+            )
+            if (slim.size != stroke.sampleCount) {
+                stroke.setSamples(slim) // allocates exactly, so no trim needed
+                stroke.invalidate()
+                return
+            }
+        }
+        // Nothing was dropped, so the stroke still carries the slack capture doubling left behind.
+        stroke.trimToSize()
     }
 
     private fun pressureOf(e: MotionEvent, index: Int): Double =

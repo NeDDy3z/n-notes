@@ -938,15 +938,20 @@ class InteractionController(
      *  The stroke's just-built geometry supplies the half-width channel, so pressure/speed width
      *  variation survives the reduction. */
     private fun simplifyForCommit(stroke: Stroke) {
-        if (!StrokeSimplify.enabled || stroke.straight) return
-        val eps = (SIMPLIFY_EPS / state.zoom).coerceAtMost(SIMPLIFY_EPS)
-        val slim = StrokeSimplify.simplify(
-            stroke.samples, stroke.geometry().halfWidths, eps,
-            stroke.smoothScale, stroke.config.directionStrength,
-        )
-        if (slim.size == stroke.samples.size) return
-        stroke.setSamples(slim)
-        stroke.invalidate()
+        if (StrokeSimplify.enabled && !stroke.straight) {
+            val eps = (SIMPLIFY_EPS / state.zoom).coerceAtMost(SIMPLIFY_EPS)
+            val slim = StrokeSimplify.simplify(
+                stroke.samples, stroke.geometry().halfWidths, eps,
+                stroke.smoothScale, stroke.config.directionStrength,
+            )
+            if (slim.size != stroke.sampleCount) {
+                stroke.setSamples(slim) // allocates exactly, so no trim needed
+                stroke.invalidate()
+                return
+            }
+        }
+        // Nothing was dropped, so the stroke still carries the slack capture doubling left behind.
+        stroke.trimToSize()
     }
 
     private fun armDwell() {

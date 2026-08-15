@@ -8,7 +8,6 @@ import com.xnotes.core.tools.ToolConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
-import org.junit.Assert.assertSame
 import org.junit.Test
 
 class CloneTest {

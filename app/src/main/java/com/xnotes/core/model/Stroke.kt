@@ -106,12 +106,16 @@ class Stroke(
         override fun get(index: Int): Sample = s.sampleAt(index)
     }
 
-    /** Replace every sample (pen-up reduction, undo restore, legacy compaction). */
+    /** Replace every sample (pen-up reduction, undo restore, legacy compaction). Allocates exactly
+     *  [list].size: a finished stroke never grows again, and rounding up to the growth step would
+     *  waste most of a byte budget where the median stroke is ~30 samples. */
     fun setSamples(list: List<Sample>) {
         val m = list.size
-        ensure(m)
         n = m
         if (m == 0) {
+            xa = EMPTY_F
+            ya = EMPTY_F
+            pa = EMPTY_F
             ta = null
             invalidate()
             return
@@ -121,7 +125,10 @@ class Stroke(
         oy = first.y
         var timed = false
         for (i in 0 until m) if (list[i].t != 0.0) { timed = true; break }
-        ta = if (timed) FloatArray(xa.size) else null
+        xa = FloatArray(m)
+        ya = FloatArray(m)
+        pa = FloatArray(m)
+        ta = if (timed) FloatArray(m) else null
         for (i in 0 until m) {
             val s = list[i]
             xa[i] = (s.x - ox).toFloat()
@@ -130,6 +137,19 @@ class Stroke(
             ta?.set(i, s.t.toFloat())
         }
         invalidate()
+    }
+
+    /**
+     * Hand back the slack [addSample]'s doubling left over. A live stroke grows by doubling, so at
+     * pen-up it holds up to twice the arrays it needs, and it never grows again. Called once the
+     * stroke is committed.
+     */
+    fun trimToSize() {
+        if (xa.size == n) return
+        xa = xa.copyOf(n)
+        ya = ya.copyOf(n)
+        pa = pa.copyOf(n)
+        ta = ta?.copyOf(n)
     }
 
     private fun ensure(capacity: Int) {
