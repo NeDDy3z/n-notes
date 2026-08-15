@@ -1,7 +1,7 @@
 package com.xnotes.core.infinite
 
 import com.xnotes.core.geometry.Pt
-import com.xnotes.core.stroke.StrokeGeometry
+import com.xnotes.core.stroke.RibbonPoints
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.hypot
@@ -33,14 +33,13 @@ class MeshData(
 }
 
 /**
- * Turns a [StrokeGeometry] into triangles once, at commit time. Every frame then draws those
+ * Turns a ribbon's points into triangles once, at commit time. Every frame then draws those
  * triangles with the current zoom pushed in as a uniform, so ink is resolution independent: there
  * is no raster to be at the wrong scale, and no blur to resolve when a pinch settles.
  *
- * The ribbon needs no triangulator. [StrokeGeometry.outline] already holds both rails, the left
- * edge forward then the right edge reversed, so vertex `i` of the left rail is `outline[2i]` and
- * its partner on the right rail is `outline[2 * (2n - 1 - i)]`. Consecutive quads share their
- * whole edge exactly, so the body is watertight with no join geometry at all.
+ * The ribbon needs no triangulator. [RibbonPoints] already carries both rails, a vertex on each
+ * per centreline point, so a quad's four corners are read straight off them. Consecutive quads
+ * share their whole edge exactly, so the body is watertight with no join geometry at all.
  *
  * What the rails do not cover is the round ends, and the outer notch where the stroke turns hard
  * enough that the two quads pinch. Both are filled with a disc, which is what the paged renderer
@@ -80,44 +79,61 @@ object StrokeTessellator {
      * is drawn: the same path at a fraction of the width, so it rounds with the body on every pen.
      */
     fun tessellate(
-        g: StrokeGeometry,
+        g: RibbonPoints,
         tolerance: Double = DEFAULT_TOLERANCE,
         widthScale: Double = 1.0,
+    ): MeshData = tessellate(g, 0, g.pointCount, tolerance, widthScale)
+
+    /**
+     * [tessellate] over the [count] points starting at [from]. A stroke still under the pen is
+     * meshed in runs — the settled ones once each, the moving tail every frame — so that what a
+     * frame costs stops growing with the stroke. Consecutive runs are asked to overlap by a point,
+     * which makes the quad bridging them fall to the later run and leaves no gap on the join.
+     *
+     * The discs a run puts at its own two ends are the same discs the sweep would place there, so
+     * they sit inside the ribbon and change nothing about its silhouette.
+     */
+    fun tessellate(
+        g: RibbonPoints,
+        from: Int,
+        count: Int,
+        tolerance: Double,
+        widthScale: Double = 1.0,
     ): MeshData {
-        val n = g.pointCount
-        if (n == 0) return MeshData.EMPTY
-        val b = MeshBuilder(estimateVertices(g), estimateIndices(g))
-        if (n == 1) {
-            val h = g.hw(0) * widthScale
-            if (h > MIN_HALF_WIDTH) b.circle(g.cx(0), g.cy(0), h, tolerance)
+        if (count <= 0) return MeshData.EMPTY
+        val end = from + count
+        val b = MeshBuilder(estimateVertices(count), estimateIndices(count))
+        if (count == 1) {
+            val h = g.hw(from) * widthScale
+            if (h > MIN_HALF_WIDTH) b.circle(g.cx(from), g.cy(from), h, tolerance)
             return b.build()
         }
-        if (widthScale != 1.0) return scaledRibbon(g, tolerance, widthScale)
-        if (g.outlineCount < 2 * n) return b.build() // geometry without rails: nothing to draw
+        if (widthScale != 1.0) return scaledRibbon(g, from, count, tolerance, widthScale)
+        if (!g.hasRails) return b.build() // geometry without rails: nothing to draw
 
         // Body: one quad per segment, both of its vertices taken straight off the rails, so
         // consecutive quads share an entire edge and the ribbon never gaps along its length.
-        for (i in 0 until n - 1) {
+        for (i in from until end - 1) {
             val h0 = g.hw(i)
             val h1 = g.hw(i + 1)
             if (h0 <= MIN_HALF_WIDTH && h1 <= MIN_HALF_WIDTH) continue
             // Each rail vertex remembers how far it sits from the centreline, so a stroke thinner
             // than a pixel can be widened back to one and faded instead of breaking up.
-            val l0 = b.vertex(leftX(g, n, i), leftY(g, n, i), leftX(g, n, i) - g.cx(i), leftY(g, n, i) - g.cy(i))
-            val r0 = b.vertex(rightX(g, n, i), rightY(g, n, i), rightX(g, n, i) - g.cx(i), rightY(g, n, i) - g.cy(i))
-            val l1 = b.vertex(leftX(g, n, i + 1), leftY(g, n, i + 1), leftX(g, n, i + 1) - g.cx(i + 1), leftY(g, n, i + 1) - g.cy(i + 1))
-            val r1 = b.vertex(rightX(g, n, i + 1), rightY(g, n, i + 1), rightX(g, n, i + 1) - g.cx(i + 1), rightY(g, n, i + 1) - g.cy(i + 1))
+            val l0 = b.vertex(g.leftX(i), g.leftY(i), g.leftX(i) - g.cx(i), g.leftY(i) - g.cy(i))
+            val r0 = b.vertex(g.rightX(i), g.rightY(i), g.rightX(i) - g.cx(i), g.rightY(i) - g.cy(i))
+            val l1 = b.vertex(g.leftX(i + 1), g.leftY(i + 1), g.leftX(i + 1) - g.cx(i + 1), g.leftY(i + 1) - g.cy(i + 1))
+            val r1 = b.vertex(g.rightX(i + 1), g.rightY(i + 1), g.rightX(i + 1) - g.cx(i + 1), g.rightY(i + 1) - g.cy(i + 1))
             b.triangle(l0, r0, r1)
             b.triangle(l0, r1, l1)
         }
 
         // Round ends. A whole disc rather than a half one: it costs two extra fans per stroke and
         // removes every orientation question, and it is exactly the disc the paged renderer sweeps.
-        if (g.hw(0) > MIN_HALF_WIDTH) b.circle(g.cx(0), g.cy(0), g.hw(0), tolerance)
-        if (g.hw(n - 1) > MIN_HALF_WIDTH) b.circle(g.cx(n - 1), g.cy(n - 1), g.hw(n - 1), tolerance)
+        if (g.hw(from) > MIN_HALF_WIDTH) b.circle(g.cx(from), g.cy(from), g.hw(from), tolerance)
+        if (g.hw(end - 1) > MIN_HALF_WIDTH) b.circle(g.cx(end - 1), g.cy(end - 1), g.hw(end - 1), tolerance)
 
         // Discs at the hard turns only.
-        for (i in 1 until n - 1) {
+        for (i in from + 1 until end - 1) {
             val h = g.hw(i)
             if (h <= MIN_HALF_WIDTH) continue
             if (turnAngle(g, i) > JOIN_DISC_ANGLE) b.circle(g.cx(i), g.cy(i), h, tolerance)
@@ -134,7 +150,7 @@ object StrokeTessellator {
      * painter falls back to.
      */
     fun tessellateDashed(
-        g: StrokeGeometry,
+        g: RibbonPoints,
         dashLength: Double,
         dashGap: Double,
         halfWidth: Double,
@@ -142,11 +158,30 @@ object StrokeTessellator {
     ): MeshData {
         val n = g.pointCount
         if (n < 2) return tessellate(g, tolerance)
+        return tessellateDashed(g, 0, n, dashLength, dashGap, halfWidth, 0.0, tolerance)
+    }
+
+    /**
+     * [tessellateDashed] over a run, picking the pattern up [phase] units in. Splitting a dashed
+     * line into runs would otherwise restart its rhythm at every seam; the phase is the arc the
+     * runs before it spent, so the dashes land where an unbroken line would have put them.
+     */
+    fun tessellateDashed(
+        g: RibbonPoints,
+        from: Int,
+        count: Int,
+        dashLength: Double,
+        dashGap: Double,
+        halfWidth: Double,
+        phase: Double,
+        tolerance: Double = DEFAULT_TOLERANCE,
+    ): MeshData {
+        if (count < 2) return tessellate(g, from, count, tolerance)
         if (halfWidth <= MIN_HALF_WIDTH) return MeshData.EMPTY
-        val path = ArrayList<Pt>(n)
-        for (i in 0 until n) path.add(Pt(g.cx(i), g.cy(i)))
-        val b = MeshBuilder(estimateVertices(g), estimateIndices(g))
-        for (run in MeshBuilder.dashRuns(path, dashLength, dashGap, closed = false)) {
+        val path = ArrayList<Pt>(count)
+        for (i in from until from + count) path.add(Pt(g.cx(i), g.cy(i)))
+        val b = MeshBuilder(estimateVertices(count), estimateIndices(count))
+        for (run in MeshBuilder.dashRuns(path, dashLength, dashGap, closed = false, phase = phase)) {
             b.polylineRibbon(run, halfWidth, closed = false, tolerance = tolerance)
         }
         return b.build()
@@ -156,10 +191,10 @@ object StrokeTessellator {
      * The ribbon at a fraction of its width, built from the centreline and scaled half-widths
      * rather than from the rails, since the rails only exist at full width.
      */
-    private fun scaledRibbon(g: StrokeGeometry, tolerance: Double, widthScale: Double): MeshData {
-        val n = g.pointCount
-        val b = MeshBuilder(estimateVertices(g), estimateIndices(g))
-        for (i in 0 until n - 1) {
+    private fun scaledRibbon(g: RibbonPoints, from: Int, count: Int, tolerance: Double, widthScale: Double): MeshData {
+        val end = from + count
+        val b = MeshBuilder(estimateVertices(count), estimateIndices(count))
+        for (i in from until end - 1) {
             val h0 = g.hw(i) * widthScale
             val h1 = g.hw(i + 1) * widthScale
             if (h0 <= MIN_HALF_WIDTH && h1 <= MIN_HALF_WIDTH) continue
@@ -177,7 +212,7 @@ object StrokeTessellator {
             b.triangle(l0, r1, l1)
         }
         // A disc at every sample, since a segment-normal ribbon gaps at its joins.
-        for (i in 0 until n) {
+        for (i in from until end) {
             val h = g.hw(i) * widthScale
             if (h > MIN_HALF_WIDTH) b.circle(g.cx(i), g.cy(i), h, tolerance)
         }
@@ -189,7 +224,7 @@ object StrokeTessellator {
         MeshBuilder.circleSegments(radius, tolerance)
 
     /** Angle between the ribbon's normal before and after sample [i], in radians. */
-    fun turnAngle(g: StrokeGeometry, i: Int): Double {
+    fun turnAngle(g: RibbonPoints, i: Int): Double {
         val n = g.pointCount
         if (i <= 0 || i >= n - 1) return 0.0
         val ax = g.cx(i) - g.cx(i - 1)
@@ -206,18 +241,12 @@ object StrokeTessellator {
 
     // --- rail accessors: kept as free functions so the tests can pin them to the geometry's own ---
 
-    fun leftX(g: StrokeGeometry, n: Int, i: Int): Double = g.leftX(i)
-    fun leftY(g: StrokeGeometry, n: Int, i: Int): Double = g.leftY(i)
-    fun rightX(g: StrokeGeometry, n: Int, i: Int): Double = g.rightX(i)
-    fun rightY(g: StrokeGeometry, n: Int, i: Int): Double = g.rightY(i)
+    fun leftX(g: RibbonPoints, n: Int, i: Int): Double = g.leftX(i)
+    fun leftY(g: RibbonPoints, n: Int, i: Int): Double = g.leftY(i)
+    fun rightX(g: RibbonPoints, n: Int, i: Int): Double = g.rightX(i)
+    fun rightY(g: RibbonPoints, n: Int, i: Int): Double = g.rightY(i)
 
-    private fun estimateVertices(g: StrokeGeometry): Int {
-        val n = g.pointCount
-        return 2 * n + 2 * (MIN_CIRCLE_SEGMENTS + 2) + 16
-    }
+    private fun estimateVertices(n: Int): Int = 2 * n + 2 * (MIN_CIRCLE_SEGMENTS + 2) + 16
 
-    private fun estimateIndices(g: StrokeGeometry): Int {
-        val n = g.pointCount
-        return 6 * maxOf(0, n - 1) + 6 * (MIN_CIRCLE_SEGMENTS + 2) + 48
-    }
+    private fun estimateIndices(n: Int): Int = 6 * maxOf(0, n - 1) + 6 * (MIN_CIRCLE_SEGMENTS + 2) + 48
 }

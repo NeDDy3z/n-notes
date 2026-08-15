@@ -5,6 +5,7 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.stroke.RibbonPoints
 import com.xnotes.core.tools.Tool
 
 /** How an item's geometry has to reach the framebuffer. */
@@ -100,6 +101,38 @@ object ItemMesher {
         }
         val part = MeshPart(mesh, stroke.renderColor, passFor(stroke))
         return MeshedItem(listOf(part), stroke.paintBounds(), narrowestHalfWidth(stroke))
+    }
+
+    /**
+     * One run of a stroke still under the pen, meshed straight off its live ribbon rather than off
+     * a built geometry. The infinite canvas draws a wet stroke as runs — the settled ones uploaded
+     * once each, the moving one re-meshed every frame — so what a frame costs stops growing with
+     * the stroke.
+     *
+     * Only for ink the runs can be laid over each other freely, which is opaque and un-neon ink
+     * ([Stroke.wetCacheable]); anything else is meshed whole by [mesh]. [dashPhase] is the arc the
+     * runs before this one spent, so the dashed pen's rhythm carries across the join.
+     */
+    fun meshRun(
+        stroke: Stroke,
+        ribbon: RibbonPoints,
+        from: Int,
+        count: Int,
+        dashPhase: Double,
+        tolerance: Double = StrokeTessellator.DEFAULT_TOLERANCE,
+    ): MeshPart? {
+        if (count <= 0) return null
+        val mesh = if (stroke.tool == Tool.DASHED) {
+            StrokeTessellator.tessellateDashed(
+                ribbon, from, count,
+                stroke.config.dashLength, stroke.config.dashGap, stroke.config.baseWidth / 2.0,
+                dashPhase, tolerance,
+            )
+        } else {
+            StrokeTessellator.tessellate(ribbon, from, count, tolerance)
+        }
+        if (mesh.isEmpty) return null
+        return MeshPart(mesh, stroke.renderColor, passFor(stroke))
     }
 
     /**

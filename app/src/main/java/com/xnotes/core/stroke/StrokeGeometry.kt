@@ -12,6 +12,29 @@ data class Sample(val x: Double, val y: Double, val pressure: Double, val t: Dou
 }
 
 /**
+ * Read access to a ribbon's points and the two edges either side of them, whatever built it.
+ * [StrokeGeometry] is the finished form and [WetRibbon] the growing one; a renderer that wants to
+ * draw part of a stroke asks through this rather than through either, so meshing a run of a live
+ * stroke never means copying its geometry out first.
+ */
+interface RibbonPoints {
+    /** Points in the ribbon. A live ribbon's backing arrays are longer than this; do not read past it. */
+    val pointCount: Int
+
+    fun cx(i: Int): Double
+    fun cy(i: Int): Double
+    fun hw(i: Int): Double
+
+    /** Whether both edges carry a vertex per point, i.e. the ribbon has a body rather than being a dot. */
+    val hasRails: Boolean
+
+    fun leftX(i: Int): Double
+    fun leftY(i: Int): Double
+    fun rightX(i: Int): Double
+    fun rightY(i: Int): Double
+}
+
+/**
  * The geometry derived from a stroke's samples (spec 03), packed into primitive float arrays —
  * a dense document caches millions of these points, so per-point objects or boxing would multiply
  * heap several-fold (floats are far past render precision; the renderer draws in floats anyway).
@@ -36,24 +59,24 @@ class StrokeGeometry(
     val leftRail: FloatArray = EMPTY_F,
     /** Ribbon's right edge, interleaved x,y, in the same order (not reversed). */
     val rightRail: FloatArray = EMPTY_F,
-) {
+) : RibbonPoints {
     /** Number of centerline points (one per input sample). */
-    val pointCount get() = halfWidths.size
+    override val pointCount get() = halfWidths.size
 
     /** Number of outline vertices (2 per centerline point when the ribbon has a body). */
     val outlineCount get() = (leftRail.size + rightRail.size) / 2
 
-    fun cx(i: Int): Double = centerline[2 * i].toDouble()
-    fun cy(i: Int): Double = centerline[2 * i + 1].toDouble()
-    fun hw(i: Int): Double = halfWidths[i].toDouble()
+    override fun cx(i: Int): Double = centerline[2 * i].toDouble()
+    override fun cy(i: Int): Double = centerline[2 * i + 1].toDouble()
+    override fun hw(i: Int): Double = halfWidths[i].toDouble()
 
-    fun leftX(i: Int): Double = leftRail[2 * i].toDouble()
-    fun leftY(i: Int): Double = leftRail[2 * i + 1].toDouble()
-    fun rightX(i: Int): Double = rightRail[2 * i].toDouble()
-    fun rightY(i: Int): Double = rightRail[2 * i + 1].toDouble()
+    override fun leftX(i: Int): Double = leftRail[2 * i].toDouble()
+    override fun leftY(i: Int): Double = leftRail[2 * i + 1].toDouble()
+    override fun rightX(i: Int): Double = rightRail[2 * i].toDouble()
+    override fun rightY(i: Int): Double = rightRail[2 * i + 1].toDouble()
 
     /** True when both rails carry a vertex per centreline point, i.e. the ribbon has a body. */
-    val hasRails get() = leftRail.size == 2 * pointCount && rightRail.size == 2 * pointCount
+    override val hasRails get() = leftRail.size == 2 * pointCount && rightRail.size == 2 * pointCount
 
     /** Built on demand and kept; volatile because painting and hit-testing can race, and the array
      *  is written before it is published, so the worst a race costs is one redundant build. */

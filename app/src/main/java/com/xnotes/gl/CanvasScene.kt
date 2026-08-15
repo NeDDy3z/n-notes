@@ -17,6 +17,18 @@ import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.floor
 
+/** Which part of the item under the pen a batch of triangles is. */
+enum class WetKind {
+    /** Replaces the lot: a selection overlay, a shape being dragged out, or clearing everything. */
+    WHOLE,
+
+    /** Added to the run of the stroke that has stopped moving, and never rewritten. */
+    SETTLED,
+
+    /** Replaces the few points still moving under the nib. */
+    TAIL,
+}
+
 /**
  * The GL-thread-owned mirror of the document: one record per committed item, holding where its
  * triangles live and what it takes to draw them. The model itself is never touched from here.
@@ -59,8 +71,11 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             val clearsWet: Boolean = false,
         ) : Edit()
 
-        /** The item under the pen, re-tessellated as it grows; an empty list clears it. */
-        class Wet(val parts: List<MeshPart>, val bounds: Rect) : Edit()
+        /**
+         * The item under the pen. [WetKind] says whether these triangles replace everything, add
+         * to the run that has stopped moving, or replace the run that has not.
+         */
+        class Wet(val parts: List<MeshPart>, val bounds: Rect, val kind: WetKind) : Edit()
 
         /** Items being dragged, and how far from where their triangles sit. Empty ends the drag. */
         class Lift(val items: List<CanvasItem>, val at: LiftTransform) : Edit()
@@ -73,12 +88,22 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private val pending = ConcurrentLinkedQueue<Edit>()
 
     /**
-     * The stroke under the pen lives in its own small buffer, rewritten every time a sample
-     * arrives, so growing it never disturbs the committed geometry's allocation. On pen up it is
-     * cleared and the finished stroke arrives through the normal upsert path.
+     * The stroke under the pen lives in its own buffers, kept apart from the committed geometry so
+     * growing it never disturbs that allocation. On pen up both are cleared and the finished stroke
+     * arrives through the normal upsert path.
+     *
+     * There are two of them because the stroke has two halves. [wetStore] holds the runs that have
+     * stopped moving: they are appended once each and never touched again, which is what keeps a
+     * long stroke from re-uploading everything it has laid down on every sample. [tailStore] holds
+     * the few points still in play, and is cleared and refilled each time — as its own buffer, so
+     * that churn cannot leave a trail of dead allocations through the settled runs. Everything the
+     * selection overlay and a dragged-out shape publish goes through the tail too: none of them can
+     * be on screen while a stroke is being drawn.
      */
     private val wetStore = GeometryStore()
     private var wetParts: List<Part> = emptyList()
+    private val tailStore = GeometryStore()
+    private var tailParts: List<Part> = emptyList()
     private var wetBounds = Rect(0.0, 0.0, 0.0, 0.0)
     private val records = IdentityHashMap<CanvasItem, Record>()
 
@@ -150,9 +175,9 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         vertexCapacity = store.vertexCapacity,
         indices = store.usedIndices,
         indexCapacity = store.indexCapacity,
-        geometryBytes = store.gpuBytes + wetStore.gpuBytes,
-        liveGeometryBytes = store.liveBytes + wetStore.liveBytes,
-        wetVertices = wetParts.sumOf { it.slice.vertexCount },
+        geometryBytes = store.gpuBytes + wetStore.gpuBytes + tailStore.gpuBytes,
+        liveGeometryBytes = store.liveBytes + wetStore.liveBytes + tailStore.liveBytes,
+        wetVertices = wetParts.sumOf { it.slice.vertexCount } + tailParts.sumOf { it.slice.vertexCount },
         textures = textures.textureCount,
         textureBytes = textures.residentBytes,
         texturesPending = textures.pendingCount,
@@ -181,12 +206,29 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     /** Publish the in-progress stroke's triangles, or clear it when [mesh] is null. */
     fun setWet(mesh: MeshData?, color: Rgba, pass: InkPass, bounds: Rect) {
-        pending.add(Edit.Wet(if (mesh == null) emptyList() else listOf(MeshPart(mesh, color, pass)), bounds))
+        pending.add(
+            Edit.Wet(
+                if (mesh == null) emptyList() else listOf(MeshPart(mesh, color, pass)),
+                bounds,
+                WetKind.WHOLE,
+            ),
+        )
     }
 
-    /** Publish an in-progress item made of several runs, which is what a filled shape is. */
+    /** Publish an in-progress item made of several runs, which is what a filled shape is. An empty
+     *  list clears the whole wet buffer, settled runs included. */
     fun setWetParts(parts: List<MeshPart>, bounds: Rect) {
-        pending.add(Edit.Wet(parts, bounds))
+        pending.add(Edit.Wet(parts, bounds, WetKind.WHOLE))
+    }
+
+    /** Add a run of the stroke under the pen that has stopped moving; it is never rewritten. */
+    fun appendWetRun(parts: List<MeshPart>, bounds: Rect) {
+        pending.add(Edit.Wet(parts, bounds, WetKind.SETTLED))
+    }
+
+    /** Replace the run still moving under the nib, leaving the settled ones where they are. */
+    fun setWetTail(parts: List<MeshPart>, bounds: Rect) {
+        pending.add(Edit.Wet(parts, bounds, WetKind.TAIL))
     }
 
     /** Draw [items] displaced by [at] until this is called again with an empty list. */
@@ -221,6 +263,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         // The mirrors survived, so the whole document re-uploads without re-tessellating anything.
         store.onContextCreated(contextGen)
         wetStore.onContextCreated(contextGen)
+        tailStore.onContextCreated(contextGen)
     }
 
     override fun drawContent(frame: FrameState) {
@@ -230,7 +273,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         glowTarget.resize(frame.widthPx, frame.heightPx, contextGen)
         val program = ink ?: return
         if (program.contextGen != contextGen) return
-        if (records.isEmpty() && wetParts.isEmpty()) {
+        if (records.isEmpty() && wetParts.isEmpty() && tailParts.isEmpty()) {
             lastDrawCalls = 0
             lastVisibleItems = 0
             return
@@ -496,33 +539,64 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * committed geometry's allocation is never disturbed while a stroke grows.
      */
     private fun drawWet(program: InkShader, frame: FrameState, camChunkX: Double, camChunkY: Double) {
-        if (wetParts.isEmpty()) return
-        if (!wetStore.bindForDraw(contextGen)) return
-        wetStore.bindAttributes(program)
-        for (part in wetParts) {
-            if (part.pass == InkPass.GLOW) {
-                drawGlow(program, wetStore, wetRecord(), part, frame, camChunkX, camChunkY)
-                rebind(program, frame, camChunkX, camChunkY)
-                wetStore.bindForDraw(contextGen)
-                wetStore.bindAttributes(program)
-                continue
-            }
-            if (part.pass == InkPass.OPAQUE) {
-                wetStore.drawRange(part.slice.indexOffset, part.slice.indexCount)
-                lastDrawCalls++
-            } else {
-                drawMasked(
-                    wetStore, part.slice, wetBounds, part.coverColor, part.coverAlpha,
-                    frame, multiply = part.pass == InkPass.MULTIPLY,
-                )
-                rebind(program, frame, camChunkX, camChunkY)
-                wetStore.bindForDraw(contextGen)
-                wetStore.bindAttributes(program)
-            }
-        }
+        // Settled runs first, then the one still under the nib over it, so the two overlap the way
+        // they were meshed to.
+        drawWetBuffer(wetStore, wetParts, program, frame, camChunkX, camChunkY)
+        drawWetBuffer(tailStore, tailParts, program, frame, camChunkX, camChunkY)
+        if (wetParts.isEmpty() && tailParts.isEmpty()) return
         // Leave the committed buffers bound for the next frame's first draw.
         store.bindForDraw(contextGen)
         store.bindAttributes(program)
+    }
+
+    private fun drawWetBuffer(
+        buffer: GeometryStore,
+        parts: List<Part>,
+        program: InkShader,
+        frame: FrameState,
+        camChunkX: Double,
+        camChunkY: Double,
+    ) {
+        if (parts.isEmpty()) return
+        if (!buffer.bindForDraw(contextGen)) return
+        buffer.bindAttributes(program)
+        // The settled runs are put into a fresh buffer in order, so they land back to back and a
+        // whole stroke's worth of them collapses into one call rather than one per run.
+        var runStart = -1
+        var runCount = 0
+        fun flush() {
+            if (runStart >= 0 && runCount > 0) {
+                buffer.drawRange(runStart, runCount)
+                lastDrawCalls++
+            }
+            runStart = -1
+            runCount = 0
+        }
+        for (part in parts) {
+            if (part.pass == InkPass.OPAQUE) {
+                if (runStart >= 0 && part.slice.indexOffset == runStart + runCount) {
+                    runCount += part.slice.indexCount
+                } else {
+                    flush()
+                    runStart = part.slice.indexOffset
+                    runCount = part.slice.indexCount
+                }
+                continue
+            }
+            flush()
+            if (part.pass == InkPass.GLOW) {
+                drawGlow(program, buffer, wetRecord(), part, frame, camChunkX, camChunkY)
+            } else {
+                drawMasked(
+                    buffer, part.slice, wetBounds, part.coverColor, part.coverAlpha,
+                    frame, multiply = part.pass == InkPass.MULTIPLY,
+                )
+            }
+            rebind(program, frame, camChunkX, camChunkY)
+            buffer.bindForDraw(contextGen)
+            buffer.bindAttributes(program)
+        }
+        flush()
     }
 
     /**
@@ -890,18 +964,39 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     }
 
     private fun applyWet(edit: Edit.Wet) {
-        // The whole buffer is rewritten rather than appended to, so a long stroke does not leave a
-        // trail of dead allocations behind it.
-        clearWetBuffer()
-        if (edit.parts.isEmpty()) return
-        wetBounds = edit.bounds
-        val built = ArrayList<Part>(edit.parts.size)
-        for (part in edit.parts) {
+        when (edit.kind) {
+            WetKind.WHOLE -> {
+                clearWetBuffer()
+                if (edit.parts.isEmpty()) return
+                wetBounds = edit.bounds
+                tailParts = build(edit.parts, tailStore)
+            }
+            WetKind.SETTLED -> {
+                // Appended, never rewritten: this run is ink that can no longer change.
+                wetBounds = edit.bounds
+                if (edit.parts.isEmpty()) return
+                wetParts = wetParts + build(edit.parts, wetStore)
+            }
+            WetKind.TAIL -> {
+                // Its own buffer, cleared whole, so the churn under the nib cannot fragment the
+                // settled runs sitting next to it.
+                wetBounds = edit.bounds
+                tailStore.clear()
+                tailParts = if (edit.parts.isEmpty()) emptyList() else build(edit.parts, tailStore)
+            }
+        }
+    }
+
+    private fun build(parts: List<MeshPart>, into: GeometryStore): List<Part> {
+        val built = ArrayList<Part>(parts.size)
+        for (part in parts) {
+            // A translucent run accumulates at full alpha and gets its alpha back at cover time,
+            // which is what stops its own overlaps from compounding.
             val baked = if (part.pass == InkPass.OPAQUE) part.color else part.color.withAlpha(255)
-            val slice = wetStore.put(part.mesh, baked) ?: continue
+            val slice = into.put(part.mesh, baked) ?: continue
             built.add(Part(slice, part.pass, part.color.withAlpha(255), part.color.a / 255.0, part.glow))
         }
-        wetParts = built
+        return built
     }
 
     private fun applyLift(edit: Edit.Lift) {
@@ -929,6 +1024,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     private fun clearWetBuffer() {
         wetStore.clear()
         wetParts = emptyList()
+        tailStore.clear()
+        tailParts = emptyList()
     }
 
     private fun applyRemove(item: CanvasItem) {

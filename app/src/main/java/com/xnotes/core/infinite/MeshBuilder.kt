@@ -225,7 +225,13 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
          * alternating [dashLength] on and [gapLength] off. A degenerate dash returns the whole
          * path, so a bad setting draws a solid line rather than nothing.
          */
-        fun dashRuns(points: List<Pt>, dashLength: Double, gapLength: Double, closed: Boolean): List<List<Pt>> {
+        fun dashRuns(
+            points: List<Pt>,
+            dashLength: Double,
+            gapLength: Double,
+            closed: Boolean,
+            phase: Double = 0.0,
+        ): List<List<Pt>> {
             if (points.size < 2) return listOf(points)
             val on = dashLength.coerceAtLeast(0.0)
             val off = gapLength.coerceAtLeast(0.0)
@@ -233,10 +239,13 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
             val path = if (closed) points + points.first() else points
             val runs = ArrayList<List<Pt>>()
             var current = ArrayList<Pt>()
-            var drawing = true
-            var left = on
+            // Start [phase] units into the pattern, so a line cut into pieces keeps one rhythm.
+            val period = on + off
+            val into = ((phase % period) + period) % period
+            var drawing = into < on
+            var left = if (drawing) on - into else period - into
             var at = path[0]
-            current.add(at)
+            if (drawing) current.add(at)
             var i = 1
             while (i < path.size) {
                 val target = path[i]

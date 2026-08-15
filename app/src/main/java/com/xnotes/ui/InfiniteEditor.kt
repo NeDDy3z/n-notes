@@ -503,15 +503,67 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     // --- drawing ---
 
+    /** The stroke whose settled runs are already in the scene's wet buffer, by identity. */
+    private var wetOwner: Stroke? = null
+
+    /** Ribbon points of [wetOwner] already meshed into it, and the arc those points spent. */
+    private var wetMeshed = 0
+    private var wetArc = 0.0
+
+    /**
+     * Hand the stroke under the pen to the scene, in two pieces where the pen allows it.
+     *
+     * Re-meshing and re-uploading the whole ribbon on every sample makes a frame cost what the
+     * stroke has already laid down, so a long one falls behind the hand. Instead the run that has
+     * stopped moving is uploaded once, [WET_RUN_POINTS] at a time and never again, and only the
+     * few points still in play are rebuilt each frame. The two runs overlap by a point so the quad
+     * bridging them belongs to the later one and no gap can open on the join.
+     *
+     * Ink the runs cannot simply be laid over each other — neon, whose halos would compound where
+     * they meet, and the highlighter, which is composited at its own alpha — is meshed whole, as
+     * are the taper pen and the straight-line tools, which have no settled run to speak of.
+     */
     private fun publishWetStroke(stroke: Stroke?) {
         if (stroke == null) {
+            forgetWetStroke()
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
             return
         }
-        val meshed = ItemMesher.mesh(stroke) ?: return
-        // Every run, not just the first: a neon stroke is a halo, a lit body and a white core, and
-        // keeping only one of them left the wet stroke invisible until the pen lifted.
-        scene.setWetParts(meshed.parts, meshed.bounds)
+        val ribbon = stroke.wetRibbon
+        if (ribbon == null || !stroke.wetCacheable) {
+            forgetWetStroke()
+            val meshed = ItemMesher.mesh(stroke) ?: return
+            // Every run, not just the first: a neon stroke is a halo, a lit body and a white core,
+            // and keeping only one of them left the wet stroke invisible until the pen lifted.
+            scene.setWetParts(meshed.parts, meshed.bounds)
+            return
+        }
+        if (wetOwner !== stroke) {
+            forgetWetStroke()
+            wetOwner = stroke
+            scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
+        }
+        val bounds = stroke.paintBounds()
+        val settled = ribbon.settledCount
+        if (settled - wetMeshed >= WET_RUN_POINTS) {
+            val from = (wetMeshed - 1).coerceAtLeast(0)
+            ItemMesher.meshRun(stroke, ribbon, from, settled - from, wetArc)?.let {
+                scene.appendWetRun(listOf(it), bounds)
+            }
+            for (k in from + 1 until settled) {
+                wetArc += kotlin.math.hypot(ribbon.cx(k) - ribbon.cx(k - 1), ribbon.cy(k) - ribbon.cy(k - 1))
+            }
+            wetMeshed = settled
+        }
+        val tailFrom = (wetMeshed - 1).coerceAtLeast(0)
+        val tail = ItemMesher.meshRun(stroke, ribbon, tailFrom, ribbon.pointCount - tailFrom, wetArc)
+        scene.setWetTail(if (tail == null) emptyList() else listOf(tail), bounds)
+    }
+
+    private fun forgetWetStroke() {
+        wetOwner = null
+        wetMeshed = 0
+        wetArc = 0.0
     }
 
     /**
@@ -618,7 +670,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     /** Pen up: the finished stroke joins the document, and the edit joins the undo stack. */
-    private fun commitStroke(stroke: Stroke) = commitItem(stroke)
+    private fun commitStroke(stroke: Stroke) {
+        // The commit message releases the wet buffers on the GL thread, so forget what was in them.
+        forgetWetStroke()
+        commitItem(stroke)
+    }
 
     private fun markDirty() {
         document.dirty = true
@@ -829,5 +885,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
         /** Content pixels a duplicate lands from its original, so the copy is visibly a copy. */
         const val DUPLICATE_NUDGE = 24.0
+
+        /**
+         * Ribbon points that have to settle before the wet stroke gives the scene another run.
+         * It sets both halves of the cost: the tail re-meshed each frame is at most this plus the
+         * pen's own lookahead, and the runs a stroke leaves behind it are its length over this.
+         * Uploading each point the moment it settled would be one buffer slice per sample.
+         */
+        const val WET_RUN_POINTS = 96
     }
 }

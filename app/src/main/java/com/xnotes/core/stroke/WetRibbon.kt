@@ -47,9 +47,9 @@ class WetRibbon(
     private val smooth: Boolean,
     private val holdEnds: Boolean,
     private val smoothScale: Double,
-) {
+) : RibbonPoints {
     /** Samples taken so far; one ribbon point each. */
-    var pointCount = 0
+    override var pointCount = 0
         private set
 
     /**
@@ -134,9 +134,9 @@ class WetRibbon(
 
     // --- reading the ribbon ---
 
-    fun cx(i: Int): Double = centerline[2 * i].toDouble()
-    fun cy(i: Int): Double = centerline[2 * i + 1].toDouble()
-    fun hw(i: Int): Double = halfWidths[i].toDouble()
+    override fun cx(i: Int): Double = centerline[2 * i].toDouble()
+    override fun cy(i: Int): Double = centerline[2 * i + 1].toDouble()
+    override fun hw(i: Int): Double = halfWidths[i].toDouble()
 
     /** The packed centres, over-allocated: read `2 * pointCount` floats. */
     fun centerlineArray(): FloatArray = centerline
@@ -144,10 +144,13 @@ class WetRibbon(
     /** The packed radii, over-allocated: read [pointCount] floats. */
     fun halfWidthArray(): FloatArray = halfWidths
 
-    fun leftX(i: Int): Double = leftRail[2 * i].toDouble()
-    fun leftY(i: Int): Double = leftRail[2 * i + 1].toDouble()
-    fun rightX(i: Int): Double = rightRail[2 * i].toDouble()
-    fun rightY(i: Int): Double = rightRail[2 * i + 1].toDouble()
+    override fun leftX(i: Int): Double = leftRail[2 * i].toDouble()
+    override fun leftY(i: Int): Double = leftRail[2 * i + 1].toDouble()
+    override fun rightX(i: Int): Double = rightRail[2 * i].toDouble()
+    override fun rightY(i: Int): Double = rightRail[2 * i + 1].toDouble()
+
+    /** A ribbon of two points or more has a body; a lone sample is a dot with no rails. */
+    override val hasRails get() = pointCount >= 2
 
     /**
      * The ribbon as a standalone [StrokeGeometry], copied out at its exact length. Kept until the
