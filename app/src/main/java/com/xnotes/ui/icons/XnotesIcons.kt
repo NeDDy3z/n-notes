@@ -39,6 +39,11 @@ object XnotesIcons {
     private fun rect(x: Double, y: Double, w: Double, h: Double): String =
         "M $x $y h $w v $h h ${-w} Z"
 
+    private fun roundRect(x: Double, y: Double, w: Double, h: Double, r: Double): String =
+        "M ${x + r} $y h ${w - 2 * r} a $r $r 0 0 1 $r $r v ${h - 2 * r} " +
+            "a $r $r 0 0 1 ${-r} $r h ${-(w - 2 * r)} a $r $r 0 0 1 ${-r} ${-r} " +
+            "v ${-(h - 2 * r)} a $r $r 0 0 1 $r ${-r} Z"
+
     private fun ellipse(cx: Double, cy: Double, rx: Double, ry: Double): String =
         "M ${cx - rx} $cy a $rx $ry 0 1 0 ${2 * rx} 0 a $rx $ry 0 1 0 ${-2 * rx} 0"
 
@@ -108,8 +113,13 @@ object XnotesIcons {
     val page = icon(rect(3.0, 3.0, 18.0, 18.0), "M12 8v8", "M8 12h8")
     // The infinite canvas: a ruled field running past its own edges.
     val canvas = icon(rect(3.0, 3.0, 18.0, 18.0), "M3 9h18", "M3 15h18", "M9 3v18", "M15 3v18")
-    // The overview map: a frame with the viewport's own smaller frame inside it.
-    val map = icon(rect(3.0, 3.0, 18.0, 18.0), rect(12.0, 12.0, 7.0, 6.0))
+    // The overview map: the canvas frame opening at its corner for the panel that rests there,
+    // which is where the minimap itself sits. Two bare squares one inside the other read as a
+    // stacking order instead, and the inner one had no room to breathe.
+    val map = icon(
+        "M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4",
+        roundRect(12.0, 13.0, 10.0, 7.0, 2.0),
+    )
     val prev = icon("M15 18l-6-6 6-6")
     val next = icon("M9 18l6-6-6-6")
     val file = icon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6")
