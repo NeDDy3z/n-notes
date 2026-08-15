@@ -1,6 +1,7 @@
 package com.xnotes.canvas
 
 import com.xnotes.core.FakeRenderer
+import com.xnotes.core.geometry.Rect
 import com.xnotes.core.FakeSurfaceFactory
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.stroke.Sample
@@ -147,6 +148,33 @@ class WetInkCacheTest {
     @Test fun aSurfaceLargerThanTheCapIsRefused() {
         val r = FakeRenderer()
         assertFalse(cache.paint(r, liveStroke(Tool.PEN, 300), 1.0, maxPixels = 16L))
+    }
+
+    @Test fun growthKeepsTheSurfaceOnTheOldPixelGrid() {
+        // Every growth blits the old pixels into the new buffer. Anchored off the grid that blit
+        // resamples them, and a long stroke would go soft behind the nib one growth at a time.
+        val res = 1.7
+        val stroke = Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN))
+        stroke.finished = false
+        val anchors = ArrayList<Rect>()
+        for (i in 0 until 900) {
+            stroke.addSample(Sample(20.0 + i * 2.0, 200.0 + sin(i * 0.05) * 40.0, 0.6, i * 5.0))
+            // What the cache blits each frame is exactly the page-space rect its surface covers.
+            frame(stroke, res).second.rasterDests.lastOrNull()?.let {
+                if (anchors.lastOrNull() != it) anchors += it
+            }
+        }
+        assertTrue("the surface never grew", anchors.size > 1)
+        for (i in 1 until anchors.size) {
+            val dx = (anchors[i - 1].left - anchors[i].left) * res
+            val dy = (anchors[i - 1].top - anchors[i].top) * res
+            assertEquals("growth $i moved the anchor off the pixel grid in x", Math.round(dx).toDouble(), dx, 1e-9)
+            assertEquals("growth $i moved the anchor off the pixel grid in y", Math.round(dy).toDouble(), dy, 1e-9)
+            assertTrue("growth $i dropped baked ink off the left", anchors[i].left <= anchors[i - 1].left + 1e-9)
+            assertTrue("growth $i dropped baked ink off the top", anchors[i].top <= anchors[i - 1].top + 1e-9)
+            assertTrue("growth $i dropped baked ink off the right", anchors[i].right >= anchors[i - 1].right - 1e-9)
+            assertTrue("growth $i dropped baked ink off the bottom", anchors[i].bottom >= anchors[i - 1].bottom - 1e-9)
+        }
     }
 
     @Test fun theSurfaceGrowsWithTheStrokeAndCarriesItsPixelsOver() {

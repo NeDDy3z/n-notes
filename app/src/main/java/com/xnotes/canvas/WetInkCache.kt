@@ -104,30 +104,37 @@ class WetInkCache(private val surfaceFactory: SurfaceFactory) {
      */
     private fun ensureRoom(needed: Rect, maxPixels: Long): Boolean {
         val old = surface
-        if (old != null && baked > 0 && contains(cover, needed)) return true
+        val carry = old != null && baked > 0
+        if (carry && contains(cover, needed)) return true
 
-        val pad = max(MIN_PAD, max(needed.w, needed.h) * PAD_FRACTION)
-        val want = needed.outset(pad)
-        val w = ceil(want.w * res).toInt().coerceAtLeast(1)
-        val h = ceil(want.h * res).toInt().coerceAtLeast(1)
+        val pad = (max(needed.w, needed.h) * PAD_FRACTION).coerceIn(MIN_PAD, MAX_PAD)
+        // Growing must never drop ink already baked, so the new cover swallows the old one whole.
+        val want = if (carry) needed.outset(pad).union(cover) else needed.outset(pad)
+        // Anchored a whole number of surface pixels out from the old anchor, so carrying the
+        // pixels over is a straight copy. Off the grid every growth would resample the ink, and a
+        // long stroke would go visibly soft where the short ones behind it stayed crisp.
+        val originX = if (carry) cover.left - ceil((cover.left - want.x) * res) / res else want.x
+        val originY = if (carry) cover.top - ceil((cover.top - want.y) * res) / res else want.y
+        val w = ceil((want.right - originX) * res).toInt().coerceAtLeast(1)
+        val h = ceil((want.bottom - originY) * res).toInt().coerceAtLeast(1)
         if (w.toLong() * h.toLong() > maxPixels) return false
 
         // A fresh stroke inside a surface we already hold: rinse it and re-anchor, no allocation.
-        if (old != null && baked == 0 && old.width >= w && old.height >= h) {
+        if (old != null && !carry && old.width >= w && old.height >= h) {
             old.fill(TRANSPARENT)
-            cover = Rect(want.x, want.y, old.width / res, old.height / res)
+            cover = Rect(originX, originY, old.width / res, old.height / res)
             return true
         }
 
         val fresh = surfaceFactory.create(w, h, 1.0)
         fresh.fill(TRANSPARENT)
         val painter = fresh.renderer()
-        val grown = Rect(want.x, want.y, w / res, h / res)
-        if (old != null && baked > 0) {
+        val grown = Rect(originX, originY, w / res, h / res)
+        if (carry) {
             painter.withSave {
                 painter.scale(res, res)
                 painter.translate(-grown.left, -grown.top)
-                painter.drawRaster(old, cover)
+                painter.drawRaster(old!!, cover)
             }
         }
         old?.recycle()
@@ -175,8 +182,10 @@ class WetInkCache(private val surfaceFactory: SurfaceFactory) {
         const val MIN_BAKE_POINTS = 48
 
         /** Page-px slack around the ink, so an ordinary stroke outgrows its surface a handful of
-         *  times rather than on every sample. */
+         *  times rather than on every sample. Capped at the top end because a stroke that already
+         *  spans the screen would otherwise ask for a third as much again. */
         private const val MIN_PAD = 48.0
+        private const val MAX_PAD = 320.0
         private const val PAD_FRACTION = 0.35
     }
 }
