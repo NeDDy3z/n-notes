@@ -11,6 +11,7 @@ import com.xnotes.core.pal.Renderer
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.StrokeEngine
 import com.xnotes.core.stroke.StrokeGeometry
+import com.xnotes.core.stroke.WetRibbon
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 
@@ -69,6 +70,18 @@ class Stroke(
     private var cachedGeometry: StrokeGeometry? = null
     private var cachedRawBounds: Rect? = null
     private var cachedBounds: Rect? = null
+
+    /**
+     * The ribbon while the pen is still down, grown a sample at a time rather than rebuilt (see
+     * [WetRibbon]). Present only for a live stroke whose pen settles as it is drawn; the taper pen
+     * and the straight-line tools have none, and neither does a finished stroke, which goes back
+     * through [StrokeEngine.build] so the lift-time rules can fire.
+     */
+    @Volatile
+    private var wet: WetRibbon? = null
+
+    /** The live ribbon, for renderers that want to draw only the part of it still moving. */
+    val wetRibbon: WetRibbon? get() = wet
 
     init {
         if (samples.isNotEmpty()) setSamples(samples)
@@ -183,6 +196,7 @@ class Stroke(
 
     /** Lazily-built ribbon geometry; rebuilt only when samples change. */
     fun geometry(): StrokeGeometry {
+        wet?.let { return it.geometry() }
         cachedGeometry?.let { return it }
         // Unpack to the doubles the engine works in. It allocates these three arrays anyway, so
         // reading the float storage here costs nothing over passing a list of boxed samples.
@@ -213,6 +227,7 @@ class Stroke(
     }
 
     fun invalidate() {
+        wet = null
         cachedGeometry = null
         cachedRawBounds = null
         cachedBounds = null
@@ -225,12 +240,17 @@ class Stroke(
      * ribbon saved. Not [invalidate]: nothing about the samples changed.
      */
     fun releaseGeometry() {
+        // A live ribbon holds the bounds too, so bank them before letting it go.
+        wet?.let {
+            cachedBounds = it.bounds()
+            wet = null
+        }
         cachedGeometry = null
     }
 
     /** True once [geometry] has been built and not since released; lets the canvas skip pages
      *  that never rendered instead of walking their items. */
-    val hasGeometry get() = cachedGeometry != null
+    val hasGeometry get() = wet != null || cachedGeometry != null
 
     fun addSample(s: Sample) {
         if (n == 0) {
@@ -244,7 +264,44 @@ class Stroke(
         pa[n] = s.pressure.toFloat()
         ta?.set(n, s.t.toFloat())
         n++
-        invalidate()
+        val ribbon = wetOrStart()
+        if (ribbon == null) {
+            invalidate()
+            return
+        }
+        // Fed from the packed arrays, not from [s]: the samples are stored as floats, and the
+        // ribbon has to see the same rounded numbers a rebuild would, or the ink would shift a
+        // hair as the stroke crosses from one to the other.
+        val i = n - 1
+        ribbon.append(xAt(i), yAt(i), pAt(i), tAt(i))
+        cachedGeometry = null
+        cachedRawBounds = null
+        cachedBounds = null
+    }
+
+    /**
+     * The live ribbon, started on the first sample of a stroke whose pen settles as it is drawn.
+     * Anything that edits the samples wholesale drops it; the next sample builds a fresh one over
+     * what is already there and carries on from the end, so a stroke never falls back to rebuilding
+     * per frame for good.
+     */
+    private fun wetOrStart(): WetRibbon? {
+        wet?.let { return it }
+        if (finished || !WetRibbon.supports(config.taperEnabled, straight)) return null
+        val w = WetRibbon(
+            baseWidth = config.baseWidth,
+            pressureEnabled = config.pressureEnabled,
+            m = config.pressureMinFactor,
+            ds = config.directionStrength,
+            speedStrength = config.speedStrength,
+            speedScale = speedScale,
+            smooth = !straight,
+            holdEnds = tool == Tool.PEN || tool == Tool.HIGHLIGHTER,
+            smoothScale = smoothScale,
+        )
+        // Everything before the sample being added; the caller appends that one itself.
+        for (i in 0 until n - 1) w.append(xAt(i), yAt(i), pAt(i), tAt(i))
+        return w.also { wet = it }
     }
 
     /**
@@ -384,6 +441,9 @@ class Stroke(
 
 
     override fun bounds(): Rect {
+        // A live ribbon keeps a running box over its settled points, so a growing stroke's bounds
+        // cost what its moving tail costs rather than a walk of every point it has laid down.
+        wet?.let { return it.bounds() }
         cachedBounds?.let { return it }
         val g = geometry()
         if (g.pointCount == 0) {
@@ -413,6 +473,7 @@ class Stroke(
     override fun translate(dx: Double, dy: Double) {
         ox += dx
         oy += dy
+        wet = null
         cachedGeometry = null
         cachedRawBounds = cachedRawBounds?.translate(dx, dy)
         cachedBounds = cachedBounds?.translate(dx, dy)
