@@ -912,11 +912,11 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
         val fullW = maxWidth
         val fullH = maxHeight
         val full = if (sideBySide) fullW else fullH
-        // Along the split axis the panes share what the divider leaves; across it they run full.
-        val shared = (full - DIVIDER).coerceAtLeast(0.dp)
-        val firstExtent = if (split) shared * ratio else full
-        val secondExtent = if (split) shared - firstExtent else full
-        val secondOffset = if (split) firstExtent + DIVIDER else 0.dp
+        // The panes meet along the split axis and take all of it; the divider is not a gap between
+        // them but a handle floating over the seam, so there is no strip of its own colour to show
+        // beside the toolbars. Across the axis both run full.
+        val firstExtent = if (split) full * ratio else full
+        val secondExtent = if (split) full - firstExtent else full
 
         /** Sizes a pane to [extent] along the split axis and the whole window across it. */
         fun paneSize(extent: Dp) = Modifier.size(
@@ -939,22 +939,24 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
                 modifier = paneSize(firstExtent),
             )
         }
-        if (split) {
-            SplitDivider(
-                sideBySide = sideBySide,
-                extentPx = with(LocalDensity.current) { shared.toPx() },
-                ratio = editor.splitRatio,
-                onRatio = { editor.splitRatio = it },
-                modifier = paneOffset(firstExtent).then(paneSize(DIVIDER)),
-            )
-        }
         if (second?.noteOpen == true) {
             EditorPane(
                 editor = second,
                 app = editor,
                 actions = actions,
                 closable = split,
-                modifier = paneOffset(secondOffset).then(paneSize(secondExtent)),
+                modifier = paneOffset(if (split) firstExtent else 0.dp).then(paneSize(secondExtent)),
+            )
+        }
+        // Composed last so it sits over both panes and catches the drag before either of them.
+        if (split) {
+            SplitDivider(
+                sideBySide = sideBySide,
+                extentPx = with(LocalDensity.current) { full.toPx() },
+                ratio = editor.splitRatio,
+                onRatio = { editor.splitRatio = it },
+                modifier = paneOffset((firstExtent - DIVIDER / 2).coerceAtLeast(0.dp))
+                    .then(paneSize(DIVIDER)),
             )
         }
     }
@@ -1074,8 +1076,10 @@ private fun EditorPane(
 }
 
 /**
- * The bar between two split panes. Dragging it moves the divider along the split axis, keeping both
- * panes at least [MIN_PANE_RATIO] of it; double-tapping puts it back in the middle.
+ * The handle over the seam between two split panes. Dragging it moves the boundary along the split
+ * axis, keeping both panes at least [MIN_PANE_RATIO] of it; double-tapping puts it back in the
+ * middle. Only the line is painted — the margin either side of it is what the finger catches, and it
+ * stays transparent so the panes it lies over show through.
  */
 @Composable
 private fun SplitDivider(
@@ -1092,7 +1096,6 @@ private fun SplitDivider(
     var dragged by remember { mutableStateOf(0f) }
     Box(
         modifier = modifier
-            .background(palette.bg.toComposeColor())
             .pointerInput(sideBySide, extentPx) {
                 detectDragGestures(
                     onDragStart = { dragged = ratioNow.value },
