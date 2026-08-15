@@ -70,7 +70,9 @@ import com.xnotes.platform.AndroidImageCodec
 import com.xnotes.platform.AndroidSurfaceFactory
 import com.xnotes.platform.AndroidTextMeasurer
 import com.xnotes.settings.ExplorerSortKey
+import com.xnotes.settings.LiveSettings
 import com.xnotes.settings.Preferences
+import com.xnotes.settings.Settings
 import com.xnotes.settings.SettingsRepository
 import com.xnotes.ui.theme.MaterialColors
 import com.xnotes.ui.theme.Palette
@@ -120,12 +122,25 @@ data class PendingImport(val kind: ImportKind, val defaultName: String, val uri:
 private const val SIDECAR_DIR = ".xnote"
 private const val SIDECAR_FILE = "colors.json"
 
+/**
+ * Which pane of a split view an editor drives. [PRIMARY] is the app's one editor in the ordinary
+ * single-note case and the first pane of a split; [SECONDARY] is the second pane, built only when a
+ * split opens. The two differ in the app-level chrome they own, not in what they can edit: the
+ * secondary never purges the shared temp dirs (the primary may have a note live in them), keeps its
+ * session in its own slot, and leaves the tool/toolbar preference snapshot to the primary.
+ */
+enum class Pane { PRIMARY, SECONDARY }
+
 @Stable
-class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost {
+class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost {
 
     private val appContext = context.applicationContext
     private val settingsRepo = SettingsRepository(context)
-    private var settings = settingsRepo.load()
+
+    /** Read and written through the process-wide [LiveSettings] so both split panes share one copy. */
+    private var settings: Settings
+        get() = LiveSettings.get(settingsRepo)
+        set(value) { LiveSettings.set(value) }
     private var pdfSource: com.xnotes.platform.PdfSource? = null
 
     private val deviceHasDisplayCutout = com.xnotes.deviceHasDisplayCutout(context)
@@ -140,22 +155,31 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
     var fullscreen by mutableStateOf(settings.prefs.startFullscreen ?: !deviceHasDisplayCutout)
         private set
 
+    /** Prepares one of the shared temp dirs. The launch purge drops temps orphaned by a crash, which
+     *  is safe for the primary editor because no real note is open yet at construction. A secondary
+     *  pane is built mid-session, with the primary's note already live in these dirs, so it only
+     *  takes the handle. */
+    private fun tempDir(name: String): java.io.File =
+        java.io.File(appContext.filesDir, name).apply {
+            mkdirs()
+            if (pane == Pane.PRIMARY) listFiles()?.forEach { it.delete() }
+        }
+
     /** Private dir holding each note's source PDF as a file, so a large PDF is never held whole in
      *  RAM (the renderer memory-maps it). Under filesDir, not the reclaimable cacheDir: the OS could
      *  evict a cacheDir copy mid-session, and the next autosave would then fail to re-embed the PDF.
-     *  Purged on launch to drop temps orphaned by a crash — safe here because no real note is open
-     *  yet at construction. */
-    private val pdfDir = java.io.File(appContext.filesDir, "pdfsrc").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+     *  Both panes share it; the files inside carry unique temp names. */
+    private val pdfDir = tempDir("pdfsrc")
 
     /** Encoded inserted images, streamed to disk so a note full of large images never loads all their
      *  bytes into the heap; the renderer decodes from these files on demand. Under filesDir (not the
-     *  reclaimable cacheDir) and purged on launch to drop temps orphaned by a crash. */
-    private val imageDir = java.io.File(appContext.filesDir, "noteimg").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+     *  reclaimable cacheDir). */
+    private val imageDir = tempDir("noteimg")
 
     /** Scratch dir for [writeNoteSafely]: a note is encoded here in full before any SAF file is
      *  touched, so a failed encode can never truncate a good note. Lives under filesDir (not the
-     *  reclaimable cacheDir) and is purged on launch to drop temps orphaned by a crash. */
-    private val saveTmpDir = java.io.File(appContext.filesDir, "savetmp").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+     *  reclaimable cacheDir). */
+    private val saveTmpDir = tempDir("savetmp")
 
     /** The stamp library: encoded image files kept under filesDir across sessions (never purged).
      *  Only [java.io.File] handles are held in memory; thumbnails and inserts decode from disk. */
@@ -166,6 +190,13 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
         private set
 
     private fun listStamps(): List<java.io.File> = stampDir.listFiles()?.sortedBy { it.name }.orEmpty()
+
+    /** Re-read the library into both panes: they browse one shared directory, so a stamp added or
+     *  removed on one toolbar has to show up on the other. */
+    private fun refreshStamps() {
+        stamps = listStamps()
+        sibling?.let { it.stamps = it.listStamps() }
+    }
 
     /** The temp PDF file backing the currently open document, tracked so it's deleted when the note
      *  is swapped out (transient docs used for export/thumbnails manage their own files locally). */
@@ -212,10 +243,11 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
     @Volatile private var publishedFlow: PublishedFlow? = null
     private var publishedFlowStamp = -1L
     private var publishedPageList: List<Page> = emptyList()
-    private val session = com.xnotes.platform.SessionStore(java.io.File(appContext.filesDir, "session"), codec, pdfDir, imageDir)
-    private val canvasSession = com.xnotes.platform.CanvasSessionStore(
-        java.io.File(appContext.filesDir, "session"), canvasCodec, imageDir,
-    )
+    /** Each pane keeps its working session in its own slot, so two open notes never overwrite
+     *  each other's saved document. */
+    private val sessionDir = java.io.File(appContext.filesDir, if (pane == Pane.PRIMARY) "session" else "session-b")
+    private val session = com.xnotes.platform.SessionStore(sessionDir, codec, pdfDir, imageDir)
+    private val canvasSession = com.xnotes.platform.CanvasSessionStore(sessionDir, canvasCodec, imageDir)
     private val viewStates = com.xnotes.platform.ViewStateStore(com.xnotes.platform.JsonStore.viewStates(appContext))
     private var lastSessionContentVersion = -1
     private var sessionLoaded = false
@@ -1241,12 +1273,12 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
             message = "Could not read the image."
             return
         }
-        stamps = listStamps()
+        refreshStamps()
     }
 
     fun removeStamp(file: java.io.File) {
         file.delete()
-        stamps = listStamps()
+        refreshStamps()
     }
 
     /** Insert a stamp as a fresh copy, so the note never references the library file itself. */
@@ -1254,7 +1286,7 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
         val bytes = runCatching { file.takeIf { it.isFile }?.readBytes() }.getOrNull()
         if (bytes == null) {
             message = "Could not read the stamp."
-            stamps = listStamps()
+            refreshStamps()
             return
         }
         insertImage(bytes)
@@ -1419,6 +1451,7 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
     /** The OS dark/light state flipped (uiMode arrives via onConfigurationChanged, no activity
      *  recreation): under the "system" appearance, rebuild the chrome and themed content live. */
     fun onSystemDarkModeChanged(dark: Boolean) {
+        secondary?.onSystemDarkModeChanged(dark) // the other pane rethemes with this one
         if (systemInDarkMode == dark) return
         systemInDarkMode = dark
         if (settings.prefs.uiAppearance != "system") return
@@ -1529,16 +1562,20 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
             shapeConfig = fromCanvas.shapeConfig
             activeColorIndex = fromCanvas.activeColorIndex
         }
-        val tools = ToolDefaults.persistedTools.associateWith { controller.configFor(it) }
-        settings = settings.copy(
-            tools = tools,
-            shapeConfig = controller.shapeConfig,
-            toolbarColors = toolbarColors,
-            toolbarColorCount = toolbarColorCount,
-            activeColor = activeColorIndex,
-            sidebarVisible = sidebarVisible,
-            renderScale = renderScale,
-        )
+        // Both panes of a split hold their own live tool state, so only the primary snapshots it
+        // back into settings; otherwise the second pane's pens would overwrite the first pane's.
+        if (pane == Pane.PRIMARY) {
+            val tools = ToolDefaults.persistedTools.associateWith { controller.configFor(it) }
+            settings = settings.copy(
+                tools = tools,
+                shapeConfig = controller.shapeConfig,
+                toolbarColors = toolbarColors,
+                toolbarColorCount = toolbarColorCount,
+                activeColor = activeColorIndex,
+                sidebarVisible = sidebarVisible,
+                renderScale = renderScale,
+            )
+        }
         if (noteOpen) saveViewState() // remember this folder note's view for next time
         settingsRepo.save(settings)
         // The note + session writes are heavy for a big note; run them off the main thread so pressing
@@ -1548,6 +1585,7 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
         flushCanvasAutosave()
         saveSession()
         saveCanvasSession()
+        secondary?.persist() // the other pane's note has to be flushed on pause too
     }
 
     /** Persist the open canvas, or clear the stored one when a canvas is not what is open. */
@@ -3494,6 +3532,8 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
 
     fun startPresentation(port: Int, scope: String, mode: String): String? {
         val d = settings.presentation
+        // One server, one port: presenting from a pane takes the stream over from the other one.
+        sibling?.stopPresentation()
         val error = presentation.start(port, scope == "lan", mode, d.quality, d.maxFps)
         refreshPresentation()
         if (error == null) {
@@ -3506,6 +3546,7 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
     fun stopPresentation() {
         presentation.stop()
         refreshPresentation()
+        secondary?.stopPresentation()
     }
 
     fun setPresentationMode(mode: String) {
@@ -4076,6 +4117,63 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
         refreshContent()
         view.requestRender()
         noteOpen = true // push the editor on top of backstage
+    }
+
+    // --- split view ---
+    //
+    // A split is two editors side by side, one per open file, each with its own toolbar. The primary
+    // editor owns the arrangement (the secondary is a plain second instance that knows nothing about
+    // it) and also owns the app-level chrome, so the backstage underneath always talks to the
+    // primary. Which panes are drawn follows straight from [noteOpen]: both open is a split, one open
+    // is that pane full-screen, neither is the backstage. Closing a pane is just its own [goHome].
+
+    /** The second pane's editor while a split is open, else null. Only ever set on the primary. */
+    var secondary: Editor? by mutableStateOf(null)
+        private set
+
+    /** The other pane's editor, from either side, while a split is open. */
+    var sibling: Editor? = null
+        private set
+
+    /** The divider position, as the first pane's share of the split axis. */
+    var splitRatio by mutableStateOf(0.5f)
+
+    /** The pane that keyboard shortcuts and the file/export actions act on. */
+    var focusedPane by mutableStateOf(Pane.PRIMARY)
+
+    /** True while two panes are open together. */
+    val inSplit: Boolean get() = secondary?.noteOpen == true && noteOpen
+
+    /** The editor a note-scoped action should run against: the focused pane of a split, else this one. */
+    val active: Editor
+        get() = if (focusedPane == Pane.SECONDARY) secondary?.takeIf { it.noteOpen } ?: this else this
+
+    /** Build the second pane on first use. It shares the temp dirs and the live settings with this
+     *  one, and keeps its own document, history, canvas and session slot. */
+    fun secondaryPane(): Editor = secondary ?: Editor(appContext, Pane.SECONDARY).also {
+        it.keyActions = keyActions // the shortcuts already resolve their target pane themselves
+        it.sibling = this
+        sibling = it
+        secondary = it
+    }
+
+    /** Give [pane] the keyboard and the file actions. */
+    fun focusPane(pane: Pane) {
+        if (focusedPane != pane) focusedPane = pane
+    }
+
+    /**
+     * Drop the second pane once it has no note open, releasing its canvas and GL surfaces. Called by
+     * the shell after a pane closes; a no-op while the split is live.
+     */
+    fun releaseClosedSecondary() {
+        val other = secondary ?: return
+        if (other.noteOpen) return
+        other.stopPresentation()
+        other.sibling = null
+        sibling = null
+        secondary = null
+        focusedPane = Pane.PRIMARY
     }
 
     /** Pop back to backstage: detach the current note (flush autosave, drop the binding) and clear
