@@ -366,8 +366,7 @@ class DocumentCodec(
                         item.smoothScale, item.config.directionStrength,
                     )
                     if (slim.size != item.samples.size) {
-                        item.samples.clear()
-                        item.samples.addAll(slim)
+                        item.setSamples(slim)
                     }
                     item.invalidate() // also frees the geometry built for the width channel
                 }

@@ -18,13 +18,21 @@ import com.xnotes.core.tools.ToolConfig
  * The unit of inking (spec 02 §5.1). Holds the raw samples plus a snapshot of
  * the tool style; the ribbon geometry is derived from the samples on demand and
  * cached until the samples change.
+ *
+ * Samples live in parallel primitive arrays, not a `List<Sample>`: a dense note holds millions of
+ * them, and one boxed 4-double object per sample costs ~60 bytes against the 12 the numbers need.
+ * Positions are **offsets from [ox]/[oy]**, a per-stroke double origin taken at pen-down, so a
+ * float never has to carry a large absolute coordinate — the infinite canvas has no coordinate
+ * bound, and float32 spacing reaches a whole pixel around 1e7. An offset spans one stroke, a few
+ * hundred px at most, where float resolves to ~1e-5 px. [samples] is a read-only view over the
+ * arrays for the cold call sites; the hot loops read [xAt]/[yAt]/[pAt] and allocate nothing.
  */
 class Stroke(
     val tool: Tool,
     /** Scaled in place when the stroke is resized (var so [applyTransform] can swap a width-scaled
      *  copy); otherwise the immutable style snapshot captured at pen-down. */
     var config: ToolConfig,
-    val samples: MutableList<Sample> = mutableListOf(),
+    samples: List<Sample> = emptyList(),
     /** Content-px → dp scale captured at pen-down (zoom ÷ display density), so the speed
      *  pen judges gesture speed in zoom- and device-independent units. 1.0 = unscaled. */
     val speedScale: Double = 1.0,
@@ -43,9 +51,96 @@ class Stroke(
     override val kind = KIND
     override val resizable = false
 
+    /** Double origin the float offsets hang off; the first sample's position. */
+    private var ox = 0.0
+    private var oy = 0.0
+    private var xa = EMPTY_F
+    private var ya = EMPTY_F
+    private var pa = EMPTY_F
+    /** Milliseconds since the first sample, allocated only once a sample carries a non-zero time
+     *  (only the speed pen records any), so ordinary ink pays nothing for the channel. */
+    private var ta: FloatArray? = null
+    private var n = 0
+
+    /** The ribbon cache. Volatile because cache builds read it off the UI thread while
+     *  [releaseGeometry] may be nulling it on the UI thread; [StrokeGeometry] is immutable, so a
+     *  race costs at worst one redundant rebuild. */
+    @Volatile
     private var cachedGeometry: StrokeGeometry? = null
     private var cachedRawBounds: Rect? = null
     private var cachedBounds: Rect? = null
+
+    init {
+        if (samples.isNotEmpty()) setSamples(samples)
+    }
+
+    /** Copy constructor: duplicates the sample arrays without materializing a single [Sample]. */
+    constructor(src: Stroke) : this(src.tool, src.config, emptyList(), src.speedScale, src.straight, src.smoothScale) {
+        ox = src.ox
+        oy = src.oy
+        n = src.n
+        xa = src.xa.copyOf(n)
+        ya = src.ya.copyOf(n)
+        pa = src.pa.copyOf(n)
+        ta = src.ta?.copyOf(n)
+    }
+
+    // --- sample access ---
+
+    /** Number of raw samples. */
+    val sampleCount get() = n
+
+    fun xAt(i: Int): Double = ox + xa[i]
+    fun yAt(i: Int): Double = oy + ya[i]
+    fun pAt(i: Int): Double = pa[i].toDouble()
+    fun tAt(i: Int): Double = ta?.get(i)?.toDouble() ?: 0.0
+
+    fun sampleAt(i: Int): Sample = Sample(xAt(i), yAt(i), pAt(i), tAt(i))
+
+    /** Read-only `List<Sample>` view for the call sites that still speak in [Sample]s. Each `get`
+     *  builds a short-lived value; the hot loops use the primitive accessors instead. */
+    val samples: List<Sample> get() = SampleView(this)
+
+    private class SampleView(private val s: Stroke) : AbstractList<Sample>() {
+        override val size get() = s.n
+        override fun get(index: Int): Sample = s.sampleAt(index)
+    }
+
+    /** Replace every sample (pen-up reduction, undo restore, legacy compaction). */
+    fun setSamples(list: List<Sample>) {
+        val m = list.size
+        ensure(m)
+        n = m
+        if (m == 0) {
+            ta = null
+            invalidate()
+            return
+        }
+        val first = list[0]
+        ox = first.x
+        oy = first.y
+        var timed = false
+        for (i in 0 until m) if (list[i].t != 0.0) { timed = true; break }
+        ta = if (timed) FloatArray(xa.size) else null
+        for (i in 0 until m) {
+            val s = list[i]
+            xa[i] = (s.x - ox).toFloat()
+            ya[i] = (s.y - oy).toFloat()
+            pa[i] = s.pressure.toFloat()
+            ta?.set(i, s.t.toFloat())
+        }
+        invalidate()
+    }
+
+    private fun ensure(capacity: Int) {
+        if (xa.size >= capacity) return
+        var c = if (xa.isEmpty()) INITIAL_CAPACITY else xa.size
+        while (c < capacity) c *= 2
+        xa = xa.copyOf(c)
+        ya = ya.copyOf(c)
+        pa = pa.copyOf(c)
+        ta = ta?.copyOf(c)
+    }
 
     /** False only while the pen is still down on this stroke: lift-time rules (the calligraphy
      *  dot swell, a stroke that never fills [StrokeEngine.HEAD_LEN]) are held off so the live
@@ -64,13 +159,24 @@ class Stroke(
         if (tool == Tool.HIGHLIGHTER) config.highlighterAlpha else tool.alphaScale,
     )
 
-    val isEmpty get() = samples.isEmpty()
+    val isEmpty get() = n == 0
 
     /** Lazily-built ribbon geometry; rebuilt only when samples change. */
     fun geometry(): StrokeGeometry {
         cachedGeometry?.let { return it }
+        // Unpack to the doubles the engine works in. It allocates these three arrays anyway, so
+        // reading the float storage here costs nothing over passing a list of boxed samples.
+        val rx = DoubleArray(n)
+        val ry = DoubleArray(n)
+        val rp = DoubleArray(n)
+        for (i in 0 until n) {
+            rx[i] = ox + xa[i]
+            ry[i] = oy + ya[i]
+            rp[i] = pa[i].toDouble()
+        }
+        val rt = ta?.let { src -> DoubleArray(n) { src[it].toDouble() } }
         return StrokeEngine.build(
-            samples,
+            rx, ry, rp, rt,
             config.baseWidth,
             config.pressureEnabled,
             config.pressureMinFactor,
@@ -92,8 +198,32 @@ class Stroke(
         cachedBounds = null
     }
 
+    /**
+     * Drop the ribbon but keep the bounds. Used by the canvas to reclaim geometry for pages that
+     * scrolled out of the cached band. The two [Rect]s stay because [bounds] is what selection
+     * reads, and rebuilding the whole ribbon to hand back a rectangle would cost more than the
+     * ribbon saved. Not [invalidate]: nothing about the samples changed.
+     */
+    fun releaseGeometry() {
+        cachedGeometry = null
+    }
+
+    /** True once [geometry] has been built and not since released; lets the canvas skip pages
+     *  that never rendered instead of walking their items. */
+    val hasGeometry get() = cachedGeometry != null
+
     fun addSample(s: Sample) {
-        samples.add(s)
+        if (n == 0) {
+            ox = s.x
+            oy = s.y
+        }
+        ensure(n + 1)
+        if (s.t != 0.0 && ta == null) ta = FloatArray(xa.size)
+        xa[n] = (s.x - ox).toFloat()
+        ya[n] = (s.y - oy).toFloat()
+        pa[n] = s.pressure.toFloat()
+        ta?.set(n, s.t.toFloat())
+        n++
         invalidate()
     }
 
@@ -103,9 +233,8 @@ class Stroke(
      * end tracks the pointer, so the live preview and committed stroke are one straight ribbon.
      */
     fun setStraightEnd(end: Sample) {
-        while (samples.size > 1) samples.removeAt(samples.size - 1)
-        samples.add(end)
-        invalidate()
+        if (n > 1) n = 1
+        addSample(end)
     }
 
     override fun paint(r: Renderer) {
@@ -238,7 +367,7 @@ class Stroke(
         cachedBounds?.let { return it }
         val g = geometry()
         if (g.pointCount == 0) {
-            val b = if (samples.isEmpty()) Rect(0.0, 0.0, 0.0, 0.0) else rawBounds()
+            val b = if (n == 0) Rect(0.0, 0.0, 0.0, 0.0) else rawBounds()
             return b.also { cachedBounds = it }
         }
         // Bound the swept-disc ribbon by the discs themselves: each centre +/- its half-width holds
@@ -260,20 +389,27 @@ class Stroke(
         return Rect(minX, minY, maxX - minX, maxY - minY).also { cachedBounds = it }
     }
 
+    /** O(1): the samples are offsets, so moving the stroke only moves the origin they hang off. */
     override fun translate(dx: Double, dy: Double) {
-        for (i in samples.indices) {
-            val s = samples[i]
-            samples[i] = s.copy(x = s.x + dx, y = s.y + dy)
-        }
-        invalidate()
+        ox += dx
+        oy += dy
+        cachedGeometry = null
+        cachedRawBounds = cachedRawBounds?.translate(dx, dy)
+        cachedBounds = cachedBounds?.translate(dx, dy)
     }
 
-    override fun snapshotGeometry(): GeometrySnapshot = StrokeSnapshot(samples.toList(), config)
+    override fun snapshotGeometry(): GeometrySnapshot =
+        StrokeSnapshot(ox, oy, xa.copyOf(n), ya.copyOf(n), pa.copyOf(n), ta?.copyOf(n), config)
 
     override fun restoreGeometry(snap: GeometrySnapshot) {
         if (snap !is StrokeSnapshot) return
-        samples.clear()
-        samples.addAll(snap.samples)
+        ox = snap.ox
+        oy = snap.oy
+        n = snap.xs.size
+        xa = snap.xs.copyOf()
+        ya = snap.ys.copyOf()
+        pa = snap.ps.copyOf()
+        ta = snap.ts?.copyOf()
         config = snap.config
         invalidate()
     }
@@ -282,10 +418,17 @@ class Stroke(
      *  runs) by the transform's linear factor, so a resized stroke looks zoomed; a pure rotation
      *  (factor 1) leaves the width untouched. */
     override fun applyTransform(t: Affine) {
-        for (i in samples.indices) {
-            val s = samples[i]
-            val p = t.apply(Pt(s.x, s.y))
-            samples[i] = s.copy(x = p.x, y = p.y)
+        if (n > 0) {
+            // Re-origin on the transformed first sample so the offsets stay stroke-local; a rotation
+            // about a far-away pivot would otherwise push them out to the pivot's magnitude.
+            val first = t.apply(Pt(ox + xa[0], oy + ya[0]))
+            for (i in 0 until n) {
+                val p = t.apply(Pt(ox + xa[i], oy + ya[i]))
+                xa[i] = (p.x - first.x).toFloat()
+                ya[i] = (p.y - first.y).toFloat()
+            }
+            ox = first.x
+            oy = first.y
         }
         val k = t.linearScale
         if (k != 1.0) {
@@ -314,14 +457,14 @@ class Stroke(
 
     /** Mean of the sample positions. */
     override fun centroid(): Pt {
-        if (samples.isEmpty()) return Pt.ZERO
+        if (n == 0) return Pt.ZERO
         var sx = 0.0
         var sy = 0.0
-        for (s in samples) {
-            sx += s.x
-            sy += s.y
+        for (i in 0 until n) {
+            sx += xa[i]
+            sy += ya[i]
         }
-        return Pt(sx / samples.size, sy / samples.size)
+        return Pt(ox + sx / n, oy + sy / n)
     }
 
     /**
@@ -331,39 +474,44 @@ class Stroke(
      */
     private fun rawBounds(): Rect {
         cachedRawBounds?.let { return it }
-        var minX = samples[0].x
-        var minY = samples[0].y
+        var minX = xa[0]
+        var minY = ya[0]
         var maxX = minX
         var maxY = minY
-        for (i in 1 until samples.size) {
-            val s = samples[i]
-            if (s.x < minX) minX = s.x else if (s.x > maxX) maxX = s.x
-            if (s.y < minY) minY = s.y else if (s.y > maxY) maxY = s.y
+        for (i in 1 until n) {
+            val x = xa[i]
+            val y = ya[i]
+            if (x < minX) minX = x else if (x > maxX) maxX = x
+            if (y < minY) minY = y else if (y > maxY) maxY = y
         }
-        return Rect(minX, minY, maxX - minX, maxY - minY).also { cachedRawBounds = it }
+        return Rect(ox + minX, oy + minY, (maxX - minX).toDouble(), (maxY - minY).toDouble())
+            .also { cachedRawBounds = it }
     }
 
     /** Cheap sample test after a bounding-box reject (spec 02 §5.1). */
     override fun intersectsCircle(cx: Double, cy: Double, radius: Double): Boolean {
-        if (samples.isEmpty()) return false
+        if (n == 0) return false
         // Reject against the *raw* sample box (the smoothed geometry lags inward).
         if (rawBounds().distanceTo(Pt(cx, cy)) > radius) return false
         // A straight stroke carries only its two endpoints, so a mid-line tap falls between
         // samples; test the segments they span (point-to-line) instead of the sample points.
         if (straight) {
             val c = Pt(cx, cy)
-            if (samples.size == 1) return c.distanceTo(Pt(samples[0].x, samples[0].y)) <= radius
-            for (i in 1 until samples.size) {
-                val a = Pt(samples[i - 1].x, samples[i - 1].y)
-                val b = Pt(samples[i].x, samples[i].y)
+            if (n == 1) return c.distanceTo(Pt(xAt(0), yAt(0))) <= radius
+            for (i in 1 until n) {
+                val a = Pt(xAt(i - 1), yAt(i - 1))
+                val b = Pt(xAt(i), yAt(i))
                 if (Geometry.distancePointToSegment(c, a, b) <= radius) return true
             }
             return false
         }
+        // Compare in offset space so the eraser sweep does no per-sample origin arithmetic.
+        val lx = cx - ox
+        val ly = cy - oy
         val r2 = radius * radius
-        for (s in samples) {
-            val dx = s.x - cx
-            val dy = s.y - cy
+        for (i in 0 until n) {
+            val dx = xa[i] - lx
+            val dy = ya[i] - ly
             if (dx * dx + dy * dy <= r2) return true
         }
         return false
@@ -381,19 +529,20 @@ class Stroke(
      *  - two or more — a mid-stroke hole split it
      */
     fun erasedBy(cx: Double, cy: Double, radius: Double): List<Stroke>? {
-        if (samples.isEmpty()) return null
+        if (n == 0) return null
         if (rawBounds().distanceTo(Pt(cx, cy)) > radius) return null
         // A straight stroke is just two endpoints — it has no mid-line samples to split on, so any
         // contact erases the whole segment (consistent with how the eraser hit-tests it).
         if (straight) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
+        val lx = cx - ox
+        val ly = cy - oy
         val r2 = radius * radius
         var anyErased = false
         var runStart = -1
         val fragments = mutableListOf<Stroke>()
-        for (i in samples.indices) {
-            val s = samples[i]
-            val dx = s.x - cx
-            val dy = s.y - cy
+        for (i in 0 until n) {
+            val dx = xa[i] - lx
+            val dy = ya[i] - ly
             if (dx * dx + dy * dy <= r2) {
                 anyErased = true
                 if (runStart >= 0) {
@@ -404,16 +553,33 @@ class Stroke(
                 runStart = i
             }
         }
-        if (runStart >= 0) fragments.add(fragment(runStart, samples.size))
+        if (runStart >= 0) fragments.add(fragment(runStart, n))
         return if (anyErased) fragments else null
     }
 
     /** A new stroke from samples `[from, to)`, copied so it shares no backing storage. */
-    private fun fragment(from: Int, to: Int): Stroke =
-        Stroke(tool, config, samples.subList(from, to).toMutableList(), speedScale, straight, smoothScale)
+    private fun fragment(from: Int, to: Int): Stroke {
+        val m = to - from
+        val s = Stroke(tool, config, emptyList(), speedScale, straight, smoothScale)
+        // Re-origin on the fragment's own first sample; the offsets stay small either way, but this
+        // keeps a fragment indistinguishable from a stroke drawn where it sits.
+        s.ox = ox + xa[from]
+        s.oy = oy + ya[from]
+        s.n = m
+        s.xa = FloatArray(m) { xa[from + it] - xa[from] }
+        s.ya = FloatArray(m) { ya[from + it] - ya[from] }
+        s.pa = pa.copyOfRange(from, to)
+        s.ta = ta?.copyOfRange(from, to)
+        return s
+    }
 
     companion object {
         const val KIND = "stroke"
+
+        private val EMPTY_F = FloatArray(0)
+
+        /** First allocation for a live stroke; grows by doubling from here. */
+        private const val INITIAL_CAPACITY = 32
 
         /** [c] lerped a fraction [t] toward white (alpha preserved). */
         internal fun lighten(c: Rgba, t: Double): Rgba {
@@ -449,5 +615,15 @@ class Stroke(
     }
 }
 
-/** Snapshot of a stroke's transformable geometry: the sample path and the width-bearing style. */
-private data class StrokeSnapshot(val samples: List<Sample>, val config: ToolConfig) : GeometrySnapshot
+/** Snapshot of a stroke's transformable geometry: the sample path and the width-bearing style.
+ *  Holds the packed arrays rather than a list of [Sample]s, so a resize drag snapshotting a big
+ *  selection every frame does not allocate one object per sample. */
+private class StrokeSnapshot(
+    val ox: Double,
+    val oy: Double,
+    val xs: FloatArray,
+    val ys: FloatArray,
+    val ps: FloatArray,
+    val ts: FloatArray?,
+    val config: ToolConfig,
+) : GeometrySnapshot

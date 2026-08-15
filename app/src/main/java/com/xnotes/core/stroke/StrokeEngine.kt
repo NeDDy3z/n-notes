@@ -240,12 +240,22 @@ object StrokeEngine {
         steps: DoubleArray,
         speedStrength: Double,
         speedScale: Double,
+    ): DoubleArray = speedFactors(
+        DoubleArray(samples.size) { samples[it].t }, steps, speedStrength, speedScale,
+    )
+
+    /** [speedFactors] over the elapsed-ms channel alone; [times] holds one entry per sample. */
+    fun speedFactors(
+        times: DoubleArray,
+        steps: DoubleArray,
+        speedStrength: Double,
+        speedScale: Double,
     ): DoubleArray {
-        val n = samples.size
+        val n = times.size
         val out = DoubleArray(n) { 1.0 }
         if (speedStrength <= 0.0 || n < 2) return out
-        val t0 = samples.first().t
-        val tN = samples.last().t
+        val t0 = times[0]
+        val tN = times[n - 1]
         if (tN - t0 <= 0.0) return out
         val cum = DoubleArray(n)
         for (i in 1 until n) cum[i] = cum[i - 1] + steps[i]
@@ -255,19 +265,19 @@ object StrokeEngine {
         for (i in 0 until n) {
             // Centre a fixed-duration window on this sample's time; if it runs past either end of
             // the stroke, slide it inward so the span stays ~2·half rather than shrinking to a point.
-            var a = samples[i].t - half
-            var b = samples[i].t + half
+            var a = times[i] - half
+            var b = times[i] + half
             if (a < t0) { b += t0 - a; a = t0 }
             if (b > tN) { a -= b - tN; b = tN; if (a < t0) a = t0 }
-            while (lo < i && samples[lo].t < a) lo++
-            while (hi < n - 1 && samples[hi + 1].t <= b) hi++
+            while (lo < i && times[lo] < a) lo++
+            while (hi < n - 1 && times[hi + 1] <= b) hi++
             // Always span at least one segment so a window that falls between two far-apart slow
             // samples reads a real speed instead of a zero-length divide.
             var l = lo
             var h = hi
             if (h <= l) { if (h < n - 1) h++ else l-- }
             val dist = (cum[h] - cum[l]) * speedScale
-            val dt = max(samples[h].t - samples[l].t, MIN_DT)
+            val dt = max(times[h] - times[l], MIN_DT)
             out[i] = 1.0 - speedStrength * smoothstep(SPEED_LO, SPEED_HI, dist / dt)
         }
         return out
@@ -434,16 +444,50 @@ object StrokeEngine {
     ): StrokeGeometry {
         val n = samples.size
         if (n == 0) return StrokeGeometry.EMPTY
-
         val rawX = DoubleArray(n)
         val rawY = DoubleArray(n)
         val rawP = DoubleArray(n)
+        var timed = false
         for (i in 0 until n) {
             val s = samples[i]
             rawX[i] = s.x
             rawY[i] = s.y
             rawP[i] = s.pressure
+            if (s.t != 0.0) timed = true
         }
+        val rawT = if (timed) DoubleArray(n) { samples[it].t } else null
+        return build(
+            rawX, rawY, rawP, rawT, baseWidth, pressureEnabled, m, ds, speedStrength,
+            taperEnabled, taperMinFactor, speedScale, smooth, holdEnds, finished, smoothScale,
+        )
+    }
+
+    /**
+     * [build] over the caller's own primitive channels: [rawX]/[rawY]/[rawP] are one entry per
+     * sample and [rawT] is the elapsed-ms channel, null when the ink carries no timing (everything
+     * but the speed pen). [Stroke] stores its samples packed and calls this directly, so painting a
+     * dense page never materializes a `Sample` per point.
+     */
+    fun build(
+        rawX: DoubleArray,
+        rawY: DoubleArray,
+        rawP: DoubleArray,
+        rawT: DoubleArray?,
+        baseWidth: Double,
+        pressureEnabled: Boolean,
+        m: Double,
+        ds: Double,
+        speedStrength: Double = 0.0,
+        taperEnabled: Boolean = false,
+        taperMinFactor: Double = 0.0,
+        speedScale: Double = 1.0,
+        smooth: Boolean = true,
+        holdEnds: Boolean = false,
+        finished: Boolean = true,
+        smoothScale: Double = 1.0,
+    ): StrokeGeometry {
+        val n = rawX.size
+        if (n == 0) return StrokeGeometry.EMPTY
 
         // Travel between consecutive samples: what the low-pass measures itself against, so the
         // smoothing is set by the path and not by how many samples describe it.
@@ -514,7 +558,11 @@ object StrokeEngine {
 
         // Optional width multipliers: speed thins fast travel, taper points the ends. Neither pen is
         // the common one, so the arrays are built only for the strokes that use them.
-        val sf = if (speedStrength > 0.0) speedFactors(samples, steps, speedStrength, speedScale) else null
+        val sf = if (speedStrength > 0.0 && rawT != null) {
+            speedFactors(rawT, steps, speedStrength, speedScale)
+        } else {
+            null
+        }
         val tf = if (taperEnabled) taperFactors(cum, taperMinFactor, smoothScale) else null
 
         // Calligraphy: the tangent-y that sets nib width, in three pieces. The head is decided once

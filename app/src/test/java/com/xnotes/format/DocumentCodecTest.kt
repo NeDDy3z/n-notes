@@ -327,7 +327,7 @@ class DocumentCodecTest {
         assertTrue(doc.compactedOnLoad)
         assertTrue("dense legacy ink should compact", stroke.samples.size < 30)
         assertEquals(Sample(0.0, 5.0, 1.0), stroke.samples.first())
-        assertEquals(19.8, stroke.samples.last().x, 1e-9)
+        assertEquals(19.8, stroke.samples.last().x, 1e-4) // samples are stored as float offsets
     }
 
     @Test fun currentWriterInkIsNotRecompacted() {
@@ -509,10 +509,21 @@ class DocumentCodecTest {
         )
         doc.pages.add(page)
 
-        val back = (roundTrip(doc).pages[0].items[0] as Stroke).samples[0]
-        assertEquals(369.67, back.x, 0.0)
-        assertEquals(33.31, back.y, 0.0)
-        assertEquals(0.032, back.pressure, 0.0)
+        // Samples are held as float offsets, so a read-back lands on the float nearest the written
+        // decimal rather than on the decimal itself. That is ~1e-5 here, three orders below the
+        // 0.01 the format stores, so it cannot change what the next write emits.
+        val once = roundTrip(doc)
+        val back = (once.pages[0].items[0] as Stroke).samples[0]
+        assertEquals(369.67, back.x, 1e-4)
+        assertEquals(33.31, back.y, 1e-4)
+        assertEquals(0.032, back.pressure, 1e-6)
+
+        // The property that actually matters: writing is a fixed point, so a note re-saved
+        // untouched does not drift sample by sample.
+        val twice = (roundTrip(once).pages[0].items[0] as Stroke).samples[0]
+        assertEquals(back.x, twice.x, 0.0)
+        assertEquals(back.y, twice.y, 0.0)
+        assertEquals(back.pressure, twice.pressure, 0.0)
     }
 
     @Test fun pageStyleRoundTrips() {

@@ -918,8 +918,7 @@ class InfiniteInteraction(
             stroke.smoothScale, stroke.config.directionStrength,
         )
         if (slim.size == stroke.samples.size) return
-        stroke.samples.clear()
-        stroke.samples.addAll(slim)
+        stroke.setSamples(slim)
         stroke.invalidate()
     }
 

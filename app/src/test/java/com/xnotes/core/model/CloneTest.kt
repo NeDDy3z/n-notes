@@ -46,9 +46,11 @@ class CloneTest {
                 val sa = a.items[ii] as? Stroke ?: continue
                 val sb = b.items[ii] as Stroke
                 assertNotSame(sa, sb) // items are cloned...
-                assertNotSame(sa.samples, sb.samples) // ...with their own sample lists...
-                assertSame(sa.samples[0], sb.samples[0]) // ...sharing the immutable Sample objects
-                assertEquals(sa.samples, sb.samples)
+                assertEquals(sa.samples, sb.samples) // ...carrying the same sample values...
+                // ...over storage of their own: clearing the original leaves the copy intact.
+                val copied = sb.samples.toList()
+                sa.setSamples(emptyList())
+                assertEquals(copied, sb.samples)
             }
         }
         assertEquals(1, copy.bookmarks.size)

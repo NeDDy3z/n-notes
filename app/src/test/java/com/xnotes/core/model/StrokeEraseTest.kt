@@ -90,7 +90,7 @@ class StrokeEraseTest {
         val orig = stroke(0.0 to 0.0, 10.0 to 0.0, 20.0 to 0.0)
         val frag = orig.erasedBy(0.0, 0.0, 5.0)!!.first() // survivors: x=10,20
         val sizeBefore = frag.samples.size
-        orig.samples.clear() // mutating the original must not disturb the fragment's copy
+        orig.setSamples(emptyList()) // mutating the original must not disturb the fragment's copy
         assertEquals(sizeBefore, frag.samples.size)
         assertEquals(10.0, frag.samples.first().x, 1e-12)
     }
