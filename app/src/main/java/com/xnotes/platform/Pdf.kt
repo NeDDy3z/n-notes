@@ -158,6 +158,7 @@ object PdfExporter {
                 } else {
                     vectorBlankPage(srcDoc, page, s, paperColor, paintRuling, flow) // a blank note page appended after the PDF
                 }
+                releaseInkGeometry(page)
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return
@@ -190,6 +191,7 @@ object PdfExporter {
                     else ->
                         vectorBlankPage(outDoc, page, s, paperColor, paintRuling, flow)
                 }
+                releaseInkGeometry(page)
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return
@@ -197,6 +199,16 @@ object PdfExporter {
         } finally {
             outDoc.runCatching { close() }
         }
+    }
+
+    /**
+     * Drop the ribbon geometry painting [page] just built. An export is a single pass that never
+     * revisits a page, so holding every page's ribbons to the end would leave the whole document's
+     * worth resident (~30 bytes per sample) exactly while the encoder wants the heap. The canvas
+     * rebuilds whatever it still needs on its next frame.
+     */
+    private fun releaseInkGeometry(page: Page) {
+        for (item in page.items) if (item is Stroke) item.releaseGeometry()
     }
 
     /** True when the note's pages are the source's pages 0..N-1 in order (rotation-0), optionally
@@ -418,6 +430,7 @@ object PdfExporter {
                 flow.paint(page, renderer, Rect(0.0, 0.0, page.width, page.height))
                 for (item in page.items) item.paint(renderer)
                 pdf.finishPage(pdfPage)
+                releaseInkGeometry(page)
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return

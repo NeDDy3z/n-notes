@@ -322,6 +322,17 @@ class CanvasState(
     private val presCaches = HashMap<Page, CacheEntry>()
     private val presBgCaches = HashMap<Page, CacheEntry>()
 
+    /**
+     * Pages whose strokes have built ribbon geometry ([Stroke.geometry]), so eviction can walk only
+     * the pages that leave the band instead of the whole document every frame.
+     *
+     * Geometry is only ever built as a side effect of rasterizing a page, so its lifetime tracks the
+     * page cache's: a stroke holds its ribbon exactly while its page holds a raster. Left unbounded
+     * it is the second biggest thing in a dense note (54 MB on a 27-page file, ~30 bytes per sample)
+     * and it never came back, because nothing dropped it on scroll.
+     */
+    private val geomPages = HashSet<Page>()
+
     /** True while a presentation is running; gates the presentation-cache debug readout. */
     var presentationActive: Boolean = false
 
@@ -952,7 +963,35 @@ class CanvasState(
         r.scale(res, res)
         if (includeFlow) paintFlow?.invoke(page, r, Rect(0.0, 0.0, page.width, page.height))
         for (item in items) item.paint(r)
+        noteGeometryBuilt(page)
         return CacheEntry(surface, res)
+    }
+
+    /** Record that [page]'s strokes now hold ribbon geometry. Called from the cache threads too, so
+     *  the set is synchronized; it is touched once per page build, never per item. */
+    fun noteGeometryBuilt(page: Page) {
+        synchronized(geomPages) { geomPages.add(page) }
+    }
+
+    /**
+     * Release ribbon geometry for every page outside [keep], and forget it. Only the pages that
+     * actually leave are walked, so a steady scroll pays for one page.
+     *
+     * [Stroke.releaseGeometry] drops the ribbon but keeps the bounds rects: [Stroke.bounds] is built
+     * from the geometry, and band selection reads it across pages it never painted, so discarding it
+     * too would rebuild the whole ribbon just to hand back a rectangle.
+     */
+    fun releaseGeometryExcept(keep: Set<Page>) {
+        synchronized(geomPages) {
+            if (geomPages.isEmpty()) return
+            val it = geomPages.iterator()
+            while (it.hasNext()) {
+                val page = it.next()
+                if (page in keep) continue
+                for (item in page.items) if (item is Stroke) item.releaseGeometry()
+                it.remove()
+            }
+        }
     }
 
     /**
@@ -1264,6 +1303,9 @@ class CanvasState(
             for (p in visible) for (it in p.items) if (it is Stroke && it.tool == Tool.HIGHLIGHTER) keep.add(it)
             hlCaches.keys.retainAll(keep)
         }
+        // Presented pages keep their geometry even when scrolled far off screen: the stream repaints
+        // them every frame, and rebuilding the ribbon each time would collapse the frame rate.
+        releaseGeometryExcept(if (presCaches.isEmpty()) visible else visible + presCaches.keys)
     }
 
     /**

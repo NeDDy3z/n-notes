@@ -1823,6 +1823,9 @@ class Editor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenu
             if (!active()) return null
             item.paint(r)
         }
+        // Painting built this page's ribbons, and the grid renders pages nowhere near the viewport.
+        // Register it so the frame loop's sweep reclaims them like any other off-band page.
+        state.noteGeometryBuilt(page)
         return surface.bitmap
     }
 

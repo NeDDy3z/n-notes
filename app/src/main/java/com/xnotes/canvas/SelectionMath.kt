@@ -39,13 +39,22 @@ object SelectionMath {
     ): List<Selected> {
         val out = ArrayList<Selected>()
         for (i in pages.indices) {
-            if (pageRects.getOrNull(i) == null) continue
+            val pr = pageRects.getOrNull(i) ?: continue
+            // Skip a page the band cannot reach, before touching its items. item.bounds() builds the
+            // stroke's ribbon, so without this one small drag rebuilds every stroke in the document
+            // and undoes the canvas's geometry eviction. Outset by OFF_PAGE_SLACK because an item
+            // may paint past its page edge (a neon glow, ink drawn over the margin).
+            if (!pr.outset(OFF_PAGE_SLACK).intersects(band)) continue
             for (item in pages[i].items) {
                 if (toContentRect(i, item.bounds()).intersects(band)) out.add(Selected(i, item))
             }
         }
         return out
     }
+
+    /** How far past its page edge an item may reach and still be reachable by a band that misses
+     *  the page rect. Covers neon bloom and ink drawn over the margin. */
+    const val OFF_PAGE_SLACK = 64.0
 
     /**
      * Lasso selection: every item whose content-space centroid lies inside [polygon] (even-odd).
