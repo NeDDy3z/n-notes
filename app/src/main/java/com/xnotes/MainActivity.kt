@@ -886,6 +886,17 @@ private val DIVIDER = 16.dp
 private val DIVIDER_LINE = 2.dp
 
 /**
+ * Makes the open panes opaque to touch. Compose stops hit-testing lower siblings once a higher one
+ * is hit, so this node — hit anywhere over the panes — keeps a tap that no child handled from
+ * reaching the backstage composed underneath. It never consumes, so children still see every event.
+ */
+private val SwallowTouches = Modifier.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent(PointerEventPass.Initial)
+    }
+}
+
+/**
  * Lays the open panes over the backstage. Both open is a split: side by side in landscape, stacked
  * in portrait, with a draggable divider between them. One open is that pane full-screen, and none
  * leaves the backstage showing.
@@ -908,7 +919,7 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
     val sideBySide = LocalConfiguration.current.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val ratio = editor.splitRatio.coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(SwallowTouches)) {
         val fullW = maxWidth
         val fullH = maxHeight
         val full = if (sideBySide) fullW else fullH
