@@ -879,8 +879,11 @@ private class PaneActions(
 /** Neither pane of a split may be squeezed below this share of the split axis. */
 private const val MIN_PANE_RATIO = 0.18f
 
-/** The draggable bar between two panes. */
-private val DIVIDER = 12.dp
+/** How wide the divider is to a finger. Mostly empty around the line, so it is easy to catch. */
+private val DIVIDER = 16.dp
+
+/** The accent line drawn down the middle of the divider, the same weight as a pane's focus line. */
+private val DIVIDER_LINE = 2.dp
 
 /**
  * Lays the open panes over the backstage. Both open is a split: side by side in landscape, stacked
@@ -1083,17 +1086,13 @@ private fun SplitDivider(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalPalette.current
-    // The accent pushed toward full saturation: a material accent can sit close enough to the panel
-    // grey that the bar reads as a seam rather than as the thing you drag.
-    val grip = com.xnotes.ui.theme.ColorMath.saturate(palette.accent, 0.55)
-    val bar = com.xnotes.ui.theme.ColorMath.mix(palette.panel, grip, 0.22)
     // Read inside the long-lived drag gesture, which does not restart as the ratio moves.
     val ratioNow = rememberUpdatedState(ratio)
     val onRatioNow = rememberUpdatedState(onRatio)
     var dragged by remember { mutableStateOf(0f) }
     Box(
         modifier = modifier
-            .background(bar.toComposeColor())
+            .background(palette.bg.toComposeColor())
             .pointerInput(sideBySide, extentPx) {
                 detectDragGestures(
                     onDragStart = { dragged = ratioNow.value },
@@ -1111,12 +1110,18 @@ private fun SplitDivider(
             },
         contentAlignment = Alignment.Center,
     ) {
-        // A short grip in the middle of the bar, so it reads as something to drag.
+        // The line itself: thin, accent, and running the whole way, so it closes the frame the two
+        // panes' focus lines start along their toolbars. The empty margin either side of it is what
+        // the finger actually catches.
         Box(
             Modifier
-                .size(if (sideBySide) 4.dp else 44.dp, if (sideBySide) 44.dp else 4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(grip.toComposeColor()),
+                .fillMaxSize()
+                .padding(
+                    horizontal = if (sideBySide) (DIVIDER - DIVIDER_LINE) / 2 else 0.dp,
+                    vertical = if (sideBySide) 0.dp else (DIVIDER - DIVIDER_LINE) / 2,
+                )
+                .clip(RoundedCornerShape(DIVIDER_LINE / 2))
+                .background(palette.accent.toComposeColor()),
         )
     }
 }
