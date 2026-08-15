@@ -81,6 +81,37 @@ class MoveItems(
     }
 }
 
+/**
+ * Hand items over to another page (a selection dragged across a page boundary). Each item leaves
+ * its old page's list, shifts by the delta between the two page spaces, and lands on top of the
+ * new page. Paired with the [MoveItems] of the same drag in one composite step.
+ */
+class TransferItems(private val transfers: List<Transfer>) : Command {
+    class Transfer(
+        val from: Page,
+        val to: Page,
+        val item: CanvasItem,
+        val dx: Double,
+        val dy: Double,
+    )
+
+    override fun redo() {
+        for (t in transfers) {
+            if (!t.from.items.removeRef(t.item)) continue
+            t.item.translate(t.dx, t.dy)
+            if (!t.to.items.containsRef(t.item)) t.to.items.add(t.item)
+        }
+    }
+
+    override fun undo() {
+        for (t in transfers.asReversed()) {
+            if (!t.to.items.removeRef(t.item)) continue
+            t.item.translate(-t.dx, -t.dy)
+            if (!t.from.items.containsRef(t.item)) t.from.items.add(t.item)
+        }
+    }
+}
+
 /** Resize an item by swapping its opaque geometry handle. */
 class ResizeItem(
     private val item: Resizable,

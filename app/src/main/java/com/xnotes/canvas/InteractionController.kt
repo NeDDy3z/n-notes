@@ -12,6 +12,7 @@ import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.AddItem
 import com.xnotes.core.history.AddItems
+import com.xnotes.core.history.Command
 import com.xnotes.core.history.CompositeCommand
 import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
@@ -21,6 +22,7 @@ import com.xnotes.core.history.ReorderItems
 import com.xnotes.core.history.ReplacePageItems
 import com.xnotes.core.history.ResizeItem
 import com.xnotes.core.history.RestyleText
+import com.xnotes.core.history.TransferItems
 import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
@@ -61,6 +63,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 /** The pointer state machine modes (spec 06 §1). */
@@ -1399,7 +1402,9 @@ class InteractionController(
             val local = state.vectorToPageSpace(moveOffset)
             for (item in items) item.translate(local.x, local.y)
             selObb = selObb?.translate(moveOffset.x, moveOffset.y)
-            history.push(MoveItems(items, local.x, local.y))
+            val move: Command = MoveItems(items, local.x, local.y)
+            val transfer = reassignSelectionPages()
+            history.push(if (transfer == null) move else CompositeCommand(listOf(move, transfer)))
             state.document.dirty = true
             // Moved items stay lifted (drawn live in the overlay), so the ink cache — which
             // already excludes them — needs no repair; it is repainted at their final spot
@@ -1525,7 +1530,9 @@ class InteractionController(
             val after = items.map { it.snapshotGeometry() }
             if (after != txSnaps) {
                 changed = true
-                history.push(TransformItems(items, txSnaps, after))
+                val tx: Command = TransformItems(items, txSnaps, after)
+                val transfer = reassignSelectionPages()
+                history.push(if (transfer == null) tx else CompositeCommand(listOf(tx, transfer)))
                 state.document.dirty = true
                 // Members stay lifted (overlay-drawn); the ink cache they were lifted out of needs
                 // no repair — it is repainted at their new geometry on deselect.
@@ -1983,6 +1990,66 @@ class InteractionController(
             val page = state.document.pages.getOrNull(pageIndex) ?: continue
             if (!state.repairRegion(page, rect.outset(REPAIR_PAD))) state.invalidatePage(page)
         }
+    }
+
+    /**
+     * Re-home selected items that a drag or transform carried onto another page. Item geometry is
+     * page-local and every page renders clipped to itself, so an item left behind on its old page
+     * vanishes the moment it is unlifted. Returns the undoable transfer, or null if nothing crossed.
+     */
+    private fun reassignSelectionPages(): Command? {
+        val transfers = ArrayList<TransferItems.Transfer>()
+        val rehomed = ArrayList<Selected>(selection.size)
+        for (sel in selection) {
+            val from = state.document.pages.getOrNull(sel.pageIndex)
+            val target = if (from == null || state.pageRects.getOrNull(sel.pageIndex) == null) {
+                null
+            } else {
+                pageIndexForBounds(state.fromPageSpaceRect(sel.pageIndex, sel.item.bounds()))
+            }
+            if (from == null || target == null || target == sel.pageIndex) {
+                rehomed.add(sel)
+                continue
+            }
+            // Both pages share the view rotation, so the change of frame is a pure page-space shift.
+            val d = state.toPageSpace(target, state.fromPageSpace(sel.pageIndex, Pt.ZERO))
+            transfers.add(TransferItems.Transfer(from, state.document.pages[target], sel.item, d.x, d.y))
+            rehomed.add(Selected(target, sel.item))
+        }
+        if (transfers.isEmpty()) return null
+        val cmd = TransferItems(transfers)
+        cmd.redo()
+        // The items stay lifted, so no cache is out of date: the old page never held them, and the
+        // new one bakes them in when the selection clears (dirtyRegions now names the new page).
+        selection.clear()
+        selection.addAll(rehomed)
+        return cmd
+    }
+
+    /** The page an item belongs to after a move: the drawable page its content-space bounds cover
+     *  most, falling back to the nearest page when it was dropped in a gap. */
+    private fun pageIndexForBounds(b: Rect): Int? {
+        val drawable = state.drawablePageRange()
+        var best = -1
+        var bestArea = 0.0
+        var nearest = -1
+        var nearestDist = Double.MAX_VALUE
+        for (i in state.pageRects.indices) {
+            if (i !in drawable) continue
+            val pr = state.pageRects[i]
+            val w = min(b.right, pr.right) - max(b.left, pr.left)
+            val h = min(b.bottom, pr.bottom) - max(b.top, pr.top)
+            if (w > 0 && h > 0 && w * h > bestArea) {
+                bestArea = w * h
+                best = i
+            }
+            val d = pr.distanceTo(b.center)
+            if (d < nearestDist) {
+                nearestDist = d
+                nearest = i
+            }
+        }
+        return if (best >= 0) best else nearest.takeIf { it >= 0 }
     }
 
     private fun selectionBoundsContent(): Rect? {

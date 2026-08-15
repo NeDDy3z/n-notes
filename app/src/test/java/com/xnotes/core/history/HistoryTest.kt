@@ -59,6 +59,30 @@ class HistoryTest {
         assertEquals(Rect(5.0, 7.0, 10.0, 10.0), img.rect)
     }
 
+    @Test fun transferItemsMovesBetweenPagesAndBack() {
+        val from = Page(100.0, 100.0)
+        val to = Page(100.0, 100.0)
+        val img = ImageItem(ImageData(java.io.File("test-image"), 10, 10), Rect(0.0, 90.0, 10.0, 10.0))
+        from.items.add(img)
+        val cmd = TransferItems(listOf(TransferItems.Transfer(from, to, img, 0.0, -120.0)))
+
+        cmd.redo()
+        assertTrue(from.items.isEmpty())
+        assertSame(img, to.items.single())
+        assertEquals(Rect(0.0, -30.0, 10.0, 10.0), img.rect)
+        cmd.redo() // idempotent
+        assertEquals(1, to.items.size)
+        assertEquals(Rect(0.0, -30.0, 10.0, 10.0), img.rect)
+
+        cmd.undo()
+        assertTrue(to.items.isEmpty())
+        assertSame(img, from.items.single())
+        assertEquals(Rect(0.0, 90.0, 10.0, 10.0), img.rect)
+        cmd.undo() // idempotent
+        assertEquals(1, from.items.size)
+        assertEquals(Rect(0.0, 90.0, 10.0, 10.0), img.rect)
+    }
+
     @Test fun resizeItemRoundTrip() {
         val img = ImageItem(ImageData(java.io.File("test-image"),10, 10), Rect(20.0, 20.0, 40.0, 40.0))
         val cmd = ResizeItem(img, RectHandle(Rect(0.0, 0.0, 10.0, 10.0)), RectHandle(Rect(20.0, 20.0, 40.0, 40.0)))
