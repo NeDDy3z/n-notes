@@ -291,6 +291,11 @@ class InteractionController(
 
     // ITEM CLIPBOARD (in-app, for copy/cut/paste/duplicate)
     private val itemClipboard = mutableListOf<CanvasItem>()
+
+    /** Whether the clipboard was filled by a cut. A cut moves the items rather than copying them,
+     *  so the first paste puts them back and spends the clipboard; a copy's stays for as long as
+     *  the user wants it. */
+    private var clipboardFromCut = false
     fun hasClipboardItems(): Boolean = itemClipboard.isNotEmpty()
 
     // SHAPE
@@ -2082,6 +2087,7 @@ class InteractionController(
     private fun copyToClipboard() {
         if (selection.isEmpty()) return
         itemClipboard.clear()
+        clipboardFromCut = false
         selection.forEach { itemClipboard.add(cloneItem(it.item)) }
     }
 
@@ -2094,6 +2100,7 @@ class InteractionController(
     fun cutSelection() {
         if (selection.isEmpty()) return
         copyToClipboard()
+        clipboardFromCut = true
         deleteSelection() // also runs the select tool's switch-back, once
     }
 
@@ -2127,6 +2134,12 @@ class InteractionController(
         for (c in clones) c.translate(dx, dy)
         page.items.addAll(clones)
         history.push(AddItems(page, clones))
+        // A cut's clipboard is spent by the paste that lands it: the items were taken from the
+        // page, so putting them down finishes the move rather than starting a series of copies.
+        if (clipboardFromCut) {
+            itemClipboard.clear()
+            clipboardFromCut = false
+        }
         state.document.dirty = true
         // The clones are immediately selected (lifted) below; setSelection repairs their
         // region in place, so no separate page rebuild is needed here.

@@ -281,6 +281,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      */
     private val clipboard = ArrayList<CanvasItem>()
 
+    /** Whether the clipboard was filled by a cut, which the first paste spends. Same rule as the
+     *  paged canvas: a cut moves items, so pasting them back finishes the move. */
+    private var clipboardFromCut = false
+
     /** Only text needs a measurer to clone, and the canvas has none; this satisfies the signature. */
     private val textMeasurer = com.xnotes.platform.AndroidTextMeasurer()
 
@@ -325,12 +329,14 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun copySelection() {
         if (selection.isEmpty) return
         clipboard.clear()
+        clipboardFromCut = false
         selection.items.mapTo(clipboard) { it.deepCopy(textMeasurer) }
     }
 
     override fun cutSelection() {
         if (selection.isEmpty) return
         copySelection()
+        clipboardFromCut = true
         deleteSelection()
     }
 
@@ -366,6 +372,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         for (clone in clones) clone.translate(dx, dy)
         document.addAll(clones)
         history.push(AddCanvasItems(document, clones))
+        if (clipboardFromCut) {
+            clipboard.clear()
+            clipboardFromCut = false
+        }
         selection.select(clones)
         armTool(Tool.SELECT)
         markDirty()
