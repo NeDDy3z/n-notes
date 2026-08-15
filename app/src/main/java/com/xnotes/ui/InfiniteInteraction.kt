@@ -907,6 +907,10 @@ class InfiniteInteraction(
         cancelDwell()
         onCommitShape(shape)
         mode = CanvasPointerMode.IDLE
+        // Leave the new shape selected, as a note does, so it can be resized or turned straight
+        // away. The chrome only shows over a settled selection, so the handles arrive at pen up.
+        selection()?.select(listOf(shape))
+        onSelectionChanged()
         requestRender()
     }
 
