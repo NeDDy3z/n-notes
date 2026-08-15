@@ -146,10 +146,15 @@ object XnotesIcons {
         "m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z",
         "m14 7 3 3", "M5 6v4", "M19 14v4", "M10 2v2", "M7 8H3", "M21 16h-4", "M11 3H9",
     )
-    val copy = icon(rect(9.0, 9.0, 13.0, 13.0), "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1")
+    // Two sheets, the front one rounded and clear of the viewBox edge. Duplicate is the same
+    // picture plus a "+", so the pair reads as one family; bring-to-front is deliberately not a
+    // third stack of squares, since three near-identical square glyphs in one bar tell you nothing.
+    private const val COPY_BACK_SHEET = "M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"
+    val copy = icon(roundRect(8.0, 8.0, 14.0, 14.0, 2.0), COPY_BACK_SHEET)
     val cut = icon(circle(6.0, 6.0, 3.0), circle(6.0, 18.0, 3.0), "M20 4 8.12 15.88", "M14.47 14.48 20 20", "M8.12 8.12 12 12")
-    val duplicate = icon(rect(8.0, 8.0, 12.0, 12.0), "M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2")
-    val front = icon(rect(3.0, 3.0, 12.0, 12.0), rect(9.0, 9.0, 12.0, 12.0))
+    val duplicate = icon(roundRect(8.0, 8.0, 14.0, 14.0, 2.0), COPY_BACK_SHEET, "M15 12v6", "M12 15h6")
+    /** Bring to front: the item lifted clear of the stack it was sitting in. */
+    val front = icon("M12 3v8", "m8 7 4-4 4 4", roundRect(4.0, 14.0, 16.0, 7.0, 2.0))
     /** Two panes with a divider down the middle: opening a pair of files side by side. */
     val split = icon(rect(3.0, 3.0, 18.0, 18.0), "M12 3v18")
     val rotate = icon("M23 4v6h-6", "M20.49 15a9 9 0 1 1-2.12-9.36L23 10")
