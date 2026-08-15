@@ -169,16 +169,25 @@ object StrokeEngine {
         val out = DoubleArray(values.size)
         out[0] = values[0]
         for (i in 1 until values.size) {
-            val d = steps[i]
-            if (d <= MIN_STEP) {
-                out[i] = out[i - 1] // the pen did not move: no arc to integrate over
-                continue
-            }
-            val decay = exp(-d / lambda)
-            val slope = (values[i] - values[i - 1]) * lambda * (1.0 - decay) / d
-            out[i] = decay * out[i - 1] + values[i] - decay * values[i - 1] - slope
+            out[i] = emaStep(out[i - 1], values[i - 1], values[i], steps[i], lambda)
         }
         return out
+    }
+
+    /** One step of [emaByArc]: the filter carried across a step of [d] travel. The whole filter is
+     *  this line applied in order, which is what lets [WetRibbon] extend it a sample at a time. */
+    internal fun emaStep(
+        prevOut: Double,
+        prevIn: Double,
+        curIn: Double,
+        d: Double,
+        lambda: Double,
+    ): Double {
+        if (lambda <= 0.0) return curIn
+        if (d <= MIN_STEP) return prevOut // the pen did not move: no arc to integrate over
+        val decay = exp(-d / lambda)
+        val slope = (curIn - prevIn) * lambda * (1.0 - decay) / d
+        return decay * prevOut + curIn - decay * prevIn - slope
     }
 
     /**
@@ -216,7 +225,7 @@ object StrokeEngine {
     }
 
     /** Hermite smoothstep: 0 below [lo], 1 above [hi], an S-curve between. */
-    private fun smoothstep(lo: Double, hi: Double, x: Double): Double {
+    internal fun smoothstep(lo: Double, hi: Double, x: Double): Double {
         if (hi <= lo) return if (x >= hi) 1.0 else 0.0
         val t = ((x - lo) / (hi - lo)).coerceIn(0.0, 1.0)
         return t * t * (3 - 2 * t)
@@ -259,28 +268,54 @@ object StrokeEngine {
         if (tN - t0 <= 0.0) return out
         val cum = DoubleArray(n)
         for (i in 1 until n) cum[i] = cum[i - 1] + steps[i]
-        val half = SPEED_WINDOW_MS
-        var lo = 0
-        var hi = 0
+        val cursor = IntArray(2)
         for (i in 0 until n) {
-            // Centre a fixed-duration window on this sample's time; if it runs past either end of
-            // the stroke, slide it inward so the span stays ~2·half rather than shrinking to a point.
-            var a = times[i] - half
-            var b = times[i] + half
-            if (a < t0) { b += t0 - a; a = t0 }
-            if (b > tN) { a -= b - tN; b = tN; if (a < t0) a = t0 }
-            while (lo < i && times[lo] < a) lo++
-            while (hi < n - 1 && times[hi + 1] <= b) hi++
-            // Always span at least one segment so a window that falls between two far-apart slow
-            // samples reads a real speed instead of a zero-length divide.
-            var l = lo
-            var h = hi
-            if (h <= l) { if (h < n - 1) h++ else l-- }
-            val dist = (cum[h] - cum[l]) * speedScale
-            val dt = max(times[h] - times[l], MIN_DT)
-            out[i] = 1.0 - speedStrength * smoothstep(SPEED_LO, SPEED_HI, dist / dt)
+            out[i] = speedFactorAt(times, cum, n, i, cursor, speedStrength, speedScale)
         }
         return out
+    }
+
+    /**
+     * One point's speed width factor, and the body of [speedFactors]. [cum] is cumulative *raw*
+     * travel and [cursor] holds the window's two sample indices, which only ever move forward, so
+     * walking the points in order costs one pass over the stroke rather than a search per point.
+     *
+     * [WetRibbon] calls this directly for the handful of points still inside the window. Restarting
+     * the scan from an older [cursor] is safe: both ends of the window only slide forward as the
+     * stroke grows, so a stale cursor is behind the true one and the scan simply runs further.
+     */
+    internal fun speedFactorAt(
+        times: DoubleArray,
+        cum: DoubleArray,
+        n: Int,
+        i: Int,
+        cursor: IntArray,
+        speedStrength: Double,
+        speedScale: Double,
+    ): Double {
+        val t0 = times[0]
+        val tN = times[n - 1]
+        val half = SPEED_WINDOW_MS
+        // Centre a fixed-duration window on this sample's time; if it runs past either end of
+        // the stroke, slide it inward so the span stays ~2·half rather than shrinking to a point.
+        var a = times[i] - half
+        var b = times[i] + half
+        if (a < t0) { b += t0 - a; a = t0 }
+        if (b > tN) { a -= b - tN; b = tN; if (a < t0) a = t0 }
+        var lo = cursor[0]
+        var hi = cursor[1]
+        while (lo < i && times[lo] < a) lo++
+        while (hi < n - 1 && times[hi + 1] <= b) hi++
+        cursor[0] = lo
+        cursor[1] = hi
+        // Always span at least one segment so a window that falls between two far-apart slow
+        // samples reads a real speed instead of a zero-length divide.
+        var l = lo
+        var h = hi
+        if (h <= l) { if (h < n - 1) h++ else l-- }
+        val dist = (cum[h] - cum[l]) * speedScale
+        val dt = max(times[h] - times[l], MIN_DT)
+        return 1.0 - speedStrength * smoothstep(SPEED_LO, SPEED_HI, dist / dt)
     }
 
     /**
@@ -413,13 +448,57 @@ object StrokeEngine {
                 out[i] = seed
                 continue
             }
-            val step = if (i == 0) 0.0 else steps[i]
-            val rate = if (ty[i] > d) openLen else closeLen
-            val limit = if (rate > 0.0) step * 2.0 / rate else Double.MAX_VALUE
-            d += (ty[i] - d).coerceIn(-limit, limit)
+            d = nibStep(d, ty[i], if (i == 0) 0.0 else steps[i], openLen, closeLen)
             out[i] = d
         }
         return out
+    }
+
+    /** One step of [nibDirection]'s slew limiter: [d] moved toward [target] by at most what [step]
+     *  of travel has earned. Shared with [WetRibbon], which carries [d] forward sample by sample. */
+    internal fun nibStep(
+        d: Double,
+        target: Double,
+        step: Double,
+        openLen: Double,
+        closeLen: Double,
+    ): Double {
+        val rate = if (target > d) openLen else closeLen
+        val limit = if (rate > 0.0) step * 2.0 / rate else Double.MAX_VALUE
+        return d + (target - d).coerceIn(-limit, limit)
+    }
+
+    /**
+     * The direction the calligraphy head is pinned to, and the last sample it covers, read off a
+     * centreline that already fills [headLen]. [WetRibbon]'s incremental form of [headDirection]:
+     * it asks the same question of a live stroke once, at the sample the window first fills, and
+     * keeps the answer. Returns null while the window is still short.
+     */
+    internal fun headDirectionAt(
+        sx: DoubleArray,
+        sy: DoubleArray,
+        k: Int,
+    ): Double {
+        val dx = sx[k] - sx[0]
+        val dy = sy[k] - sy[0]
+        val len = hypot(dx, dy)
+        // A stroke that came back to where it started has no net direction to read, so take the safe
+        // value rather than a heading made of rounding.
+        return if (len < MIN_TANGENT_LEN) -1.0 else dy / len
+    }
+
+    /**
+     * The end-pressure hold ([holdEndPressure]) read at one point instead of applied to the array:
+     * the pressure a stroke of [n] samples draws point [i] at, given the smoothed channel [p].
+     * [WetRibbon] uses it because the hold's tail window moves as the stroke grows, so the last few
+     * points have to be asked again every sample while the ones before them stay put.
+     */
+    internal fun heldPressureAt(p: DoubleArray, n: Int, i: Int): Double {
+        val w = min(CAP_HOLD_SAMPLES, (n - 1) / 2)
+        if (w < 1) return p[i]
+        if (i < w) return max(p[i], p[w])
+        if (i >= n - w) return max(p[i], p[n - 1 - w])
+        return p[i]
     }
 
     /**
