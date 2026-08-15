@@ -27,7 +27,7 @@ object StrokeSimplify {
      *  judging ink: nothing that shows up at pen-up can then be blamed on a dropped sample. A `var`
      *  so it can be flipped from a debugger without a rebuild. [simplify] itself always reduces, so
      *  the unit tests keep testing the reduction whatever this says. */
-    var enabled = false
+    var enabled = true
 
     /** Compaction tolerance (content px) for legacy files, whose draw zoom is unknown. */
     const val LEGACY_EPS = 0.1
