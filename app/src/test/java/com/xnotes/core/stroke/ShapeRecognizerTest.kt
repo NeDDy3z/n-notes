@@ -65,6 +65,53 @@ class ShapeRecognizerTest {
         return out
     }
 
+    /**
+     * A box as a pen actually laps it: rounded corners, a slight tilt, jitter, and samples that
+     * bunch through the corners (drawn slowly) and spread along the edges (drawn fast).
+     */
+    private fun tracedBox(
+        w: Double,
+        h: Double,
+        corner: Double = 16.0,
+        tiltDeg: Double = 2.0,
+        noise: Double = 3.0,
+    ): List<Pt> {
+        val cs = listOf(Pt(0.0, 0.0), Pt(w, 0.0), Pt(w, h), Pt(0.0, h))
+        val out = ArrayList<Pt>()
+        for (e in cs.indices) {
+            val a = cs[e]
+            val b = cs[(e + 1) % 4]
+            val c = cs[(e + 2) % 4]
+            val len = hypot(b.x - a.x, b.y - a.y)
+            val ux = (b.x - a.x) / len
+            val uy = (b.y - a.y) / len
+            var t = corner
+            while (t < len - corner) {
+                out.add(Pt(a.x + ux * t, a.y + uy * t))
+                t += 8.0
+            }
+            val len2 = hypot(c.x - b.x, c.y - b.y)
+            val p0 = Pt(b.x - ux * corner, b.y - uy * corner)
+            val p1 = Pt(b.x + (c.x - b.x) / len2 * corner, b.y + (c.y - b.y) / len2 * corner)
+            for (s in 0..8) { // quarter-arc rounding the corner
+                val u = s / 8.0
+                val m = 1.0 - u
+                out.add(
+                    Pt(
+                        m * m * p0.x + 2 * m * u * b.x + u * u * p1.x,
+                        m * m * p0.y + 2 * m * u * b.y + u * u * p1.y,
+                    ),
+                )
+            }
+        }
+        val rad = tiltDeg * PI / 180.0
+        return out.map {
+            val x = it.x + jit(noise)
+            val y = it.y + jit(noise)
+            Pt(x * cos(rad) - y * sin(rad), x * sin(rad) + y * cos(rad))
+        }
+    }
+
     // --- positives ---
 
     @Test fun circleSnapsToEllipse() {
@@ -111,6 +158,46 @@ class ShapeRecognizerTest {
         assertEquals(ShapeKind.RECTANGLE, rec!!.kind)
         assertEquals(300.0, abs(rec.end.x - rec.start.x), 35.0)
         assertEquals(150.0, abs(rec.end.y - rec.start.y), 35.0)
+    }
+
+    @Test fun longThinBoxSnapsToRectangle() {
+        // 8:1. The default corner window is wider than the short ends, so only the retry pass at a
+        // tighter window can tell this box's four corners apart.
+        val rec = ShapeRecognizer.recognizePoints(tracedBox(800.0, 100.0, tiltDeg = 0.0))
+        assertNotNull(rec)
+        assertEquals(ShapeKind.RECTANGLE, rec!!.kind)
+        assertEquals(800.0, abs(rec.end.x - rec.start.x), 40.0)
+        assertEquals(100.0, abs(rec.end.y - rec.start.y), 40.0)
+    }
+
+    @Test fun veryLongBoxSnapsToRectangle() {
+        // 16:1, drawn with a tilt and fat rounded corners: still a rectangle.
+        val rec = ShapeRecognizer.recognizePoints(tracedBox(800.0, 50.0))
+        assertNotNull(rec)
+        assertEquals(ShapeKind.RECTANGLE, rec!!.kind)
+    }
+
+    @Test fun tallThinBoxSnapsToRectangle() {
+        val rec = ShapeRecognizer.recognizePoints(tracedBox(120.0, 800.0, tiltDeg = 0.0))
+        assertNotNull(rec)
+        assertEquals(ShapeKind.RECTANGLE, rec!!.kind)
+        assertEquals(120.0, abs(rec.end.x - rec.start.x), 40.0)
+        assertEquals(800.0, abs(rec.end.y - rec.start.y), 40.0)
+    }
+
+    @Test fun longBoxKeepsFourCorners() {
+        // A tighter window can plant a spare corner on a long edge; the box must still be a box.
+        val rec = ShapeRecognizer.recognizePoints(
+            polygon(
+                listOf(Pt(0.0, 0.0), Pt(800.0, 0.0), Pt(800.0, 80.0), Pt(0.0, 80.0)),
+                perEdge = 20, noise = 4.0,
+            ),
+        )
+        assertNotNull(rec)
+        assertTrue(
+            "a long box is a rectangle or a 4-gon, never more corners",
+            rec!!.kind == ShapeKind.RECTANGLE || rec.vertices?.size == 4,
+        )
     }
 
     @Test fun threeCornerStrokeSnapsToFreePolygon() {
@@ -203,6 +290,33 @@ class ShapeRecognizerTest {
 
     @Test fun tinyStrokeIsNotAShape() {
         assertNull(ShapeRecognizer.recognizePoints(circle(10.0, 10.0, 6.0, 40, 0.5)))
+    }
+
+    @Test fun thinOvalStaysEllipse() {
+        // A long flat oval hugs the top and bottom of its box, so it must not read as a rectangle.
+        val rec = ShapeRecognizer.recognizePoints(ellipse(400.0, 100.0, 400.0, 45.0, 90, 4.0))
+        assertNotNull(rec)
+        assertEquals(ShapeKind.ELLIPSE, rec!!.kind)
+    }
+
+    @Test fun thinDiamondIsNotARectangle() {
+        // Its corners sit at the box's edge midpoints, half the (short) height from a box corner.
+        val rec = ShapeRecognizer.recognizePoints(
+            polygon(
+                listOf(Pt(0.0, 60.0), Pt(400.0, 0.0), Pt(800.0, 60.0), Pt(400.0, 120.0)),
+                perEdge = 24, noise = 3.0,
+            ),
+        )
+        assertTrue("a flat diamond is never squared up", rec?.kind != ShapeKind.RECTANGLE)
+    }
+
+    @Test fun strikeThroughStaysInk() {
+        // A line scrubbed back over itself: a hair-thin loop, not a box.
+        val backForth = (0 until 60).map { i ->
+            val t = i / 59.0
+            if (t < 0.5) Pt(800.0 * t * 2.0, jit(3.0)) else Pt(800.0 * (1.0 - (t - 0.5) * 2.0), 8.0 + jit(3.0))
+        }
+        assertTrue(ShapeRecognizer.recognizePoints(backForth)?.kind != ShapeKind.RECTANGLE)
     }
 
     @Test fun openArcSnapsToCurve() {
