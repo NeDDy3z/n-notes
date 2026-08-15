@@ -288,13 +288,7 @@ class InfiniteInteraction(
     private fun armLongPress(at: Pt, onSelection: Boolean, isFinger: Boolean) {
         cancelLongPress()
         if (!isFinger || onSelection) return
-        // The rect only narrows the index; whether the press is really on something is the item's
-        // own answer, so it is padded rather than a bare point.
-        val content = viewport.viewportToContent(at)
-        val pad = TAP_SLOP_PX / viewport.zoom
-        val near = Rect(content.x - pad, content.y - pad, pad * 2, pad * 2)
-        // Last, not first: the index comes back in z-order, so the topmost item is the one held.
-        val hit = itemsIn(near).lastOrNull { it.contains(content) }
+        val hit = itemAt(viewport.viewportToContent(at))
         // The eraser is the one tool a grab would fight with, so it is the one that leaves an item
         // alone. Everything else hands it over, which is what makes a held finger pick something up
         // without having to reach for the selection tool first.
@@ -346,12 +340,8 @@ class InfiniteInteraction(
             onToolChanged(Tool.SELECT)
         }
         sel.select(listOf(item))
-        sel.beginTransform()
-        moveAnchor = viewport.viewportToContent(longPressAt)
-        movedBy = Pt.ZERO
-        mode = CanvasPointerMode.MOVE
         setInteractive(false, false)
-        onLiftSelection(sel.items, LiftTransform.NONE)
+        beginMoveAt(sel, viewport.viewportToContent(longPressAt))
         onSelectionChanged()
     }
 
@@ -625,19 +615,44 @@ class InfiniteInteraction(
                 return
             }
             if (sel.contains(at)) {
-                sel.beginTransform()
-                moveAnchor = at
-                movedBy = Pt.ZERO
-                mode = CanvasPointerMode.MOVE
-                onLiftSelection(sel.items, LiftTransform.NONE)
+                beginMoveAt(sel, at)
                 return
             }
+        }
+        // A press that lands on an item picks that item up, as it does on a note. A band is what
+        // the empty canvas between items starts, not what selecting anything at all takes.
+        val hit = itemAt(at)
+        if (hit != null) {
+            if (sel.items.none { it === hit }) sel.select(listOf(hit))
+            beginMoveAt(sel, at)
+            onSelectionChanged()
+            return
         }
         sel.clear()
         bandAnchor = at
         bandRect = Rect(at.x, at.y, 0.0, 0.0)
         mode = CanvasPointerMode.BAND
         onSelectionChanged()
+    }
+
+    /** Start dragging the selection from [at], the tail of every press that grabs one. */
+    private fun beginMoveAt(sel: CanvasSelection, at: Pt) {
+        sel.beginTransform()
+        moveAnchor = at
+        movedBy = Pt.ZERO
+        mode = CanvasPointerMode.MOVE
+        onLiftSelection(sel.items, LiftTransform.NONE)
+    }
+
+    /**
+     * The topmost item under [content], or null. The index is queried with a slop-sized rect, but
+     * whether the press really landed on something is the item's own answer.
+     */
+    private fun itemAt(content: Pt): CanvasItem? {
+        val pad = TAP_SLOP_PX / viewport.zoom
+        val near = Rect(content.x - pad, content.y - pad, pad * 2, pad * 2)
+        // Last, not first: the index comes back in z-order, so the topmost item is the one hit.
+        return itemsIn(near).lastOrNull { it.contains(content) }
     }
 
     private fun extendBand(vx: Double, vy: Double) {
