@@ -20,6 +20,25 @@ import com.xnotes.core.pal.TextMeasurer
 class FakeRenderer : Renderer {
     val ops = mutableListOf<String>()
 
+    /** Ribbon runs as `from to count`, so a test can see which points a pass actually painted. */
+    val ribbonRuns = mutableListOf<Pair<Int, Int>>()
+
+    /** Dashed runs as `from to count` paired with the phase they started at. */
+    val dashRuns = mutableListOf<Triple<Int, Int, Double>>()
+
+    /** Page-space rects a raster was blitted into. */
+    val rasterDests = mutableListOf<Rect>()
+
+    override fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, from: Int, count: Int, color: Rgba) {
+        ribbonRuns += from to count
+        super.fillDiskRibbon(centers, radii, from, count, color)
+    }
+
+    override fun strokePolyline(pts: FloatArray, from: Int, count: Int, pen: Pen) {
+        dashRuns += Triple(from, count, pen.dashPhase)
+        super.strokePolyline(pts, from, count, pen)
+    }
+
     override fun save() { ops += "save" }
     override fun restore() { ops += "restore" }
     override fun saveLayerAlpha(bounds: Rect, alpha: Double) { ops += "saveLayerAlpha" }
@@ -36,7 +55,10 @@ class FakeRenderer : Renderer {
     override fun strokePolyline(points: List<Pt>, pen: Pen) { ops += "strokePolyline" }
     override fun strokePolygon(points: List<Pt>, pen: Pen) { ops += "strokePolygon" }
     override fun strokeEllipse(center: Pt, rx: Double, ry: Double, pen: Pen) { ops += "strokeEllipse" }
-    override fun drawRaster(raster: RasterSurface, dest: Rect, src: Rect?) { ops += "drawRaster" }
+    override fun drawRaster(raster: RasterSurface, dest: Rect, src: Rect?) {
+        ops += "drawRaster"
+        rasterDests += dest
+    }
     override fun drawImage(image: ImageData, dest: Rect, orientation: Int) { ops += "drawImage" }
     override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) { ops += "drawText" }
     override fun drawTextRun(text: String, x: Double, baseline: Double, font: FontSpec, color: Rgba) {
@@ -50,13 +72,21 @@ class FakeRasterSurface(
     override val height: Int,
     override val devicePixelRatio: Double = 1.0,
 ) : RasterSurface {
-    override fun fill(color: Rgba) {}
-    override fun renderer(): Renderer = FakeRenderer()
+    /** One painter for the surface's life, so a test can read everything ever drawn into it. */
+    val painter = FakeRenderer()
+    var fills = 0
+    var recycled = false
+
+    override fun fill(color: Rgba) { fills++ }
+    override fun renderer(): Renderer = painter
+    override fun recycle() { recycled = true }
 }
 
 class FakeSurfaceFactory : SurfaceFactory {
+    val created = mutableListOf<FakeRasterSurface>()
+
     override fun create(widthPx: Int, heightPx: Int, devicePixelRatio: Double) =
-        FakeRasterSurface(widthPx, heightPx, devicePixelRatio)
+        FakeRasterSurface(widthPx, heightPx, devicePixelRatio).also { created += it }
 }
 
 /**

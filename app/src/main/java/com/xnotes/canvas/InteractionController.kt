@@ -2571,8 +2571,9 @@ class InteractionController(
                 }
             }
 
-            // Live in-progress stroke / shape preview, clipped to its page.
-            liveStroke?.let { stroke -> paintClippedToPage(r, strokePageIndex) { stroke.paint(r) } }
+            // Live in-progress stroke / shape preview, clipped to its page. The stroke goes through
+            // the wet cache, which blits whatever has stopped moving instead of refilling it.
+            liveStroke?.let { stroke -> paintClippedToPage(r, strokePageIndex) { state.paintLiveStroke(r, stroke) } }
             pendingShape?.let { shape -> paintClippedToPage(r, shapePageIndex) { shape.paint(r) } }
 
             // Disappearing ink (magic wand): ephemeral strokes drawn live at the shared fade alpha,

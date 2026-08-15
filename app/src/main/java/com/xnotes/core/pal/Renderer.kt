@@ -31,6 +31,10 @@ data class Pen(
     /** Dash on/off run lengths used when [dashed]; device px when [cosmetic], else content px. */
     val dashOn: Double = 6.0,
     val dashGap: Double = 4.0,
+    /** How far into the dash pattern this line starts, in the same units as [dashOn]. Lets a line
+     *  be drawn in two pieces without the rhythm restarting at the seam: the wet cache bakes a
+     *  dashed pen's settled run and hands the tail the arc the run already spent. */
+    val dashPhase: Double = 0.0,
     /** Soft outward glow (page-px blur) on the stroke — the neon halo for shapes. 0 = crisp. */
     val glowRadius: Double = 0.0,
 )
@@ -116,14 +120,24 @@ interface Renderer {
      * just repaint the same colour; an anti-aliasing backend should override to union them into
      * one path so shared edges don't seam.
      */
-    fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, color: Rgba) {
-        val n = minOf(centers.size / 2, radii.size)
+    fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, color: Rgba) =
+        fillDiskRibbon(centers, radii, 0, minOf(centers.size / 2, radii.size), color)
+
+    /**
+     * [fillDiskRibbon] over the [count] points starting at [from], so a run of a ribbon can be
+     * drawn without slicing its arrays. The wet cache paints in two runs — the settled prefix into
+     * a raster, the moving tail live over it — and a live stroke's arrays are over-allocated, so
+     * neither piece can be described by an array's own length.
+     */
+    fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, from: Int, count: Int, color: Rgba) {
+        if (count <= 0) return
         fun pt(i: Int) = Pt(centers[2 * i].toDouble(), centers[2 * i + 1].toDouble())
-        for (i in 0 until n - 1) {
+        val end = from + count
+        for (i in from until end - 1) {
             val q = Geometry.ribbonQuad(pt(i), radii[i].toDouble(), pt(i + 1), radii[i + 1].toDouble())
             if (q.size >= 3) fillPolygon(q, color, FillRule.NONZERO)
         }
-        for (i in 0 until n) if (radii[i] > 0f) fillCircle(pt(i), radii[i].toDouble(), color)
+        for (i in from until end) if (radii[i] > 0f) fillCircle(pt(i), radii[i].toDouble(), color)
     }
 
     // --- outlines (cosmetic for chrome, page-space for shapes) ---
@@ -131,7 +145,11 @@ interface Renderer {
     fun strokePolyline(points: List<Pt>, pen: Pen)
 
     /** [strokePolyline] over a packed interleaved x,y polyline (the dashed pen's centerline). */
-    fun strokePolyline(pts: FloatArray, pen: Pen) = strokePolyline(unpackPts(pts), pen)
+    fun strokePolyline(pts: FloatArray, pen: Pen) = strokePolyline(pts, 0, pts.size / 2, pen)
+
+    /** [strokePolyline] over [count] packed points starting at [from]; see [fillDiskRibbon]. */
+    fun strokePolyline(pts: FloatArray, from: Int, count: Int, pen: Pen) =
+        strokePolyline(List(count) { Pt(pts[2 * (from + it)].toDouble(), pts[2 * (from + it) + 1].toDouble()) }, pen)
 
     fun strokePolygon(points: List<Pt>, pen: Pen)
     fun strokeEllipse(center: Pt, rx: Double, ry: Double, pen: Pen)

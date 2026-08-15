@@ -1232,8 +1232,30 @@ class CanvasState(
         presCaches.clear()
         presBgCaches.clear()
         hlCaches.clear()
+        wetInk.clear()
         cacheGen++
         sharpGen++
+    }
+
+    /**
+     * The settled part of the stroke under the pen, baked into a raster once and blitted after
+     * (see [WetInkCache]). Held here because the surface factory and the render resolution are, and
+     * because one buffer serves every stroke the note ever draws rather than one per stroke.
+     */
+    private val wetInk = WetInkCache(surfaceFactory)
+
+    /**
+     * Paint the live stroke, through the wet cache when it will take it. Called inside the page's
+     * own transform, so everything the cache does is in page space, exactly like the page caches.
+     *
+     * The surface is capped at twice the viewport's pixels: a stroke sweeping a deeply zoomed page
+     * could ask for a buffer many times the screen it is drawn on, and past that cap redrawing the
+     * ribbon is the cheaper of the two.
+     */
+    fun paintLiveStroke(r: Renderer, stroke: Stroke) {
+        val res = (zoom * renderScale).coerceAtLeast(0.01)
+        val cap = 2L * max(viewportW, 1) * max(viewportH, 1)
+        if (!wetInk.paint(r, stroke, res, cap)) stroke.paint(r)
     }
 
     /**

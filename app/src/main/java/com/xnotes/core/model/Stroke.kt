@@ -359,6 +359,44 @@ class Stroke(
     }
 
     /**
+     * Paint [count] points of the live ribbon starting at [from]. The wet cache draws a stroke in
+     * two runs — the settled one baked into a raster once, the moving one over it every frame — and
+     * a growing ribbon's arrays are over-allocated, so neither run is describable by array length.
+     *
+     * Only for opaque, non-neon ink, which is the only kind the cache takes: overlapping runs of a
+     * solid colour union to the same colour, while a translucent one would darken where they meet
+     * and a bloom would compound. [dashPhase] is how far into the dash pattern this run starts, so
+     * the dashed pen's rhythm carries across the seam instead of restarting at it.
+     */
+    fun paintRun(r: Renderer, ribbon: WetRibbon, from: Int, count: Int, dashPhase: Double) {
+        if (count <= 0) return
+        val color = renderColor
+        val centers = ribbon.centerlineArray()
+        if (tool == Tool.DASHED && ribbon.pointCount >= 2) {
+            r.strokePolyline(
+                centers, from, count,
+                Pen(
+                    color = color,
+                    width = config.baseWidth,
+                    cosmetic = false,
+                    dashed = true,
+                    dashOn = config.dashLength,
+                    dashGap = config.dashGap,
+                    dashPhase = dashPhase,
+                ),
+            )
+        } else {
+            r.fillDiskRibbon(centers, ribbon.halfWidthArray(), from, count, color)
+        }
+    }
+
+    /** Whether the wet cache may bake this stroke's settled ink into a raster. Neon stacks blurred
+     *  layers composited at an alpha, and translucent ink compounds where it overlaps itself, so
+     *  neither survives being painted in two runs; both keep the plain every-frame redraw. */
+    val wetCacheable: Boolean
+        get() = !config.neon && renderColor.a >= 255
+
+    /**
      * The dashed pen: a constant-width, round-capped dashed line traced down the smoothed
      * centreline (so its rounded dashes match the tool's icon). Dash/gap runs are in content
      * px so they scale with zoom like the ink. A single tap (no line) is drawn as a dot.

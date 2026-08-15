@@ -140,12 +140,15 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     // silhouette, no interior seams, no winding-cancelled gap at a sharp turn). One draw call keeps
     // the repainted-every-frame live stroke cheap. Built straight from the packed float geometry
     // (the [Geometry.ribbonQuad] math inlined) so a dense page allocates nothing per point.
-    override fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, color: Rgba) {
-        val n = minOf(centers.size / 2, radii.size)
-        if (n == 0) return
+    override fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, color: Rgba) =
+        fillDiskRibbon(centers, radii, 0, minOf(centers.size / 2, radii.size), color)
+
+    override fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, from: Int, count: Int, color: Rgba) {
+        if (count <= 0) return
+        val end = from + count
         fillPaint.color = color.toArgb()
         val path = Path().apply { fillType = Path.FillType.WINDING }
-        for (i in 0 until n - 1) {
+        for (i in from until end - 1) {
             val x0 = centers[2 * i]
             val y0 = centers[2 * i + 1]
             val x1 = centers[2 * i + 2]
@@ -180,7 +183,7 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
             }
             path.close()
         }
-        for (i in 0 until n) {
+        for (i in from until end) {
             val r = radii[i]
             if (r > 0f) path.addCircle(centers[2 * i], centers[2 * i + 1], r, Path.Direction.CW)
         }
@@ -236,10 +239,15 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         canvas.drawPath(buildPath(points, close = false, FillRule.NONZERO), strokePaint)
     }
 
-    override fun strokePolyline(pts: FloatArray, pen: Pen) {
-        if (pts.size < 4) return
+    override fun strokePolyline(pts: FloatArray, pen: Pen) = strokePolyline(pts, 0, pts.size / 2, pen)
+
+    override fun strokePolyline(pts: FloatArray, from: Int, count: Int, pen: Pen) {
+        if (count < 2) return
         applyPen(pen)
-        canvas.drawPath(buildPath(pts, close = false, FillRule.NONZERO), strokePaint)
+        val path = Path()
+        path.moveTo(pts[2 * from], pts[2 * from + 1])
+        for (i in 1 until count) path.lineTo(pts[2 * (from + i)], pts[2 * (from + i) + 1])
+        canvas.drawPath(path, strokePaint)
     }
 
     override fun strokePolygon(points: List<Pt>, pen: Pen) {
@@ -340,7 +348,7 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
             val s = if (pen.cosmetic) 1.0 / avgScale else 1.0
             val on = (pen.dashOn * s).toFloat().coerceAtLeast(0.1f)
             val off = (pen.dashGap * s).toFloat().coerceAtLeast(0.1f)
-            DashPathEffect(floatArrayOf(on, off), 0f)
+            DashPathEffect(floatArrayOf(on, off), (pen.dashPhase * s).toFloat())
         } else {
             null
         }
