@@ -247,7 +247,7 @@ private fun EditorScreen(
 ) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
-    var showPresentation by remember { mutableStateOf(false) }
+    var presentPane by remember { mutableStateOf<Editor?>(null) }
     // Backstage is the root of the stack; the editor is pushed on top only when a note is open
     // (editor.noteOpen). Every launch starts on backstage.
     var backstageView by remember { mutableStateOf(com.xnotes.ui.BackstageView.HOME) }
@@ -439,6 +439,9 @@ private fun EditorScreen(
     // The prompt is about one pane's note, so it asks about — and saves — the pane being acted on.
     fun guarded(target: Editor = editor.active, action: () -> Unit) {
         when {
+            // A canvas keeps its own autosave, and dirty/autosaveUri describe the paged buffer
+            // underneath it, so asking about those here would prompt over a note nobody is looking at.
+            target.canvasOpen -> action()
             target.autosaveUri != null -> action() // autosaved notes are flushed on doc-swap; no prompt
             target.dirty -> guardAction = GuardRequest(target, action)
             else -> action()
@@ -644,7 +647,6 @@ private fun EditorScreen(
             fullscreen = onToggleFullscreen,
         )
     }
-    editor.secondary?.keyActions = editor.keyActions
 
     LaunchedEffect(editor.message) {
         editor.message?.let {
@@ -718,7 +720,7 @@ private fun EditorScreen(
                 BackHandler(enabled = focused.flowEditingActive) { focused.flowText.endSession() }
                 // Otherwise Back closes that pane (guarded for unsaved edits); the other one stays.
                 BackHandler(enabled = focused.editingField == null && !focused.flowEditingActive) {
-                    if (focused.canvasOpen) focused.goHome() else guarded(focused) { focused.goHome() }
+                    guarded(focused) { focused.goHome() }
                 }
             }
 
@@ -728,9 +730,7 @@ private fun EditorScreen(
                     backstageView = com.xnotes.ui.BackstageView.HOME
                     guardedAll { editor.goHomeAll() }
                 },
-                onClosePane = { pane ->
-                    if (pane.canvasOpen) pane.goHome() else guarded(pane) { pane.goHome() }
-                },
+                onClosePane = { pane -> guarded(pane) { pane.goHome() } },
                 onInsertImage = { pane, at ->
                     pendingInsert = PendingInsert(pane, at)
                     insertImageLauncher.launch(arrayOf("image/*"))
@@ -740,7 +740,7 @@ private fun EditorScreen(
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
                 onAddStamps = { addStampsLauncher.launch(arrayOf("image/*")) },
-                onPresent = { showPresentation = true },
+                onPresent = { presentPane = editor.active },
                 onSharePages = { pane, pages, asPdf -> sharePages(pane, pages, asPdf) },
                 onSavePagesAsPdf = { pane, pages -> savePagesAsPdf(pane, pages) },
                 onSavePagesAsImages = { pane, pages -> savePagesAsImages(pane, pages) },
@@ -771,8 +771,8 @@ private fun EditorScreen(
             },
         )
     }
-    if (showPresentation) {
-        com.xnotes.ui.PresentationDialog(editor = editor, onDismiss = { showPresentation = false })
+    presentPane?.let { pane ->
+        com.xnotes.ui.PresentationDialog(editor = pane, onDismiss = { presentPane = null })
     }
     guardAction?.let { request ->
         val guarded = request.editor
@@ -822,22 +822,26 @@ private fun EditorScreen(
     // Tapping a note reads it off-thread (editor.opening). Only show the spinner once the read has run
     // long enough to matter, so opening a small note never flashes a dialog; a big PDF gets the loader.
     var showOpening by remember { mutableStateOf(false) }
-    LaunchedEffect(editor.opening) {
-        if (editor.opening) { delay(160); showOpening = editor.opening } else showOpening = false
+    val opening = editor.opening || editor.secondary?.opening == true
+    LaunchedEffect(opening) {
+        if (opening) { delay(160); showOpening = opening } else showOpening = false
     }
-    if (showOpening && editor.opening) {
+    if (showOpening && opening) {
         SpinnerDialog("Opening note…", onCancel = {
-            editor.cancelOpenInProgress() // discard the loaded note when its read returns
-            showOpening = false           // dismiss at once; editor.opening clears as the read unwinds
+            // Discard whichever pane's note is still being read when it returns.
+            editor.cancelOpenInProgress()
+            editor.secondary?.cancelOpenInProgress()
+            showOpening = false // dismiss at once; opening clears as the reads unwind
         })
     }
     // A dirty note is flushed off-thread on close/pause; show the saving overlay only once the write is
     // slow enough to matter, so closing a small note never flashes a dialog.
     var showSaving by remember { mutableStateOf(false) }
-    LaunchedEffect(editor.savingNote) {
-        if (editor.savingNote) { delay(160); showSaving = editor.savingNote } else showSaving = false
+    val saving = editor.savingNote || editor.secondary?.savingNote == true
+    LaunchedEffect(saving) {
+        if (saving) { delay(160); showSaving = saving } else showSaving = false
     }
-    if (showSaving && editor.savingNote) SavingDialog()
+    if (showSaving && saving) SavingDialog()
 }
 
 /** A pending "unsaved changes" prompt: the pane it asks about, and what to run once it's settled. */
@@ -903,8 +907,9 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
         val fullH = maxHeight
         val full = if (sideBySide) fullW else fullH
         // Along the split axis the panes share what the divider leaves; across it they run full.
-        val firstExtent = if (split) (full - DIVIDER) * ratio else full
-        val secondExtent = if (split) full - DIVIDER - firstExtent else full
+        val shared = (full - DIVIDER).coerceAtLeast(0.dp)
+        val firstExtent = if (split) shared * ratio else full
+        val secondExtent = if (split) shared - firstExtent else full
         val secondOffset = if (split) firstExtent + DIVIDER else 0.dp
 
         /** Sizes a pane to [extent] along the split axis and the whole window across it. */
@@ -931,7 +936,7 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
         if (split) {
             SplitDivider(
                 sideBySide = sideBySide,
-                extentPx = with(LocalDensity.current) { full.toPx() },
+                extentPx = with(LocalDensity.current) { shared.toPx() },
                 ratio = editor.splitRatio,
                 onRatio = { editor.splitRatio = it },
                 modifier = paneOffset(firstExtent).then(paneSize(DIVIDER)),
@@ -992,6 +997,15 @@ private fun EditorPane(
             },
     ) {
         val onClose = if (closable) ({ actions.onClosePane(editor) }) else null
+        // In a split, a hairline over the toolbar marks the pane the pen and the keyboard are in.
+        if (closable) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background((if (focused) palette.accent else palette.border).toComposeColor()),
+            )
+        }
         if (editor.canvasOpen) {
             val canvas = editor.infinite
             com.xnotes.ui.InfiniteToolbar(
