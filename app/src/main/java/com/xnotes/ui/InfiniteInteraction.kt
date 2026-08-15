@@ -94,6 +94,8 @@ class InfiniteInteraction(
     private val onMinimapPress: (Double, Double) -> Boolean = { _, _ -> false },
     /** A finger held still on empty canvas: open the paste menu at this viewport and content point. */
     private val onContextMenu: (Pt, Pt) -> Unit = { _, _ -> },
+    /** A tool this layer armed by itself, so the chrome can follow: a long-press grab and its end. */
+    private val onToolChanged: (Tool) -> Unit = {},
 ) {
 
     private val choreographer = Choreographer.getInstance()
@@ -148,9 +150,13 @@ class InfiniteInteraction(
     private var panMayDismiss = false
     private var panDownAt = Pt.ZERO
 
-    // A finger held still on empty canvas opens the paste menu.
+    // A finger held still grabs the item under it, or opens the paste menu on empty canvas.
     private var longPressRunnable: Runnable? = null
     private var longPressAt = Pt.ZERO
+    private var longPressCandidate: CanvasItem? = null
+
+    // The tool a long-press grab borrowed the canvas from, given back when the selection goes.
+    private var longPressPrevTool: Tool? = null
 
     // Hold-still-to-snap: a freehand stroke that stops moving becomes the shape it looks like.
     private val handler = Handler(Looper.getMainLooper())
@@ -208,6 +214,7 @@ class InfiniteInteraction(
     fun resetGestureState() {
         stopFling()
         cancelLongPress()
+        longPressPrevTool = null
         mode = CanvasPointerMode.IDLE
         panVel = Pt.ZERO
         liveStroke = null
@@ -269,13 +276,14 @@ class InfiniteInteraction(
         }
     }
 
-    // --- long press on empty canvas ---
+    // --- long press: grab an item, or the paste menu on empty canvas ---
 
     /**
-     * Arm the paste menu for a finger held still on empty canvas.
+     * Arm what a finger held still does: pick up the item under it, or open the paste menu when
+     * there is nothing there.
      *
-     * Finger only, like the paged canvas: the stylus always draws, so resting it never pops a menu.
-     * A press on the selection or on an item is left alone, because those already mean something.
+     * Finger only, like the paged canvas: the stylus always draws, so resting it never grabs or pops
+     * a menu. A press on the live selection is left alone, because that already means something.
      */
     private fun armLongPress(at: Pt, onSelection: Boolean, isFinger: Boolean) {
         cancelLongPress()
@@ -285,7 +293,15 @@ class InfiniteInteraction(
         val content = viewport.viewportToContent(at)
         val pad = TAP_SLOP_PX / viewport.zoom
         val near = Rect(content.x - pad, content.y - pad, pad * 2, pad * 2)
-        if (itemsIn(near).any { it.contains(content) }) return
+        // Last, not first: the index comes back in z-order, so the topmost item is the one held.
+        val hit = itemsIn(near).lastOrNull { it.contains(content) }
+        // The eraser is the one tool a grab would fight with, so it is the one that leaves an item
+        // alone. Everything else hands it over, which is what makes a held finger pick something up
+        // without having to reach for the selection tool first.
+        val grabbable = tool.isStroke || tool == Tool.PAN || tool == Tool.SELECT ||
+            tool == Tool.LASSO || tool == Tool.SHAPE
+        if (hit != null && !grabbable) return
+        longPressCandidate = hit
         longPressAt = at
         val r = Runnable { triggerLongPress() }
         longPressRunnable = r
@@ -295,19 +311,48 @@ class InfiniteInteraction(
     private fun cancelLongPress() {
         longPressRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable = null
+        longPressCandidate = null
     }
 
     private fun triggerLongPress() {
         longPressRunnable = null
-        // The gesture underway is only ever a pan or a stroke that has not moved; drop it so the
-        // menu is not fighting a drag, and stop the press from also dismissing the selection.
+        val candidate = longPressCandidate
+        longPressCandidate = null
+        // The gesture underway is only ever a pan or a stroke that has not moved; drop it so what
+        // follows is not fighting a drag, and stop the press from also dismissing the selection.
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
         if (mode == CanvasPointerMode.SHAPE) abandonShape()
         mode = CanvasPointerMode.IDLE
         panMayDismiss = false
-        setInteractive(false, true)
-        onContextMenu(longPressAt, viewport.viewportToContent(longPressAt))
+        if (candidate != null) {
+            grabItem(candidate)
+        } else {
+            setInteractive(false, true)
+            onContextMenu(longPressAt, viewport.viewportToContent(longPressAt))
+        }
         requestRender()
+    }
+
+    /**
+     * Hand the held item to the selection tool and start moving it, so a long press picks something
+     * up whatever tool is armed. The borrowed tool comes back when the selection is put away, and
+     * the handles arrive with the chrome the moment the finger lifts.
+     */
+    private fun grabItem(item: CanvasItem) {
+        val sel = selection() ?: return
+        if (tool != Tool.SELECT) {
+            longPressPrevTool = tool
+            tool = Tool.SELECT
+            onToolChanged(Tool.SELECT)
+        }
+        sel.select(listOf(item))
+        sel.beginTransform()
+        moveAnchor = viewport.viewportToContent(longPressAt)
+        movedBy = Pt.ZERO
+        mode = CanvasPointerMode.MOVE
+        setInteractive(false, false)
+        onLiftSelection(sel.items, LiftTransform.NONE)
+        onSelectionChanged()
     }
 
     private fun handlePointerDown(e: MotionEvent) {
@@ -542,6 +587,12 @@ class InfiniteInteraction(
 
     /** Clear the selection and its chrome, for a tool change or a document swap. */
     fun clearSelection() {
+        // A long-press grab only borrowed the selection tool; putting the selection away returns it.
+        longPressPrevTool?.let {
+            longPressPrevTool = null
+            tool = it
+            onToolChanged(it)
+        }
         selection()?.clear()
         bandRect = null
         lassoPoints.clear()

@@ -88,6 +88,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         devicePxPerDp = { devicePxPerDp },
         onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
         onContextMenu = { vp, content -> contextMenu = ContextMenuTarget(vp.x, vp.y, content) },
+        onToolChanged = { adoptTool(it) },
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
@@ -259,6 +260,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     fun armTool(next: Tool) {
         // Leaving the selection tools drops the selection, so its chrome cannot linger over ink.
         if (tool != next && (tool == Tool.SELECT || tool == Tool.LASSO)) interaction.clearSelection()
+        adoptTool(next)
+    }
+
+    /** Show a tool the gesture layer armed by itself: a long-press grab, and its release. */
+    private fun adoptTool(next: Tool) {
         tool = next
         interaction.tool = next
     }
