@@ -1083,13 +1083,17 @@ private fun SplitDivider(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalPalette.current
+    // The accent pushed toward full saturation: a material accent can sit close enough to the panel
+    // grey that the bar reads as a seam rather than as the thing you drag.
+    val grip = com.xnotes.ui.theme.ColorMath.saturate(palette.accent, 0.55)
+    val bar = com.xnotes.ui.theme.ColorMath.mix(palette.panel, grip, 0.22)
     // Read inside the long-lived drag gesture, which does not restart as the ratio moves.
     val ratioNow = rememberUpdatedState(ratio)
     val onRatioNow = rememberUpdatedState(onRatio)
     var dragged by remember { mutableStateOf(0f) }
     Box(
         modifier = modifier
-            .background(palette.panel.toComposeColor())
+            .background(bar.toComposeColor())
             .pointerInput(sideBySide, extentPx) {
                 detectDragGestures(
                     onDragStart = { dragged = ratioNow.value },
@@ -1110,9 +1114,9 @@ private fun SplitDivider(
         // A short grip in the middle of the bar, so it reads as something to drag.
         Box(
             Modifier
-                .size(if (sideBySide) 3.dp else 40.dp, if (sideBySide) 40.dp else 3.dp)
+                .size(if (sideBySide) 4.dp else 44.dp, if (sideBySide) 44.dp else 4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(palette.textDim.toComposeColor()),
+                .background(grip.toComposeColor()),
         )
     }
 }

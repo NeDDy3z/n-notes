@@ -182,6 +182,14 @@ object ColorMath {
         return Rgba(ch(c.r), ch(c.g), ch(c.b), c.a)
     }
 
+    /** Push saturation toward full by [amount] (0..1), keeping the hue and the value. Gives a
+     *  muted accent (the material palette draws plenty of those) enough colour to read as one. */
+    fun saturate(c: Rgba, amount: Double): Rgba {
+        val hsv = rgbToHsv(c)
+        val s = hsv[1] + (1.0 - hsv[1]) * amount.coerceIn(0.0, 1.0)
+        return hsvToRgb(hsv[0], s, hsv[2], c.a)
+    }
+
     /** Lighten toward white by [amount] (0..1). */
     fun lighten(c: Rgba, amount: Double): Rgba {
         val a = amount.coerceIn(0.0, 1.0)
