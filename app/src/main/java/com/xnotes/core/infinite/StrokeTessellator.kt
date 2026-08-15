@@ -204,12 +204,12 @@ object StrokeTessellator {
         return kotlin.math.abs(atan2(cross, dot))
     }
 
-    // --- rail accessors: the outline is the left edge forward, then the right edge reversed ---
+    // --- rail accessors: kept as free functions so the tests can pin them to the geometry's own ---
 
-    fun leftX(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * i].toDouble()
-    fun leftY(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * i + 1].toDouble()
-    fun rightX(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * (2 * n - 1 - i)].toDouble()
-    fun rightY(g: StrokeGeometry, n: Int, i: Int): Double = g.outline[2 * (2 * n - 1 - i) + 1].toDouble()
+    fun leftX(g: StrokeGeometry, n: Int, i: Int): Double = g.leftX(i)
+    fun leftY(g: StrokeGeometry, n: Int, i: Int): Double = g.leftY(i)
+    fun rightX(g: StrokeGeometry, n: Int, i: Int): Double = g.rightX(i)
+    fun rightY(g: StrokeGeometry, n: Int, i: Int): Double = g.rightY(i)
 
     private fun estimateVertices(g: StrokeGeometry): Int {
         val n = g.pointCount

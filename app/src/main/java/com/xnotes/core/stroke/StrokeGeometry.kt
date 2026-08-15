@@ -16,29 +16,104 @@ data class Sample(val x: Double, val y: Double, val pressure: Double, val t: Dou
  * a dense document caches millions of these points, so per-point objects or boxing would multiply
  * heap several-fold (floats are far past render precision; the renderer draws in floats anyway).
  * The ink is painted by sweeping a brush disc down the [centerline] at the per-point [halfWidths]
- * (Renderer.fillDiskRibbon), so caps and joins round on every pen; [outline] is that same ribbon
- * as one closed polygon, kept for the neon bloom and hit-testing. Compared by identity (a rebuild
+ * (Renderer.fillDiskRibbon), so caps and joins round on every pen. Compared by identity (a rebuild
  * is a new instance), like the model items.
+ *
+ * The ribbon's two edges are stored as [leftRail] and [rightRail], each in centreline order, and
+ * the closed polygon the neon bloom fills is derived from them by [outline]. Storing the rails and
+ * not the polygon is what lets a live stroke *grow*: the polygon is the left rail followed by the
+ * right one reversed, so its second half shifts by one slot every time a sample lands, while the
+ * rails only ever gain an entry at the end. [outline] is built once, on the first caller that
+ * genuinely needs a packed ring, so ordinary ink never pays for it. Nothing needs both:
+ * [WetRibbon] grows the rails, and the neon painter reads the ring.
  */
 class StrokeGeometry(
-    /** Closed ribbon polygon, interleaved x,y: the left edge in order, then the right reversed. */
-    val outline: FloatArray,
     /** Smoothed centerline, interleaved x,y; one point per input sample. */
     val centerline: FloatArray,
     /** Brush disc radius at each centerline point. */
     val halfWidths: FloatArray,
+    /** Ribbon's left edge, interleaved x,y, in centreline order; empty when there is no body. */
+    val leftRail: FloatArray = EMPTY_F,
+    /** Ribbon's right edge, interleaved x,y, in the same order (not reversed). */
+    val rightRail: FloatArray = EMPTY_F,
 ) {
     /** Number of centerline points (one per input sample). */
     val pointCount get() = halfWidths.size
 
     /** Number of outline vertices (2 per centerline point when the ribbon has a body). */
-    val outlineCount get() = outline.size / 2
+    val outlineCount get() = (leftRail.size + rightRail.size) / 2
 
     fun cx(i: Int): Double = centerline[2 * i].toDouble()
     fun cy(i: Int): Double = centerline[2 * i + 1].toDouble()
     fun hw(i: Int): Double = halfWidths[i].toDouble()
 
+    fun leftX(i: Int): Double = leftRail[2 * i].toDouble()
+    fun leftY(i: Int): Double = leftRail[2 * i + 1].toDouble()
+    fun rightX(i: Int): Double = rightRail[2 * i].toDouble()
+    fun rightY(i: Int): Double = rightRail[2 * i + 1].toDouble()
+
+    /** True when both rails carry a vertex per centreline point, i.e. the ribbon has a body. */
+    val hasRails get() = leftRail.size == 2 * pointCount && rightRail.size == 2 * pointCount
+
+    /** Built on demand and kept; volatile because painting and hit-testing can race, and the array
+     *  is written before it is published, so the worst a race costs is one redundant build. */
+    @Volatile
+    private var packedOutline: FloatArray? = null
+
+    /**
+     * The ribbon as one closed polygon, interleaved x,y: the left edge in order, then the right
+     * reversed. Only the neon bloom, which hands a packed ring to the renderer, needs it.
+     */
+    val outline: FloatArray
+        get() {
+            packedOutline?.let { return it }
+            val n = pointCount
+            if (!hasRails) return EMPTY_F.also { packedOutline = it }
+            val out = FloatArray(4 * n)
+            for (i in 0 until n) {
+                out[2 * i] = leftRail[2 * i]
+                out[2 * i + 1] = leftRail[2 * i + 1]
+                val j = 2 * n - 1 - i
+                out[2 * j] = rightRail[2 * i]
+                out[2 * j + 1] = rightRail[2 * i + 1]
+            }
+            return out.also { packedOutline = it }
+        }
+
+    /**
+     * [p] inside the ribbon body, by the crossing-number rule over the closed rail ring. Walks the
+     * rails in place rather than through [outline], so a hit test never packs a ring it then throws
+     * away — selection sweeps run this over every stroke on the page.
+     */
+    fun bodyContains(p: Pt): Boolean {
+        val n = pointCount
+        if (!hasRails || n < 2) return false
+        val m = 2 * n
+        var inside = false
+        var j = m - 1
+        for (i in 0 until m) {
+            val ax = ringX(i, n)
+            val ay = ringY(i, n)
+            val bx = ringX(j, n)
+            val by = ringY(j, n)
+            val crosses = (ay > p.y) != (by > p.y) &&
+                p.x < (bx - ax) * (p.y - ay) / (by - ay) + ax
+            if (crosses) inside = !inside
+            j = i
+        }
+        return inside
+    }
+
+    /** Ring vertex [i] of `2n`: the left rail forward, then the right rail reversed. */
+    private fun ringX(i: Int, n: Int): Double =
+        if (i < n) leftRail[2 * i].toDouble() else rightRail[2 * (2 * n - 1 - i)].toDouble()
+
+    private fun ringY(i: Int, n: Int): Double =
+        if (i < n) leftRail[2 * i + 1].toDouble() else rightRail[2 * (2 * n - 1 - i) + 1].toDouble()
+
     companion object {
-        val EMPTY = StrokeGeometry(FloatArray(0), FloatArray(0), FloatArray(0))
+        private val EMPTY_F = FloatArray(0)
+
+        val EMPTY = StrokeGeometry(EMPTY_F, EMPTY_F)
     }
 }

@@ -513,7 +513,6 @@ object StrokeEngine {
         if (n == 1) {
             val h = hw(0, if (finished && ds > 0.0) DOT_DIR_Y else 0.0)
             return StrokeGeometry(
-                FloatArray(0),
                 floatArrayOf(sx[0].toFloat(), sy[0].toFloat()),
                 floatArrayOf(h.toFloat()),
             )
@@ -582,13 +581,13 @@ object StrokeEngine {
             d
         } else null
 
-        // 5–8. Half-widths, normals, and the two ribbon edges, packed straight into the output:
-        // the outline is the left edge in order plus the right edge reversed (one closed polygon).
+        // 5–8. Half-widths, normals, and the two ribbon edges, packed straight into the output.
         // No separate end caps: the swept brush disc at each sample (the head and tail included)
         // already rounds every end and join, so [holdEnds] only shapes the end half-widths.
         val centerline = FloatArray(2 * n)
         val halfWidths = FloatArray(n)
-        val outline = FloatArray(4 * n)
+        val leftRail = FloatArray(2 * n)
+        val rightRail = FloatArray(2 * n)
         for (i in 0 until n) {
             // Clamped to [-1, DOT_DIR_Y], not to [-1, 1]: a dot is 1.5 on purpose, past the broad
             // face, so a cap at 1.0 would quietly shrink every tap.
@@ -596,17 +595,36 @@ object StrokeEngine {
             var h = hw(i, dir)
             if (sf != null) h *= sf[i]
             if (tf != null) h *= tf[i]
-            halfWidths[i] = h.toFloat()
-            centerline[2 * i] = sx[i].toFloat()
-            centerline[2 * i + 1] = sy[i].toFloat()
-            val nx = -ty[i] // tangent rotated 90°, already unit length
-            val ny = tx[i]
-            outline[2 * i] = (sx[i] - nx * h).toFloat()
-            outline[2 * i + 1] = (sy[i] - ny * h).toFloat()
-            val j = 2 * n - 1 - i
-            outline[2 * j] = (sx[i] + nx * h).toFloat()
-            outline[2 * j + 1] = (sy[i] + ny * h).toFloat()
+            writePoint(centerline, halfWidths, leftRail, rightRail, i, sx[i], sy[i], tx[i], ty[i], h)
         }
-        return StrokeGeometry(outline, centerline, halfWidths)
+        return StrokeGeometry(centerline, halfWidths, leftRail, rightRail)
+    }
+
+    /**
+     * One ribbon point written into the packed output arrays: its centre, its half-width, and the
+     * rail vertex either side of it along the normal. Shared with [WetRibbon] so a live stroke's
+     * growing ribbon and a finished stroke's rebuilt one are laid out by the same code.
+     */
+    internal fun writePoint(
+        centerline: FloatArray,
+        halfWidths: FloatArray,
+        leftRail: FloatArray,
+        rightRail: FloatArray,
+        i: Int,
+        x: Double,
+        y: Double,
+        tx: Double,
+        ty: Double,
+        h: Double,
+    ) {
+        halfWidths[i] = h.toFloat()
+        centerline[2 * i] = x.toFloat()
+        centerline[2 * i + 1] = y.toFloat()
+        val nx = -ty // tangent rotated 90°, already unit length
+        val ny = tx
+        leftRail[2 * i] = (x - nx * h).toFloat()
+        leftRail[2 * i + 1] = (y - ny * h).toFloat()
+        rightRail[2 * i] = (x + nx * h).toFloat()
+        rightRail[2 * i + 1] = (y + ny * h).toFloat()
     }
 }

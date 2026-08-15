@@ -472,7 +472,7 @@ class Stroke(
             val dy = p.y - g.cy(i)
             if (dx * dx + dy * dy <= h * h) return true
         }
-        return g.outlineCount >= 3 && Geometry.pointInPolygon(g.outline, p)
+        return g.bodyContains(p)
     }
 
     /** Mean of the sample positions. */
