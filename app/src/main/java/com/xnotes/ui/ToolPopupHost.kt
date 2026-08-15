@@ -30,4 +30,10 @@ interface ToolPopupHost {
     val hostToolbarColors: List<Rgba>
     val hostActiveColorIndex: Int
     val hostRecentColors: List<Rgba>
+
+    /** Recolour swatch [index] and arm it, live while the picker is open. */
+    fun setSwatchColor(index: Int, color: Rgba)
+
+    /** The picker closed: keep the swatch's colour among the recents. */
+    fun rememberSwatchColor(index: Int)
 }

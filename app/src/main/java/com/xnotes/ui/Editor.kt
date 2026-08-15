@@ -443,7 +443,21 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.pickColor(activeColorIndex)
             // A style tuned on the canvas is the same style, so it persists through this editor.
             it.onToolStyleChanged = { settingsDirty = true }
+            it.onSwatchColorChanged = { index, color -> adoptSwatchColor(index, color) }
+            it.onColorRemembered = { color ->
+                settings = settings.rememberColor(color)
+                it.recentColors = recentColors
+            }
         }
+
+    /** Take on a swatch the canvas recoloured, so both bars show it and the next save keeps it. */
+    private fun adoptSwatchColor(index: Int, color: Rgba) {
+        if (index !in toolbarColors.indices) return
+        toolbarColors = toolbarColors.toMutableList().also { it[index] = color }
+        activeColorIndex = index
+        controller.pickInk(color)
+        settingsDirty = true
+    }
 
     /** The canvas's autosave binding, the sibling of [autosaveUri] for the paged note. */
     var canvasAutosaveUri: String? = null
@@ -3203,13 +3217,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Live swatch recolour while the picker is open: applies to the canvas but does *not* yet
      *  commit to recents (a spectrum drag fires this on every sample and would flood the list). */
-    fun setSwatchColor(index: Int, color: Rgba) {
+    override fun setSwatchColor(index: Int, color: Rgba) {
         toolbarColors = toolbarColors.toMutableList().also { it[index] = color }
         pickColor(index)
     }
 
     /** Commit the swatch's current colour to the recent-colours list — called once the picker closes. */
-    fun rememberSwatchColor(index: Int) {
+    override fun rememberSwatchColor(index: Int) {
         toolbarColors.getOrNull(index)?.let { settings = settings.rememberColor(it) }
     }
 

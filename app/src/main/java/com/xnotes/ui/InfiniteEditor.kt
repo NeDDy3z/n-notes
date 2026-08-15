@@ -491,6 +491,28 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override val hostActiveColorIndex: Int get() = activeColorIndex
     override val hostRecentColors: List<Rgba> get() = recentColors
 
+    /**
+     * Recolour a swatch from the picker. The swatches belong to the host, which owns the settings
+     * file, so the change is reported rather than only kept here: a colour mixed on the canvas is
+     * the same colour on a note, and it is still there next launch.
+     */
+    override fun setSwatchColor(index: Int, color: Rgba) {
+        if (index !in toolbarColors.indices) return
+        toolbarColors = toolbarColors.toMutableList().also { it[index] = color }
+        pickColor(index)
+        onSwatchColorChanged?.invoke(index, color)
+    }
+
+    override fun rememberSwatchColor(index: Int) {
+        toolbarColors.getOrNull(index)?.let { onColorRemembered?.invoke(it) }
+    }
+
+    /** Fired when a swatch was recoloured here, so the host can adopt it and persist it. */
+    var onSwatchColorChanged: ((Int, Rgba) -> Unit)? = null
+
+    /** Fired when the picker closed on a colour, so the host can keep it among its recents. */
+    var onColorRemembered: ((Rgba) -> Unit)? = null
+
     /** The toolbar's swatches and recents, handed over by the host so both surfaces share them. */
     var toolbarColors by mutableStateOf(InkPalette.presets)
     var activeColorIndex by mutableStateOf(0)

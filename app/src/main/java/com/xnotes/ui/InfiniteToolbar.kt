@@ -79,6 +79,9 @@ fun InfiniteToolbar(
     var waypointsOpen by remember { mutableStateOf(false) }
     var penOpen by remember { mutableStateOf<Tool?>(null) }
     var selectOpen by remember { mutableStateOf(false) }
+    // Which swatch has the colour picker open, as on the paged bar: tapping the armed swatch again
+    // opens it, so the five colours are both the ink and the way to change it.
+    var switcherIndex by remember { mutableStateOf<Int?>(null) }
 
     Row(
         modifier = Modifier.fillMaxWidth().height(48.dp).background(palette.panel.toComposeColor()),
@@ -128,8 +131,11 @@ fun InfiniteToolbar(
 
                         ToolbarItem.COLORS ->
                             editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->
-                                Swatch(color.toComposeColor(), active = editor.activeColorIndex == i) {
-                                    editor.pickColor(i)
+                                Box {
+                                    Swatch(color.toComposeColor(), active = editor.activeColorIndex == i) {
+                                        if (editor.activeColorIndex == i) switcherIndex = i else editor.pickColor(i)
+                                    }
+                                    if (switcherIndex == i) ColorSwitcherPopup(editor, i) { switcherIndex = null }
                                 }
                             }
 

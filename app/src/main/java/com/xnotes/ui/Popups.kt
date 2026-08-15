@@ -645,12 +645,12 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
  *  and writes the chosen colour back to swatch [index]. Picks apply live; the final colour is
  *  remembered into recents when the popup closes. */
 @Composable
-fun ColorSwitcherPopup(editor: Editor, index: Int, onDismiss: () -> Unit) {
+fun ColorSwitcherPopup(host: ToolPopupHost, index: Int, onDismiss: () -> Unit) {
     ColorPickerPopup(
-        initial = editor.toolbarColors.getOrNull(index),
-        recents = editor.hostRecentColors,
-        onDismiss = { editor.rememberSwatchColor(index); onDismiss() },
-        onPick = { editor.setSwatchColor(index, it) },
+        initial = host.hostToolbarColors.getOrNull(index),
+        recents = host.hostRecentColors,
+        onDismiss = { host.rememberSwatchColor(index); onDismiss() },
+        onPick = { host.setSwatchColor(index, it) },
     )
 }
 
