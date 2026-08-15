@@ -135,6 +135,11 @@ enum class Pane { PRIMARY, SECONDARY }
 class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost {
 
     private val appContext = context.applicationContext
+
+    /** The context the views are built from, kept so a second pane can be built the same way. The
+     *  application context will not do: it is not attached to a display, so the cutout probe throws
+     *  on it and any View made from it misses the activity's theme. */
+    private val viewContext = context
     private val settingsRepo = SettingsRepository(context)
 
     /** Read and written through the process-wide [LiveSettings] so both split panes share one copy. */
@@ -4160,7 +4165,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Build the second pane on first use. It shares the temp dirs and the live settings with this
      *  one, and keeps its own document, history, canvas and session slot. */
-    fun secondaryPane(): Editor = secondary ?: Editor(appContext, Pane.SECONDARY).also {
+    fun secondaryPane(): Editor = secondary ?: Editor(viewContext, Pane.SECONDARY).also {
         it.keyActions = keyActions // the shortcuts already resolve their target pane themselves
         it.sibling = this
         sibling = it

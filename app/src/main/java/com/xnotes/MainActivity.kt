@@ -93,12 +93,15 @@ import kotlinx.coroutines.launch
 private const val MIN_LOADER_MS = 600L
 
 /** Whether the display has a camera cutout (notch/hole-punch). False below API 29, which has no
- *  cutout API; such devices fall back to fullscreen by default. */
+ *  cutout API; such devices fall back to fullscreen by default. Also false for a context with no
+ *  display of its own, which cannot answer the question. */
 internal fun deviceHasDisplayCutout(context: Context): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
-    val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) context.display
+    val display = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) context.display
         else @Suppress("DEPRECATION")
             (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
+    }.getOrNull()
     return display?.cutout != null
 }
 
