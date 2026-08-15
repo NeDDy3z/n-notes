@@ -193,8 +193,9 @@ class DocumentCodec(
         j.name("rect").beginArray().value(item.rect.x).value(item.rect.y).value(item.rect.w).value(item.rect.h).endArray()
         j.name("src_w").value(item.image.width)
         j.name("src_h").value(item.image.height)
-        // Additive field: written only when rotated, so older readers stay compatible.
+        // Additive fields: written only when turned, so older readers stay compatible.
         if (item.orientation != 0) j.name("orientation").value(item.orientation)
+        if (item.angle != 0.0) j.name("angle").value(item.angle)
         j.endObject()
     }
 
@@ -396,6 +397,7 @@ class DocumentCodec(
         val srcW: Int,
         val srcH: Int,
         val orientation: Int,
+        val angle: Double,
     )
 
     private fun parseManifest(p: JsonPull): ParsedManifest {
@@ -499,6 +501,7 @@ class DocumentCodec(
         var srcW = 0
         var srcH = 0
         var orientation = 0
+        var angle = 0.0
         var pos: Pt? = null
         var width = TextItem.DEFAULT_WIDTH
         var height = 0.0
@@ -556,6 +559,7 @@ class DocumentCodec(
                 "src_w" -> s.srcW = intOr(p, 0)
                 "src_h" -> s.srcH = intOr(p, 0)
                 "orientation" -> s.orientation = intOr(p, 0)
+                "angle" -> s.angle = doubleOr(p, 0.0)
                 "pos" -> s.pos = ptOrNull(p)
                 "width" -> s.width = doubleOr(p, TextItem.DEFAULT_WIDTH)
                 "height" -> s.height = doubleOr(p, 0.0)
@@ -584,7 +588,9 @@ class DocumentCodec(
             ImageItem.KIND -> {
                 val asset = s.asset
                 if (!asset.isNullOrEmpty()) {
-                    pending.add(PendingImage(items.size + pending.size, asset, s.rect, s.srcW, s.srcH, s.orientation))
+                    pending.add(
+                        PendingImage(items.size + pending.size, asset, s.rect, s.srcW, s.srcH, s.orientation, s.angle),
+                    )
                 }
             }
             TextItem.KIND -> items.add(
@@ -743,7 +749,7 @@ class DocumentCodec(
             h = probed.height
         }
         val rect = spec.rect ?: Rect(0.0, 0.0, w.toDouble(), h.toDouble())
-        return ImageItem(ImageData(file, w, h), rect, spec.orientation)
+        return ImageItem(ImageData(file, w, h), rect, spec.orientation, spec.angle)
     }
 
     // --- streaming value helpers (mirroring org.json's forgiving opt* coercions) ---

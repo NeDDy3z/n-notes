@@ -292,9 +292,6 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override var selectionMenuRect: Rect? by mutableStateOf(null)
         private set
 
-    override val selectionMenuIsImage: Boolean
-        get() = selection.items.singleOrNull() is ImageItem
-
     /** Re-anchor the floating menu over the settled selection, or take it away. */
     private fun refreshSelectionMenu() {
         val box = selection.box
@@ -414,34 +411,6 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         if (com.xnotes.core.infinite.sameOrder(before, after)) return
         document.replaceAll(after)
         history.push(ReplaceCanvasItems(document, before, after))
-        markDirty()
-        refresh()
-        publishOverlay()
-    }
-
-    /** Turn the one selected image a quarter turn; the stored bytes are untouched, so it is lossless. */
-    override fun rotateSelectedImage() {
-        val item = selection.items.singleOrNull() as? ImageItem ?: return
-        val oldRect = item.rect
-        val oldOrientation = item.orientation
-        val centre = oldRect.center
-        val newRect = Rect(
-            centre.x - oldRect.h / 2.0, centre.y - oldRect.w / 2.0, oldRect.h, oldRect.w,
-        )
-        val newOrientation = (oldOrientation + 90) % 360
-        item.rect = newRect
-        item.orientation = newOrientation
-        document.itemsChanged(listOf(item))
-        history.push(
-            com.xnotes.core.infinite.OnCanvas(
-                document,
-                com.xnotes.core.history.RotateImage(
-                    item, oldRect, oldOrientation, newRect, newOrientation,
-                ),
-                listOf(item),
-            ),
-        )
-        selection.refreshBox()
         markDirty()
         refresh()
         publishOverlay()

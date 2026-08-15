@@ -296,9 +296,10 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     }
 
     // Decode the source only to the destination's device-pixel size (capped, never upscaled past the
-    // source) so a huge photo never fully decodes; the quarter turn is applied as a canvas rotation
-    // about the destination centre, the rect already carrying the rotated (w/h-swapped) box.
-    override fun drawImage(image: ImageData, dest: Rect, orientation: Int) {
+    // source) so a huge photo never fully decodes; the quarter turn and the free angle are applied
+    // as one canvas rotation about the destination centre (they share it, so they simply add), the
+    // rect already carrying the quarter-turned (w/h-swapped) box.
+    override fun drawImage(image: ImageData, dest: Rect, orientation: Int, angle: Double) {
         if (dest.w <= 0.0 || dest.h <= 0.0) return
         val devW = (dest.w * scaleX).toInt()
         val devH = (dest.h * scaleY).toInt()
@@ -309,9 +310,10 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         val bmp = ImageDecoder.decodeSampledFile(image.file.path, reqW, reqH) ?: return
         val uw = (if (turned) dest.h else dest.w).toFloat()
         val uh = (if (turned) dest.w else dest.h).toFloat()
+        val degrees = o + Math.toDegrees(angle)
         canvas.save()
         canvas.translate(((dest.left + dest.right) / 2.0).toFloat(), ((dest.top + dest.bottom) / 2.0).toFloat())
-        if (o != 0) canvas.rotate(o.toFloat())
+        if (degrees != 0.0) canvas.rotate(degrees.toFloat())
         canvas.drawBitmap(bmp, null, RectF(-uw / 2f, -uh / 2f, uw / 2f, uh / 2f), bitmapPaint)
         canvas.restore()
     }

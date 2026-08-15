@@ -394,12 +394,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var selectionMenu by mutableStateOf<com.xnotes.core.geometry.Rect?>(null)
         private set
 
-    /** True when the settled selection is a single image, so the menu shows the rotate action. */
-    var selectionIsImage by mutableStateOf(false)
-        private set
-
     override val selectionMenuRect: com.xnotes.core.geometry.Rect? get() = selectionMenu
-    override val selectionMenuIsImage: Boolean get() = selectionIsImage
 
     /** Viewport rect to anchor the screenshot tool's "copy as image" menu, or null when hidden. */
     var screenshotMenu by mutableStateOf<com.xnotes.core.geometry.Rect?>(null)
@@ -612,7 +607,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onToolChanged = { t -> tool = t },
         onTextEditStart = { field -> editingField = field; refreshTextBar() },
         onTextEditEnd = { editingField = null; refreshTextBar() },
-        onSelectionMenu = { rect -> selectionMenu = rect; selectionIsImage = controller.selectionIsSingleImage },
+        onSelectionMenu = { rect -> selectionMenu = rect },
         onScreenshotMenu = { rect -> screenshotMenu = rect },
         onContextMenu = { vp, content -> contextMenu = ContextMenuTarget(vp.x, vp.y, content) },
         onAddPageAtEnd = { addPageAtEnd() },
@@ -879,7 +874,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override fun copySelection() = controller.copySelection()
     override fun cutSelection() = controller.cutSelection()
     override fun duplicateSelection() = controller.duplicateSelection()
-    override fun rotateSelectedImage() = controller.rotateSelectedImage()
     override fun dismissSelectionMenu() { selectionMenu = null }
     override fun dismissContextMenu() { contextMenu = null }
     fun dismissScreenshot() = controller.clearScreenshot()

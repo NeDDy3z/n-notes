@@ -6,6 +6,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
+import com.tom_roush.pdfbox.util.Matrix
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.ImageData
@@ -17,6 +18,8 @@ import com.xnotes.core.pal.RasterSurface
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.TextFlags
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import com.xnotes.core.pal.BlendMode as PalBlend
 
 /**
@@ -157,7 +160,7 @@ class PdfBoxRenderer(
     // stored quarter turn to the pixels, then place it like any other bitmap. A vector (SVG) source
     // has no native pixels, so it rasterizes at the placed size supersampled for print instead of at
     // the cap; the decode box is pre-swapped for quarter turns (dest already carries the turned box).
-    override fun drawImage(image: ImageData, dest: Rect, orientation: Int) {
+    override fun drawImage(image: ImageData, dest: Rect, orientation: Int, angle: Double) {
         if (dest.w <= 0.0 || dest.h <= 0.0) return
         val turned = orientation % 180 != 0
         val (reqW, reqH) = if (ImageDecoder.isVector(image.file.path)) {
@@ -173,7 +176,31 @@ class PdfBoxRenderer(
             val m = android.graphics.Matrix().apply { postRotate(o.toFloat()) }
             bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
         }
-        placeBitmap(bmp, dest, multiply = false)
+        if (angle == 0.0) placeBitmap(bmp, dest, multiply = false) else placeTurnedBitmap(bmp, dest, angle)
+    }
+
+    /**
+     * Place a bitmap turned [angle] radians clockwise about [dest]'s centre, as a placement matrix
+     * rather than a resampled bitmap, so the exported pixels are the source's own. The matrix maps
+     * the unit square: content space is y-down and user space is y-up, so the page sees the turn
+     * mirrored, which is the sign flip on the sine terms.
+     */
+    private fun placeTurnedBitmap(bmp: Bitmap, dest: Rect, angle: Double) {
+        if (bmp.isRecycled) return
+        val img = LosslessFactory.createFromImage(doc, bmp)
+        val w = dest.w * abs(sx)
+        val h = dest.h * abs(sy)
+        val cx = ux(dest.centerX)
+        val cy = uy(dest.centerY)
+        val co = cos(angle)
+        val sn = sin(angle)
+        val matrix = Matrix(
+            (w * co).toFloat(), (-w * sn).toFloat(),
+            (h * sn).toFloat(), (h * co).toFloat(),
+            (cx - w / 2.0 * co - h / 2.0 * sn).toFloat(),
+            (cy + w / 2.0 * sn - h / 2.0 * co).toFloat(),
+        )
+        cs.drawImage(img, matrix)
     }
 
     /**

@@ -9,8 +9,10 @@ import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
 
@@ -101,6 +103,34 @@ class ItemTransformTest {
         val img = ImageItem(ImageData(java.io.File("test-image"),10, 10), Rect(10.0, 10.0, 100.0, 50.0))
         img.applyTransform(Affine.scaleAbout(Pt(10.0, 10.0), 2.0, 2.0))
         assertEquals(Rect(10.0, 10.0, 200.0, 100.0), img.rect)
+        assertEquals(0.0, img.angle, 1e-12) // a scale carries no turn
+    }
+
+    @Test fun rotateImageKeepsRectAndTurnsBounds() {
+        val img = ImageItem(ImageData(java.io.File("test-image"), 10, 10), Rect(0.0, 0.0, 100.0, 50.0))
+        img.applyTransform(Affine.rotateAbout(Pt(50.0, 25.0), PI / 2))
+        assertEquals(PI / 2, img.angle, 1e-9)
+        // The source box is never resampled: only where it sits and how far it is turned change.
+        assertEquals(100.0, img.rect.w, 1e-9)
+        assertEquals(50.0, img.rect.h, 1e-9)
+        assertEquals(50.0, img.rect.centerX, 1e-9)
+        assertEquals(25.0, img.rect.centerY, 1e-9)
+        val b = img.bounds()
+        assertEquals(25.0, b.left, 1e-9)
+        assertEquals(-25.0, b.top, 1e-9)
+        assertEquals(50.0, b.w, 1e-9)
+        assertEquals(100.0, b.h, 1e-9)
+        assertTrue(img.contains(Pt(50.0, 70.0))) // inside the turned box, outside the upright one
+        assertFalse(img.contains(Pt(90.0, 25.0)))
+    }
+
+    @Test fun imageSnapshotRestoresAngle() {
+        val img = ImageItem(ImageData(java.io.File("test-image"), 10, 10), Rect(0.0, 0.0, 100.0, 50.0))
+        val snap = img.snapshotGeometry()
+        img.applyTransform(Affine.rotateAbout(Pt(50.0, 25.0), PI / 3))
+        img.restoreGeometry(snap)
+        assertEquals(0.0, img.angle, 1e-12)
+        assertEquals(Rect(0.0, 0.0, 100.0, 50.0), img.rect)
     }
 
     // --- text ---

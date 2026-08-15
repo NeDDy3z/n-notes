@@ -21,7 +21,6 @@ import com.xnotes.core.history.ReorderItems
 import com.xnotes.core.history.ReplacePageItems
 import com.xnotes.core.history.ResizeItem
 import com.xnotes.core.history.RestyleText
-import com.xnotes.core.history.RotateImage
 import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
@@ -351,9 +350,6 @@ class InteractionController(
     }
 
     val hasSelection: Boolean get() = selection.isNotEmpty()
-
-    /** True when exactly one image is selected (drives the rotate affordance). */
-    val selectionIsSingleImage: Boolean get() = selection.size == 1 && selection[0].item is ImageItem
 
     /** The in-progress stroke and the page it is on (for the presentation frame). */
     val activeLiveStroke: Stroke? get() = liveStroke
@@ -1200,10 +1196,10 @@ class InteractionController(
         )
     }
 
-    /** Strokes and shapes rotate; images and text don't. A mixed selection rotates only when every
+    /** Strokes, shapes and images rotate; text doesn't. A mixed selection rotates only when every
      *  member is rotatable. */
     private fun selectionIsRotatable(): Boolean =
-        selection.isNotEmpty() && selection.all { it.item is Stroke || it.item is ShapeItem }
+        selection.isNotEmpty() && selection.all { it.item is Stroke || it.item is ShapeItem || it.item is ImageItem }
 
     /** Rotate-grip centre (content space, no move offset), out past the oriented box's top edge, or
      *  null when the selection can't rotate or is a single line/arrow (reoriented by an endpoint). */
@@ -2014,28 +2010,6 @@ class InteractionController(
         clearSelection()
         onContentChanged()
         maybeSwitchBackAfterSelect()
-    }
-
-    /**
-     * Rotate the single selected image a quarter turn clockwise: the stored orientation advances and
-     * the rect's width/height swap about its centre. The source bytes are untouched, so rotation is
-     * lossless. The image is lifted (drawn live), so a render shows it at once and it re-bakes into the
-     * cache on deselect, no manual cache repair here.
-     */
-    fun rotateSelectedImage() {
-        val item = selection.singleOrNull()?.item as? ImageItem ?: return
-        val oldRect = item.rect
-        val oldOrientation = item.orientation
-        val c = oldRect.center
-        val newRect = Rect(c.x - oldRect.h / 2.0, c.y - oldRect.w / 2.0, oldRect.h, oldRect.w)
-        val newOrientation = (item.orientation + 90) % 360
-        item.rect = newRect
-        item.orientation = newOrientation
-        history.push(RotateImage(item, oldRect, oldOrientation, newRect, newOrientation))
-        state.document.dirty = true
-        refreshSelectionMenu()
-        onContentChanged()
-        requestRender()
     }
 
     fun selectAll() {

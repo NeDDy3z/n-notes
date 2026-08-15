@@ -603,8 +603,9 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      * A placed image as one textured quad. The corners are worked out in double precision here and
      * handed over in clip space, so an image a long way from the origin is placed exactly.
      *
-     * Only the drag's shift is honoured, never its turn: an image has no rotation in the model
-     * either, so a selection holding one is turned by the model rather than lifted.
+     * Only the drag's shift is honoured, never its turn: an image's angle lives in the model, so a
+     * selection holding one is turned by the model rather than lifted. The stored angle is folded
+     * into the corners here, which is all a rotation costs on a quad.
      */
     private fun drawImage(
         record: Record,
@@ -621,9 +622,20 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         val corners = FloatArray(8)
         val xs = doubleArrayOf(rect.left, rect.right, rect.left, rect.right)
         val ys = doubleArrayOf(rect.top, rect.top, rect.bottom, rect.bottom)
+        val turn = image.angle
+        val co = kotlin.math.cos(turn)
+        val sn = kotlin.math.sin(turn)
         for (i in 0 until 4) {
-            val dx = (xs[i] - frame.scrollX) * frame.zoom
-            val dy = (ys[i] - frame.scrollY) * frame.zoom
+            var wx = xs[i]
+            var wy = ys[i]
+            if (turn != 0.0) {
+                val ox = wx - rect.centerX
+                val oy = wy - rect.centerY
+                wx = rect.centerX + ox * co - oy * sn
+                wy = rect.centerY + ox * sn + oy * co
+            }
+            val dx = (wx - frame.scrollX) * frame.zoom
+            val dy = (wy - frame.scrollY) * frame.zoom
             corners[2 * i] = (dx / frame.widthPx * 2.0 - 1.0).toFloat()
             corners[2 * i + 1] = (1.0 - dy / frame.heightPx * 2.0).toFloat()
         }

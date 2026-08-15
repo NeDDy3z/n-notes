@@ -42,21 +42,18 @@ interface SelectionMenuHost {
     /** Where the settled selection sits in viewport pixels, or null to hide the bar. */
     val selectionMenuRect: com.xnotes.core.geometry.Rect?
 
-    /** Whether the selection is a single image, which is the only thing rotate applies to. */
-    val selectionMenuIsImage: Boolean
-
     fun deleteSelection()
     fun cutSelection()
     fun copySelection()
     fun bringToFront()
     fun duplicateSelection()
-    fun rotateSelectedImage()
     fun dismissSelectionMenu()
 }
 
 /**
  * Floating action bar shown above a settled selection (spec-adjacent): delete,
- * cut, copy, bring-to-front, duplicate. Hidden while moving/resizing.
+ * cut, copy, bring-to-front, duplicate. Hidden while moving/resizing. Rotation
+ * is not here: everything the bar can be shown over turns by its own grip.
  */
 @Composable
 fun SelectionMenu(host: SelectionMenuHost) {
@@ -65,7 +62,7 @@ fun SelectionMenu(host: SelectionMenuHost) {
     val density = LocalDensity.current
 
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { ((if (host.selectionMenuIsImage) 6 else 5) * 46).dp.toPx() }
+    val barWidthPx = with(density) { (5 * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
@@ -89,7 +86,6 @@ fun SelectionMenu(host: SelectionMenuHost) {
         ActionIcon(XnotesIcons.copy, "Copy") { host.copySelection(); host.dismissSelectionMenu() }
         ActionIcon(XnotesIcons.front, "Bring to front") { host.bringToFront(); host.dismissSelectionMenu() }
         ActionIcon(XnotesIcons.duplicate, "Duplicate") { host.duplicateSelection() }
-        if (host.selectionMenuIsImage) ActionIcon(XnotesIcons.rotate, "Rotate") { host.rotateSelectedImage() }
     }
 }
 

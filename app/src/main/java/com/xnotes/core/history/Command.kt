@@ -1,11 +1,9 @@
 package com.xnotes.core.history
 
-import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.model.GeometrySnapshot
-import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.Resizable
 import com.xnotes.core.model.TextItem
@@ -105,25 +103,6 @@ class TransformItems(
 ) : Command {
     override fun redo() = items.forEachIndexed { i, it -> it.restoreGeometry(after[i]) }
     override fun undo() = items.forEachIndexed { i, it -> it.restoreGeometry(before[i]) }
-}
-
-/** Rotate an image a quarter turn: swap its (width/height-swapped) rect and orientation. */
-class RotateImage(
-    private val item: ImageItem,
-    private val oldRect: Rect,
-    private val oldOrientation: Int,
-    private val newRect: Rect,
-    private val newOrientation: Int,
-) : Command {
-    override fun redo() {
-        item.rect = newRect
-        item.orientation = newOrientation
-    }
-
-    override fun undo() {
-        item.rect = oldRect
-        item.orientation = oldOrientation
-    }
 }
 
 /** Change the text of an existing text box. */

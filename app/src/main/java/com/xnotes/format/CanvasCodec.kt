@@ -205,6 +205,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         j.name("src_w").value(item.image.width)
         j.name("src_h").value(item.image.height)
         if (item.orientation != 0) j.name("orientation").value(item.orientation)
+        if (item.angle != 0.0) j.name("angle").value(item.angle)
         j.endObject()
     }
 
@@ -324,6 +325,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         val srcW: Int,
         val srcH: Int,
         val orientation: Int,
+        val angle: Double,
     )
 
     private fun parseManifest(p: JsonPull): ParsedManifest {
@@ -425,6 +427,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         var srcW = 0
         var srcH = 0
         var orientation = 0
+        var angle = 0.0
         var shape: String? = null
         var start: Pt? = null
         var end: Pt? = null
@@ -474,6 +477,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
                 "src_w" -> s.srcW = intOr(p, 0)
                 "src_h" -> s.srcH = intOr(p, 0)
                 "orientation" -> s.orientation = intOr(p, 0)
+                "angle" -> s.angle = doubleOr(p, 0.0)
                 "shape" -> s.shape = stringOr(p, "")
                 "start" -> s.start = ptOrNull(p)
                 "end" -> s.end = ptOrNull(p)
@@ -495,7 +499,9 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             ImageItem.KIND -> {
                 val asset = s.asset
                 if (!asset.isNullOrEmpty()) {
-                    pending.add(PendingImage(items.size + pending.size, asset, s.rect, s.srcW, s.srcH, s.orientation))
+                    pending.add(
+                        PendingImage(items.size + pending.size, asset, s.rect, s.srcW, s.srcH, s.orientation, s.angle),
+                    )
                 }
             }
             ShapeItem.KIND -> items.add(buildShape(s))
@@ -614,7 +620,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             h = probed.height
         }
         val rect = spec.rect ?: Rect(0.0, 0.0, w.toDouble(), h.toDouble())
-        return ImageItem(ImageData(file, w, h), rect, spec.orientation)
+        return ImageItem(ImageData(file, w, h), rect, spec.orientation, spec.angle)
     }
 
     // --- streaming value helpers (mirroring org.json's forgiving opt* coercions) ---

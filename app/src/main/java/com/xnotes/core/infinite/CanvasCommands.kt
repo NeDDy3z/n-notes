@@ -136,7 +136,7 @@ class SplitCanvasItems(
 /**
  * Run a paged geometry command against the canvas, telling the document which items moved so the
  * index re-files them and the renderer re-uploads their vertices. Wraps `MoveItems`,
- * `ResizeItem`, `TransformItems` and `RotateImage` without forking any of them.
+ * `ResizeItem` and `TransformItems` without forking any of them.
  */
 class OnCanvas(
     private val doc: InfiniteDocument,

@@ -45,7 +45,9 @@ data class Pen(
  * the screen, to offscreen [RasterSurface]s, and to PDF export.
  *
  * Only translation, uniform/axis scaling and quarter-turn [rotate] are used —
- * never free rotation or shear.
+ * never free rotation or shear. The one exception is [drawImage], which turns a
+ * placed bitmap about its own centre because pixels cannot be rotated by moving
+ * points the way ink and shapes are.
  */
 interface Renderer {
     // --- transform / clip stack ---
@@ -168,11 +170,14 @@ interface Renderer {
         drawRaster(raster, dest, src)
 
     /**
-     * Draw [image] (its encoded source) scaled into [dest] and turned [orientation] degrees clockwise
-     * (0/90/180/270). The backend decodes only as large as [dest] needs, so a big photo is never
-     * fully decoded into memory. Default is a no-op for backends that don't place images.
+     * Draw [image] (its encoded source) scaled into [dest], turned [orientation] degrees clockwise
+     * (0/90/180/270) and then [angle] radians clockwise about [dest]'s centre. The backend decodes
+     * only as large as [dest] needs, so a big photo is never fully decoded into memory. A placed
+     * bitmap is the one thing that cannot rotate by moving its own points, which is why this is the
+     * single primitive that takes a free angle. Default is a no-op for backends that don't place
+     * images.
      */
-    fun drawImage(image: ImageData, dest: Rect, orientation: Int = 0) {}
+    fun drawImage(image: ImageData, dest: Rect, orientation: Int = 0, angle: Double = 0.0) {}
 
     fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags = TextFlags())
 

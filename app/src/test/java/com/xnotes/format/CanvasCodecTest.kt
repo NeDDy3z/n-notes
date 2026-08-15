@@ -235,7 +235,9 @@ class CanvasCodecTest {
         val doc = InfiniteDocument()
         doc.add(ImageItem(ImageData(imageFile(byteArrayOf(1)), 8, 8), Rect(0.0, 0.0, 8.0, 8.0)))
         doc.add(Stroke(Tool.PEN, ToolConfig(), mutableListOf(Sample(0.0, 0.0, 1.0))))
-        doc.add(ImageItem(ImageData(imageFile(byteArrayOf(2, 2)), 9, 9), Rect(9.0, 9.0, 9.0, 9.0), orientation = 90))
+        doc.add(
+            ImageItem(ImageData(imageFile(byteArrayOf(2, 2)), 9, 9), Rect(9.0, 9.0, 9.0, 9.0), orientation = 90, angle = 0.75),
+        )
 
         val back = roundTrip(doc)
         assertEquals(3, back.itemCount)
@@ -243,6 +245,8 @@ class CanvasCodecTest {
         assertTrue(back.items[1] is Stroke)
         val second = back.items[2] as ImageItem
         assertEquals(90, second.orientation)
+        assertEquals(0.75, second.angle, 1e-9)
+        assertEquals(0.0, (back.items[0] as ImageItem).angle, 1e-9)
         assertArrayEquals(byteArrayOf(1), (back.items[0] as ImageItem).image.file.readBytes())
         assertArrayEquals(byteArrayOf(2, 2), second.image.file.readBytes())
     }

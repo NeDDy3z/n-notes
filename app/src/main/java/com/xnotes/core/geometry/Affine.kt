@@ -1,6 +1,7 @@
 package com.xnotes.core.geometry
 
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -56,6 +57,14 @@ data class Affine(
 
     /** No rotation or shear: a pure scale-and-translate (the off-diagonal terms are zero). */
     val isAxisAligned: Boolean get() = b == 0.0 && c == 0.0
+
+    /**
+     * The turn this transform carries, in radians clockwise: the rotation of its polar
+     * decomposition. Zero for any pure scale, the sheared single-axis scale of a turned selection
+     * box included, whose linear part is symmetric. Items that store an angle instead of baking a
+     * rotation into points (an image) read their turn from here.
+     */
+    val rotationAngle: Double get() = atan2(b - c, a + d)
 
     /** An axis-aligned scale with equal factors on both axes. */
     val isUniformScale: Boolean get() = isAxisAligned && a == d
