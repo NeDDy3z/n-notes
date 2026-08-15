@@ -938,7 +938,7 @@ class InteractionController(
      *  The stroke's just-built geometry supplies the half-width channel, so pressure/speed width
      *  variation survives the reduction. */
     private fun simplifyForCommit(stroke: Stroke) {
-        if (stroke.straight) return
+        if (!StrokeSimplify.enabled || stroke.straight) return
         val eps = (SIMPLIFY_EPS / state.zoom).coerceAtMost(SIMPLIFY_EPS)
         val slim = StrokeSimplify.simplify(
             stroke.samples, stroke.geometry().halfWidths, eps,

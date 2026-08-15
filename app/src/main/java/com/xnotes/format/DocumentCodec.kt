@@ -356,7 +356,7 @@ class DocumentCodec(
         // Ink written before pen-up sample reduction shipped (writer < 43, or no writer field at
         // all) carries far more samples than the ribbon needs; compact it once at load. In-memory
         // only — the file shrinks whenever the user next edits and saves.
-        if (m.writer < SIMPLIFIED_SINCE) {
+        if (m.writer < SIMPLIFIED_SINCE && StrokeSimplify.enabled) {
             doc.compactedOnLoad = true
             for (page in doc.pages) {
                 for (item in page.items) {

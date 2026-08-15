@@ -16,6 +16,7 @@ import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.stroke.Sample
+import com.xnotes.core.stroke.StrokeSimplify
 import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
@@ -303,7 +304,8 @@ class DocumentCodecTest {
     @Test fun legacyFileInkCompactsOnLoad() {
         // No "writer" field = written before pen-up sample reduction shipped: dense ink is
         // compacted once at load. 100 collinear samples 0.2 px apart carry nothing the ribbon
-        // needs beyond the ends and the EMA gap cap.
+        // needs beyond the ends and the EMA gap cap. Reads the master switch like the two pen-up
+        // paths do, so the test turns it on for itself rather than depending on how it is left.
         val samples = (0 until 100).joinToString(",") { "[${it * 0.2},5,1]" }
         val out = ByteArrayOutputStream()
         java.util.zip.ZipOutputStream(out).use {
@@ -314,7 +316,13 @@ class DocumentCodecTest {
             )
             it.closeEntry()
         }
-        val doc = codec.read(ByteArrayInputStream(out.toByteArray()))
+        val was = StrokeSimplify.enabled
+        StrokeSimplify.enabled = true
+        val doc = try {
+            codec.read(ByteArrayInputStream(out.toByteArray()))
+        } finally {
+            StrokeSimplify.enabled = was
+        }
         val stroke = doc.pages[0].items[0] as Stroke
         assertTrue(doc.compactedOnLoad)
         assertTrue("dense legacy ink should compact", stroke.samples.size < 30)

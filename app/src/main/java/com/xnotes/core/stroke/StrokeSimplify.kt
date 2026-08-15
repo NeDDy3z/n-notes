@@ -21,6 +21,14 @@ import kotlin.math.hypot
  */
 object StrokeSimplify {
 
+    /** Master switch, read by the three places that reduce: both interaction controllers at pen-up
+     *  and the codec's one-off compaction at load. Off means every stroke keeps every sample it was
+     *  drawn with, whatever that costs in memory and file size, which is worth being able to do while
+     *  judging ink: nothing that shows up at pen-up can then be blamed on a dropped sample. A `var`
+     *  so it can be flipped from a debugger without a rebuild. [simplify] itself always reduces, so
+     *  the unit tests keep testing the reduction whatever this says. */
+    var enabled = false
+
     /** Compaction tolerance (content px) for legacy files, whose draw zoom is unknown. */
     const val LEGACY_EPS = 0.1
 
