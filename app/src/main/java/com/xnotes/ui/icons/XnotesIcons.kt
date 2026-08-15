@@ -153,8 +153,13 @@ object XnotesIcons {
     val copy = icon(roundRect(8.0, 8.0, 14.0, 14.0, 2.0), COPY_BACK_SHEET)
     val cut = icon(circle(6.0, 6.0, 3.0), circle(6.0, 18.0, 3.0), "M20 4 8.12 15.88", "M14.47 14.48 20 20", "M8.12 8.12 12 12")
     val duplicate = icon(roundRect(8.0, 8.0, 14.0, 14.0, 2.0), COPY_BACK_SHEET, "M15 12v6", "M12 15h6")
-    /** Bring to front: the item lifted clear of the stack it was sitting in. */
-    val front = icon("M12 3v8", "m8 7 4-4 4 4", roundRect(4.0, 14.0, 16.0, 7.0, 2.0))
+    /** Bring to front: a stack of plates seen in three-quarter view. The stack is the z-order
+     *  itself and the top plate is where the selection is going, with no arrow over it. */
+    val front = icon(
+        "M12 2.5 22 7.5 12 12.5 2 7.5Z",
+        "M22 12.5 12 17.5 2 12.5",
+        "M22 17.5 12 22.5 2 17.5",
+    )
     /** Two panes with a divider down the middle: opening a pair of files side by side. */
     val split = icon(rect(3.0, 3.0, 18.0, 18.0), "M12 3v18")
 
