@@ -186,21 +186,22 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  reclaimable cacheDir). */
     private val saveTmpDir = tempDir("savetmp")
 
-    /** The stamp library: encoded image files kept under filesDir across sessions (never purged).
+    /** The sticker library: encoded image files kept under filesDir across sessions (never purged).
      *  Only [java.io.File] handles are held in memory; thumbnails and inserts decode from disk. */
-    private val stampDir = java.io.File(appContext.filesDir, "stamps").apply { mkdirs() }
+    // The directory keeps its old "stamps" name so libraries saved before the rename still load.
+    private val stickerDir = java.io.File(appContext.filesDir, "stamps").apply { mkdirs() }
 
-    /** Stamp files, oldest first (names embed the add time so a plain name sort is stable). */
-    var stamps: List<java.io.File> by mutableStateOf(listStamps())
+    /** Sticker files, oldest first (names embed the add time so a plain name sort is stable). */
+    var stickers: List<java.io.File> by mutableStateOf(listStickers())
         private set
 
-    private fun listStamps(): List<java.io.File> = stampDir.listFiles()?.sortedBy { it.name }.orEmpty()
+    private fun listStickers(): List<java.io.File> = stickerDir.listFiles()?.sortedBy { it.name }.orEmpty()
 
-    /** Re-read the library into both panes: they browse one shared directory, so a stamp added or
-     *  removed on one toolbar has to show up on the other. */
-    private fun refreshStamps() {
-        stamps = listStamps()
-        sibling?.let { it.stamps = it.listStamps() }
+    /** Re-read the library into both panes: they browse one shared directory, so a sticker added
+     *  or removed on one toolbar has to show up on the other. */
+    private fun refreshStickers() {
+        stickers = listStickers()
+        sibling?.let { it.stickers = it.listStickers() }
     }
 
     /** The temp PDF file backing the currently open document, tracked so it's deleted when the note
@@ -1274,10 +1275,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         view.requestRender()
     }
 
-    /** Save an encoded image into the on-disk stamp library (validated by a probe decode). */
-    fun addStamp(bytes: ByteArray) {
+    /** Save an encoded image into the on-disk sticker library (validated by a probe decode). */
+    fun addSticker(bytes: ByteArray) {
         val file = runCatching {
-            java.io.File.createTempFile("stamp-${System.currentTimeMillis()}-", null, stampDir)
+            java.io.File.createTempFile("stamp-${System.currentTimeMillis()}-", null, stickerDir)
                 .apply { writeBytes(bytes) }
         }.getOrNull()
         val size = file?.let { imageCodec.probeFile(it.path) }
@@ -1286,20 +1287,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             message = "Could not read the image."
             return
         }
-        refreshStamps()
+        refreshStickers()
     }
 
-    fun removeStamp(file: java.io.File) {
+    fun removeSticker(file: java.io.File) {
         file.delete()
-        refreshStamps()
+        refreshStickers()
     }
 
-    /** Insert a stamp as a fresh copy, so the note never references the library file itself. */
-    fun insertStamp(file: java.io.File) {
+    /** Insert a sticker as a fresh copy, so the note never references the library file itself. */
+    fun insertSticker(file: java.io.File) {
         val bytes = runCatching { file.takeIf { it.isFile }?.readBytes() }.getOrNull()
         if (bytes == null) {
-            message = "Could not read the stamp."
-            refreshStamps()
+            message = "Could not read the sticker."
+            refreshStickers()
             return
         }
         insertImage(bytes)

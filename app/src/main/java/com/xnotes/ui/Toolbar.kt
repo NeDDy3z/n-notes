@@ -69,7 +69,7 @@ fun Toolbar(
     onToggleFullscreen: () -> Unit,
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit,
-    onAddStamps: () -> Unit,
+    onAddStickers: () -> Unit,
     onPresent: () -> Unit,
     modifier: Modifier = Modifier,
     onClosePane: (() -> Unit)? = null,
@@ -123,7 +123,7 @@ fun Toolbar(
                         onRename = { renaming = true },
                         onOpenBackstage = onOpenBackstage,
                         onInsertImage = onInsertImage,
-                        onAddStamps = onAddStamps,
+                        onAddStickers = onAddStickers,
                         onPresent = onPresent,
                         onToggleFullscreen = onToggleFullscreen,
                     )
@@ -159,7 +159,7 @@ private fun ToolbarItemView(
     onRename: () -> Unit,
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit,
-    onAddStamps: () -> Unit,
+    onAddStickers: () -> Unit,
     onPresent: () -> Unit,
     onToggleFullscreen: () -> Unit,
 ) {
@@ -191,7 +191,7 @@ private fun ToolbarItemView(
         ToolbarItem.RULER ->
             ToolbarIcon(XnotesIcons.ruler, "Ruler", active = editor.rulerVisible) { editor.toggleRuler() }
 
-        ToolbarItem.IMAGE -> ImageMenu(editor, onInsertImage, onAddStamps)
+        ToolbarItem.IMAGE -> ImageMenu(editor, onInsertImage, onAddStickers)
 
         ToolbarItem.UNDO -> ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
         ToolbarItem.REDO -> ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
@@ -413,37 +413,37 @@ internal fun Separator() {
 }
 
 @Composable
-private fun ImageMenu(editor: Editor, onInsertImage: () -> Unit, onAddStamps: () -> Unit) {
+private fun ImageMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    var stampsOpen by remember { mutableStateOf(false) }
+    var stickersOpen by remember { mutableStateOf(false) }
     Box {
         ToolbarIcon(XnotesIcons.image, "Image") { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(text = { Text("Paste image") }, onClick = { editor.pasteImage(); expanded = false })
             DropdownMenuItem(text = { Text("Insert image…") }, onClick = { onInsertImage(); expanded = false })
-            DropdownMenuItem(text = { Text("Stamps") }, onClick = { expanded = false; stampsOpen = true })
+            DropdownMenuItem(text = { Text("Stickers") }, onClick = { expanded = false; stickersOpen = true })
         }
-        if (stampsOpen) StampsMenu(editor, onAddStamps) { stampsOpen = false }
+        if (stickersOpen) StickersMenu(editor, onAddStickers) { stickersOpen = false }
     }
 }
 
 /**
- * The stamp library popup: a grid of saved images that insert with one tap, so a
- * recurring image never needs the gallery round trip. Stamps live on disk (see
- * [Editor.stamps]); each tile decodes its own small preview off the main thread.
+ * The sticker library popup: a grid of saved images that insert with one tap, so a
+ * recurring image never needs the gallery round trip. Stickers live on disk (see
+ * [Editor.stickers]); each tile decodes its own small preview off the main thread.
  */
 @Composable
-private fun StampsMenu(editor: Editor, onAddStamps: () -> Unit, onDismiss: () -> Unit) {
+private fun StickersMenu(editor: Editor, onAddStickers: () -> Unit, onDismiss: () -> Unit) {
     val palette = LocalPalette.current
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         DropdownMenuItem(
-            text = { Text("Add stamps…") },
+            text = { Text("Add stickers…") },
             leadingIcon = { Icon(XnotesIcons.plus, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            onClick = onAddStamps,
+            onClick = onAddStickers,
         )
-        if (editor.stamps.isEmpty()) {
+        if (editor.stickers.isEmpty()) {
             Text(
-                "No stamps yet.",
+                "No stickers yet.",
                 color = palette.textDim.toComposeColor(),
                 fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -451,7 +451,7 @@ private fun StampsMenu(editor: Editor, onAddStamps: () -> Unit, onDismiss: () ->
         } else {
             // Both dimensions must be fixed: the menu measures its content by intrinsics, which a
             // lazy grid cannot answer (it crashes) — a fixed size short-circuits the query.
-            val rows = ((editor.stamps.size + 2) / 3).coerceAtMost(3)
+            val rows = ((editor.stickers.size + 2) / 3).coerceAtMost(3)
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -461,11 +461,11 @@ private fun StampsMenu(editor: Editor, onAddStamps: () -> Unit, onDismiss: () ->
                     .width(72.dp * 3 + 6.dp * 2)
                     .height(72.dp * rows + 6.dp * (rows - 1)),
             ) {
-                items(editor.stamps, key = { it.name }) { file ->
-                    StampTile(
+                items(editor.stickers, key = { it.name }) { file ->
+                    StickerTile(
                         file = file,
-                        onInsert = { editor.insertStamp(file); onDismiss() },
-                        onRemove = { editor.removeStamp(file) },
+                        onInsert = { editor.insertSticker(file); onDismiss() },
+                        onRemove = { editor.removeSticker(file) },
                     )
                 }
             }
@@ -481,7 +481,7 @@ private fun StampsMenu(editor: Editor, onAddStamps: () -> Unit, onDismiss: () ->
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StampTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -> Unit) {
+private fun StickerTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -> Unit) {
     val palette = LocalPalette.current
     val thumbPx = with(LocalDensity.current) { 72.dp.roundToPx() }
     val thumb by produceState<ImageBitmap?>(null, file) {
@@ -500,7 +500,7 @@ private fun StampTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -> 
         thumb?.let {
             Image(
                 bitmap = it,
-                contentDescription = "Stamp",
+                contentDescription = "Sticker",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().padding(3.dp),
             )

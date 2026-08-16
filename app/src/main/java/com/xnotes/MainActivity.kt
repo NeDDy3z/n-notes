@@ -391,10 +391,10 @@ private fun EditorScreen(
         }
     }
 
-    // Images picked for the stamp library (multi-select), stored on disk by the editor.
-    val addStampsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+    // Images picked for the sticker library (multi-select), stored on disk by the editor.
+    val addStickersLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { uri ->
-            runCatching { resolver.openInputStream(uri)?.use { s -> editor.addStamp(s.readBytes()) } }
+            runCatching { resolver.openInputStream(uri)?.use { s -> editor.addSticker(s.readBytes()) } }
                 .onFailure { editor.message = "Could not read the image." }
         }
     }
@@ -742,7 +742,7 @@ private fun EditorScreen(
                     pendingCanvasInsert = PendingInsert(pane, at)
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
-                onAddStamps = { addStampsLauncher.launch(arrayOf("image/*")) },
+                onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
                 onPresent = { presentPane = editor.active },
                 onSharePages = { pane, pages, asPdf -> sharePages(pane, pages, asPdf) },
                 onSavePagesAsPdf = { pane, pages -> savePagesAsPdf(pane, pages) },
@@ -869,7 +869,7 @@ private class PaneActions(
     val onClosePane: (Editor) -> Unit,
     val onInsertImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
-    val onAddStamps: () -> Unit,
+    val onAddStickers: () -> Unit,
     val onPresent: () -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
     val onSavePagesAsPdf: (Editor, List<Int>) -> Unit,
@@ -1049,7 +1049,7 @@ private fun EditorPane(
                 onToggleFullscreen = actions.onToggleFullscreen,
                 onOpenBackstage = actions.onOpenBackstage,
                 onInsertImage = { actions.onInsertImage(editor, null) },
-                onAddStamps = actions.onAddStamps,
+                onAddStickers = actions.onAddStickers,
                 onPresent = actions.onPresent,
                 onClosePane = onClose,
             )
