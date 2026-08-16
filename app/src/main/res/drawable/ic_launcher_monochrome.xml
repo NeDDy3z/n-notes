@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: shape lives in alpha, the launcher supplies the tint. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="432"
+    android:viewportHeight="432">
+    <path
+        android:fillAlpha="0.25"
+        android:fillColor="#FFFFFF"
+        android:fillType="nonZero"
+        android:pathData="M140 255 L181 256 L162 287 L119 287 Z M204 255 L245 255 L265 287 L222 287 Z" />
+    <path
+        android:fillAlpha="0.45"
+        android:fillColor="#FFFFFF"
+        android:fillType="nonZero"
+        android:pathData="M130 146 L148 146 L150 148 L156 160 L192 215 L168 255 L150 255 L150 253 L171 222 L174 215 Z M228 146 L246 147 L242 151 L237 161 L234 162 L226 150 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="nonZero"
+        android:pathData="M179 141 L221 141 L234 162 L237 161 L246 146 L274 146 L274 141 L319 141 L291 185 L263 185 L244 214 L291 287 L265 287 L248 261 L247 257 L245 255 L228 255 L220 240 L217 241 L209 255 L204 255 L206 261 L189 287 L162 287 L181 256 L168 255 L168 253 L189 222 L192 215 L148 146 L179 146 Z" />
+</vector>
