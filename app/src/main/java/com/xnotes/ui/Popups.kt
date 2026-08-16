@@ -605,6 +605,7 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     var kind by remember { mutableStateOf(editor.hostShapeConfig.shape) }
     var width by remember { mutableStateOf(editor.hostShapeConfig.strokeWidth.toFloat()) }
     var fill by remember { mutableStateOf(editor.hostShapeConfig.fill) }
+    var fillOpacity by remember { mutableStateOf((editor.hostShapeConfig.fillAlpha * 100).toFloat()) }
     var glow by remember { mutableStateOf(editor.hostShapeConfig.neon) }
     var glowIntensity by remember { mutableStateOf(ToolConversions.neonStrengthToIntensity(editor.hostShapeConfig.neonStrength).toFloat()) }
     var dashed by remember { mutableStateOf(editor.hostShapeConfig.dashed) }
@@ -613,8 +614,15 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
 
     fun emit() = editor.updateShapeConfig(
         ShapeConfig(
-            kind, width.toDouble(), fill, glow, ToolConversions.intensityToNeonStrength(glowIntensity.toDouble()),
-            dashed, dashLen.toDouble(), gapLen.toDouble(),
+            shape = kind,
+            strokeWidth = width.toDouble(),
+            fill = fill,
+            fillAlpha = (fillOpacity / 100.0).coerceIn(ShapeConfig.FILL_ALPHA_MIN, ShapeConfig.FILL_ALPHA_MAX),
+            neon = glow,
+            neonStrength = ToolConversions.intensityToNeonStrength(glowIntensity.toDouble()),
+            dashed = dashed,
+            dashLength = dashLen.toDouble(),
+            dashGap = gapLen.toDouble(),
         ),
     )
 
@@ -628,6 +636,10 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             }
             SliderRow("WIDTH", width, 1f..20f) { width = it; emit() }
             ToggleRow("FILL", fill) { fill = it; emit() }
+            if (fill) {
+                val minPct = (ShapeConfig.FILL_ALPHA_MIN * 100).toFloat()
+                SliderRow("OPACITY", fillOpacity, minPct..100f) { fillOpacity = it; emit() }
+            }
             ToggleRow("DASHED", dashed) { dashed = it; emit() }
             if (dashed) {
                 SliderRow("DASH", dashLen, 2f..40f) { dashLen = it; emit() }

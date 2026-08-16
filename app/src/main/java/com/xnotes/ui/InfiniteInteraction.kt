@@ -804,7 +804,7 @@ class InfiniteInteraction(
         val cfg = shapeConfig()
         val at = viewport.viewportToContent(Pt(vx, vy))
         val ink = inkColor()
-        val fill = if (cfg.fill && cfg.shape.isClosed) ink.scaleAlpha(ShapeConfig.FILL_ALPHA) else null
+        val fill = if (cfg.fill && cfg.shape.isClosed) ink.scaleAlpha(cfg.fillAlpha) else null
         pendingShape = ShapeItem(
             cfg.shape, at, at, ink, cfg.strokeWidth * InteractionController.SHAPE_PEN_PARITY, fill,
             cfg.neon, cfg.neonStrength,

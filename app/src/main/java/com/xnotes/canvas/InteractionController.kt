@@ -1558,7 +1558,7 @@ class InteractionController(
         clearSelection()
         val startLocal = state.toPageSpace(pageIndex, content)
         val kind = shapeConfig.shape
-        val fill = if (shapeConfig.fill && kind.isClosed) inkColor.scaleAlpha(ShapeConfig.FILL_ALPHA) else null
+        val fill = if (shapeConfig.fill && kind.isClosed) inkColor.scaleAlpha(shapeConfig.fillAlpha) else null
         pendingShape = ShapeItem(
             kind, startLocal, startLocal, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY, fill,
             shapeConfig.neon, shapeConfig.neonStrength,

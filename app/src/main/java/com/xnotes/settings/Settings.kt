@@ -289,6 +289,7 @@ data class Settings(
 
         private fun shapeConfigJson(c: ShapeConfig) = JSONObject()
             .put("shape", c.shape.id).put("stroke_width", c.strokeWidth).put("fill", c.fill)
+            .put("fill_alpha", c.fillAlpha)
             .put("neon", c.neon).put("neon_strength", c.neonStrength)
             .put("dashed", c.dashed).put("dash_length", c.dashLength).put("dash_gap", c.dashGap)
 
@@ -296,6 +297,8 @@ data class Settings(
             shape = ShapeKind.fromId(o.optString("shape", "rectangle")),
             strokeWidth = o.optDouble("stroke_width", 3.0),
             fill = o.optBoolean("fill", false),
+            fillAlpha = o.optDouble("fill_alpha", ShapeConfig.FILL_ALPHA)
+                .coerceIn(ShapeConfig.FILL_ALPHA_MIN, ShapeConfig.FILL_ALPHA_MAX),
             neon = o.optBoolean("neon", false),
             neonStrength = o.optDouble("neon_strength", 0.6),
             dashed = o.optBoolean("dashed", false),

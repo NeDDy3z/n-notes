@@ -33,6 +33,8 @@ data class ShapeConfig(
     val shape: ShapeKind = ShapeKind.RECTANGLE,
     val strokeWidth: Double = 3.0,
     val fill: Boolean = false,
+    /** Opacity of the fill in [0, 1], applied to the ink colour; used only when [fill]. */
+    val fillAlpha: Double = FILL_ALPHA,
     /** Neon glow: a luminous halo + white-hot core on the shape's outline. */
     val neon: Boolean = false,
     /** Glow intensity in [0, 1] (halo size + brightness); used only when [neon]. */
@@ -43,7 +45,11 @@ data class ShapeConfig(
     val dashGap: Double = 8.0,
 ) {
     companion object {
-        /** Reduced opacity applied to the ink colour when a closed shape is filled. */
+        /** Default reduced opacity applied to the ink colour when a closed shape is filled. */
         const val FILL_ALPHA = 0.25
+
+        /** Settable fill-opacity range; never fully transparent, never fully opaque. */
+        const val FILL_ALPHA_MIN = 0.05
+        const val FILL_ALPHA_MAX = 1.0
     }
 }
