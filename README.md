@@ -18,7 +18,13 @@
 
 <p align="center">
   <a href="https://github.com/shardulvs/xnotes-android/releases/latest">GitHub Releases</a> &bull;
-  <a href="https://f-droid.org/en/packages/com.xnotes">F-Droid</a>
+  <a href="https://f-droid.org/en/packages/com.xnotes">F-Droid</a> &bull;
+  <a href="https://play.google.com/store/apps/details?id=com.xnotes">Google Play</a>
+</p>
+
+<p align="center">
+  <a href="https://f-droid.org/en/packages/com.xnotes"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" height="70" alt="Get it on F-Droid" /></a>
+  <a href="https://play.google.com/store/apps/details?id=com.xnotes"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="70" alt="Get it on Google Play" /></a>
 </p>
 
 <p align="center">
@@ -54,8 +60,9 @@
 |---|---|
 | [GitHub Releases](https://github.com/shardulvs/xnotes-android/releases/latest) | Signed APK |
 | [F-Droid](https://f-droid.org/en/packages/com.xnotes) | Built reproducibly from source |
+| [Google Play](https://play.google.com/store/apps/details?id=com.xnotes) | Automatic updates |
 
-Both channels ship the same signed APK. F-Droid rebuilds from source and verifies it against the GitHub release, so you can switch between them without reinstalling.
+GitHub Releases and F-Droid ship the same signed APK. F-Droid rebuilds from source and verifies it against the GitHub release, so you can switch between those two without reinstalling.
 
 ## Build from source
 
