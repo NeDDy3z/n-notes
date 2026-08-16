@@ -692,7 +692,14 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 @Composable
-internal fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, enabled: Boolean = true, onChange: (Float) -> Unit) {
+internal fun SliderRow(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    enabled: Boolean = true,
+    onChangeFinished: (() -> Unit)? = null,
+    onChange: (Float) -> Unit,
+) {
     Column {
         Text(
             "$label  ${"%.0f".format(value)}",
@@ -700,7 +707,13 @@ internal fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRa
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
         )
-        Slider(value = value, onValueChange = onChange, valueRange = range, enabled = enabled)
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            onValueChangeFinished = onChangeFinished,
+            valueRange = range,
+            enabled = enabled,
+        )
     }
 }
 

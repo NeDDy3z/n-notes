@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.History
+import com.xnotes.core.history.RestyleItems
 import com.xnotes.core.infinite.AddCanvasItem
 import com.xnotes.core.infinite.AddCanvasItems
 import com.xnotes.core.infinite.CanvasBackground
@@ -16,6 +17,7 @@ import com.xnotes.core.infinite.CanvasViewport
 import com.xnotes.core.infinite.EraseCanvasItems
 import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.infinite.Minimap
+import com.xnotes.core.infinite.OnCanvas
 import com.xnotes.core.infinite.OverlayTessellator
 import com.xnotes.core.infinite.ReplaceCanvasItems
 import com.xnotes.core.infinite.StrokeTessellator
@@ -25,6 +27,7 @@ import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.Waypoint
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.deepCopy
@@ -415,6 +418,43 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         if (com.xnotes.core.infinite.sameOrder(before, after)) return
         document.replaceAll(after)
         history.push(ReplaceCanvasItems(document, before, after))
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    override fun selectionStyles(): List<DrawStyle> = selection.items.mapNotNull { DrawStyle.of(it) }
+
+    /** Styles held from the first restyle preview, so a slider drag undoes in one step. */
+    private var restyleBaseline: MutableMap<CanvasItem, DrawStyle>? = null
+
+    /**
+     * Recolour and/or re-thicken the selected strokes and shapes, with the same preview/commit
+     * contract the paged editor uses. The command is wrapped in [OnCanvas] so undo and redo re-file
+     * the index and re-mesh through exactly the path the edit did.
+     */
+    override fun restyleSelection(color: Rgba?, width: Double?, preview: Boolean) {
+        if (selection.isEmpty) return
+        val baseline = restyleBaseline ?: HashMap<CanvasItem, DrawStyle>().also { map ->
+            for (item in selection.items) DrawStyle.of(item)?.let { map[item] = it }
+        }
+        restyleBaseline = if (preview) baseline else null
+        if (color != null || width != null) {
+            for (item in selection.items) {
+                val current = DrawStyle.of(item) ?: continue
+                DrawStyle(color ?: current.color, width ?: current.width).applyTo(item)
+            }
+            document.itemsChanged(selection.items)
+        }
+        if (!preview) {
+            val entries = baseline.mapNotNull { (item, before) ->
+                DrawStyle.of(item)?.takeIf { it != before }?.let { RestyleItems.Entry(item, before, it) }
+            }
+            if (entries.isNotEmpty()) {
+                history.push(OnCanvas(document, RestyleItems(entries), entries.map { it.item }))
+            }
+            color?.let { onColorRemembered?.invoke(it) }
+        }
         markDirty()
         refresh()
         publishOverlay()

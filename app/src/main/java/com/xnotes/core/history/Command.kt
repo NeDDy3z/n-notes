@@ -2,6 +2,7 @@ package com.xnotes.core.history
 
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
+import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.model.GeometrySnapshot
 import com.xnotes.core.model.Page
@@ -159,6 +160,22 @@ class RestyleText(
 ) : Command {
     override fun redo() = newStyle.applyTo(item)
     override fun undo() = oldStyle.applyTo(item)
+}
+
+/**
+ * Restyle drawn items (ink colour and stroke width) in place. Each item keeps its own before/after
+ * pair, so undoing a mixed selection puts every item back to the style it actually had.
+ */
+class RestyleItems(private val entries: List<Entry>) : Command {
+    class Entry(val item: CanvasItem, val before: DrawStyle, val after: DrawStyle)
+
+    override fun redo() {
+        for (e in entries) e.after.applyTo(e.item)
+    }
+
+    override fun undo() {
+        for (e in entries) e.before.applyTo(e.item)
+    }
 }
 
 /** Replace a page's item list (bring-to-front), via full before/after snapshots. */

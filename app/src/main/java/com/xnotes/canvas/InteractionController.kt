@@ -21,11 +21,13 @@ import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.ReorderItems
 import com.xnotes.core.history.ReplacePageItems
 import com.xnotes.core.history.ResizeItem
+import com.xnotes.core.history.RestyleItems
 import com.xnotes.core.history.RestyleText
 import com.xnotes.core.history.TransferItems
 import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
+import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.model.ImageItem
@@ -2106,6 +2108,46 @@ class InteractionController(
         state.document.dirty = true
         onContentChanged()
         maybeSwitchBackAfterSelect()
+    }
+
+    /** The styles the selection's drawn items carry, for the restyle popup to open on. */
+    fun selectionStyles(): List<DrawStyle> = selection.mapNotNull { DrawStyle.of(it.item) }
+
+    /** Styles held from the first [restyleSelection] preview, so a slider drag undoes in one step. */
+    private var restyleBaseline: MutableMap<CanvasItem, DrawStyle>? = null
+
+    /**
+     * Recolour and/or re-thicken the selection's strokes and shapes. A null [color] or [width]
+     * leaves that half of each item's style alone, so a mixed selection can be recoloured without
+     * flattening its widths.
+     *
+     * A [preview] call applies the change without touching history; the next call with [preview]
+     * off records everything since as a single undo step. Passing both values null with [preview]
+     * off does nothing but close a pending preview, which is how a dismissed popup settles up.
+     * No cache repair is needed: a selected item is lifted, so it is drawn live rather than baked.
+     */
+    fun restyleSelection(color: Rgba?, width: Double?, preview: Boolean = false) {
+        if (selection.isEmpty()) return
+        val baseline = restyleBaseline ?: HashMap<CanvasItem, DrawStyle>().also { map ->
+            for (s in selection) DrawStyle.of(s.item)?.let { map[s.item] = it }
+        }
+        restyleBaseline = if (preview) baseline else null
+        if (color != null || width != null) {
+            for (s in selection) {
+                val current = DrawStyle.of(s.item) ?: continue
+                DrawStyle(color ?: current.color, width ?: current.width).applyTo(s.item)
+            }
+        }
+        if (!preview) {
+            val entries = baseline.mapNotNull { (item, before) ->
+                DrawStyle.of(item)?.takeIf { it != before }?.let { RestyleItems.Entry(item, before, it) }
+            }
+            // Pushed after the fact, like every command: redo only ever re-applies an undone edit.
+            if (entries.isNotEmpty()) history.push(RestyleItems(entries))
+        }
+        state.document.dirty = true
+        onContentChanged()
+        requestRender()
     }
 
     fun escape() {

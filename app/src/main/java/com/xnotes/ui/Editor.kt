@@ -3567,6 +3567,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override fun deleteSelection() = controller.deleteSelection()
     fun selectAll() = controller.selectAll()
     override fun bringToFront() = controller.bringToFront()
+    override fun selectionStyles() = controller.selectionStyles()
+
+    override fun restyleSelection(color: Rgba?, width: Double?, preview: Boolean) {
+        controller.restyleSelection(color, width, preview)
+        if (!preview) color?.let { settings = settings.rememberColor(it) }
+    }
+
     fun escape() = controller.escape()
 
     fun toggleSidebar() {

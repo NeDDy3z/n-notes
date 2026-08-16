@@ -3,11 +3,17 @@ package com.xnotes.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -26,6 +32,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import com.xnotes.core.model.DrawStyle
+import com.xnotes.core.model.Rgba
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -48,21 +56,38 @@ interface SelectionMenuHost {
     fun bringToFront()
     fun duplicateSelection()
     fun dismissSelectionMenu()
+
+    /** The colour and width of every selected stroke/shape, for the restyle popup to open on. */
+    fun selectionStyles(): List<DrawStyle>
+
+    /**
+     * Recolour and/or re-thicken the selection; a null [color] or [width] leaves that half alone.
+     * A [preview] call skips history, and the next call without it records everything since as one
+     * undo step, so dragging the thickness slider is a single edit rather than one per sample.
+     */
+    fun restyleSelection(color: Rgba?, width: Double?, preview: Boolean = false)
+
+    /** The toolbar's ink swatches and recently picked colours, offered by the restyle popup. */
+    val hostToolbarColors: List<Rgba>
+    val hostRecentColors: List<Rgba>
 }
 
 /**
  * Floating action bar shown above a settled selection (spec-adjacent): delete,
- * cut, copy, bring-to-front, duplicate. Hidden while moving/resizing. Rotation
- * is not here: everything the bar can be shown over turns by its own grip.
+ * cut, copy, bring-to-front, duplicate, and an overflow menu for the rest.
+ * Hidden while moving/resizing. Rotation is not here: everything the bar can be
+ * shown over turns by its own grip.
  */
 @Composable
 fun SelectionMenu(host: SelectionMenuHost) {
     val rect = host.selectionMenuRect ?: return
     val palette = LocalPalette.current
     val density = LocalDensity.current
+    var overflowOpen by remember { mutableStateOf(false) }
+    var styleOpen by remember { mutableStateOf(false) }
 
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { (5 * 46).dp.toPx() }
+    val barWidthPx = with(density) { (6 * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
@@ -86,6 +111,92 @@ fun SelectionMenu(host: SelectionMenuHost) {
         ActionIcon(XnotesIcons.copy, "Copy") { host.copySelection(); host.dismissSelectionMenu() }
         ActionIcon(XnotesIcons.front, "Bring to front") { host.bringToFront(); host.dismissSelectionMenu() }
         ActionIcon(XnotesIcons.duplicate, "Duplicate") { host.duplicateSelection() }
+        Box {
+            ActionIcon(XnotesIcons.more, "More") { overflowOpen = true }
+            DropdownMenu(
+                expanded = overflowOpen,
+                onDismissRequest = { overflowOpen = false },
+                properties = PopupProperties(focusable = false),
+            ) {
+                // Empty when nothing selected carries ink: an image or a text box has no
+                // colour-and-width pair to restyle.
+                val styles = host.selectionStyles()
+                DropdownMenuItem(
+                    text = { Text("Change style") },
+                    enabled = styles.isNotEmpty(),
+                    onClick = { overflowOpen = false; styleOpen = true },
+                )
+            }
+            if (styleOpen) {
+                // Closing settles any preview the slider left open.
+                SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
+            }
+        }
+    }
+}
+
+/**
+ * "Change style" on a settled selection: the toolbar's swatches plus the full colour picker, and a
+ * thickness slider. Both apply live, so the result can be judged on the page rather than guessed
+ * at. The controls open on the styles the selection had when the popup did — a shared colour when
+ * every item agrees, the first item's otherwise.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) {
+    val palette = LocalPalette.current
+    val opened = remember { host.selectionStyles() }
+    val first = opened.firstOrNull()
+    val shared = opened.firstOrNull()?.color?.takeIf { c -> opened.all { it.color == c } }
+    var color by remember { mutableStateOf(shared ?: first?.color ?: Rgba(0, 0, 0)) }
+    var width by remember { mutableStateOf((first?.width ?: 1.0).toFloat()) }
+    if (first == null) return
+
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss, properties = PopupProperties(focusable = false)) {
+        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle("CHANGE STYLE")
+            StyleCaption("COLOUR")
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                host.hostToolbarColors.forEach { c ->
+                    ColorDot(c.toComposeColor(), selected = color == c) {
+                        color = c
+                        host.restyleSelection(c, null)
+                    }
+                }
+                ColorPickerDot(
+                    color,
+                    custom = color !in host.hostToolbarColors,
+                    onPick = { color = it; host.restyleSelection(it, null) },
+                    dismissOnPick = false,
+                ) { dismiss, pick ->
+                    ColorPickerPopup(
+                        initial = color,
+                        recents = host.hostRecentColors,
+                        onDismiss = dismiss,
+                        onPick = pick,
+                    )
+                }
+            }
+            Spacer(Modifier.size(8.dp))
+            // The drag previews live and commits on release, so it is one undo step, not fifty.
+            SliderRow(
+                "THICKNESS",
+                width,
+                DrawStyle.MIN_WIDTH.toFloat()..DrawStyle.MAX_WIDTH.toFloat(),
+                onChangeFinished = { host.restyleSelection(null, null) },
+            ) { w ->
+                width = w
+                host.restyleSelection(null, w.toDouble(), preview = true)
+            }
+            Text(
+                "Applies to the selected strokes and shapes.",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 11.sp,
+            )
+        }
     }
 }
 
