@@ -69,6 +69,8 @@ data class Settings(
     /** The infinite canvas's own bar. A separate layout because the two hold different items. */
     val canvasToolbarLayout: ToolbarLayout = ToolbarLayout.CANVAS_DEFAULT,
     val activeColor: Int = 0,
+    /** The tool armed when the app was last paused, re-armed on the next launch. */
+    val lastTool: Tool = Tool.DEFAULT,
     val recentColors: List<Rgba> = emptyList(),
     /** Persisted SAF tree URI for the in-app file explorer's root folder, or null. */
     val browseRoot: String? = null,
@@ -107,6 +109,7 @@ data class Settings(
             .put("toolbar_layout", toolbarLayoutJson(toolbarLayout))
             .put("canvas_toolbar_layout", toolbarLayoutJson(canvasToolbarLayout))
             .put("active_color", activeColor)
+            .put("last_tool", lastTool.id)
             .put("recent_colors", JSONArray().apply { recentColors.forEach { put(rgbaArr(it)) } })
             .apply { browseRoot?.let { put("browse_root", it) } }
             .put("start_on_home", startOnHome)
@@ -151,6 +154,10 @@ data class Settings(
                     ToolbarLayout.CANVAS_DEFAULT,
                 ),
                 activeColor = o.optInt("active_color", 0).coerceIn(0, 6),
+                // Only tools the toolbar can arm come back; a transient one (e.g. TEXT_BOX) would
+                // leave the bar showing a tool the user never picked.
+                lastTool = Tool.fromId(o.optString("last_tool", ""))
+                    ?.takeIf { it in Tool.wheelOrder } ?: Tool.DEFAULT,
                 recentColors = rgbaList(o.optJSONArray("recent_colors")).take(24),
                 browseRoot = o.optString("browse_root", "").ifEmpty { null },
                 startOnHome = o.optBoolean("start_on_home", true),

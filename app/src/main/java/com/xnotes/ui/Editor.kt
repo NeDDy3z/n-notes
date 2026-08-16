@@ -1440,6 +1440,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.shapeConfig = settings.shapeConfig
         for (t in ToolDefaults.persistedTools) controller.setToolConfig(t, settings.configFor(t))
         controller.inkColor = toolbarColors[activeColorIndex]
+        selectTool(settings.lastTool)
         pushToolsToCanvas()
         applyPagePrefsToState(settings.prefs)
     }
@@ -1586,6 +1587,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 toolbarColors = toolbarColors,
                 toolbarColorCount = toolbarColorCount,
                 activeColor = activeColorIndex,
+                lastTool = tool,
                 sidebarVisible = sidebarVisible,
                 renderScale = renderScale,
             )
