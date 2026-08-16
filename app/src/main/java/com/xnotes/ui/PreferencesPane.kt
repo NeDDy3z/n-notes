@@ -3,6 +3,7 @@ package com.xnotes.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,8 +47,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
@@ -117,6 +120,7 @@ fun PreferencesPane(
     onImportFont: () -> Unit = {},
 ) {
     val palette = LocalPalette.current
+    val focusManager = LocalFocusManager.current
     var prefs by remember { mutableStateOf(editor.preferences) }
     fun update(p: Preferences) {
         prefs = p
@@ -170,7 +174,12 @@ fun PreferencesPane(
         sectionDropTarget = null
     }
 
-    Box(Modifier.fillMaxSize().onGloballyPositioned { paneTopLeft = it.boundsInRoot().topLeft }) {
+    // A tap on empty space dismisses the template field's focus; children consume their own taps.
+    Box(
+        Modifier.fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
+            .onGloballyPositioned { paneTopLeft = it.boundsInRoot().topLeft },
+    ) {
     Column(Modifier.fillMaxSize()) {
         // Leading button inline with the title, at a constant row height so toggling the sidebar never
         // shifts the settings below: a back arrow to Home on compact, else a hamburger when hidden.
