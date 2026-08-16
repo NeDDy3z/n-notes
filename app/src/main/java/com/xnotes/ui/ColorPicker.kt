@@ -108,15 +108,21 @@ internal fun ColorPickerPopup(
 ) {
     val palette = LocalPalette.current
     var current by remember { mutableStateOf(initial?.copy(a = 255) ?: Rgba(255, 255, 255)) }
-    // Hue is kept explicitly so dragging value/saturation to a grey or black doesn't lose it (an
-    // achromatic colour has no defined hue, which would otherwise snap the ring marker back to red).
-    var hue by remember { mutableStateOf(ColorMath.rgbToHsv(current)[0]) }
+    // Hue and saturation are kept explicitly, because a colour does not always carry them: black has
+    // no defined hue *or* saturation, and any grey has no hue. Re-deriving them from [current] would
+    // send the markers home the moment a drag reached the square's bottom edge or the ring a grey.
+    val startHsv = remember { ColorMath.rgbToHsv(current) }
+    var hue by remember { mutableStateOf(startHsv[0]) }
+    var sat by remember { mutableStateOf(startHsv[1]) }
+    var value by remember { mutableStateOf(startHsv[2]) }
     var tab by remember { mutableStateOf(0) }
 
     fun applyLive(c: Rgba) {
         current = c
         val hsv = ColorMath.rgbToHsv(c)
         if (hsv[1] > 1e-4 && hsv[2] > 1e-4) hue = hsv[0]
+        if (hsv[2] > 1e-4) sat = hsv[1]
+        value = hsv[2]
     }
     fun commit(c: Rgba) { applyLive(c); onPick(c) }
 
@@ -129,18 +135,20 @@ internal fun ColorPickerPopup(
             Spacer(Modifier.size(12.dp))
             when (tab) {
                 0 -> SwatchesTab(recents, current) { commit(it) }
-                else -> {
-                    val hsv = ColorMath.rgbToHsv(current)
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        SpectrumWheel(
-                            hue = hue,
-                            sat = hsv[1],
-                            value = hsv[2],
-                            onPreview = { h, s, v -> hue = h; current = ColorMath.hsvToRgb(h, s, v) },
-                            onCommit = { onPick(current) },
-                            modifier = Modifier.size(210.dp),
-                        )
-                    }
+                else -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    SpectrumWheel(
+                        hue = hue,
+                        sat = sat,
+                        value = value,
+                        onPreview = { h, s, v ->
+                            hue = h
+                            sat = s
+                            value = v
+                            current = ColorMath.hsvToRgb(h, s, v)
+                        },
+                        onCommit = { onPick(current) },
+                        modifier = Modifier.size(210.dp),
+                    )
                 }
             }
             Spacer(Modifier.size(12.dp))
