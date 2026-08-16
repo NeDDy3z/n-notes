@@ -2563,13 +2563,40 @@ class InteractionController(
             else if (wasFit && !nowFit) onFitWidthReleased()
         }
         if (pinchPanAllowed()) {
-            state.scrollX = pinchAnchorContent.x * z - mid.x
-            state.scrollY = pinchAnchorContent.y * z - mid.y
+            val targetX = pinchAnchorContent.x * z - mid.x
+            val targetY = pinchAnchorContent.y * z - mid.y
+            state.scrollX = targetX
+            state.scrollY = targetY
             state.clampScroll()
+            // Only a pan-only (zoom-locked) pinch works the elastics. While the zoom is changing the
+            // clamp rejects scroll for reasons that have nothing to do with reaching past the end.
+            if (state.zoomLocked) applyPinchElastic(targetX - state.scrollX, targetY - state.scrollY)
         }
         lastPan = mid
         onViewChanged() // live zoom %: refresh the toolbar each pinch frame, not just at the end
         requestRender()
+    }
+
+    /**
+     * Work the scroll the clamp rejected into the same elastics a one-finger pan drives: the
+     * add-page stretch scrolling vertically, the edge-pull paginated. Without this a two-finger
+     * pan — the only pan there is with zoom locked to two fingers — could never reach either.
+     *
+     * The pinch positions the scroll from a fixed content anchor, so the rejected amount is the
+     * whole overshoot rather than one frame's worth: the elastic is set, not accumulated.
+     */
+    private fun applyPinchElastic(overX: Double, overY: Double) {
+        if (state.verticalScroll) {
+            state.overscrollY =
+                if (overY > 0.0 && state.isDocumentEndVisible()) (overY * OVERSCROLL_RESIST).coerceAtMost(OVERSCROLL_MAX)
+                else 0.0
+            updateOverscrollArmed()
+            return
+        }
+        val cap = FLIP_MAX_FRACTION * state.viewportW
+        val armedBefore = abs(state.flipOffsetX) >= FLIP_TRIGGER
+        state.flipOffsetX = (overX * FLIP_RESIST).coerceIn(-cap, cap)
+        if (!armedBefore && abs(state.flipOffsetX) >= FLIP_TRIGGER) onHaptic()
     }
 
     private fun endPinch() {
@@ -2578,7 +2605,12 @@ class InteractionController(
         state.invalidateCachesForZoom() // keep stale surfaces to blit until the sharp rebuild lands
         onViewChanged()
         requestRender()
-        if (pinchPanAllowed()) startFling(panVel)
+        if (!pinchPanAllowed()) return
+        when {
+            state.overscrollY > 0.0 -> releaseOverscroll()
+            !state.verticalScroll && state.flipOffsetX != 0.0 -> endPanPaginated()
+            else -> startFling(panVel)
+        }
     }
 
     private fun abortGesture() {
