@@ -2304,11 +2304,19 @@ class InteractionController(
         // The pull reveals only empty background; the neighbouring row never joins the screen.
     }
 
-    /** Decide what a lifted paginated pan does: flip instantly, drop the pull, or glide in-row. */
+    /** Decide what a lifted paginated pan does: flip instantly, add a page, drop the pull, or glide. */
     private fun endPanPaginated() {
         val rows = state.rowRanges().size
         val pull = state.flipOffsetX
         when {
+            // Past the last row the pull adds a page, the horizontal counterpart of the bottom
+            // elastic. The new page opens its own row, so flipping onto it lands the user there.
+            pull >= FLIP_TRIGGER && state.currentRow >= rows - 1 -> {
+                clearFlipPull()
+                onAddPageAtEnd()
+                val grown = state.rowRanges().size
+                if (grown > rows) flipTo(grown - 1) else { onViewChanged(); requestRender() }
+            }
             pull >= FLIP_TRIGGER && state.currentRow < rows - 1 -> flipTo(state.currentRow + 1)
             pull <= -FLIP_TRIGGER && state.currentRow > 0 -> flipTo(state.currentRow - 1)
             panVel.x <= -FLIP_FLING_VEL && state.atRowEdge(next = true) && state.currentRow < rows - 1 ->

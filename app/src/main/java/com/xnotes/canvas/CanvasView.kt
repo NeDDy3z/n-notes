@@ -565,7 +565,11 @@ class CanvasView @JvmOverloads constructor(
         drawOverlay?.invoke(r, canvas)
 
         // Elastic "pull past the end to add a page" affordance, on top of everything (viewport space).
-        if (st.overscrollY > 1.0) drawOverscrollIndicator(canvas, st)
+        if (st.overscrollY > 1.0) {
+            drawOverscrollIndicator(canvas, st)
+        } else if (!st.verticalScroll && st.flipOffsetX > 1.0 && st.currentRow >= st.rowRanges().size - 1) {
+            drawFlipAddPageIndicator(canvas, st)
+        }
 
         drawScrollbar(canvas, st)
 
@@ -602,15 +606,48 @@ class CanvasView @JvmOverloads constructor(
         if (st.pageRects.isEmpty()) return
         val d = resources.displayMetrics.density
         val progress = (over / InteractionController.OVERSCROLL_TRIGGER).coerceIn(0.0, 1.0).toFloat()
-        val alpha = (over / (InteractionController.OVERSCROLL_TRIGGER * 0.4)).coerceIn(0.0, 1.0).toFloat()
-        val ready = progress >= 1f
+        val radius = (16f * d) * (0.8f + 0.2f * progress)
 
         val last = st.pageRects.last()
         val anchor = st.contentToViewport(Pt(last.centerX, last.bottom))
-        val radius = (16f * d) * (0.8f + 0.2f * progress)
         val cx = anchor.x.toFloat().coerceIn(0f, st.viewportW.toFloat())
         // Pin the badge just below the page's bottom edge so it rises into the gap, never over the page.
         val cy = anchor.y.toFloat() + 12f * d + radius
+        drawAddPageBadge(canvas, st, cx, cy, radius, progress, over / (InteractionController.OVERSCROLL_TRIGGER * 0.4))
+    }
+
+    /**
+     * The same badge for the paginated strip, in the gap the edge-pull opens past the last page.
+     * Only the last row shows it — an earlier row's pull flips to the next page instead.
+     */
+    private fun drawFlipAddPageIndicator(canvas: Canvas, st: CanvasState) {
+        val pull = st.flipOffsetX
+        val rows = st.rowRanges()
+        val lastPage = rows.lastOrNull()?.last ?: return
+        val rect = st.pageRects.getOrNull(lastPage) ?: return
+        val d = resources.displayMetrics.density
+        val progress = (pull / InteractionController.FLIP_TRIGGER).coerceIn(0.0, 1.0).toFloat()
+        val radius = (16f * d) * (0.8f + 0.2f * progress)
+
+        val anchor = st.contentToViewport(Pt(rect.right, rect.centerY))
+        val cx = anchor.x.toFloat() + 12f * d + radius
+        val cy = anchor.y.toFloat().coerceIn(radius + 8f * d, st.viewportH.toFloat() - radius - 24f * d)
+        drawAddPageBadge(canvas, st, cx, cy, radius, progress, pull / (InteractionController.FLIP_TRIGGER * 0.4))
+    }
+
+    /** The shared add-page badge: progress ring, "+", and the pull/release caption under it. */
+    private fun drawAddPageBadge(
+        canvas: Canvas,
+        st: CanvasState,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        progress: Float,
+        rawAlpha: Double,
+    ) {
+        val d = resources.displayMetrics.density
+        val alpha = rawAlpha.coerceIn(0.0, 1.0).toFloat()
+        val ready = progress >= 1f
         val accent = st.palette.accent.toArgb()
         val dim = st.palette.textDim.toArgb()
 
