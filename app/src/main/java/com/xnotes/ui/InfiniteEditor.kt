@@ -117,6 +117,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     var zoomPercent by mutableStateOf(100)
         private set
 
+    /** Zoom lock: pinch and the zoom buttons stop changing the zoom, as in the paged editor. */
+    var zoomLocked by mutableStateOf(false)
+        private set
+
     var title by mutableStateOf("Untitled")
         private set
 
@@ -689,9 +693,15 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     /** Adopt the app's pen preferences, so the canvas and the paged note behave the same. */
-    fun applyInputPrefs(fingerDraws: Boolean, penButtonTool: Tool?) {
+    fun applyInputPrefs(fingerDraws: Boolean, penButtonTool: Tool?, zoomLockPan: String = "single") {
         interaction.fingerDraws = fingerDraws
         interaction.penButtonTool = penButtonTool
+        interaction.zoomLockPan = zoomLockPan
+    }
+
+    fun toggleZoomLock() {
+        zoomLocked = !zoomLocked
+        interaction.zoomLocked = zoomLocked
     }
 
     /** Adopt the configured zoom range, then pull the current zoom back into it. */
@@ -735,6 +745,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     fun zoomBy(factor: Double) {
+        if (zoomLocked) return
         viewport.zoomAroundCenter(viewport.zoom * factor)
         onViewChanged()
         view.publish()
@@ -795,6 +806,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** Frame every item on the canvas. */
     fun zoomToFit() {
+        if (zoomLocked) return
         val bounds = document.contentBounds()
         if (bounds == null) {
             viewport.zoom = 1.0

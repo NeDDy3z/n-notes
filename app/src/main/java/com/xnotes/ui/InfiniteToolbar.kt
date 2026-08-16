@@ -161,11 +161,22 @@ fun InfiniteToolbar(
                             }
 
                         ToolbarItem.ZOOM -> {
-                            ToolbarIcon(XnotesIcons.zoomOut, "Zoom out") { editor.zoomBy(1.0 / InfiniteEditor.ZOOM_STEP) }
+                            ToolbarIcon(XnotesIcons.zoomOut, "Zoom out", enabled = !editor.zoomLocked) {
+                                editor.zoomBy(1.0 / InfiniteEditor.ZOOM_STEP)
+                            }
                             Label("${editor.zoomPercent}%")
-                            ToolbarIcon(XnotesIcons.zoomIn, "Zoom in") { editor.zoomBy(InfiniteEditor.ZOOM_STEP) }
+                            ToolbarIcon(XnotesIcons.zoomIn, "Zoom in", enabled = !editor.zoomLocked) {
+                                editor.zoomBy(InfiniteEditor.ZOOM_STEP)
+                            }
                         }
-                        ToolbarItem.FIT -> ToolbarIcon(XnotesIcons.fit, "Fit all") { editor.zoomToFit() }
+                        ToolbarItem.FIT ->
+                            ToolbarIcon(XnotesIcons.fit, "Fit all", enabled = !editor.zoomLocked) { editor.zoomToFit() }
+
+                        ToolbarItem.ZOOM_LOCK -> ToolbarIcon(
+                            if (editor.zoomLocked) XnotesIcons.lock else XnotesIcons.unlock,
+                            "Zoom lock",
+                            active = editor.zoomLocked,
+                        ) { editor.toggleZoomLock() }
 
                         // Everything else belongs to the paged bar; a canvas layout never holds one.
                         else -> Unit

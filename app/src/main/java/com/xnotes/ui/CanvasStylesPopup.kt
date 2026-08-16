@@ -23,7 +23,7 @@ import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 
 /**
- * The infinite canvas's background styles: ruling, spacing, ruling colour and paper colour.
+ * The infinite canvas's background styles: pattern, spacing, pattern colour and paper colour.
  *
  * Unlike the paged [StylesPopup] there is no inheritance to express, because a canvas has no page
  * level under it, so every control sets a real value rather than choosing between "default" and an
@@ -41,9 +41,9 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("CANVAS STYLES")
+            PopupTitle("STYLES")
 
-            StyleCaption("RULING")
+            StyleCaption("PATTERN")
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -71,7 +71,7 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
             ) { apply(background.copy(spacing = it.toDouble())) }
 
             Spacer(Modifier.size(8.dp))
-            StyleCaption("RULING COLOUR")
+            StyleCaption("PATTERN COLOUR")
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),

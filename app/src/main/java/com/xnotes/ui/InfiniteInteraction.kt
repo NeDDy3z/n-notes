@@ -120,6 +120,12 @@ class InfiniteInteraction(
     /** Tool the stylus side button arms while it is held; null leaves the button alone. */
     var penButtonTool: Tool? = Tool.ERASER
 
+    /** Zoom lock: a pinch pans without changing the zoom, mirroring the paged canvas. */
+    var zoomLocked: Boolean = false
+
+    /** Which pans still move a locked view: "single" (default) | "double" | "none". */
+    var zoomLockPan: String = "single"
+
     private val stylusButtons = StylusButtonLatch()
 
     private var eraseSession: EraseSession? = null
@@ -394,7 +400,8 @@ class InfiniteInteraction(
 
     private fun handleUp(e: MotionEvent) {
         cancelLongPress()
-        val wasMoving = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
+        val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed()) ||
+            (mode == CanvasPointerMode.PINCH && pinchPanAllowed())
         // A finger tap off the selection puts it away; a tap is the only way to say so with a
         // finger, since a drag there is a pan.
         if (mode == CanvasPointerMode.PAN && panMayDismiss &&
@@ -1016,11 +1023,17 @@ class InfiniteInteraction(
 
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
-        viewport.panByViewport(vx - lastPan.x, vy - lastPan.y)
+        if (singleFingerPanAllowed()) viewport.panByViewport(vx - lastPan.x, vy - lastPan.y)
         lastPan = Pt(vx, vy)
         onViewChanged()
         requestRender()
     }
+
+    // Once zoom is locked the zoomLockPan preference decides which pans still move the view; an
+    // unlocked view always pans. Mirrors the paged canvas so one preference governs both surfaces.
+    private fun singleFingerPanAllowed(): Boolean = !(zoomLocked && zoomLockPan != "single")
+
+    private fun pinchPanAllowed(): Boolean = !(zoomLocked && zoomLockPan == "none")
 
     // --- pinch ---
 
@@ -1046,9 +1059,12 @@ class InfiniteInteraction(
         trackVelocity(mid.x, mid.y)
         // Zoom about the pinch's own midpoint, and let that midpoint drag the canvas at the same
         // time: the content under the fingers stays under the fingers whether they spread or slide.
-        viewport.zoom = pinchInitZoom * (dist / pinchInitDist)
-        viewport.scrollX = pinchAnchorContent.x - mid.x / viewport.zoom
-        viewport.scrollY = pinchAnchorContent.y - mid.y / viewport.zoom
+        // A locked zoom keeps the zoom it started at, so the pinch is a pan and nothing else.
+        viewport.zoom = if (zoomLocked) pinchInitZoom else pinchInitZoom * (dist / pinchInitDist)
+        if (pinchPanAllowed()) {
+            viewport.scrollX = pinchAnchorContent.x - mid.x / viewport.zoom
+            viewport.scrollY = pinchAnchorContent.y - mid.y / viewport.zoom
+        }
         lastPan = mid
         onViewChanged()
         requestRender()

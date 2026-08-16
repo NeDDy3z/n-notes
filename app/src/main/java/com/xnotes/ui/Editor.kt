@@ -495,7 +495,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val canvas = infinite
         canvas.replaceDocument(doc)
         canvas.applyPalette(palette)
-        canvas.applyInputPrefs(settings.prefs.fingerDraws, controller.penButtonTool)
+        canvas.applyInputPrefs(settings.prefs.fingerDraws, controller.penButtonTool, settings.prefs.zoomLockPan)
         canvas.applyZoomRange(settings.prefs.canvasMinZoomPercent, settings.prefs.canvasMaxZoomPercent)
         canvas.onContentChanged = { scheduleCanvasAutosave() }
         // Only a canvas living under the granted folder autosaves; anything else is left alone,
@@ -1484,7 +1484,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         palette = buildPalette(p)
         state.palette = palette
         infiniteOrNull?.applyPalette(palette)
-        infiniteOrNull?.applyInputPrefs(p.fingerDraws, if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER))
+        infiniteOrNull?.applyInputPrefs(
+            p.fingerDraws,
+            if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER),
+            p.zoomLockPan,
+        )
         infiniteOrNull?.applyZoomRange(p.canvasMinZoomPercent, p.canvasMaxZoomPercent)
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
         controller.fingerDraws = p.fingerDraws

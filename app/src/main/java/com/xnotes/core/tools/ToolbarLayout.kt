@@ -163,7 +163,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.SHAPE,
             ToolbarItem.IMAGE, ToolbarItem.COLORS, ToolbarItem.UNDO, ToolbarItem.REDO,
             ToolbarItem.STYLES, ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP,
-            ToolbarItem.ZOOM, ToolbarItem.FIT,
+            ToolbarItem.ZOOM, ToolbarItem.FIT, ToolbarItem.ZOOM_LOCK,
         )
 
         /** Everything the paged bar can hold: the whole enum bar the two canvas-only additions. */
@@ -201,7 +201,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.COLORS),
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
             listOf(ToolbarItem.STYLES, ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP),
-            listOf(ToolbarItem.ZOOM, ToolbarItem.FIT),
+            listOf(ToolbarItem.ZOOM, ToolbarItem.FIT, ToolbarItem.ZOOM_LOCK),
         )
 
         private fun of(vararg groups: List<ToolbarItem>): ToolbarLayout =
