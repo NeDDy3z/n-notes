@@ -246,20 +246,23 @@ private fun SpectrumWheel(
     val commit = rememberUpdatedState(onCommit)
     Canvas(
         modifier.pointerInput(Unit) {
-            fun emit(pos: Offset) {
+            fun emit(pos: Offset, onRing: Boolean) {
                 val (h, s, v) = hsv.value
-                val r = pickFromTouch(pos.x, pos.y, size.width.toFloat(), h, s, v)
+                val r = pickFromTouch(pos.x, pos.y, size.width.toFloat(), onRing, h, s, v)
                 preview.value(r[0], r[1], r[2])
             }
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
-                emit(down.position)
+                // The target is latched at touch-down so a ring drag that wanders inward keeps
+                // editing hue instead of jumping to the square.
+                val onRing = hitsRing(down.position.x, down.position.y, size.width.toFloat())
+                emit(down.position, onRing)
                 down.consume()
                 while (true) {
                     val event = awaitPointerEvent()
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                     if (!change.pressed) { change.consume(); break }
-                    emit(change.position)
+                    emit(change.position, onRing)
                     change.consume()
                 }
                 commit.value()
@@ -271,22 +274,32 @@ private fun SpectrumWheel(
     }
 }
 
-/** Map a touch point to (hue, saturation, value): inside the square edits S/V, otherwise the ring
- *  edits hue. Coordinates that don't change keep the passed-in [hue]/[sat]/[value]. */
-private fun pickFromTouch(x: Float, y: Float, s: Float, hue: Double, sat: Double, value: Double): DoubleArray {
+/** True when a touch belongs to the hue ring. Only the ring band itself counts; the corner gaps
+ *  between the square and the ring's inner circle fall through to the square. */
+private fun hitsRing(x: Float, y: Float, s: Float): Boolean {
+    val c = s / 2f
+    val innerR = s / 2f - s * RING_FRAC
+    val dx = x - c
+    val dy = y - c
+    return dx * dx + dy * dy >= innerR * innerR
+}
+
+/** Map a touch point to (hue, saturation, value). [onRing] picks hue from the angle, otherwise the
+ *  point is clamped into the S/V square. Coordinates that don't change keep [hue]/[sat]/[value]. */
+private fun pickFromTouch(x: Float, y: Float, s: Float, onRing: Boolean, hue: Double, sat: Double, value: Double): DoubleArray {
     val c = s / 2f
     val innerR = s / 2f - s * RING_FRAC
     val side = innerR * 1.41421f * SQUARE_FRAC
     val left = c - side / 2f
     val top = c - side / 2f
-    return if (x in left..(left + side) && y in top..(top + side)) {
-        val ss = ((x - left) / side).coerceIn(0f, 1f).toDouble()
-        val vv = (1f - (y - top) / side).coerceIn(0f, 1f).toDouble()
-        doubleArrayOf(hue, ss, vv)
-    } else {
+    return if (onRing) {
         var deg = atan2((y - c).toDouble(), (x - c).toDouble()) * 180.0 / Math.PI
         if (deg < 0) deg += 360.0
         doubleArrayOf(deg, sat, value)
+    } else {
+        val ss = ((x - left) / side).coerceIn(0f, 1f).toDouble()
+        val vv = (1f - (y - top) / side).coerceIn(0f, 1f).toDouble()
+        doubleArrayOf(hue, ss, vv)
     }
 }
 
