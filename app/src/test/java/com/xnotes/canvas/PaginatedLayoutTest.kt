@@ -151,4 +151,31 @@ class PaginatedLayoutTest {
         val st = state(4).apply { verticalScroll = true; relayout() }
         assertEquals(0..3, st.drawablePageRange())
     }
+
+    @Test fun twoPageNoteCentresEachRowAtFitHeight() {
+        // Exactly two pages fit-to-height: the whole strip is narrower than a wide viewport,
+        // but each row must still be centred, not the strip.
+        val st = state(2).apply {
+            viewportW = 1600
+            viewportH = 1000
+            relayout()
+        }
+        st.fitHeight()
+        val c0 = st.contentToViewport(st.rowBounds(st.rowRanges()[0]).center)
+        assertEquals(st.viewportW / 2.0, c0.x, 1e-6)
+        st.goToPage(1)
+        val c1 = st.contentToViewport(st.rowBounds(st.rowRanges()[1]).center)
+        assertEquals(st.viewportW / 2.0, c1.x, 1e-6)
+    }
+
+    @Test fun twoPageNoteCentresEachRowWhenZoomedOut() {
+        val st = state(2)
+        st.zoom = 0.3
+        st.clampScroll()
+        val c0 = st.contentToViewport(st.rowBounds(st.rowRanges()[0]).center)
+        assertEquals(st.viewportW / 2.0, c0.x, 1e-6)
+        st.goToPage(1)
+        val c1 = st.contentToViewport(st.rowBounds(st.rowRanges()[1]).center)
+        assertEquals(st.viewportW / 2.0, c1.x, 1e-6)
+    }
 }

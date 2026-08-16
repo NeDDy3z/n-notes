@@ -550,7 +550,9 @@ class CanvasState(
     fun origin(): Pt {
         val cw = contentW * zoom
         val ch = contentH * zoom
-        val ox = (if (cw < viewportW) (viewportW - cw) / 2.0 else -scrollX) - flipOffsetX
+        // Paginated: the row clamp centres the row when it fits, so the scroll always wins; the
+        // whole strip must never be centred (two pages would push each single-page row off centre).
+        val ox = (if (!verticalScroll || cw >= viewportW) -scrollX else (viewportW - cw) / 2.0) - flipOffsetX
         val oy = (if (ch < viewportH) (viewportH - ch) / 2.0 else -scrollY) - overscrollY
         return Pt(ox, oy)
     }
@@ -1532,7 +1534,7 @@ class CanvasState(
     private fun originFor(sx: Double, sy: Double, z: Double): Pt {
         val cw = contentW * z
         val ch = contentH * z
-        val ox = if (cw < viewportW) (viewportW - cw) / 2.0 else -sx
+        val ox = if (!verticalScroll || cw >= viewportW) -sx else (viewportW - cw) / 2.0
         val oy = if (ch < viewportH) (viewportH - ch) / 2.0 else -sy
         return Pt(ox, oy)
     }
