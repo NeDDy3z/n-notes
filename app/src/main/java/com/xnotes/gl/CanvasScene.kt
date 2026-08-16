@@ -326,9 +326,9 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             for (part in record.parts) {
                 @Suppress("UNUSED_EXPRESSION")
                 when (part.pass) {
-                    InkPass.MULTIPLY -> {
+                    InkPass.MULTIPLY, InkPass.SCREEN -> {
                         // Highlighters composite over the finished picture, matching the paged
-                        // canvas, so their multiply darkens what is beneath instead of washing it out.
+                        // canvas, so their blend acts on what is beneath instead of washing it out.
                         deferred.add(record to part)
                     }
                     InkPass.OPAQUE -> {
@@ -344,7 +344,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                         flushRun(runStart, runCount)
                         runStart = -1
                         runCount = 0
-                        drawMasked(record, part, frame, multiply = false)
+                        drawMasked(record, part, frame, part.pass)
                         rebind(program, frame, camChunkX, camChunkY)
                     }
                     InkPass.GLOW -> {
@@ -361,7 +361,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         flushRun(runStart, runCount)
 
         for ((record, part) in deferred) {
-            drawMasked(record, part, frame, multiply = true)
+            drawMasked(record, part, frame, part.pass)
             rebind(program, frame, camChunkX, camChunkY)
         }
 
@@ -435,10 +435,10 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                         store.drawRange(part.slice.indexOffset, part.slice.indexCount)
                         lastDrawCalls++
                     }
-                    InkPass.TRANSLUCENT, InkPass.MULTIPLY -> {
+                    InkPass.TRANSLUCENT, InkPass.MULTIPLY, InkPass.SCREEN -> {
                         drawMasked(
                             store, part.slice, bounds, part.coverColor, part.coverAlpha,
-                            frame, multiply = part.pass == InkPass.MULTIPLY,
+                            frame, part.pass,
                         )
                         applyView(program, frame, camChunkX, camChunkY, liftAt)
                         store.bindForDraw(contextGen)
@@ -589,7 +589,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             } else {
                 drawMasked(
                     buffer, part.slice, wetBounds, part.coverColor, part.coverAlpha,
-                    frame, multiply = part.pass == InkPass.MULTIPLY,
+                    frame, part.pass,
                 )
             }
             rebind(program, frame, camChunkX, camChunkY)
@@ -879,8 +879,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         )
     }
 
-    private fun drawMasked(record: Record, part: Part, frame: FrameState, multiply: Boolean) =
-        drawMasked(store, part.slice, record.bounds, part.coverColor, part.coverAlpha, frame, multiply)
+    private fun drawMasked(record: Record, part: Part, frame: FrameState, pass: InkPass) =
+        drawMasked(store, part.slice, record.bounds, part.coverColor, part.coverAlpha, frame, pass)
 
     private fun drawMasked(
         from: GeometryStore,
@@ -889,7 +889,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         coverColor: Rgba,
         coverAlpha: Double,
         frame: FrameState,
-        multiply: Boolean,
+        pass: InkPass,
     ) {
         val quad = cover ?: return
         GLES30.glEnable(GLES30.GL_STENCIL_TEST)
@@ -903,17 +903,23 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         GLES30.glColorMask(true, true, true, true)
         GLES30.glStencilFunc(GLES30.GL_EQUAL, 1, 0xFF)
         GLES30.glStencilOp(GLES30.GL_KEEP, GLES30.GL_KEEP, GLES30.GL_ZERO)
-        if (multiply) {
+        when (pass) {
             // Exact multiply: the destination is scaled by the source and nothing is added.
-            GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ZERO)
-        } else {
-            GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+            InkPass.MULTIPLY -> GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ZERO)
+            // Exact screen: src + dst - src*dst, the multiply reflected about white.
+            InkPass.SCREEN -> GLES30.glBlendFunc(GLES30.GL_ONE_MINUS_DST_COLOR, GLES30.GL_ONE)
+            else -> GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         }
         val r = clipRect(bounds, frame)
-        // A multiply cover must present the ink already faded toward white by its own alpha, since
-        // the blend function cannot apply an alpha of its own.
-        val color = if (multiply) ItemMesher.multiplyColor(coverColor, coverAlpha) else coverColor
-        quad.draw(r[0], r[1], r[2], r[3], color, if (multiply) 1.0 else coverAlpha)
+        // A multiply/screen cover must present the ink already faded by its own alpha (toward white
+        // and toward black respectively), since the blend function cannot apply an alpha of its own.
+        val color = when (pass) {
+            InkPass.MULTIPLY -> ItemMesher.multiplyColor(coverColor, coverAlpha)
+            InkPass.SCREEN -> ItemMesher.screenColor(coverColor, coverAlpha)
+            else -> coverColor
+        }
+        val alpha = if (pass == InkPass.MULTIPLY || pass == InkPass.SCREEN) 1.0 else coverAlpha
+        quad.draw(r[0], r[1], r[2], r[3], color, alpha)
         lastDrawCalls++
 
         GLES30.glDisable(GLES30.GL_STENCIL_TEST)

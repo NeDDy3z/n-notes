@@ -176,7 +176,10 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             j.name("dash_length").value(s.config.dashLength)
             j.name("dash_gap").value(s.config.dashGap)
         }
-        if (s.tool == Tool.HIGHLIGHTER) j.name("highlighter_alpha").value(s.config.highlighterAlpha)
+        if (s.tool == Tool.HIGHLIGHTER) {
+            j.name("highlighter_alpha").value(s.config.highlighterAlpha)
+            if (s.config.highlighterInverse) j.name("highlighter_inverse").value(true)
+        }
         j.endObject()
         // Samples are almost all of a dense manifest's bytes, so they serialize rounded: 0.01
         // content px and 0.001 pressure are far below anything visible. Rounding is idempotent,
@@ -457,6 +460,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         var dashLength: Double? = null
         var dashGap: Double? = null
         var highlighterAlpha: Double? = null
+        var highlighterInverse: Boolean? = null
     }
 
     private fun parseItem(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<PendingImage>) {
@@ -527,6 +531,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             dashLength = c?.dashLength ?: def.dashLength,
             dashGap = c?.dashGap ?: def.dashGap,
             highlighterAlpha = c?.highlighterAlpha ?: def.highlighterAlpha,
+            highlighterInverse = c?.highlighterInverse ?: def.highlighterInverse,
         )
         return Stroke(tool, config, s.samples ?: mutableListOf(), s.speedScale, s.straight, s.smoothScale)
     }
@@ -577,6 +582,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
                 "dash_length" -> c.dashLength = doubleOrNull(p)
                 "dash_gap" -> c.dashGap = doubleOrNull(p)
                 "highlighter_alpha" -> c.highlighterAlpha = doubleOrNull(p)
+                "highlighter_inverse" -> c.highlighterInverse = boolOrNull(p)
                 else -> p.skipValue()
             }
         }

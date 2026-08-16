@@ -552,10 +552,10 @@ class CanvasView @JvmOverloads constructor(
                         if (item is Stroke && item.isHighlighterInk() && !st.isLiftedItem(item) &&
                             item.bounds().intersects(visLocal)
                         ) {
-                            // Blit the pre-rendered opaque ribbon at the ink's alpha + MULTIPLY,
+                            // Blit the pre-rendered opaque ribbon at the ink's alpha and blend,
                             // instead of re-tessellating the ribbon every frame.
                             val hc = st.highlighterCacheFor(item, page)
-                            r.drawRasterBlended(hc.surface, hc.cover, item.renderColor.a / 255.0, BlendMode.MULTIPLY)
+                            r.drawRasterBlended(hc.surface, hc.cover, item.renderColor.a / 255.0, item.blendMode)
                         }
                     }
                 }

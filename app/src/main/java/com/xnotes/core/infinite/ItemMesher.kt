@@ -19,6 +19,9 @@ enum class InkPass {
     /** Like [TRANSLUCENT] but multiplied, and always drawn last, exactly as the paged canvas does. */
     MULTIPLY,
 
+    /** [MULTIPLY]'s mirror image: screened, so the inverse highlighter lightens a dark page. */
+    SCREEN,
+
     /** Blurred into a halo and composited under the item, which is what makes neon glow. */
     GLOW,
 }
@@ -202,7 +205,8 @@ object ItemMesher {
 
     /** The pass a stroke has to take, from its tool and its resolved ink alpha. */
     fun passFor(stroke: Stroke): InkPass = when {
-        stroke.tool == Tool.HIGHLIGHTER -> InkPass.MULTIPLY
+        stroke.tool == Tool.HIGHLIGHTER ->
+            if (stroke.config.highlighterInverse) InkPass.SCREEN else InkPass.MULTIPLY
         stroke.renderColor.a >= 255 -> InkPass.OPAQUE
         else -> InkPass.TRANSLUCENT
     }
@@ -214,6 +218,17 @@ object ItemMesher {
             (255 - (255 - c.r) * f).toInt().coerceIn(0, 255),
             (255 - (255 - c.g) * f).toInt().coerceIn(0, 255),
             (255 - (255 - c.b) * f).toInt().coerceIn(0, 255),
+            255,
+        )
+    }
+
+    /** [c] scaled toward black by [alpha]: the colour a screen blend lightens by [alpha]. */
+    fun screenColor(c: Rgba, alpha: Double): Rgba {
+        val f = alpha.coerceIn(0.0, 1.0)
+        return Rgba(
+            (c.r * f).toInt().coerceIn(0, 255),
+            (c.g * f).toInt().coerceIn(0, 255),
+            (c.b * f).toInt().coerceIn(0, 255),
             255,
         )
     }

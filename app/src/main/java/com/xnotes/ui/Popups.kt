@@ -82,6 +82,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
     var straight by remember { mutableStateOf(base.straightLine) }
     var scale by remember { mutableStateOf(base.scale) }
     var intensity by remember { mutableStateOf(ToolConversions.highlighterAlphaToIntensity(base.highlighterAlpha).toFloat()) }
+    var inverse by remember { mutableStateOf(base.highlighterInverse) }
     var colorOverride by remember { mutableStateOf(base.colorOverride) }
 
     fun emit() {
@@ -106,6 +107,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
                 straightLine = straight,
                 scale = scale,
                 highlighterAlpha = ha,
+                highlighterInverse = inverse,
                 colorOverride = colorOverride,
             ),
         )
@@ -161,6 +163,9 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
             if (tool == Tool.HIGHLIGHTER) {
                 SliderRow("INTENSITY", intensity, 10f..90f) { intensity = it; emit() }
                 ToggleRow("STRAIGHT LINE", straight) { straight = it; emit() }
+                // INVERSE swaps the multiply blend for a screen one, so the marker lightens the
+                // page instead of darkening it. A multiply has nothing to darken on a dark page.
+                ToggleRow("INVERSE", inverse) { inverse = it; emit() }
             }
             // Glow is offered on every stroke tool except the highlighter (translucent) and the
             // dashed pen (it draws a line, not a fillable ribbon, so a halo has nothing to hug).

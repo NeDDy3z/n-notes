@@ -67,6 +67,10 @@ data class ToolConfig(
      *  0 = the tail comes to a sharp point; 0.1 = it bottoms out at a tenth of full width. Only
      *  used when [taperEnabled]. */
     val taperMinFactor: Double = 0.0,
+    /** Inverse highlighter: composite with SCREEN instead of MULTIPLY, so the stroke lightens what
+     *  is under it. A multiply has nothing to darken on a dark page, where it ends up tinting the
+     *  light ink instead of the paper. Only used by [Tool.HIGHLIGHTER]. */
+    val highlighterInverse: Boolean = false,
 )
 
 /** Factory defaults per tool (spec 04 §3). */

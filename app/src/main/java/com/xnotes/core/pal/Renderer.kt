@@ -12,9 +12,10 @@ enum class FillRule { NONZERO, EVEN_ODD }
 /**
  * How a layer composites onto what's beneath it. `SRC_OVER` is normal alpha
  * blending; `MULTIPLY` darkens (the highlighter — it can't lighten dark ink, so
- * text stays legible). A renderer without a real multiply falls back to `SRC_OVER`.
+ * text stays legible). `SCREEN` is its mirror image, lightening instead, which is what
+ * highlights a dark page. A renderer without real separable blends falls back to `SRC_OVER`.
  */
-enum class BlendMode { SRC_OVER, MULTIPLY }
+enum class BlendMode { SRC_OVER, MULTIPLY, SCREEN }
 
 /**
  * An outline pen. When [cosmetic] is true the [width] is in *device* pixels and

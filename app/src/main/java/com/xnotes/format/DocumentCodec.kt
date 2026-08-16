@@ -162,7 +162,10 @@ class DocumentCodec(
             j.name("dash_gap").value(s.config.dashGap)
         }
         // Strength matters only to the highlighter; baked per-stroke so a note reopens unchanged.
-        if (s.tool == Tool.HIGHLIGHTER) j.name("highlighter_alpha").value(s.config.highlighterAlpha)
+        if (s.tool == Tool.HIGHLIGHTER) {
+            j.name("highlighter_alpha").value(s.config.highlighterAlpha)
+            if (s.config.highlighterInverse) j.name("highlighter_inverse").value(true)
+        }
         j.endObject()
         // Samples are ~97% of a dense manifest's bytes, so they serialize rounded: 0.01
         // content px (2dp) and 0.001 pressure (3dp) are far below anything visible, and a
@@ -539,6 +542,7 @@ class DocumentCodec(
         var dashLength: Double? = null
         var dashGap: Double? = null
         var highlighterAlpha: Double? = null
+        var highlighterInverse: Boolean? = null
     }
 
     private fun parseItem(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<PendingImage>) {
@@ -631,6 +635,7 @@ class DocumentCodec(
             dashGap = c?.dashGap ?: def.dashGap,
             // Absent on legacy highlighter strokes -> the historical 0.35, so they reload unchanged.
             highlighterAlpha = c?.highlighterAlpha ?: def.highlighterAlpha,
+            highlighterInverse = c?.highlighterInverse ?: def.highlighterInverse,
         )
         return Stroke(tool, config, s.samples ?: mutableListOf(), s.speedScale, s.straight, s.smoothScale)
     }
@@ -682,6 +687,7 @@ class DocumentCodec(
                 "dash_length" -> c.dashLength = doubleOrNull(p)
                 "dash_gap" -> c.dashGap = doubleOrNull(p)
                 "highlighter_alpha" -> c.highlighterAlpha = doubleOrNull(p)
+                "highlighter_inverse" -> c.highlighterInverse = boolOrNull(p)
                 else -> p.skipValue()
             }
         }

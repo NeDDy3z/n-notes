@@ -74,7 +74,12 @@ class PdfBoxRenderer(
 
     override fun saveLayerBlended(bounds: Rect, alpha: Double, blend: PalBlend) {
         save()
-        cs.setGraphicsStateParameters(alphaState(alpha, if (blend == PalBlend.MULTIPLY) BlendMode.MULTIPLY else null))
+        val pdfBlend = when (blend) {
+            PalBlend.MULTIPLY -> BlendMode.MULTIPLY
+            PalBlend.SCREEN -> BlendMode.SCREEN
+            PalBlend.SRC_OVER -> null
+        }
+        cs.setGraphicsStateParameters(alphaState(alpha, pdfBlend))
     }
 
     override fun translate(dx: Double, dy: Double) {

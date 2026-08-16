@@ -192,6 +192,14 @@ class Stroke(
         if (tool == Tool.HIGHLIGHTER) config.highlighterAlpha else tool.alphaScale,
     )
 
+    /** How this stroke's translucent ink composites: the highlighter darkens with MULTIPLY, or
+     *  lightens with SCREEN when it is the inverse variant; every other ink blends normally. */
+    val blendMode: BlendMode get() = when {
+        tool != Tool.HIGHLIGHTER -> BlendMode.SRC_OVER
+        config.highlighterInverse -> BlendMode.SCREEN
+        else -> BlendMode.MULTIPLY
+    }
+
     val isEmpty get() = n == 0
 
     /** Lazily-built ribbon geometry; rebuilt only when samples change. */
@@ -334,8 +342,7 @@ class Stroke(
                 // don't compound into darker patches. The highlighter composites with
                 // MULTIPLY so it tints light areas but can't lighten dark ink underneath
                 // (text stays legible); other translucent inks blend normally.
-                val blend = if (tool == Tool.HIGHLIGHTER) BlendMode.MULTIPLY else BlendMode.SRC_OVER
-                r.saveLayerBlended(bounds().outset(2.0), color.a / 255.0, blend)
+                r.saveLayerBlended(bounds().outset(2.0), color.a / 255.0, blendMode)
                 paintFills(r, g, color.withAlpha(255))
                 r.restore()
             }

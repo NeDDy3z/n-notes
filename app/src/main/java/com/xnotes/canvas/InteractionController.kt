@@ -40,7 +40,6 @@ import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TextHandle
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextStyle
-import com.xnotes.core.pal.BlendMode
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.FontSpec
 import com.xnotes.core.pal.Pen
@@ -2634,8 +2633,7 @@ class InteractionController(
             // without mutating their stored colour. Highlighters keep their MULTIPLY look while fading.
             for (fs in fadingStrokes) {
                 paintClippedToPage(r, fs.pageIndex) {
-                    val blend = if (fs.stroke.tool == Tool.HIGHLIGHTER) BlendMode.MULTIPLY else BlendMode.SRC_OVER
-                    r.saveLayerBlended(fs.stroke.paintBounds(), fadeAlpha, blend)
+                    r.saveLayerBlended(fs.stroke.paintBounds(), fadeAlpha, fs.stroke.blendMode)
                     fs.stroke.paint(r)
                     r.restore()
                 }

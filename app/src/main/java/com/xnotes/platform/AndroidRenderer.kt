@@ -41,6 +41,16 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val layerPaint = Paint()
 
+    /** The platform blend for [blend], or null when it has none (SRC_OVER, or below API 29). */
+    private fun nativeBlend(blend: BlendMode): android.graphics.BlendMode? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return when (blend) {
+            BlendMode.MULTIPLY -> android.graphics.BlendMode.MULTIPLY
+            BlendMode.SCREEN -> android.graphics.BlendMode.SCREEN
+            BlendMode.SRC_OVER -> null
+        }
+    }
+
     private val scaleStack = ArrayDeque<Float>()
     private var scaleX = 1f
     private var scaleY = 1f
@@ -69,17 +79,15 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         scaleStack.addLast(scaleY)
     }
 
-    // MULTIPLY uses the W3C separable blend (BlendMode, API 29+), which over a
-    // transparent backdrop *deposits* the source and over ink *multiplies* — so it
-    // works the same in the transparent ink cache and on the composed screen. Below
+    // MULTIPLY and SCREEN use the W3C separable blends (BlendMode, API 29+), which over a
+    // transparent backdrop *deposit* the source and over ink blend — so they
+    // work the same in the transparent ink cache and on the composed screen. Below
     // API 29 (and for SRC_OVER) we just use plain alpha compositing.
     override fun saveLayerBlended(bounds: Rect, alpha: Double, blend: BlendMode) {
-        if (blend != BlendMode.MULTIPLY || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return saveLayerAlpha(bounds, alpha)
-        }
+        val native = nativeBlend(blend) ?: return saveLayerAlpha(bounds, alpha)
         layerPaint.reset()
         layerPaint.alpha = (alpha.coerceIn(0.0, 1.0) * 255).toInt()
-        layerPaint.blendMode = android.graphics.BlendMode.MULTIPLY
+        layerPaint.blendMode = native
         canvas.saveLayer(
             bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat(),
             layerPaint,
@@ -285,9 +293,7 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         rasterBlendPaint.isFilterBitmap = true
         rasterBlendPaint.isDither = true
         rasterBlendPaint.alpha = (alpha.coerceIn(0.0, 1.0) * 255).toInt()
-        if (blend == BlendMode.MULTIPLY && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            rasterBlendPaint.blendMode = android.graphics.BlendMode.MULTIPLY
-        }
+        nativeBlend(blend)?.let { rasterBlendPaint.blendMode = it }
         val srcRect = src?.let {
             android.graphics.Rect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
         }
