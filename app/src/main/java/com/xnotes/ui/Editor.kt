@@ -64,6 +64,8 @@ import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.core.tools.ToolbarLayout
+import com.xnotes.core.util.DocumentKind
+import com.xnotes.core.util.NameTemplate
 import com.xnotes.format.DocumentCodec
 import com.xnotes.format.XNoteFormatException
 import com.xnotes.platform.AndroidImageCodec
@@ -2320,8 +2322,31 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         ) != null
     }.getOrDefault(false)
 
-    /** Resolves a document file name: blank -> "untitled_N"; else ensures the extension for [kind]
-     *  and avoids conflicts with a "_N" suffix. */
+    /**
+     * The stem a new note gets from the filename template, expanded against the current moment.
+     * A template carrying `#` advances its number past every name in [takenLower] (lowercased,
+     * with extension); one that doesn't is returned as-is, for the caller to de-duplicate.
+     */
+    fun newNoteStem(takenLower: Set<String>): String {
+        val template = settings.prefs.newNoteNameTemplate
+        val c = java.util.Calendar.getInstance()
+        val stem = NameTemplate.expand(
+            template,
+            c.get(java.util.Calendar.YEAR),
+            c.get(java.util.Calendar.MONTH) + 1,
+            c.get(java.util.Calendar.DAY_OF_MONTH),
+            c.get(java.util.Calendar.HOUR_OF_DAY),
+            c.get(java.util.Calendar.MINUTE),
+            c.get(java.util.Calendar.SECOND),
+        )
+        if (!NameTemplate.hasSequence(template)) return stem
+        var n = 1
+        while (DocumentKind.entries.any { "${NameTemplate.withSequence(stem, n).lowercase()}${it.suffix}" in takenLower }) n++
+        return NameTemplate.withSequence(stem, n)
+    }
+
+    /** Resolves a document file name: blank -> the filename template; else ensures the extension
+     *  for [kind] and avoids conflicts with a "_N" suffix. */
     private fun uniqueDocumentName(
         treeUri: String,
         parentDocId: String,
@@ -2332,9 +2357,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val taken = browseChildren(treeUri, parentDocId).map { it.name.lowercase() }.toSet()
         val base = com.xnotes.core.util.DocumentKind.stripSuffix(raw.trim()).trim()
         if (base.isEmpty()) {
+            val stem = newNoteStem(taken)
+            if ("${stem.lowercase()}$ext" !in taken) return "$stem$ext"
             var n = 1
-            while ("untitled_$n$ext" in taken) n++
-            return "untitled_$n$ext"
+            while ("${stem.lowercase()}_$n$ext" in taken) n++
+            return "${stem}_$n$ext"
         }
         if ("${base.lowercase()}$ext" !in taken) return "$base$ext"
         var n = 1

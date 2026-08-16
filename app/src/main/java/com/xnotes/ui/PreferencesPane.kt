@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,6 +29,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -56,6 +59,7 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.core.tools.ToolbarLayout
+import com.xnotes.core.util.NameTemplate
 import com.xnotes.settings.Preferences
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.ColorMath
@@ -79,6 +83,12 @@ private val materialSeedPresets = listOf(
 )
 internal val pageColorPresets = listOf(
     Rgba(22, 22, 22), Rgba(13, 13, 13), Rgba(255, 255, 255), Rgba(247, 243, 233), Rgba(232, 232, 232),
+)
+/** One-tap filename templates offered beside the free-text field. */
+private val NAME_TEMPLATE_PRESETS = listOf(
+    NameTemplate.DEFAULT,
+    "note_YYYY-MM-DD",
+    "note_YYYY-MM-DD_HH-mm",
 )
 private val penButtonOptions = listOf("eraser" to "Eraser", "pan" to "Pan", "select" to "Select", "none" to "None")
 private val tapGestureOptions = listOf(
@@ -259,6 +269,34 @@ fun PreferencesPane(
             OptionDropdown(tapGestureOptions, prefs.stylusDoubleTap) { update(prefs.copy(stylusDoubleTap = it)) }
             FieldLabel("Stylus side button (tap)")
             OptionDropdown(tapGestureOptions, prefs.stylusButtonTap) { update(prefs.copy(stylusButtonTap = it)) }
+
+            HorizontalDivider(color = palette.border.toComposeColor())
+            SectionTitle("New notes")
+            FieldLabel("Filename template")
+            Text(
+                "YYYY YY MM DD HH mm ss expand to the creation date and time. # becomes the number " +
+                    "that keeps the name free in its folder.",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 12.sp,
+            )
+            OutlinedTextField(
+                value = prefs.newNoteNameTemplate,
+                onValueChange = { update(prefs.copy(newNoteNameTemplate = it)) },
+                singleLine = true,
+                placeholder = { Text(NameTemplate.DEFAULT) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                modifier = Modifier.width(280.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NAME_TEMPLATE_PRESETS.forEach { t ->
+                    Chip(t, prefs.newNoteNameTemplate == t) { update(prefs.copy(newNoteNameTemplate = t)) }
+                }
+            }
+            Text(
+                "The next note would be named ${editor.newNoteStem(emptySet())}.xnote",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 12.sp,
+            )
 
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle("Page")

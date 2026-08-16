@@ -149,13 +149,9 @@ private enum class CreateMode { NONE, FILE, CANVAS, FOLDER }
 /** Entries copied/cut in the explorer; [sourceParentDocId] is the folder they came from (for moves). */
 private data class ClipItem(val entries: List<BrowseEntry>, val sourceParentDocId: String, val isCut: Boolean)
 
-/** The next free "untitled_N" stem (no extension) for a fresh note in [entries]. */
-private fun nextUntitled(entries: List<BrowseEntry>?): String {
-    val taken = entries.orEmpty().filter { !it.isDir }.map { it.name.lowercase() }.toSet()
-    var n = 1
-    while (taken.any { it.equals("untitled_$n.xnote", true) || it.equals("untitled_$n.xcanvas", true) }) n++
-    return "untitled_$n"
-}
+/** The stem (no extension) offered for a fresh note in [entries], from the filename template. */
+private fun nextUntitled(editor: Editor, entries: List<BrowseEntry>?): String =
+    editor.newNoteStem(entries.orEmpty().filter { !it.isDir }.map { it.name.lowercase() }.toSet())
 
 /**
  * The full-screen "File" area (the home screen). Shows an in-app file explorer
@@ -984,7 +980,7 @@ private fun ExplorerSection(
         val default = when {
             pendingImport != null -> pendingImport.defaultName // import names default to the source file
             createMode == CreateMode.FILE || createMode == CreateMode.CANVAS ->
-                nextUntitled(editor.cachedChildren(root, currentDocId))
+                nextUntitled(editor, editor.cachedChildren(root, currentDocId))
             else -> "" // new folder
         }
         NameDialog(

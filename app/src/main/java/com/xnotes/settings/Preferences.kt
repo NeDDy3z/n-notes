@@ -3,6 +3,7 @@ package com.xnotes.settings
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.util.NameTemplate
 import org.json.JSONObject
 
 /**
@@ -24,6 +25,8 @@ data class Preferences(
     val pageTemplatePdf: String? = null,
     val defaultTemplate: String = "color", // "color" | "pdf"
     val defaultPageSize: PageSize = PageSize.A4,
+    /** Filename template for new notes; see [com.xnotes.core.util.NameTemplate]. */
+    val newNoteNameTemplate: String = NameTemplate.DEFAULT,
     val defaultPageOrientation: Orientation = Orientation.PORTRAIT,
     /** Whether a finger draws (true) or pans (false, default). The stylus always draws. */
     val fingerDraws: Boolean = false,
@@ -101,6 +104,7 @@ data class Preferences(
         .put("page_template_pdf", pageTemplatePdf ?: JSONObject.NULL)
         .put("default_template", defaultTemplate)
         .put("default_page_size", defaultPageSize.displayName)
+        .put("new_note_name_template", newNoteNameTemplate)
         .put("default_page_orientation", defaultPageOrientation.toName())
         .put("finger_draws", fingerDraws)
         .put("zoom_lock_pan", zoomLockPan)
@@ -158,6 +162,8 @@ data class Preferences(
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },
                 defaultTemplate = template,
                 defaultPageSize = PageSize.fromName(o.optString("default_page_size", "A4")),
+                newNoteNameTemplate = o.optString("new_note_name_template", NameTemplate.DEFAULT)
+                    .ifBlank { NameTemplate.DEFAULT },
                 defaultPageOrientation = Orientation.fromName(o.optString("default_page_orientation", "portrait")),
                 fingerDraws = o.optBoolean("finger_draws", false),
                 zoomLockPan = zoomLockPan,
