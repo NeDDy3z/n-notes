@@ -5,6 +5,8 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FillRule
 import com.xnotes.core.vector.Affine
+import com.xnotes.core.vector.GlyphOutliner
+import com.xnotes.core.vector.GlyphStyle
 import com.xnotes.core.vector.GradientStop
 import com.xnotes.core.vector.LineCap
 import com.xnotes.core.vector.LineJoin
@@ -37,7 +39,11 @@ import org.w3c.dom.Node
  */
 object SvgReader {
 
-    fun parse(bytes: ByteArray): VectorScene {
+    /**
+     * [bytes] as a scene. [glyphs] turns any text in the file into outlines; without one, text is
+     * named as unsupported and left out, which is what keeps this parser testable off-device.
+     */
+    fun parse(bytes: ByteArray, glyphs: GlyphOutliner? = null): VectorScene {
         val root = runCatching {
             DocumentBuilderFactory.newInstance()
                 .apply {
@@ -50,12 +56,12 @@ object SvgReader {
                 .documentElement
         }.getOrNull() ?: return VectorScene.EMPTY
         if (localName(root) != "svg") return VectorScene.EMPTY
-        return Reader(root).read()
+        return Reader(root, glyphs).read()
     }
 
     // --- the walk ---
 
-    private class Reader(private val root: Element) {
+    private class Reader(private val root: Element, private val glyphs: GlyphOutliner?) {
 
         private val paths = ArrayList<VectorPath>()
         private val skipped = LinkedHashSet<String>()
@@ -146,7 +152,8 @@ object SvgReader {
                 "line" -> emit(line(el), ctm, style)
                 "polyline" -> emit(poly(el, close = false), ctm, style)
                 "polygon" -> emit(poly(el, close = true), ctm, style)
-                "text", "tspan", "textPath" -> skipped.add("text")
+                "text" -> emitText(el, ctm, style)
+                "tspan", "textPath" -> Unit // laid out by the enclosing text element
                 "image" -> skipped.add("image")
                 "foreignObject" -> skipped.add("foreignObject")
                 else -> Unit
@@ -288,6 +295,108 @@ object SvgReader {
                     clip = style.clip,
                 ),
             )
+        }
+
+        // --- text ---
+
+        /**
+         * A `text` element laid out and outlined. The layout is the practical subset: absolute and
+         * relative positions, nested `tspan`s, and `text-anchor` per chunk, which is what a diagram
+         * label uses. Anything beyond that is named rather than guessed at.
+         */
+        private fun emitText(el: Element, ctm: Affine, style: Style) {
+            val outliner = glyphs ?: run {
+                skipped.add("text")
+                return
+            }
+            val cursor = Cursor(length(attr(el, "x"), 0.0, width), length(attr(el, "y"), 0.0, height))
+            val chunks = ArrayList<Chunk>()
+            chunks.add(Chunk(cursor.x, cursor.y, style.textAnchor))
+            gather(el, style, cursor, chunks)
+            for (chunk in chunks) {
+                if (chunk.runs.isEmpty()) continue
+                val total = chunk.runs.sumOf { outliner.measure(it.text, it.style.glyphStyle()) }
+                var pen = chunk.x - when (chunk.anchor) {
+                    "middle" -> total / 2.0
+                    "end" -> total
+                    else -> 0.0
+                }
+                for (run in chunk.runs) {
+                    val glyphs = outliner.outline(run.text, run.style.glyphStyle())
+                    if (glyphs == null || glyphs.contours.isEmpty()) {
+                        pen += outliner.measure(run.text, run.style.glyphStyle())
+                        continue
+                    }
+                    val at = ctm.times(Affine.translate(pen + run.dx, chunk.y + run.dy))
+                    emit(glyphs.contours, at, run.style)
+                    pen += glyphs.advance
+                }
+            }
+        }
+
+        /** Where the next run starts, carried across nested `tspan`s. */
+        private class Cursor(var x: Double, var y: Double)
+
+        /** One run of characters, with the style and offsets in force where it appeared. */
+        private class TextRun(val text: String, val style: Style, val dx: Double, val dy: Double)
+
+        /** Runs sharing one absolute start, which is the unit `text-anchor` applies to. */
+        private class Chunk(val x: Double, val y: Double, val anchor: String) {
+            val runs = ArrayList<TextRun>()
+        }
+
+        private fun gather(el: Element, parentStyle: Style, cursor: Cursor, chunks: MutableList<Chunk>) {
+            val kids = el.childNodes
+            for (i in 0 until kids.length) {
+                val node = kids.item(i)
+                if (node.nodeType == Node.TEXT_NODE || node.nodeType == Node.CDATA_SECTION_NODE) {
+                    val text = collapse(node.nodeValue ?: "")
+                    if (text.isNotEmpty()) chunks.last().runs.add(TextRun(text, parentStyle, 0.0, 0.0))
+                    continue
+                }
+                val child = node as? Element ?: continue
+                val name = localName(child)
+                if (name == "textPath") {
+                    skipped.add("text on a path")
+                    continue
+                }
+                if (name != "tspan") continue
+                val style = parentStyle.inherit(child, css)
+                if (!style.visible) continue
+                // An absolute position starts a new chunk, which is what anchoring is measured over.
+                val ax = attr(child, "x")?.let { length(it, cursor.x, width) }
+                val ay = attr(child, "y")?.let { length(it, cursor.y, height) }
+                if (ax != null || ay != null) {
+                    cursor.x = ax ?: cursor.x
+                    cursor.y = ay ?: cursor.y
+                    chunks.add(Chunk(cursor.x, cursor.y, style.textAnchor))
+                }
+                val dx = attr(child, "dx")?.let { length(it, 0.0, width) } ?: 0.0
+                val dy = attr(child, "dy")?.let { length(it, 0.0, height) } ?: 0.0
+                if (dx != 0.0 || dy != 0.0) {
+                    // A shift moves the pen for everything after it, so it starts its own chunk too.
+                    chunks.add(Chunk(cursor.x + dx, cursor.y + dy, style.textAnchor))
+                    cursor.x += dx
+                    cursor.y += dy
+                }
+                gather(child, style, cursor, chunks)
+            }
+        }
+
+        /** XML whitespace collapsed the way SVG's default `xml:space` asks for. */
+        private fun collapse(raw: String): String {
+            val out = StringBuilder(raw.length)
+            var space = false
+            for (c in raw) {
+                if (c.isWhitespace()) {
+                    space = out.isNotEmpty()
+                } else {
+                    if (space) out.append(' ')
+                    space = false
+                    out.append(c)
+                }
+            }
+            return out.toString()
         }
 
         /**
@@ -549,6 +658,12 @@ object SvgReader {
         val visible: Boolean,
         /** The rectangular clip in force, in document space; nested clips intersect. */
         val clip: Rect?,
+        val fontFamily: String?,
+        val fontSize: Double,
+        val bold: Boolean,
+        val italic: Boolean,
+        val letterSpacing: Double,
+        val textAnchor: String,
     ) {
 
         fun withClip(rect: Rect): Style = copyWith(clip?.let { intersection(it, rect) } ?: rect)
@@ -556,7 +671,10 @@ object SvgReader {
         private fun copyWith(newClip: Rect?) = Style(
             fill, stroke, color, fillOpacity, strokeOpacity, opacity, fillRule, strokeWidth,
             cap, join, miterLimit, dash, dashOffset, visible, newClip,
+            fontFamily, fontSize, bold, italic, letterSpacing, textAnchor,
         )
+
+        fun glyphStyle() = GlyphStyle(fontFamily, fontSize, bold, italic, letterSpacing)
 
         fun inherit(el: Element, css: CssRules): Style {
             val decl = css.declarationsFor(el) + inlineStyle(attr(el, "style"))
@@ -595,6 +713,14 @@ object SvgReader {
                 dashOffset = prop("stroke-dashoffset")?.let { length(it, 0.0) } ?: dashOffset,
                 visible = visible && display != "none" && visibility != "hidden" && visibility != "collapse",
                 clip = clip,
+                fontFamily = prop("font-family")?.let { firstFamily(it) } ?: fontFamily,
+                fontSize = prop("font-size")?.let { fontSize(it, fontSize) } ?: fontSize,
+                bold = prop("font-weight")?.let { weightIsBold(it, bold) } ?: bold,
+                italic = prop("font-style")?.let { s ->
+                    s.trim().lowercase().let { it == "italic" || it == "oblique" }
+                } ?: italic,
+                letterSpacing = prop("letter-spacing")?.let { spacing(it, fontSize) } ?: letterSpacing,
+                textAnchor = prop("text-anchor")?.trim()?.lowercase() ?: textAnchor,
             )
         }
 
@@ -612,7 +738,45 @@ object SvgReader {
                 fill = null, stroke = null, color = Rgba(0, 0, 0), fillOpacity = 1.0,
                 strokeOpacity = 1.0, opacity = 1.0, fillRule = FillRule.NONZERO, strokeWidth = 1.0,
                 cap = LineCap.BUTT, join = LineJoin.MITER, miterLimit = 4.0, dash = null,
-                dashOffset = 0.0, visible = true, clip = null,
+                dashOffset = 0.0, visible = true, clip = null, fontFamily = null,
+                fontSize = DEFAULT_FONT_SIZE, bold = false, italic = false, letterSpacing = 0.0,
+                textAnchor = "start",
+            )
+
+            /** The first family a font stack names; the platform matches or substitutes it. */
+            fun firstFamily(text: String): String? = text.split(',').firstOrNull()
+                ?.trim()
+                ?.trim('"', '\'')
+                ?.takeIf { it.isNotEmpty() }
+
+            /** A font size, which may be relative to the size it inherited. */
+            fun fontSize(text: String, inherited: Double): Double {
+                val t = text.trim().lowercase()
+                if (t.endsWith("%")) return (t.dropLast(1).toDoubleOrNull() ?: 100.0) / 100.0 * inherited
+                if (t.endsWith("em")) return (t.dropLast(2).toDoubleOrNull() ?: 1.0) * inherited
+                if (t.endsWith("ex")) return (t.dropLast(2).toDoubleOrNull() ?: 1.0) * inherited / 2.0
+                return NAMED_SIZES[t] ?: length(t, inherited)
+            }
+
+            fun weightIsBold(text: String, inherited: Boolean): Boolean {
+                val t = text.trim().lowercase()
+                return when (t) {
+                    "bold", "bolder" -> true
+                    "normal", "lighter" -> false
+                    else -> t.toIntOrNull()?.let { it >= 600 } ?: inherited
+                }
+            }
+
+            fun spacing(text: String, fontSize: Double): Double {
+                val t = text.trim().lowercase()
+                if (t == "normal") return 0.0
+                if (t.endsWith("em")) return (t.dropLast(2).toDoubleOrNull() ?: 0.0) * fontSize
+                return length(t, 0.0)
+            }
+
+            private val NAMED_SIZES = mapOf(
+                "xx-small" to 9.0, "x-small" to 10.0, "small" to 13.0, "medium" to 16.0,
+                "large" to 18.0, "x-large" to 24.0, "xx-large" to 32.0,
             )
 
             fun alpha(text: String): Double {
@@ -782,6 +946,9 @@ object SvgReader {
     private const val KAPPA = 0.5522847498307933
 
     private const val DEFAULT_SIZE = 512.0
+
+    /** CSS's own initial font size, which SVG inherits. */
+    private const val DEFAULT_FONT_SIZE = 16.0
 
     /** A ceiling so a machine-generated map cannot mesh the app into the ground. */
     private const val MAX_PATHS = 20000

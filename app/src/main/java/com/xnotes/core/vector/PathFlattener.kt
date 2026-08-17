@@ -39,6 +39,53 @@ object PathFlattener {
     }
 
     /**
+     * [points] thinned to the fewest that still stay within [tolerance] of the original, by
+     * Ramer-Douglas-Peucker.
+     *
+     * Uniformly sampled geometry, which is all a platform path walker can hand back, spends most of
+     * its points on the straight parts. A capital H sampled every fraction of an em is a hundred
+     * points describing twelve corners; this puts it back to twelve.
+     */
+    fun decimate(points: List<Pt>, tolerance: Double): List<Pt> {
+        if (points.size < 3 || tolerance <= 0.0) return points
+        val keep = BooleanArray(points.size)
+        keep[0] = true
+        keep[points.size - 1] = true
+        rdp(points, keep, 0, points.size - 1, tolerance)
+        val out = ArrayList<Pt>(points.size)
+        for (i in points.indices) if (keep[i]) out.add(points[i])
+        return out
+    }
+
+    private fun rdp(points: List<Pt>, keep: BooleanArray, first: Int, last: Int, tolerance: Double) {
+        if (last <= first + 1) return
+        val a = points[first]
+        val b = points[last]
+        var worst = -1
+        var worstDist = tolerance
+        for (i in first + 1 until last) {
+            val d = distanceToSegment(points[i], a, b)
+            if (d > worstDist) {
+                worstDist = d
+                worst = i
+            }
+        }
+        if (worst < 0) return
+        keep[worst] = true
+        rdp(points, keep, first, worst, tolerance)
+        rdp(points, keep, worst, last, tolerance)
+    }
+
+    private fun distanceToSegment(p: Pt, a: Pt, b: Pt): Double {
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val lenSq = dx * dx + dy * dy
+        if (lenSq < 1e-18) return kotlin.math.hypot(p.x - a.x, p.y - a.y)
+        val t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq).coerceIn(0.0, 1.0)
+        return kotlin.math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    /**
      * Emit the interior of one cubic, exclusive of both ends. The flatness test is the standard
      * one: the control points' distance from the chord, compared squared so no square root is
      * taken per candidate.

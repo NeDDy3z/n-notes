@@ -22,6 +22,7 @@ object VectorScenes {
 
     private val cache = LruCache<String, VectorScene>(4)
     private val reported = HashSet<String>()
+    private val glyphs = AndroidGlyphOutliner()
 
     /** The parsed scene for [file], or null when it is not a vector or will not read. */
     @Synchronized
@@ -35,7 +36,7 @@ object VectorScenes {
             return null
         }
         val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
-        val scene = SvgReader.parse(bytes)
+        val scene = SvgReader.parse(bytes, glyphs)
         cache.put(path, scene)
         report(path, scene)
         return scene
