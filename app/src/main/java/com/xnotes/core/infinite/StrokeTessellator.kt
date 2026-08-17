@@ -22,6 +22,13 @@ class MeshData(
     val offsets: DoubleArray,
     /** Triangle list, three indices per triangle, zero-based within this mesh. */
     val indices: IntArray,
+    /**
+     * Packed ARGB per vertex, or null when the whole mesh is one colour and the uploader supplies
+     * it. Set only by a gradient fill, which is per-vertex colour on a subdivided mesh: the vertex
+     * format already carries RGBA and the rasterizer already interpolates it, so a ramp costs
+     * nothing per frame beyond the extra triangles it took to resolve.
+     */
+    val colors: IntArray? = null,
 ) {
     val vertexCount: Int get() = positions.size / 2
     val triangleCount: Int get() = indices.size / 3

@@ -72,6 +72,7 @@ class GeometryStore {
     /**
      * Write [mesh] into the buffers in [color] and return where it landed. Positions are split into
      * chunk plus local here rather than in the tessellator, so the tessellator stays pure doubles.
+     * A mesh carrying its own per-vertex colours (a gradient fill) uses those instead of [color].
      */
     fun put(mesh: MeshData, color: Rgba): BufferSlice? {
         if (mesh.isEmpty) return null
@@ -93,6 +94,7 @@ class GeometryStore {
         val g = color.g.toByte()
         val b = color.b.toByte()
         val a = color.a.toByte()
+        val perVertex = mesh.colors?.takeIf { it.size >= vCount }
         var p = vOffset * VERTEX_STRIDE
         for (i in 0 until vCount) {
             val x = mesh.positions[2 * i]
@@ -103,10 +105,18 @@ class GeometryStore {
             vertexMirror.putFloat(p + 4, (y - cy * CHUNK_SIZE).toFloat())
             vertexMirror.putShort(p + 8, cx.toInt().toShort())
             vertexMirror.putShort(p + 10, cy.toInt().toShort())
-            vertexMirror.put(p + 12, r)
-            vertexMirror.put(p + 13, g)
-            vertexMirror.put(p + 14, b)
-            vertexMirror.put(p + 15, a)
+            if (perVertex != null) {
+                val c = perVertex[i]
+                vertexMirror.put(p + 12, ((c shr 16) and 0xFF).toByte())
+                vertexMirror.put(p + 13, ((c shr 8) and 0xFF).toByte())
+                vertexMirror.put(p + 14, (c and 0xFF).toByte())
+                vertexMirror.put(p + 15, ((c ushr 24) and 0xFF).toByte())
+            } else {
+                vertexMirror.put(p + 12, r)
+                vertexMirror.put(p + 13, g)
+                vertexMirror.put(p + 14, b)
+                vertexMirror.put(p + 15, a)
+            }
             // How far this vertex sits from its own line, quantized; the shader uses it to keep a
             // sub-pixel stroke a line rather than a shimmer.
             vertexMirror.putShort(p + 16, quantizeOffset(mesh.offsets[2 * i]))

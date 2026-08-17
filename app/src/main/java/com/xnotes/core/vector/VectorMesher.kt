@@ -45,17 +45,26 @@ object VectorMesher {
         val parts = ArrayList<MeshPart>()
         var vertices = 0
         for (path in scene.paths) {
+            val clip = path.clip?.let { clipQuad(it, place) }
+            if (clip != null && clip.isEmpty()) continue // a clip that hides everything
             val rings = ArrayList<List<Pt>>(path.contours.size)
             val lines = ArrayList<Flat>(path.contours.size)
             for (contour in path.contours) {
                 val moved = transform(contour, place)
                 val pts = PathFlattener.flatten(moved, tolerance)
                 if (pts.size < 2) continue
-                lines.add(Flat(pts, moved.closed))
-                // An open subpath still fills as if it were closed, which is what the spec says.
-                if (pts.size >= 3) rings.add(pts)
+                if (clip == null) {
+                    lines.add(Flat(pts, moved.closed))
+                    // An open subpath still fills as if closed, which is what the spec says.
+                    if (pts.size >= 3) rings.add(pts)
+                } else {
+                    // A clipped stroke is cut down its centreline, so it can overhang the clip by
+                    // up to half its own width. A clipped fill is exact.
+                    for (run in PolygonClip.polyline(pts, moved.closed, clip)) lines.add(Flat(run, false))
+                    if (pts.size >= 3) PolygonClip.polygon(pts, clip).takeIf { it.size >= 3 }?.let(rings::add)
+                }
             }
-            if (lines.isEmpty()) continue
+            if (lines.isEmpty() && rings.isEmpty()) continue
             path.fill?.let { fillPart(rings, it, path) }?.let {
                 parts.add(it)
                 vertices += it.mesh.vertexCount
@@ -71,6 +80,19 @@ object VectorMesher {
 
     /** A flattened contour and whether it closes, which decides both filling and capping. */
     private class Flat(val points: List<Pt>, val closed: Boolean)
+
+    /** A document-space clip rectangle as the (possibly turned) convex quad it becomes on screen. */
+    private fun clipQuad(clip: Rect, place: Affine): List<Pt> {
+        if (clip.w <= 0.0 || clip.h <= 0.0) return emptyList()
+        return PolygonClip.wound(
+            listOf(
+                place.map(Pt(clip.left, clip.top)),
+                place.map(Pt(clip.right, clip.top)),
+                place.map(Pt(clip.right, clip.bottom)),
+                place.map(Pt(clip.left, clip.bottom)),
+            ),
+        )
+    }
 
     /**
      * The document box mapped onto [rect]. A quarter turn swaps which side of the box each document
@@ -108,22 +130,32 @@ object VectorMesher {
      */
     private fun fillPart(rings: List<List<Pt>>, paint: VectorPaint, path: VectorPath): MeshPart? {
         if (rings.isEmpty()) return null
-        val color = solid(paint) ?: return null
+        val ramp = GradientRamp.of(paint)
+        val color = ramp?.average() ?: solid(paint) ?: return null
+        if (color.a <= 0) return null
         val mesh = Triangulator.triangulate(rings, path.fillRule)
         if (mesh != null) {
-            val mb = MeshBuilder(mesh.points.size, mesh.indices.size)
-            for (p in mesh.points) mb.vertex(p.x, p.y)
-            var i = 0
-            while (i < mesh.indices.size) {
-                mb.triangle(mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2])
-                i += 3
+            val data = if (ramp != null) {
+                GradientFill.refine(mesh, ramp)
+            } else {
+                val mb = MeshBuilder(mesh.points.size, mesh.indices.size)
+                for (p in mesh.points) mb.vertex(p.x, p.y)
+                var i = 0
+                while (i < mesh.indices.size) {
+                    mb.triangle(mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2])
+                    i += 3
+                }
+                if (mb.isEmpty) return null
+                mb.build()
             }
-            if (mb.isEmpty) return null
+            if (data.isEmpty) return null
             // Ear clipping tiles the fill rather than overlapping it, so even a translucent one can
             // go straight into the batched draw with its alpha in the vertices. That is worth
             // having: a diagram full of soft fills would otherwise cost two calls apiece.
-            return MeshPart(mb.build(), color, InkPass.OPAQUE)
+            return MeshPart(data, color, InkPass.OPAQUE)
         }
+        // The stencil cover is one flat colour, so an outline too tangled to triangulate loses its
+        // ramp and takes the average. Nothing real hits both at once.
         val mb = MeshBuilder(64, 96)
         val pivot = mb.vertex(rings[0][0].x, rings[0][0].y)
         for (ring in rings) {
@@ -147,7 +179,9 @@ object VectorMesher {
         scale: Double,
         tolerance: Double,
     ): MeshPart? {
-        val color = solid(paint) ?: return null
+        val ramp = GradientRamp.of(paint)
+        val color = ramp?.average() ?: solid(paint) ?: return null
+        if (color.a <= 0) return null
         val halfWidth = path.strokeWidth * scale / 2.0
         if (halfWidth <= 0.0) return null
         val mb = MeshBuilder(128, 192)
@@ -168,9 +202,13 @@ object VectorMesher {
             }
         }
         if (mb.isEmpty) return null
+        val data = mb.build()
+        // A gradient has to be per-vertex colour, which rules out the single-colour cover. The
+        // ribbon's vertices already track the path closely, so the ramp resolves without refining.
+        if (ramp != null) return MeshPart(GradientFill.color(data, ramp), color, InkPass.OPAQUE)
         // A stroke overlaps itself at every join and cap, so a translucent one has to accumulate
         // opaquely and take its alpha back once, the way translucent ink already does.
-        return MeshPart(mb.build(), color, if (color.a >= 255) InkPass.OPAQUE else InkPass.TRANSLUCENT)
+        return MeshPart(data, color, if (color.a >= 255) InkPass.OPAQUE else InkPass.TRANSLUCENT)
     }
 
     private fun solid(paint: VectorPaint): Rgba? = (paint as? VectorPaint.Solid)?.color?.takeIf { it.a > 0 }

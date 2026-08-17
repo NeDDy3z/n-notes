@@ -212,12 +212,56 @@ class SvgReaderTest {
     @Test
     fun `unimplemented features are named rather than silently dropped`() {
         val scene = read(
-            """<defs><linearGradient id="g"><stop offset="0" stop-color="red"/></linearGradient></defs>
-               <rect width="4" height="4" fill="url(#g)"/><text x="0" y="0">hi</text><image href="x.png"/>""",
+            """<defs><pattern id="p"/><filter id="f"/></defs>
+               <rect width="4" height="4" fill="url(#p)"/><text x="0" y="0">hi</text><image href="x.png"/>""",
         )
-        assertTrue(scene.skipped.contains("gradient"))
+        assertTrue(scene.skipped.contains("pattern"))
         assertTrue(scene.skipped.contains("text"))
         assertTrue(scene.skipped.contains("image"))
+    }
+
+    @Test
+    fun `a rectangular clip is kept and a shaped one is named and ignored`() {
+        val rect = read(
+            """<defs><clipPath id="c"><rect x="1" y="2" width="3" height="4"/></clipPath></defs>
+               <rect width="10" height="10" clip-path="url(#c)"/>""",
+        )
+        assertEquals(1.0, rect.paths[0].clip!!.left, 1e-9)
+        assertEquals(3.0, rect.paths[0].clip!!.w, 1e-9)
+        assertTrue(rect.skipped.isEmpty())
+
+        val shaped = read(
+            """<defs><clipPath id="c"><circle cx="5" cy="5" r="4"/></clipPath></defs>
+               <rect width="10" height="10" clip-path="url(#c)"/>""",
+        )
+        assertNull(shaped.paths[0].clip)
+        assertTrue(shaped.skipped.contains("clip path"))
+    }
+
+    @Test
+    fun `a gradient resolves against the path's own box`() {
+        val scene = read(
+            """<defs><linearGradient id="g"><stop offset="0" stop-color="red"/>
+                 <stop offset="1" stop-color="blue"/></linearGradient></defs>
+               <rect x="10" y="20" width="40" height="60" fill="url(#g)"/>""",
+        )
+        val g = scene.paths[0].fill as VectorPaint.Linear
+        assertEquals(10.0, g.x0, 1e-9)
+        assertEquals(50.0, g.x1, 1e-9)
+        assertEquals(2, g.stops.size)
+        assertTrue(scene.skipped.isEmpty())
+    }
+
+    @Test
+    fun `stop opacity folds into the stop's own alpha`() {
+        val scene = read(
+            """<defs><linearGradient id="g"><stop offset="0" stop-color="red" stop-opacity="0.5"/>
+                 <stop offset="1" stop-color="blue"/></linearGradient></defs>
+               <rect width="10" height="10" fill="url(#g)" fill-opacity="0.5"/>""",
+        )
+        val g = scene.paths[0].fill as VectorPaint.Linear
+        assertEquals(64.0, g.stops[0].color.a.toDouble(), 2.0)
+        assertEquals(128.0, g.stops[1].color.a.toDouble(), 2.0)
     }
 
     @Test

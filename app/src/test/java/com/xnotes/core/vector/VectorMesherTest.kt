@@ -5,6 +5,7 @@ import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.MeshPart
 import com.xnotes.format.SvgReader
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -161,6 +162,118 @@ class VectorMesherTest {
     @Test
     fun `a path with neither fill nor stroke meshes to nothing`() {
         assertTrue(mesh("""<path d="M0 0 L10 10" fill="none"/>""").isEmpty())
+    }
+
+    /** The colour the mesh carries at whichever vertex sits nearest ([x], [y]). */
+    private fun colorNear(parts: List<MeshPart>, x: Double, y: Double): Int {
+        var best = 0
+        var bestDist = Double.MAX_VALUE
+        for (part in parts) {
+            val colors = part.mesh.colors ?: continue
+            for (i in 0 until part.mesh.vertexCount) {
+                val dx = part.mesh.positions[2 * i] - x
+                val dy = part.mesh.positions[2 * i + 1] - y
+                val d = dx * dx + dy * dy
+                if (d < bestDist) {
+                    bestDist = d
+                    best = colors[i]
+                }
+            }
+        }
+        return best
+    }
+
+    private fun red(argb: Int) = (argb shr 16) and 0xFF
+    private fun blue(argb: Int) = argb and 0xFF
+
+    @Test
+    fun `a linear gradient runs across the fill`() {
+        val parts = mesh(
+            """<defs><linearGradient id="g"><stop offset="0" stop-color="#ff0000"/>
+                 <stop offset="1" stop-color="#0000ff"/></linearGradient></defs>
+               <rect width="100" height="100" fill="url(#g)"/>""",
+        )
+        assertEquals(1, parts.size)
+        assertNotNull(parts[0].mesh.colors)
+        assertEquals(255, red(colorNear(parts, 0.0, 50.0)))
+        assertEquals(0, blue(colorNear(parts, 0.0, 50.0)))
+        assertEquals(0, red(colorNear(parts, 100.0, 50.0)))
+        assertEquals(255, blue(colorNear(parts, 100.0, 50.0)))
+    }
+
+    @Test
+    fun `a two-stop linear ramp needs no subdivision`() {
+        val parts = mesh(
+            """<defs><linearGradient id="g"><stop offset="0" stop-color="#000000"/>
+                 <stop offset="1" stop-color="#ffffff"/></linearGradient></defs>
+               <rect width="100" height="100" fill="url(#g)"/>""",
+        )
+        // Two triangles, three unshared vertices each: exactly what the triangulation produced.
+        assertEquals(6, parts[0].mesh.vertexCount)
+    }
+
+    @Test
+    fun `a radial gradient starts at its centre`() {
+        val parts = mesh(
+            """<defs><radialGradient id="g"><stop offset="0" stop-color="#ff0000"/>
+                 <stop offset="1" stop-color="#0000ff"/></radialGradient></defs>
+               <rect width="100" height="100" fill="url(#g)"/>""",
+        )
+        assertTrue(red(colorNear(parts, 50.0, 50.0)) > 180)
+        assertTrue(blue(colorNear(parts, 0.0, 50.0)) > 180)
+    }
+
+    @Test
+    fun `a user-space gradient is placed in document coordinates`() {
+        val parts = mesh(
+            """<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="50" y2="0">
+                 <stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>
+               </linearGradient></defs>
+               <rect width="100" height="100" fill="url(#g)"/>""",
+        )
+        // The ramp is spent by halfway across, so the far edge is the pad colour.
+        assertEquals(255, blue(colorNear(parts, 100.0, 50.0)))
+        assertEquals(255, red(colorNear(parts, 0.0, 50.0)))
+    }
+
+    @Test
+    fun `a gradient inherits its stops through href`() {
+        val parts = mesh(
+            """<defs><linearGradient id="base"><stop offset="0" stop-color="#00ff00"/>
+                 <stop offset="1" stop-color="#00ff00"/></linearGradient>
+               <linearGradient id="g" href="#base"/></defs>
+               <rect width="100" height="100" fill="url(#g)"/>""",
+        )
+        assertEquals(0, red(colorNear(parts, 50.0, 50.0)))
+        assertEquals(255, (colorNear(parts, 50.0, 50.0) shr 8) and 0xFF)
+    }
+
+    @Test
+    fun `a rectangular clip cuts the fill down to itself`() {
+        val parts = mesh(
+            """<defs><clipPath id="c"><rect x="0" y="0" width="50" height="100"/></clipPath></defs>
+               <rect width="100" height="100" fill="black" clip-path="url(#c)"/>""",
+        )
+        assertEquals(50.0 * 100.0, area(parts), 1e-6)
+        assertEquals(50.0, bounds(parts).right, 1e-6)
+    }
+
+    @Test
+    fun `a clip travels down to the group's children`() {
+        val parts = mesh(
+            """<defs><clipPath id="c"><rect x="0" y="0" width="40" height="100"/></clipPath></defs>
+               <g clip-path="url(#c)"><rect width="100" height="100" fill="black"/></g>""",
+        )
+        assertEquals(40.0, bounds(parts).right, 1e-6)
+    }
+
+    @Test
+    fun `a clipped stroke is cut where it leaves the clip`() {
+        val parts = mesh(
+            """<defs><clipPath id="c"><rect x="0" y="0" width="50" height="100"/></clipPath></defs>
+               <path d="M0 50 L100 50" stroke="black" stroke-width="4" fill="none" clip-path="url(#c)"/>""",
+        )
+        assertEquals(50.0, bounds(parts).right, 1e-6)
     }
 
     @Test

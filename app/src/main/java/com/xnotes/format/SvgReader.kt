@@ -5,8 +5,10 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FillRule
 import com.xnotes.core.vector.Affine
+import com.xnotes.core.vector.GradientStop
 import com.xnotes.core.vector.LineCap
 import com.xnotes.core.vector.LineJoin
+import com.xnotes.core.vector.SpreadMethod
 import com.xnotes.core.vector.VectorContour
 import com.xnotes.core.vector.VectorPaint
 import com.xnotes.core.vector.VectorPath
@@ -62,6 +64,12 @@ object SvgReader {
         private var used = 0
         private var useDepth = 0
 
+        // The document box, which percentage lengths in user space resolve against.
+        private var width = DEFAULT_SIZE
+        private var height = DEFAULT_SIZE
+        private val diagonal: Double
+            get() = kotlin.math.sqrt(width * width + height * height) / kotlin.math.sqrt(2.0)
+
         fun read(): VectorScene {
             index(root)
             css.collect(root)
@@ -73,8 +81,8 @@ object SvgReader {
             }
             val w = length(attr(root, "width"), vb?.w ?: DEFAULT_SIZE)
             val h = length(attr(root, "height"), vb?.h ?: DEFAULT_SIZE)
-            val width = (if (w > 0.0) w else vb?.w ?: DEFAULT_SIZE).coerceAtLeast(1e-6)
-            val height = (if (h > 0.0) h else vb?.h ?: DEFAULT_SIZE).coerceAtLeast(1e-6)
+            width = (if (w > 0.0) w else vb?.w ?: DEFAULT_SIZE).coerceAtLeast(1e-6)
+            height = (if (h > 0.0) h else vb?.h ?: DEFAULT_SIZE).coerceAtLeast(1e-6)
             val ctm = viewBoxTransform(vb, width, height, attr(root, "preserveAspectRatio"))
             walk(root, ctm, Style.ROOT)
             return VectorScene(width, height, paths, skipped)
@@ -123,9 +131,10 @@ object SvgReader {
                 if (name == "mask" || name == "filter" || name == "pattern") skipped.add(name)
                 return
             }
-            val style = parentStyle.inherit(el, css)
-            if (!style.visible) return
+            val inherited = parentStyle.inherit(el, css)
+            if (!inherited.visible) return
             val ctm = parentCtm.times(transform(attr(el, "transform")))
+            val style = clipped(inherited, el, ctm)
             when (name) {
                 "g", "a", "switch" -> walk(el, ctm, style)
                 "svg" -> walk(el, ctm, style) // a nested viewport, treated as a plain group
@@ -255,8 +264,13 @@ object SvgReader {
 
         private fun emit(contours: List<VectorContour>, ctm: Affine, style: Style) {
             if (contours.isEmpty()) return
-            val fill = paint(style.fill ?: "black", style.fillOpacity, style)
-            val stroke = if (style.strokeWidth > 0.0) paint(style.stroke, style.strokeOpacity, style) else null
+            val box = controlBox(contours)
+            val fill = paint(style.fill ?: "black", style.fillOpacity, style, ctm, box)
+            val stroke = if (style.strokeWidth > 0.0) {
+                paint(style.stroke, style.strokeOpacity, style, ctm, box)
+            } else {
+                null
+            }
             if (fill == null && stroke == null) return
             val scale = ctm.lengthScale()
             paths.add(
@@ -271,8 +285,39 @@ object SvgReader {
                     miterLimit = style.miterLimit,
                     dash = style.dash?.map { it * scale }?.toDoubleArray(),
                     dashOffset = style.dashOffset * scale,
+                    clip = style.clip,
                 ),
             )
+        }
+
+        /**
+         * The path's box before it is placed, which is what `objectBoundingBox` gradient units
+         * resolve against. Taken from the control points, which contain the true outline: a curve
+         * never leaves its own control hull, so this is at worst slightly generous.
+         */
+        private fun controlBox(contours: List<VectorContour>): Rect {
+            var l = Double.MAX_VALUE
+            var t = Double.MAX_VALUE
+            var r = -Double.MAX_VALUE
+            var b = -Double.MAX_VALUE
+            fun add(p: Pt) {
+                l = minOf(l, p.x)
+                t = minOf(t, p.y)
+                r = maxOf(r, p.x)
+                b = maxOf(b, p.y)
+            }
+            for (c in contours) {
+                add(c.start)
+                for (seg in c.segments) {
+                    if (seg is VectorSeg.Cubic) {
+                        add(seg.c1)
+                        add(seg.c2)
+                    }
+                    add(seg.end)
+                }
+            }
+            if (l > r || t > b) return Rect(0.0, 0.0, 0.0, 0.0)
+            return Rect(l, t, r - l, b - t)
         }
 
         /**
@@ -280,27 +325,185 @@ object SvgReader {
          * pipeline cannot build is named in [skipped] rather than silently painting the wrong
          * colour, which is what makes a coverage gap visible.
          */
-        private fun paint(source: String?, channelOpacity: Double, style: Style): VectorPaint? {
+        private fun paint(
+            source: String?,
+            channelOpacity: Double,
+            style: Style,
+            ctm: Affine,
+            box: Rect,
+        ): VectorPaint? {
             val s = source?.trim() ?: return null
             if (s.isEmpty() || s.equals("none", true)) return null
-            if (s.startsWith("url(")) {
-                skipped.add(paintReferenceKind(s))
-                return null
-            }
+            val alpha = channelOpacity * style.opacity
+            if (s.startsWith("url(")) return referencedPaint(s, alpha, ctm, box)
             val base = if (s.equals("currentColor", true)) style.color else SvgColors.parse(s) ?: return null
-            val a = (base.a / 255.0) * channelOpacity * style.opacity
+            val a = (base.a / 255.0) * alpha
             if (a <= 0.0) return null
             return VectorPaint.Solid(base.withAlpha((a * 255.0).toInt().coerceIn(0, 255)))
         }
 
-        /** What a `url(#x)` paint actually points at, so the log line names the real feature. */
-        private fun paintReferenceKind(source: String): String {
+        /**
+         * A `url(#x)` paint resolved to a gradient, or named in [skipped] when it points at
+         * something the pipeline cannot build.
+         */
+        private fun referencedPaint(source: String, alpha: Double, ctm: Affine, box: Rect): VectorPaint? {
             val id = source.substringAfter('#', "").substringBefore(')').trim()
-            return when (localName(byId[id] ?: return "paint server")) {
-                "linearGradient", "radialGradient" -> "gradient"
-                "pattern" -> "pattern"
-                else -> "paint server"
+            val el = byId[id]
+            return when (localName(el ?: return skip("paint server"))) {
+                "linearGradient" -> gradient(el, alpha, ctm, box, radial = false)
+                "radialGradient" -> gradient(el, alpha, ctm, box, radial = true)
+                "pattern" -> skip("pattern")
+                else -> skip("paint server")
             }
+        }
+
+        private fun skip(feature: String): VectorPaint? {
+            skipped.add(feature)
+            return null
+        }
+
+        /**
+         * A gradient in document space. Everything a gradient's geometry depends on is resolved
+         * here — bounding-box units, `gradientTransform`, the referring element's own transform —
+         * so nothing downstream carries a matrix or needs to know what the path's box was.
+         */
+        private fun gradient(el: Element, alpha: Double, ctm: Affine, box: Rect, radial: Boolean): VectorPaint? {
+            val stops = gradientStops(el, alpha)
+            if (stops.isEmpty()) return null
+            val onBox = (gradientAttr(el, "gradientUnits") ?: "objectBoundingBox").trim() != "userSpaceOnUse"
+            if (onBox && (box.w <= 0.0 || box.h <= 0.0)) return null
+            val units = if (onBox) {
+                Affine.translate(box.left, box.top).times(Affine.scale(box.w, box.h))
+            } else {
+                Affine.IDENTITY
+            }
+            val m = ctm.times(units).times(transform(gradientAttr(el, "gradientTransform")))
+            val spread = when (gradientAttr(el, "spreadMethod")?.trim()?.lowercase()) {
+                "reflect" -> SpreadMethod.REFLECT
+                "repeat" -> SpreadMethod.REPEAT
+                else -> SpreadMethod.PAD
+            }
+            fun coord(name: String, fallback: Double, reference: Double) =
+                gradientCoord(gradientAttr(el, name), fallback, onBox, reference)
+            if (!radial) {
+                val a = m.map(Pt(coord("x1", 0.0, width), coord("y1", 0.0, height)))
+                val b = m.map(Pt(coord("x2", 1.0, width), coord("y2", 0.0, height)))
+                return VectorPaint.Linear(a.x, a.y, b.x, b.y, stops, spread)
+            }
+            val cx = coord("cx", 0.5, width)
+            val cy = coord("cy", 0.5, height)
+            val c = m.map(Pt(cx, cy))
+            val f = m.map(Pt(coord("fx", cx, width), coord("fy", cy, height)))
+            // A non-uniform transform would make the circle an ellipse; the length scale is the
+            // circular reading of it, which is what the one file in a hundred that does this loses.
+            val r = coord("r", 0.5, diagonal) * m.lengthScale()
+            return VectorPaint.Radial(c.x, c.y, r, f.x, f.y, stops, spread)
+        }
+
+        /** A gradient coordinate: a fraction under bounding-box units, a length under user space. */
+        private fun gradientCoord(text: String?, fallback: Double, onBox: Boolean, reference: Double): Double {
+            val t = text?.trim() ?: return fallback
+            if (t.isEmpty()) return fallback
+            if (t.endsWith("%")) {
+                val v = t.dropLast(1).toDoubleOrNull() ?: return fallback
+                return if (onBox) v / 100.0 else v / 100.0 * reference
+            }
+            if (onBox) return t.toDoubleOrNull() ?: fallback
+            return length(t, fallback, reference)
+        }
+
+        /** An attribute of [el] or of whatever it inherits from through `href`. */
+        private fun gradientAttr(el: Element, name: String): String? {
+            var cur: Element? = el
+            var hops = 0
+            while (cur != null && hops++ < MAX_HREF_HOPS) {
+                attr(cur, name)?.let { return it }
+                cur = hrefTarget(cur)
+            }
+            return null
+        }
+
+        /** The nearest stops up the `href` chain, which is how a file shares one ramp everywhere. */
+        private fun gradientStops(el: Element, alpha: Double): List<GradientStop> {
+            var cur: Element? = el
+            var hops = 0
+            while (cur != null && hops++ < MAX_HREF_HOPS) {
+                val stops = children(cur).filter { localName(it) == "stop" }
+                if (stops.isNotEmpty()) return stops.mapNotNull { stop(it, alpha) }
+                cur = hrefTarget(cur)
+            }
+            return emptyList()
+        }
+
+        private fun stop(el: Element, alpha: Double): GradientStop? {
+            val decl = css.declarationsFor(el) + Style.inlineStyle(attr(el, "style"))
+            fun prop(name: String) = decl[name] ?: attr(el, name)
+            val color = SvgColors.parse(prop("stop-color") ?: "black") ?: return null
+            val opacity = prop("stop-opacity")?.let { Style.alpha(it) } ?: 1.0
+            val a = (color.a / 255.0) * opacity * alpha
+            val offsetText = (prop("offset") ?: "0").trim()
+            val offset = if (offsetText.endsWith("%")) {
+                (offsetText.dropLast(1).toDoubleOrNull() ?: 0.0) / 100.0
+            } else {
+                offsetText.toDoubleOrNull() ?: 0.0
+            }
+            return GradientStop(offset, color.withAlpha((a * 255.0).toInt().coerceIn(0, 255)))
+        }
+
+        private fun hrefTarget(el: Element): Element? {
+            val href = (attr(el, "href") ?: attrNs(el, XLINK, "href"))?.trim() ?: return null
+            if (!href.startsWith("#")) return null
+            return byId[href.substring(1)]
+        }
+
+        /**
+         * The element's own `clip-path` intersected with whatever it inherited. A rectangular clip
+         * is kept and applied to the geometry; anything else is named and ignored, since dropping
+         * the clipped content entirely would hide far more than the clip ever would.
+         */
+        private fun clipped(style: Style, el: Element, ctm: Affine): Style {
+            val source = (Style.inlineStyle(attr(el, "style"))["clip-path"] ?: attr(el, "clip-path"))?.trim()
+                ?: return style
+            if (!source.startsWith("url(")) return style
+            val id = source.substringAfter('#', "").substringBefore(')').trim()
+            val el2 = byId[id] ?: return style
+            if (localName(el2) != "clipPath") return style
+            val rect = clipRect(el2, ctm) ?: return skipClip(style)
+            return style.withClip(rect)
+        }
+
+        private fun skipClip(style: Style): Style {
+            skipped.add("clip path")
+            return style
+        }
+
+        /**
+         * A `clipPath` as one axis-aligned rectangle in document space, or null when it is anything
+         * else. The artboard clip an exporter writes is exactly this shape, which is the case worth
+         * getting right; a genuinely arbitrary clip would need a polygon boolean library.
+         */
+        private fun clipRect(el: Element, ctm: Affine): Rect? {
+            if ((attr(el, "clipPathUnits") ?: "userSpaceOnUse").trim() != "userSpaceOnUse") return null
+            val kids = children(el).filter { localName(it) != "title" && localName(it) != "desc" }
+            val only = kids.singleOrNull() ?: return null
+            val contours = when (localName(only)) {
+                "rect" -> rect(only)
+                "path" -> SvgPathData.parse(attr(only, "d") ?: "")
+                else -> return null
+            }
+            val m = ctm.times(transform(attr(only, "transform")))
+            // Only a straight rectangle survives: a corner radius or a turn is not a box any more.
+            if (attr(only, "rx") != null || attr(only, "ry") != null) return null
+            if (kotlin.math.abs(m.b) > 1e-9 || kotlin.math.abs(m.c) > 1e-9) return null
+            val contour = contours.singleOrNull() ?: return null
+            if (contour.segments.any { it !is VectorSeg.Line } || contour.segments.size !in 3..4) return null
+            val pts = listOf(contour.start) + contour.segments.map { it.end }
+            val xs = pts.map { it.x }.distinct()
+            val ys = pts.map { it.y }.distinct()
+            if (xs.size != 2 || ys.size != 2) return null
+            val a = m.map(Pt(xs.min(), ys.min()))
+            val b = m.map(Pt(xs.max(), ys.max()))
+            return Rect.fromPoints(a, b)
         }
 
         private fun transformContour(c: VectorContour, m: Affine): VectorContour {
@@ -344,7 +547,16 @@ object SvgReader {
         val dash: DoubleArray?,
         val dashOffset: Double,
         val visible: Boolean,
+        /** The rectangular clip in force, in document space; nested clips intersect. */
+        val clip: Rect?,
     ) {
+
+        fun withClip(rect: Rect): Style = copyWith(clip?.let { intersection(it, rect) } ?: rect)
+
+        private fun copyWith(newClip: Rect?) = Style(
+            fill, stroke, color, fillOpacity, strokeOpacity, opacity, fillRule, strokeWidth,
+            cap, join, miterLimit, dash, dashOffset, visible, newClip,
+        )
 
         fun inherit(el: Element, css: CssRules): Style {
             val decl = css.declarationsFor(el) + inlineStyle(attr(el, "style"))
@@ -382,6 +594,7 @@ object SvgReader {
                 dash = prop("stroke-dasharray")?.let { parseDash(it) } ?: dash,
                 dashOffset = prop("stroke-dashoffset")?.let { length(it, 0.0) } ?: dashOffset,
                 visible = visible && display != "none" && visibility != "hidden" && visibility != "collapse",
+                clip = clip,
             )
         }
 
@@ -399,7 +612,7 @@ object SvgReader {
                 fill = null, stroke = null, color = Rgba(0, 0, 0), fillOpacity = 1.0,
                 strokeOpacity = 1.0, opacity = 1.0, fillRule = FillRule.NONZERO, strokeWidth = 1.0,
                 cap = LineCap.BUTT, join = LineJoin.MITER, miterLimit = 4.0, dash = null,
-                dashOffset = 0.0, visible = true,
+                dashOffset = 0.0, visible = true, clip = null,
             )
 
             fun alpha(text: String): Double {
@@ -489,6 +702,12 @@ object SvgReader {
 
     private fun localName(node: Node): String = node.localName ?: node.nodeName ?: ""
 
+    /** The overlap of two clips; an empty result is a clip that hides everything, which is legal. */
+    private fun intersection(a: Rect, b: Rect) = Rect.fromPoints(
+        Pt(maxOf(a.left, b.left), maxOf(a.top, b.top)),
+        Pt(maxOf(maxOf(a.left, b.left), minOf(a.right, b.right)), maxOf(maxOf(a.top, b.top), minOf(a.bottom, b.bottom))),
+    )
+
     private fun attr(el: Element, name: String): String? =
         el.getAttribute(name).takeIf { it.isNotEmpty() }
 
@@ -570,6 +789,9 @@ object SvgReader {
     private const val MAX_USE_EXPANSIONS = 20000
 
     private const val MAX_USE_DEPTH = 32
+
+    /** How far a gradient's `href` chain is followed for its stops and attributes. */
+    private const val MAX_HREF_HOPS = 8
 
     private val NEVER_DRAWN = setOf(
         "defs", "symbol", "clipPath", "mask", "marker", "pattern", "filter",
