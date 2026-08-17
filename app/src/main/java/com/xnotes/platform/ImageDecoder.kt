@@ -11,6 +11,7 @@ import com.xnotes.core.util.Svg
 import java.io.File
 import java.io.FileInputStream
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.max
 
 /**
@@ -22,6 +23,8 @@ import kotlin.math.max
  * complex SVG is expensive to parse and paint — and lifted (selected) items repaint every frame —
  * SVGs are served from two bounded LRUs: the parsed document, and rasterizations at power-of-two
  * size buckets (so a drag, a repeated sharpen, or a small zoom step is a plain bitmap blit).
+ * On-screen draws go through [renderVectorSlice], which rasterizes only the region the caller can
+ * actually show, so a deep zoom paints a viewport-sized bitmap instead of the whole document.
  * Safe to call from any thread; both caches are thread-safe and memory-capped.
  */
 object ImageDecoder {
@@ -58,8 +61,111 @@ object ImageDecoder {
         return scaled
     }
 
-    /** True when [path] holds a vector (SVG) source with no native pixel resolution. */
-    fun isVector(path: String): Boolean = Svg.isSvgFile(File(path))
+    /** True when [path] holds a vector (SVG) source with no native pixel resolution.
+     *  Memoized: the sniff opens the file, and a lifted image is re-drawn every frame. */
+    fun isVector(path: String): Boolean =
+        vectorFlags.get(path) ?: Svg.isSvgFile(File(path)).also { vectorFlags.put(path, it) }
+
+    /**
+     * A rasterized sub-region of a vector document. [bitmap] covers the fractional rect
+     * ([u0], [v0])–([u1], [v1]) of the document's intrinsic box, so the caller maps that
+     * fraction of its destination and blits.
+     */
+    class VectorSlice(
+        val bitmap: Bitmap,
+        val u0: Double,
+        val v0: Double,
+        val u1: Double,
+        val v1: Double,
+    )
+
+    /**
+     * Rasterize only the requested fraction of the vector at [path], sized for a [devW]×[devH]
+     * on-screen box for the *whole* document. At deep zoom the caller passes the visible sliver,
+     * so the render is bounded by the viewport instead of by the document: no whole-document paint
+     * whose pixels are then thrown away, and no bitmap too big for its own cache.
+     *
+     * The returned slice may cover more than was asked for. The document snaps to the same
+     * power-of-two long-side buckets [renderSvg] uses, and the region snaps outward to a
+     * [SLICE_GRID] grid, so a pan or a small zoom step re-uses one rasterization.
+     */
+    fun renderVectorSlice(
+        path: String,
+        u0: Double,
+        v0: Double,
+        u1: Double,
+        v1: Double,
+        devW: Int,
+        devH: Int,
+    ): VectorSlice? {
+        val svg = cachedSvg(path) ?: return null
+        val size = svgSize(svg)
+        val cu0 = u0.coerceIn(0.0, 1.0)
+        val cv0 = v0.coerceIn(0.0, 1.0)
+        val cu1 = u1.coerceIn(0.0, 1.0)
+        val cv1 = v1.coerceIn(0.0, 1.0)
+        if (cu1 <= cu0 || cv1 <= cv0) return null
+        // Cover (not fit): neither axis is under-sampled when the item's box was stretched.
+        val cover = max(devW.toDouble() / size.width, devH.toDouble() / size.height)
+        val longSide = (max(size.width, size.height) * cover).toInt().coerceAtLeast(1)
+        var bucket = pow2AtLeast(longSide)
+        // Halve until the slice fits the raster caps: the region shrinks with the bucket, so this
+        // terminates. It only bites when the whole document is wanted at once (export, thumbnails).
+        while (bucket >= MIN_BUCKET_PX) {
+            val s = bucket.toDouble() / max(size.width, size.height)
+            val docW = (size.width * s).toInt().coerceAtLeast(1)
+            val docH = (size.height * s).toInt().coerceAtLeast(1)
+            val x0 = floorGrid(cu0 * docW).coerceIn(0, docW)
+            val y0 = floorGrid(cv0 * docH).coerceIn(0, docH)
+            val x1 = ceilGrid(cu1 * docW).coerceIn(0, docW)
+            val y1 = ceilGrid(cv1 * docH).coerceIn(0, docH)
+            val w = x1 - x0
+            val h = y1 - y0
+            if (w <= 0 || h <= 0) return null
+            if (w > VECTOR_RENDER_CAP_PX || h > VECTOR_RENDER_CAP_PX ||
+                w.toLong() * h.toLong() > MAX_SLICE_PX
+            ) {
+                bucket = bucket shr 1
+                continue
+            }
+            val bmp = sliceBitmap(svg, path, bucket, x0, y0, w, h, docW, docH) ?: return null
+            return VectorSlice(
+                bmp,
+                x0.toDouble() / docW, y0.toDouble() / docH,
+                x1.toDouble() / docW, y1.toDouble() / docH,
+            )
+        }
+        return null
+    }
+
+    private fun sliceBitmap(
+        svg: SVG,
+        path: String,
+        bucket: Int,
+        x0: Int,
+        y0: Int,
+        w: Int,
+        h: Int,
+        docW: Int,
+        docH: Int,
+    ): Bitmap? {
+        val key = "$path#$bucket#$x0,$y0+$w,$h"
+        svgBitmapCache.get(key)?.let { return it }
+        val bmp = runCatching {
+            val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val c = Canvas(b)
+            // The viewport is the whole document at this scale; the bitmap bounds clip to the slice.
+            c.translate(-x0.toFloat(), -y0.toFloat())
+            synchronized(svg) { svg.renderToCanvas(c, RectF(0f, 0f, docW.toFloat(), docH.toFloat())) }
+            b
+        }.getOrNull() ?: return null
+        svgBitmapCache.put(key, bmp)
+        return bmp
+    }
+
+    private fun floorGrid(v: Double): Int = (floor(v / SLICE_GRID) * SLICE_GRID).toInt()
+
+    private fun ceilGrid(v: Double): Int = (ceil(v / SLICE_GRID) * SLICE_GRID).toInt()
 
     private fun probeRaster(path: String): ImageSize? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -71,6 +177,9 @@ object ImageDecoder {
     // files are immutable temp files, so the path alone is a sound key. Count-bounded (a parsed DOM
     // has no cheap byte size); stale entries for deleted temp files just age out.
     private val svgCache = LruCache<String, SVG>(4)
+
+    // Vector-ness by path: the sniff opens the file, and image files are immutable temp files.
+    private val vectorFlags = LruCache<String, Boolean>(64)
 
     // Rasterized SVGs by path + bucket. Byte-bounded against the heap; entries are never recycled
     // (callers may still be drawing them), eviction leaves them to the GC.
@@ -148,6 +257,15 @@ object ImageDecoder {
 
     private const val DEFAULT_SVG_SIZE = 512f
 
-    // Matches the raster decode caps used by the screen renderer and PDF export.
+    // Matches the raster decode caps used by the screen renderer and PDF export. On screen the
+    // slice render keeps every bitmap viewport-bounded, so this only governs export/thumbnails.
     private const val VECTOR_RENDER_CAP_PX = 4096
+
+    // Slices snap outward to this grid so panning re-uses one rasterization for a while.
+    private const val SLICE_GRID = 128
+
+    // 32 MiB at ARGB_8888: a slice is normally viewport-sized, this only bounds the pathological.
+    private const val MAX_SLICE_PX = 8L shl 20
+
+    private const val MIN_BUCKET_PX = 16
 }

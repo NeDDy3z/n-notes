@@ -51,6 +51,7 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         }
     }
 
+    private val clipBounds = android.graphics.Rect()
     private val scaleStack = ArrayDeque<Float>()
     private var scaleX = 1f
     private var scaleY = 1f
@@ -310,6 +311,7 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         val devW = (dest.w * scaleX).toInt()
         val devH = (dest.h * scaleY).toInt()
         val o = ((orientation % 360) + 360) % 360
+        if (o == 0 && angle == 0.0 && drawVectorSlice(image, dest, devW, devH)) return
         val turned = o == 90 || o == 270
         val reqW = (if (turned) devH else devW).coerceIn(1, DECODE_CAP_PX)
         val reqH = (if (turned) devW else devH).coerceIn(1, DECODE_CAP_PX)
@@ -322,6 +324,41 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         if (degrees != 0.0) canvas.rotate(degrees.toFloat())
         canvas.drawBitmap(bmp, null, RectF(-uw / 2f, -uh / 2f, uw / 2f, uh / 2f), bitmapPaint)
         canvas.restore()
+    }
+
+    /**
+     * Draw an unrotated vector image by rasterizing only the part the clip can show. The clip is
+     * this canvas's own, so the destination surface bounds it: the sharp viewport asks for the
+     * visible sliver instead of the whole document at a 4096 px bucket. Returns false when the
+     * image isn't a vector (or the slice failed) so the caller falls back to the raster path.
+     */
+    private fun drawVectorSlice(image: ImageData, dest: Rect, devW: Int, devH: Int): Boolean {
+        val path = image.file.path
+        if (!ImageDecoder.isVector(path)) return false
+        if (!canvas.getClipBounds(clipBounds)) return true // clipped away entirely
+        val l = maxOf(dest.left, clipBounds.left.toDouble())
+        val t = maxOf(dest.top, clipBounds.top.toDouble())
+        val r = minOf(dest.right, clipBounds.right.toDouble())
+        val b = minOf(dest.bottom, clipBounds.bottom.toDouble())
+        if (r <= l || b <= t) return true
+        val slice = ImageDecoder.renderVectorSlice(
+            path,
+            (l - dest.left) / dest.w, (t - dest.top) / dest.h,
+            (r - dest.left) / dest.w, (b - dest.top) / dest.h,
+            devW, devH,
+        ) ?: return false
+        canvas.drawBitmap(
+            slice.bitmap,
+            null,
+            RectF(
+                (dest.left + slice.u0 * dest.w).toFloat(),
+                (dest.top + slice.v0 * dest.h).toFloat(),
+                (dest.left + slice.u1 * dest.w).toFloat(),
+                (dest.top + slice.v1 * dest.h).toFloat(),
+            ),
+            bitmapPaint,
+        )
+        return true
     }
 
     override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {
