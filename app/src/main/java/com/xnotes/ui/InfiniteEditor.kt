@@ -196,6 +196,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         }
 
         override fun onItemRemoved(item: CanvasItem) {
+            // Drop any mesh job still running for it, so its result cannot file the record again.
+            if (item is ImageItem) vectorMeshGen.remove(item)
             scene.remove(item)
         }
 
@@ -282,12 +284,15 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             } else {
                 VectorMesher.mesh(parsed, rect, orientation, angle, StrokeTessellator.DEFAULT_TOLERANCE)
             }
-            // A newer placement already queued its own mesh; that one owns the record now.
-            if (!vectorMeshGen.remove(item, token)) return@execute
-            if (parts.isEmpty()) return@execute
-            scene.lastTessellateMs = (System.nanoTime() - started) / 1_000_000.0
-            scene.upsert(item, parts, bounds)
-            view.post { view.publish() }
+            val ms = (System.nanoTime() - started) / 1_000_000.0
+            // Claimed and filed on the main thread, so this cannot land after a removal that was
+            // decided while it ran and put the item back on the canvas.
+            view.post {
+                if (!vectorMeshGen.remove(item, token) || parts.isEmpty()) return@post
+                scene.lastTessellateMs = ms
+                scene.upsert(item, parts, bounds)
+                view.publish()
+            }
         }
         return true
     }
