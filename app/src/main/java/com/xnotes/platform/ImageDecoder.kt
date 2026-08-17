@@ -85,9 +85,12 @@ object ImageDecoder {
      * so the render is bounded by the viewport instead of by the document: no whole-document paint
      * whose pixels are then thrown away, and no bitmap too big for its own cache.
      *
-     * The returned slice may cover more than was asked for. The document snaps to the same
-     * power-of-two long-side buckets [renderSvg] uses, and the region snaps outward to a
-     * [SLICE_GRID] grid, so a pan or a small zoom step re-uses one rasterization.
+     * The returned slice may cover more than was asked for, and deliberately so. Slicing at all is
+     * only worth it once the whole document no longer fits the raster caps; below that the whole
+     * thing is rendered, because one rasterization then serves every position and a *lifted* image
+     * repaints on the UI thread every single frame. Past the caps the wanted region is padded, and
+     * the last slice is re-used for as long as it still covers what is asked for, so dragging or
+     * pinching a deeply zoomed image re-renders occasionally rather than continuously.
      */
     fun renderVectorSlice(
         path: String,
@@ -109,34 +112,84 @@ object ImageDecoder {
         val cover = max(devW.toDouble() / size.width, devH.toDouble() / size.height)
         val longSide = (max(size.width, size.height) * cover).toInt().coerceAtLeast(1)
         var bucket = pow2AtLeast(longSide)
-        // Halve until the slice fits the raster caps: the region shrinks with the bucket, so this
-        // terminates. It only bites when the whole document is wanted at once (export, thumbnails).
         while (bucket >= MIN_BUCKET_PX) {
             val s = bucket.toDouble() / max(size.width, size.height)
             val docW = (size.width * s).toInt().coerceAtLeast(1)
             val docH = (size.height * s).toInt().coerceAtLeast(1)
-            val x0 = floorGrid(cu0 * docW).coerceIn(0, docW)
-            val y0 = floorGrid(cv0 * docH).coerceIn(0, docH)
-            val x1 = ceilGrid(cu1 * docW).coerceIn(0, docW)
-            val y1 = ceilGrid(cv1 * docH).coerceIn(0, docH)
-            val w = x1 - x0
-            val h = y1 - y0
-            if (w <= 0 || h <= 0) return null
-            if (w > VECTOR_RENDER_CAP_PX || h > VECTOR_RENDER_CAP_PX ||
-                w.toLong() * h.toLong() > MAX_SLICE_PX
-            ) {
-                bucket = bucket shr 1
-                continue
+            if (fits(docW, docH)) {
+                // The whole document, under the same key [renderSvg] uses, so a draw and an export
+                // at the same bucket share one bitmap.
+                val bmp = sliceBitmap(svg, path, bucket, 0, 0, docW, docH, docW, docH) ?: return null
+                return VectorSlice(bmp, 0.0, 0.0, 1.0, 1.0)
             }
-            val bmp = sliceBitmap(svg, path, bucket, x0, y0, w, h, docW, docH) ?: return null
-            return VectorSlice(
-                bmp,
-                x0.toDouble() / docW, y0.toDouble() / docH,
-                x1.toDouble() / docW, y1.toDouble() / docH,
-            )
+            reusable(path, bucket, cu0 * docW, cv0 * docH, cu1 * docW, cv1 * docH)?.let { return it }
+            val wantW = (cu1 - cu0) * docW
+            val wantH = (cv1 - cv0) * docH
+            // As much padding as the caps will take, which is what buys the drag its room. A small
+            // region gets the generous share; one already the size of the screen gets what is left.
+            for (pad in SLICE_PADS) {
+                val x0 = floorGrid(cu0 * docW - wantW * pad).coerceIn(0, docW)
+                val y0 = floorGrid(cv0 * docH - wantH * pad).coerceIn(0, docH)
+                val x1 = ceilGrid(cu1 * docW + wantW * pad).coerceIn(0, docW)
+                val y1 = ceilGrid(cv1 * docH + wantH * pad).coerceIn(0, docH)
+                val w = x1 - x0
+                val h = y1 - y0
+                if (w <= 0 || h <= 0) return null
+                if (!fits(w, h)) continue
+                val bmp = sliceBitmap(svg, path, bucket, x0, y0, w, h, docW, docH) ?: return null
+                synchronized(lastSlices) { lastSlices.put(path, Slice(bucket, x0, y0, x1, y1, docW, docH)) }
+                return VectorSlice(
+                    bmp,
+                    x0.toDouble() / docW, y0.toDouble() / docH,
+                    x1.toDouble() / docW, y1.toDouble() / docH,
+                )
+            }
+            bucket = bucket shr 1
         }
         return null
     }
+
+    private fun fits(w: Int, h: Int): Boolean =
+        w <= VECTOR_RENDER_CAP_PX && h <= VECTOR_RENDER_CAP_PX && w.toLong() * h.toLong() <= MAX_SLICE_PX
+
+    /** Where the last slice of a document landed, so a small move can re-use it whole. */
+    private class Slice(
+        val bucket: Int,
+        val x0: Int,
+        val y0: Int,
+        val x1: Int,
+        val y1: Int,
+        val docW: Int,
+        val docH: Int,
+    )
+
+    private val lastSlices = LruCache<String, Slice>(8)
+
+    /**
+     * The last slice of [path] when it still covers the wanted region at the same bucket and its
+     * bitmap is still cached. This is what makes a drag cheap: the region asked for slides with
+     * every frame, but the padded slice under it holds for a good while.
+     */
+    private fun reusable(path: String, bucket: Int, wx0: Double, wy0: Double, wx1: Double, wy1: Double): VectorSlice? {
+        val last = synchronized(lastSlices) { lastSlices.get(path) } ?: return null
+        if (last.bucket != bucket) return null
+        if (wx0 < last.x0 || wy0 < last.y0 || wx1 > last.x1 || wy1 > last.y1) return null
+        val key = sliceKey(path, bucket, last.x0, last.y0, last.x1 - last.x0, last.y1 - last.y0, last.docW, last.docH)
+        val bmp = svgBitmapCache.get(key) ?: return null
+        return VectorSlice(
+            bmp,
+            last.x0.toDouble() / last.docW, last.y0.toDouble() / last.docH,
+            last.x1.toDouble() / last.docW, last.y1.toDouble() / last.docH,
+        )
+    }
+
+    /** A whole-document slice keys as [renderSvg]'s own entry, so the two share one bitmap. */
+    private fun sliceKey(path: String, bucket: Int, x0: Int, y0: Int, w: Int, h: Int, docW: Int, docH: Int): String =
+        if (x0 == 0 && y0 == 0 && w == docW && h == docH) {
+            "$path#$bucket"
+        } else {
+            "$path#$bucket#$x0,$y0+$w,$h"
+        }
 
     private fun sliceBitmap(
         svg: SVG,
@@ -149,7 +202,7 @@ object ImageDecoder {
         docW: Int,
         docH: Int,
     ): Bitmap? {
-        val key = "$path#$bucket#$x0,$y0+$w,$h"
+        val key = sliceKey(path, bucket, x0, y0, w, h, docW, docH)
         svgBitmapCache.get(key)?.let { return it }
         val mpx = (w.toDouble() * h) / 1e6
         val cost = renderCost(path)
@@ -307,8 +360,13 @@ object ImageDecoder {
     // Slices snap outward to this grid so panning re-uses one rasterization for a while.
     private const val SLICE_GRID = 128
 
-    // 32 MiB at ARGB_8888: a slice is normally viewport-sized, this only bounds the pathological.
-    private const val MAX_SLICE_PX = 8L shl 20
+    // How far past the wanted region a slice may reach, as a fraction of that region on each side,
+    // widest first. This is the room a drag or a pinch has before the render has to be repeated.
+    private val SLICE_PADS = doubleArrayOf(1.0, 0.5, 0.25, 0.125, 0.0)
+
+    // 40 MiB at ARGB_8888. A slice is bounded by the viewport, so the headroom over a screenful is
+    // what the padding spends; it never scales with the document the way a whole-page render did.
+    private const val MAX_SLICE_PX = 10L shl 20
 
     private const val MIN_BUCKET_PX = 16
 

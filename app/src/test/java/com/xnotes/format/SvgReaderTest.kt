@@ -66,6 +66,25 @@ class SvgReaderTest {
     }
 
     @Test
+    fun `every rounded corner is a true quarter circle`() {
+        val r = 8.0
+        val scene = read("""<rect x="0" y="0" width="60" height="40" rx="$r"/>""")
+        val centres = listOf(
+            Pt(r, r), Pt(60.0 - r, r), Pt(60.0 - r, 40.0 - r), Pt(r, 40.0 - r),
+        )
+        for (p in points(scene)) {
+            // Points on a corner arc sit r from that corner's centre; points on an edge do not
+            // belong to any corner, so only test the ones inside a corner's quadrant.
+            val c = centres.firstOrNull {
+                (p.x < r || p.x > 60.0 - r) && (p.y < r || p.y > 40.0 - r) &&
+                    (p.x < it.x) == (it.x < 30.0) && (p.y < it.y) == (it.y < 20.0)
+            } ?: continue
+            val d = Math.hypot(p.x - c.x, p.y - c.y)
+            assertEquals("point $p should sit $r from $c", r, d, 0.05)
+        }
+    }
+
+    @Test
     fun `a circle spans its diameter`() {
         val pts = points(read("""<circle cx="50" cy="50" r="20"/>"""))
         assertEquals(30.0, pts.minOf { it.x }, 0.02)

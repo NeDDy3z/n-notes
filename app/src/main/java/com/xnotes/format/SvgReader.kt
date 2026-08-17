@@ -224,32 +224,42 @@ object SvgReader {
             if (ry < 0.0) ry = rx
             rx = rx.coerceIn(0.0, w / 2.0)
             ry = ry.coerceIn(0.0, h / 2.0)
-            val segs = ArrayList<VectorSeg>()
-            val k = KAPPA
-            segs.add(VectorSeg.Line(Pt(x + w - rx, y)))
-            segs.add(corner(Pt(x + w - rx, y), Pt(x + w, y + ry), rx * k, ry * k, 1.0, 0.0, 0.0, 1.0))
-            segs.add(VectorSeg.Line(Pt(x + w, y + h - ry)))
-            segs.add(corner(Pt(x + w, y + h - ry), Pt(x + w - rx, y + h), rx * k, ry * k, 0.0, 1.0, 1.0, 0.0))
-            segs.add(VectorSeg.Line(Pt(x + rx, y + h)))
-            segs.add(corner(Pt(x + rx, y + h), Pt(x, y + h - ry), rx * k, ry * k, -1.0, 0.0, 0.0, -1.0))
-            segs.add(VectorSeg.Line(Pt(x, y + ry)))
-            segs.add(corner(Pt(x, y + ry), Pt(x + rx, y), rx * k, ry * k, 0.0, -1.0, -1.0, 0.0))
+            val kx = rx * KAPPA
+            val ky = ry * KAPPA
+            // Clockwise from the top edge, each corner stated as where it starts and ends and which
+            // way the outline is travelling at each. The direction is what places the control
+            // points, so writing it down is what stops a corner being built inside out.
+            val segs = listOf(
+                VectorSeg.Line(Pt(x + w - rx, y)),
+                corner(Pt(x + w - rx, y), 1.0, 0.0, Pt(x + w, y + ry), 0.0, 1.0, kx, ky),
+                VectorSeg.Line(Pt(x + w, y + h - ry)),
+                corner(Pt(x + w, y + h - ry), 0.0, 1.0, Pt(x + w - rx, y + h), -1.0, 0.0, kx, ky),
+                VectorSeg.Line(Pt(x + rx, y + h)),
+                corner(Pt(x + rx, y + h), -1.0, 0.0, Pt(x, y + h - ry), 0.0, -1.0, kx, ky),
+                VectorSeg.Line(Pt(x, y + ry)),
+                corner(Pt(x, y + ry), 0.0, -1.0, Pt(x + rx, y), 1.0, 0.0, kx, ky),
+            )
             return listOf(VectorContour(Pt(x + rx, y), segs, closed = true))
         }
 
-        /** One rounded corner, as the cubic that approximates a quarter ellipse. */
+        /**
+         * One rounded corner as the cubic that approximates a quarter ellipse: from [from], leaving
+         * along ([fx], [fy]), to [to], arriving along ([tx], [ty]). The first control point runs
+         * forward from the start and the second runs *back* from the end, which is why the arriving
+         * direction is subtracted.
+         */
         private fun corner(
             from: Pt,
+            fx: Double,
+            fy: Double,
             to: Pt,
+            tx: Double,
+            ty: Double,
             kx: Double,
             ky: Double,
-            ax: Double,
-            ay: Double,
-            bx: Double,
-            by: Double,
         ) = VectorSeg.Cubic(
-            Pt(from.x + ax * kx, from.y + ay * ky),
-            Pt(to.x + bx * kx, to.y + by * ky),
+            Pt(from.x + fx * kx, from.y + fy * ky),
+            Pt(to.x - tx * kx, to.y - ty * ky),
             to,
         )
 
