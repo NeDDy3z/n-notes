@@ -285,6 +285,14 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
                 VectorMesher.mesh(parsed, rect, orientation, angle, StrokeTessellator.DEFAULT_TOLERANCE)
             }
             val ms = (System.nanoTime() - started) / 1_000_000.0
+            // The mesher stops at a vertex ceiling; say so rather than silently drawing part of it.
+            if (parts.sumOf { it.mesh.vertexCount } >= VectorMesher.MAX_VERTICES) {
+                android.util.Log.w(
+                    "InfiniteEditor",
+                    "svg drawn only as far as the ${VectorMesher.MAX_VERTICES} vertex ceiling: " +
+                        item.image.file.path,
+                )
+            }
             // Claimed and filed on the main thread, so this cannot land after a removal that was
             // decided while it ran and put the item back on the canvas.
             view.post {

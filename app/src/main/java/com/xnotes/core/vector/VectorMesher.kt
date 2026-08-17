@@ -218,5 +218,5 @@ object VectorMesher {
      * paths, and the buffer mirrors itself on the heap, so past this the rest of the document is
      * dropped rather than taking the canvas down with it.
      */
-    const val MAX_VERTICES = 1_500_000
+    const val MAX_VERTICES = 800_000
 }
