@@ -16,6 +16,14 @@ enum class InkPass {
     /** Stencilled, then covered once at its own alpha, so self-overlap cannot darken. */
     TRANSLUCENT,
 
+    /**
+     * Stencilled with an inverting fill, then covered once. Coverage parity is the even-odd rule
+     * exactly, for any outline at all, holes and self-crossings included, with no triangulation.
+     * A vector fill falls back to this when the triangulator refuses the path; it costs a pair of
+     * draw calls, so it is never the default.
+     */
+    EVEN_ODD,
+
     /** Like [TRANSLUCENT] but multiplied, and always drawn last, exactly as the paged canvas does. */
     MULTIPLY,
 

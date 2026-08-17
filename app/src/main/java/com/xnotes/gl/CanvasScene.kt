@@ -340,7 +340,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                             runCount = part.slice.indexCount
                         }
                     }
-                    InkPass.TRANSLUCENT -> {
+                    InkPass.TRANSLUCENT, InkPass.EVEN_ODD -> {
                         flushRun(runStart, runCount)
                         runStart = -1
                         runCount = 0
@@ -435,7 +435,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                         store.drawRange(part.slice.indexOffset, part.slice.indexCount)
                         lastDrawCalls++
                     }
-                    InkPass.TRANSLUCENT, InkPass.MULTIPLY, InkPass.SCREEN -> {
+                    InkPass.TRANSLUCENT, InkPass.EVEN_ODD, InkPass.MULTIPLY, InkPass.SCREEN -> {
                         drawMasked(
                             store, part.slice, bounds, part.coverColor, part.coverAlpha,
                             frame, part.pass,
@@ -892,16 +892,23 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         pass: InkPass,
     ) {
         val quad = cover ?: return
+        // An even-odd fill inverts instead of replacing, so the parity of how many times a pixel
+        // was covered is the fill rule itself: a hole cancels, a self-crossing cancels, and the
+        // cover then paints exactly what the outline encloses without a single triangle of setup.
+        val invert = pass == InkPass.EVEN_ODD
         GLES30.glEnable(GLES30.GL_STENCIL_TEST)
-        GLES30.glStencilFunc(GLES30.GL_ALWAYS, 1, 0xFF)
-        GLES30.glStencilOp(GLES30.GL_KEEP, GLES30.GL_KEEP, GLES30.GL_REPLACE)
+        GLES30.glStencilFunc(GLES30.GL_ALWAYS, if (invert) 0 else 1, 0xFF)
+        GLES30.glStencilOp(
+            GLES30.GL_KEEP, GLES30.GL_KEEP,
+            if (invert) GLES30.GL_INVERT else GLES30.GL_REPLACE,
+        )
         GLES30.glStencilMask(0xFF)
         GLES30.glColorMask(false, false, false, false)
         from.drawRange(slice.indexOffset, slice.indexCount)
         lastDrawCalls++
 
         GLES30.glColorMask(true, true, true, true)
-        GLES30.glStencilFunc(GLES30.GL_EQUAL, 1, 0xFF)
+        GLES30.glStencilFunc(if (invert) GLES30.GL_NOTEQUAL else GLES30.GL_EQUAL, if (invert) 0 else 1, 0xFF)
         GLES30.glStencilOp(GLES30.GL_KEEP, GLES30.GL_KEEP, GLES30.GL_ZERO)
         when (pass) {
             // Exact multiply: the destination is scaled by the source and nothing is added.
