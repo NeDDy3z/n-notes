@@ -151,16 +151,62 @@ object ImageDecoder {
     ): Bitmap? {
         val key = "$path#$bucket#$x0,$y0+$w,$h"
         svgBitmapCache.get(key)?.let { return it }
-        val bmp = runCatching {
-            val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val c = Canvas(b)
-            // The viewport is the whole document at this scale; the bitmap bounds clip to the slice.
-            c.translate(-x0.toFloat(), -y0.toFloat())
-            synchronized(svg) { svg.renderToCanvas(c, RectF(0f, 0f, docW.toFloat(), docH.toFloat())) }
-            b
-        }.getOrNull() ?: return null
+        val mpx = (w.toDouble() * h) / 1e6
+        val cost = renderCost(path)
+        var bmp: Bitmap? = null
+        if (preferHardware(cost)) {
+            val t = System.nanoTime()
+            bmp = HardwareSvgRasterizer.render(w, h) { paintSlice(it, svg, x0, y0, docW, docH) }
+            cost.hardware = if (bmp == null) Double.MAX_VALUE else elapsedPerMpx(t, mpx, cost.hardware)
+        }
+        if (bmp == null) {
+            val t = System.nanoTime()
+            bmp = runCatching {
+                Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { paintSlice(Canvas(it), svg, x0, y0, docW, docH) }
+            }.getOrNull() ?: return null
+            cost.software = elapsedPerMpx(t, mpx, cost.software)
+        }
         svgBitmapCache.put(key, bmp)
         return bmp
+    }
+
+    // The viewport is the whole document at this bucket; the target's bounds clip to the slice.
+    private fun paintSlice(c: Canvas, svg: SVG, x0: Int, y0: Int, docW: Int, docH: Int) {
+        c.translate(-x0.toFloat(), -y0.toFloat())
+        // Concurrent renders of one parsed document are serialized (its render state is shared).
+        synchronized(svg) { svg.renderToCanvas(c, RectF(0f, 0f, docW.toFloat(), docH.toFloat())) }
+    }
+
+    /** Measured raster cost of one document, in milliseconds per megapixel, per backend. */
+    private class RenderCost {
+        @Volatile var software = -1.0
+        @Volatile var hardware = -1.0
+    }
+
+    private val renderCosts = LruCache<String, RenderCost>(16)
+
+    private fun renderCost(path: String): RenderCost =
+        synchronized(renderCosts) { renderCosts.get(path) ?: RenderCost().also { renderCosts.put(path, it) } }
+
+    /**
+     * Whether the GPU raster is worth its readback for this document. Software is timed first; a
+     * cheap paint stays on the CPU forever because the readback alone would cost more than it
+     * saves. Anything dearer than that tries the GPU once, and the two measurements pick the
+     * winner from then on. So the decision is measured per device and per file, never guessed.
+     */
+    private fun preferHardware(cost: RenderCost): Boolean {
+        if (!HardwareSvgRasterizer.supported) return false
+        val sw = cost.software
+        if (sw < 0.0 || sw < HW_WORTH_MS_PER_MPX) return false
+        val hw = cost.hardware
+        return hw < 0.0 || hw < sw
+    }
+
+    // Exponentially smoothed, so one scheduling hiccup cannot pin a document to the wrong backend.
+    private fun elapsedPerMpx(startNanos: Long, mpx: Double, prev: Double): Double {
+        val ms = (System.nanoTime() - startNanos) / 1e6
+        val now = if (mpx > 0.0) ms / mpx else ms
+        return if (prev < 0.0 || prev == Double.MAX_VALUE) now else prev * 0.7 + now * 0.3
     }
 
     private fun floorGrid(v: Double): Int = (floor(v / SLICE_GRID) * SLICE_GRID).toInt()
@@ -233,10 +279,7 @@ object ImageDecoder {
         val bw = (size.width * s).toInt().coerceAtLeast(1)
         val bh = (size.height * s).toInt().coerceAtLeast(1)
         val bmp = runCatching {
-            val b = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
-            // Concurrent renders of one parsed document are serialized (its render state is shared).
-            synchronized(svg) { svg.renderToCanvas(Canvas(b), RectF(0f, 0f, bw.toFloat(), bh.toFloat())) }
-            b
+            Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also { paintSlice(Canvas(it), svg, 0, 0, bw, bh) }
         }.getOrNull() ?: return null
         svgBitmapCache.put(key, bmp)
         return bmp
@@ -268,4 +311,8 @@ object ImageDecoder {
     private const val MAX_SLICE_PX = 8L shl 20
 
     private const val MIN_BUCKET_PX = 16
+
+    // Below this the CPU already paints faster than the GPU can hand the pixels back (a megapixel
+    // of ARGB is 4 MiB across the bus), so the GPU path is never even measured.
+    private const val HW_WORTH_MS_PER_MPX = 6.0
 }
