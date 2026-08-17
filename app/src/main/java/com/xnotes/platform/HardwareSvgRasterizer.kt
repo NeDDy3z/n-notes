@@ -44,7 +44,8 @@ object HardwareSvgRasterizer {
      */
     @Synchronized
     fun render(w: Int, h: Int, draw: (Canvas) -> Unit): Bitmap? {
-        if (!supported || w <= 0 || h <= 0 || failures >= MAX_FAILURES) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        if (w <= 0 || h <= 0 || failures >= MAX_FAILURES) return null
         val bmp = runCatching { renderQ(w, h, draw) }.getOrNull()
         if (bmp == null) {
             failures++
