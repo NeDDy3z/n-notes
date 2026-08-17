@@ -265,6 +265,26 @@ class SvgReaderTest {
     }
 
     @Test
+    fun `a filter and a mask are named where they are used, and the element still draws`() {
+        val scene = read(
+            """<defs><filter id="f"/><mask id="m"/></defs>
+               <rect width="4" height="4" filter="url(#f)"/>
+               <rect width="4" height="4" style="mask:url(#m)"/>""",
+        )
+        assertEquals(2, scene.paths.size)
+        assertTrue(scene.skipped.contains("filter"))
+        assertTrue(scene.skipped.contains("mask"))
+    }
+
+    @Test
+    fun `group opacity is named only when the group holds more than one thing`() {
+        val many = read("""<g opacity="0.5"><rect width="4" height="4"/><rect width="4" height="4"/></g>""")
+        assertTrue(many.skipped.contains("group opacity"))
+        val one = read("""<g opacity="0.5"><rect width="4" height="4"/></g>""")
+        assertTrue(one.skipped.isEmpty())
+    }
+
+    @Test
     fun `a file that will not parse loads empty`() {
         assertTrue(SvgReader.parse("<svg><rect".toByteArray()).isEmpty)
         assertTrue(SvgReader.parse(ByteArray(0)).isEmpty)

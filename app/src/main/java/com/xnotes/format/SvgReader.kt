@@ -133,12 +133,10 @@ object SvgReader {
 
         private fun visit(el: Element, parentCtm: Affine, parentStyle: Style) {
             val name = localName(el)
-            if (name in NEVER_DRAWN) {
-                if (name == "mask" || name == "filter" || name == "pattern") skipped.add(name)
-                return
-            }
+            if (name in NEVER_DRAWN) return
             val inherited = parentStyle.inherit(el, css)
             if (!inherited.visible) return
+            nameUnbuilt(el, name)
             val ctm = parentCtm.times(transform(attr(el, "transform")))
             val style = clipped(inherited, el, ctm)
             when (name) {
@@ -159,6 +157,32 @@ object SvgReader {
                 else -> Unit
             }
         }
+
+        /**
+         * Name whatever this element asks for that the pipeline composites approximately or not at
+         * all. All three need the same thing to be exact: the subtree rendered into its own buffer
+         * and composited once, which is the one part of the ladder this canvas has not climbed.
+         *
+         * Named where they are used, not where they are defined: a filter or a mask lives inside
+         * `defs`, which is never walked. The element still draws, unfiltered and unmasked, because
+         * losing a drop shadow is a far smaller loss than losing the card it sits under.
+         */
+        private fun nameUnbuilt(el: Element, name: String) {
+            if (property(el, "filter") != null) skipped.add("filter")
+            if (property(el, "mask") != null) skipped.add("mask")
+            // Opacity on a group has to composite the whole subtree once. Applying it per shape
+            // instead is exact until two of them overlap, so it is only worth naming for a group
+            // that holds more than one thing.
+            if (name != "g" && name != "a" && name != "svg") return
+            val own = property(el, "opacity")?.let { Style.alpha(it) } ?: return
+            if (own < 1.0 && children(el).count { localName(it) !in NEVER_DRAWN } > 1) {
+                skipped.add("group opacity")
+            }
+        }
+
+        /** A property from the element's own `style` attribute, else its presentation attribute. */
+        private fun property(el: Element, name: String): String? =
+            Style.inlineStyle(attr(el, "style"))[name] ?: attr(el, name)
 
         /** `use` draws its target again, offset by x/y, under the referring element's own style. */
         private fun expandUse(el: Element, ctm: Affine, style: Style) {
@@ -574,6 +598,7 @@ object SvgReader {
             val source = (Style.inlineStyle(attr(el, "style"))["clip-path"] ?: attr(el, "clip-path"))?.trim()
                 ?: return style
             if (!source.startsWith("url(")) return style
+            @Suppress("NAME_SHADOWING")
             val id = source.substringAfter('#', "").substringBefore(')').trim()
             val el2 = byId[id] ?: return style
             if (localName(el2) != "clipPath") return style
