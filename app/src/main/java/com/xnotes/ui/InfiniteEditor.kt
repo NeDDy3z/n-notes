@@ -39,6 +39,7 @@ import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
+import com.xnotes.core.vector.VectorMesher
 import com.xnotes.gl.CanvasScene
 import com.xnotes.gl.InfiniteCanvasView
 import com.xnotes.ui.theme.Palette
@@ -239,7 +240,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Tessellate [item] and hand the triangles to the renderer, or drop it if it draws nothing. */
     private fun pushItem(item: CanvasItem) {
         if (item is ImageItem) {
-            scene.upsertImage(item, item.paintBounds())
+            if (!pushVectorImage(item)) scene.upsertImage(item, item.paintBounds())
             return
         }
         val started = System.nanoTime()
@@ -252,9 +253,60 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         scene.upsert(item, meshed.parts, meshed.bounds, committingWetStroke)
     }
 
+    /**
+     * A placed SVG becomes triangles like everything else, so it stays sharp at any zoom instead of
+     * magnifying a texture. Nothing about it is cached as pixels, which is why a pinch costs it
+     * nothing.
+     *
+     * The meshing runs on the decode thread. A thousand-path drawing takes long enough that doing
+     * it inline would stall the edit that triggered it, and a placeholder box holds the space
+     * meanwhile since there is no texture to stand in. The box also stays put when a document uses
+     * only constructs this pipeline does not draw: the gap should be visible, not silent.
+     *
+     * Returns false for a raster image, which takes the texture path as before.
+     */
+    private fun pushVectorImage(item: ImageItem): Boolean {
+        if (!com.xnotes.platform.ImageDecoder.isVector(item.image.file.path)) return false
+        val bounds = item.paintBounds()
+        scene.upsert(item, vectorPlaceholder(bounds), bounds)
+        val token = vectorMeshSeq.incrementAndGet()
+        vectorMeshGen[item] = token
+        val rect = item.rect
+        val orientation = item.orientation
+        val angle = item.angle
+        decodeExecutor.execute {
+            val started = System.nanoTime()
+            val parsed = com.xnotes.platform.VectorScenes.sceneFor(item.image.file)
+            val parts = if (parsed == null) {
+                emptyList()
+            } else {
+                VectorMesher.mesh(parsed, rect, orientation, angle, StrokeTessellator.DEFAULT_TOLERANCE)
+            }
+            // A newer placement already queued its own mesh; that one owns the record now.
+            if (!vectorMeshGen.remove(item, token)) return@execute
+            if (parts.isEmpty()) return@execute
+            scene.lastTessellateMs = (System.nanoTime() - started) / 1_000_000.0
+            scene.upsert(item, parts, bounds)
+            view.post { view.publish() }
+        }
+        return true
+    }
+
+    /** The faint box that holds a vector image's place until its triangles land. */
+    private fun vectorPlaceholder(bounds: Rect): List<MeshPart> {
+        val b = com.xnotes.core.infinite.MeshBuilder(4, 6)
+        b.rect(bounds.left, bounds.top, bounds.w, bounds.h)
+        return listOf(MeshPart(b.build(), VECTOR_PLACEHOLDER, InkPass.OPAQUE))
+    }
+
+    /** Which mesh job owns each vector image's record, so a stale one cannot overwrite a newer. */
+    private val vectorMeshGen = java.util.concurrent.ConcurrentHashMap<ImageItem, Long>()
+    private val vectorMeshSeq = java.util.concurrent.atomic.AtomicLong()
+
     /** Re-tessellate the whole document, after a load or a wholesale list replacement. */
     private fun rebuildScene() {
         scene.reset()
+        vectorMeshGen.clear()
         for (item in document.items) pushItem(item)
         scene.setOrder(document.items)
     }
@@ -952,5 +1004,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
          * Uploading each point the moment it settled would be one buffer slice per sample.
          */
         const val WET_RUN_POINTS = 96
+
+        /** The box that stands in for a vector image while it meshes, or where it cannot be drawn. */
+        val VECTOR_PLACEHOLDER = Rgba(128, 128, 128, 36)
     }
 }

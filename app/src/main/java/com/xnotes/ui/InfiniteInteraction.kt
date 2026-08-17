@@ -18,6 +18,7 @@ import com.xnotes.core.infinite.EraseSession
 import com.xnotes.core.infinite.LiftTransform
 import com.xnotes.core.infinite.OverlayTessellator
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
@@ -145,9 +146,9 @@ class InfiniteInteraction(
     private var movedBy = Pt.ZERO
 
     // Where a handle or the rotate grip is being dragged to, and whether the renderer is doing the
-    // work. Only ink and shapes map faithfully in the shader: an image or a text box is rebuilt by
-    // the model rather than mapped, so a selection holding one is transformed the slow way and stays
-    // honest.
+    // work. Ink, shapes and placed SVGs map faithfully in the shader, since all three are triangles.
+    // A photo or a text box is rebuilt by the model rather than mapped, so a selection holding one is
+    // transformed the slow way and stays honest.
     private var transformPointer = Pt.ZERO
     private var liftedTransform = false
 
@@ -738,14 +739,19 @@ class InfiniteInteraction(
     /**
      * Arm a handle or grip drag to be drawn by the renderer rather than baked by the model, when
      * everything selected maps faithfully. Ink and shapes do: their geometry is mapped through the
-     * transform, which is exactly what the shader does. An image or a text box is rebuilt instead of
-     * mapped, so those keep the slow path and stay honest.
+     * transform, which is exactly what the shader does. A placed SVG does too, since it is drawn
+     * from triangles rather than from a texture, and it has the most to gain: baking would re-mesh
+     * the whole drawing on every pointer sample. A photo or a text box is rebuilt instead of mapped,
+     * so those keep the slow path and stay honest.
      */
     private fun beginLiftedTransform(sel: CanvasSelection, at: Pt) {
         transformPointer = at
-        liftedTransform = sel.items.all { it is Stroke || it is ShapeItem }
+        liftedTransform = sel.items.all { it is Stroke || it is ShapeItem || isVectorImage(it) }
         if (liftedTransform) onLiftSelection(sel.items, LiftTransform.NONE)
     }
+
+    private fun isVectorImage(item: CanvasItem): Boolean =
+        item is ImageItem && com.xnotes.platform.ImageDecoder.isVector(item.image.file.path)
 
     /**
      * A resize in progress. The model is left alone and the renderer is handed the map, so a handle
