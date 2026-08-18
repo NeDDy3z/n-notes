@@ -26,6 +26,7 @@ class ImageItem(
 
     override val kind = KIND
     override val resizable = true
+    override var locked = false
 
     override fun paint(r: Renderer) = r.drawImage(image, rect, orientation, angle)
 

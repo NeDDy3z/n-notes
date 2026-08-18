@@ -57,6 +57,9 @@ interface SelectionMenuHost {
     fun duplicateSelection()
     fun dismissSelectionMenu()
 
+    /** Pin the selection where it is and put it away; a held finger over it offers to release it. */
+    fun lockSelection()
+
     /** The colour and width of every selected stroke/shape, for the restyle popup to open on. */
     fun selectionStyles(): List<DrawStyle>
 
@@ -125,6 +128,10 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     text = { Text("Change style") },
                     enabled = styles.isNotEmpty(),
                     onClick = { overflowOpen = false; styleOpen = true },
+                )
+                DropdownMenuItem(
+                    text = { Text("Lock") },
+                    onClick = { overflowOpen = false; host.lockSelection() },
                 )
             }
             if (styleOpen) {
@@ -269,11 +276,15 @@ interface LongPressMenuHost {
     fun pasteItemsAt(content: com.xnotes.core.geometry.Pt)
     fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt)
     fun dismissContextMenu()
+
+    /** Release [item], so it can be selected again. */
+    fun unlockItem(item: com.xnotes.core.model.CanvasItem)
 }
 
 /**
- * Long-press paste menu on empty space: paste copied items or an image from the
- * system clipboard at the press point, or insert an image there.
+ * Long-press menu: paste copied items or an image from the system clipboard at the press point, or
+ * insert an image there. A press that landed on a locked item offers only to release it, since
+ * nothing else can be done with one and there is no other way back.
  */
 @Composable
 fun LongPressMenu(host: LongPressMenuHost, onInsertImageAt: (com.xnotes.core.geometry.Pt) -> Unit) {
@@ -284,6 +295,13 @@ fun LongPressMenu(host: LongPressMenuHost, onInsertImageAt: (com.xnotes.core.geo
 
     Box(modifier = Modifier.offset(xDp, yDp).size(1.dp)) {
         DropdownMenu(expanded = true, onDismissRequest = { host.dismissContextMenu() }) {
+            val locked = target.locked
+            if (locked != null) {
+                DropdownMenuItem(text = { Text("Unlock") }, onClick = {
+                    host.unlockItem(locked); host.dismissContextMenu()
+                })
+                return@DropdownMenu
+            }
             if (host.hasClipboardItems) {
                 DropdownMenuItem(text = { Text("Paste here") }, onClick = {
                     host.pasteItemsAt(target.content); host.dismissContextMenu()

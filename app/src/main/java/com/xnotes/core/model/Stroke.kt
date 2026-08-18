@@ -51,6 +51,7 @@ class Stroke(
 
     override val kind = KIND
     override val resizable = false
+    override var locked = false
 
     /** Double origin the float offsets hang off; the first sample's position. */
     private var ox = 0.0

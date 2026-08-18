@@ -15,7 +15,9 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
     is ShapeItem ->
         ShapeItem(shape, start, end, strokeRgba, strokeWidth, fillRgba, neon, neonStrength, points?.toList(), dashed, dashLength, dashGap)
     else -> this
-}
+    // Carried, not reset: autosave snapshots the document through this, so dropping the lock here
+    // would quietly unlock everything on the next save.
+}.also { it.locked = locked }
 
 /** A deep copy of a page — its items cloned ([deepCopy]) — keeping the size, PDF link and style. */
 fun Page.deepCopy(measurer: TextMeasurer): Page =

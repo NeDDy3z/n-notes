@@ -186,6 +186,7 @@ class DocumentCodec(
         if (s.smoothScale != 1.0) j.name("smooth_scale").value(s.smoothScale)
         // Straight-line strokes must reload un-smoothed, else the EMA pulls their far end inward.
         if (s.straight) j.name("straight").value(true)
+        if (s.locked) j.name("locked").value(true)
         j.endObject()
     }
 
@@ -199,6 +200,7 @@ class DocumentCodec(
         // Additive fields: written only when turned, so older readers stay compatible.
         if (item.orientation != 0) j.name("orientation").value(item.orientation)
         if (item.angle != 0.0) j.name("angle").value(item.angle)
+        if (item.locked) j.name("locked").value(true)
         j.endObject()
     }
 
@@ -215,6 +217,7 @@ class DocumentCodec(
         // and notes that use neither serialize exactly as before.
         if (t.height > 0.0) j.name("height").value(t.height)
         if (t.face != TextItem.DEFAULT_FACE) j.name("font_face").value(t.face.id)
+        if (t.locked) j.name("locked").value(true)
         j.endObject()
     }
 
@@ -246,6 +249,7 @@ class DocumentCodec(
             j.name("dash_length").value(s.dashLength)
             j.name("dash_gap").value(s.dashGap)
         }
+        if (s.locked) j.name("locked").value(true)
         j.endObject()
     }
 
@@ -401,6 +405,7 @@ class DocumentCodec(
         val srcH: Int,
         val orientation: Int,
         val angle: Double,
+        val locked: Boolean,
     )
 
     private fun parseManifest(p: JsonPull): ParsedManifest {
@@ -492,6 +497,7 @@ class DocumentCodec(
 
     /** Union of every kind's fields, so an item parses in one pass whatever its key order. */
     private class ItemScratch {
+        var locked = false
         var kind: String? = null
         var tool: String? = null
         var config: ConfigScratch? = null
@@ -583,17 +589,22 @@ class DocumentCodec(
                 "dashed" -> s.dashed = boolOr(p, false)
                 "dash_length" -> s.dashLength = doubleOr(p, 10.0)
                 "dash_gap" -> s.dashGap = doubleOr(p, 8.0)
+                "locked" -> s.locked = boolOr(p, false)
                 else -> p.skipValue()
             }
         }
         p.endObject()
+        val before = items.size
         when (s.kind) {
             Stroke.KIND -> items.add(buildStroke(s))
             ImageItem.KIND -> {
                 val asset = s.asset
                 if (!asset.isNullOrEmpty()) {
                     pending.add(
-                        PendingImage(items.size + pending.size, asset, s.rect, s.srcW, s.srcH, s.orientation, s.angle),
+                        PendingImage(
+                            items.size + pending.size, asset, s.rect, s.srcW, s.srcH,
+                            s.orientation, s.angle, s.locked,
+                        ),
                     )
                 }
             }
@@ -612,6 +623,8 @@ class DocumentCodec(
             ShapeItem.KIND -> items.add(buildShape(s))
             else -> {} // unrecognized kind: skipped (forgiving)
         }
+        // Absent on every note written before locking existed, which reads back as unlocked.
+        if (s.locked && items.size > before) items[before].locked = true
     }
 
     private fun buildStroke(s: ItemScratch): Stroke {
@@ -756,6 +769,7 @@ class DocumentCodec(
         }
         val rect = spec.rect ?: Rect(0.0, 0.0, w.toDouble(), h.toDouble())
         return ImageItem(ImageData(file, w, h), rect, spec.orientation, spec.angle)
+            .also { it.locked = spec.locked }
     }
 
     // --- streaming value helpers (mirroring org.json's forgiving opt* coercions) ---

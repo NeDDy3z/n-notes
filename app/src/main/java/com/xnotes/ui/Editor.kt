@@ -95,7 +95,16 @@ import kotlinx.coroutines.withContext
  * observable state and the actions the toolbar/menus invoke.
  */
 /** Target of the long-press paste context menu (viewport position + paste point). */
-data class ContextMenuTarget(val viewportX: Double, val viewportY: Double, val content: com.xnotes.core.geometry.Pt)
+/**
+ * Where a long press landed. [locked] is the pinned item under it, if there was one, and it turns
+ * the menu into a single offer to release that item.
+ */
+data class ContextMenuTarget(
+    val viewportX: Double,
+    val viewportY: Double,
+    val content: com.xnotes.core.geometry.Pt,
+    val locked: com.xnotes.core.model.CanvasItem? = null,
+)
 
 /**
  * One entry (folder or .xnote file) in the in-app explorer. [documentUri] is a SAF document URI.
@@ -612,7 +621,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onTextEditEnd = { editingField = null; refreshTextBar() },
         onSelectionMenu = { rect -> selectionMenu = rect },
         onScreenshotMenu = { rect -> screenshotMenu = rect },
-        onContextMenu = { vp, content -> contextMenu = ContextMenuTarget(vp.x, vp.y, content) },
+        onContextMenu = { vp, content, locked -> contextMenu = ContextMenuTarget(vp.x, vp.y, content, locked) },
         onAddPageAtEnd = { addPageAtEnd() },
         onHaptic = { runCatching { view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } },
     )
@@ -877,6 +886,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override fun copySelection() = controller.copySelection()
     override fun cutSelection() = controller.cutSelection()
     override fun duplicateSelection() = controller.duplicateSelection()
+    override fun lockSelection() = controller.lockSelection()
+    override fun unlockItem(item: com.xnotes.core.model.CanvasItem) = controller.unlockItem(item)
     override fun dismissSelectionMenu() { selectionMenu = null }
     override fun dismissContextMenu() { contextMenu = null }
     fun dismissScreenshot() = controller.clearScreenshot()

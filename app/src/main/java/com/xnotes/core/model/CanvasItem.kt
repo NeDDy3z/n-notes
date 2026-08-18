@@ -20,6 +20,15 @@ interface CanvasItem {
     /** Whether the item exposes resize handles (images, text boxes, shapes do). */
     val resizable: Boolean
 
+    /**
+     * Pinned in place: it cannot be selected, moved or erased until it is unlocked. A held finger
+     * over a locked item offers to unlock it rather than picking it up, which is the only way back.
+     *
+     * A property of the item rather than of the selection, because the whole point is to survive
+     * the selection being cleared, the document being closed and the file being reopened.
+     */
+    var locked: Boolean
+
     /** Draw the item; [r] is already translated to the page origin and scaled. */
     fun paint(r: Renderer)
 

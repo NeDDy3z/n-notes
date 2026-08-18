@@ -29,6 +29,7 @@ class TextItem(
 
     override val kind = KIND
     override val resizable = true
+    override var locked = false
 
     val font get() = FontSpec(pointSize, face)
 

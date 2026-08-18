@@ -45,13 +45,14 @@ class EraseSession(private val doc: InfiniteDocument) {
      * changed, or null when nothing was under it.
      *
      * Images and text are left alone in both modes, matching the paged canvas: they are placed
-     * deliberately and are deleted through a selection instead.
+     * deliberately and are deleted through a selection instead. So is anything locked, which is
+     * what a lock is for.
      */
     fun erase(cx: Double, cy: Double, radius: Double, area: Boolean): Rect? {
         val box = Rect(cx - radius, cy - radius, radius * 2, radius * 2)
         var dirty: Rect? = null
         for (item in doc.itemsIn(box)) {
-            if (item is ImageItem || item is TextItem) continue
+            if (item.locked || item is ImageItem || item is TextItem) continue
             val fragments: List<CanvasItem> = if (area) {
                 when (item) {
                     is Stroke -> item.erasedBy(cx, cy, radius) ?: continue

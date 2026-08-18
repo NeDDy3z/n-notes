@@ -131,6 +131,24 @@ class CanvasCodecTest {
         assertEquals(PagePattern.GRID, back.background.pattern)
     }
 
+    @Test fun lockedItemsSurviveARoundTrip() {
+        val doc = InfiniteDocument()
+        doc.add(
+            Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(1.0, 2.0, 1.0), Sample(3.0, 4.0, 1.0)))
+                .apply { locked = true },
+        )
+        doc.add(Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(5.0, 6.0, 1.0), Sample(7.0, 8.0, 1.0))))
+        doc.add(ImageItem(ImageData(imageFile(), 20, 10), Rect(0.0, 0.0, 20.0, 10.0)).apply { locked = true })
+        doc.add(ShapeItem(ShapeKind.RECTANGLE, Pt(0.0, 0.0), Pt(9.0, 9.0), Rgba(1, 2, 3, 255)).apply { locked = true })
+
+        val back = roundTrip(doc).items
+        assertEquals(4, back.size)
+        assertTrue(back[0].locked)
+        assertTrue(!back[1].locked)
+        assertTrue(back[2].locked)
+        assertTrue(back[3].locked)
+    }
+
     @Test fun loadedItemsAreIndexedAndOrdered() {
         val doc = InfiniteDocument()
         val far = ShapeItem(ShapeKind.RECTANGLE, Pt(9000.0, 9000.0), Pt(9100.0, 9100.0), Rgba(1, 1, 1, 255))

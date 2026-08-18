@@ -93,8 +93,11 @@ class InfiniteInteraction(
     private val devicePxPerDp: () -> Double = { 1.0 },
     /** A press that landed on the minimap; returns true when it was consumed as navigation. */
     private val onMinimapPress: (Double, Double) -> Boolean = { _, _ -> false },
-    /** A finger held still on empty canvas: open the paste menu at this viewport and content point. */
-    private val onContextMenu: (Pt, Pt) -> Unit = { _, _ -> },
+    /**
+     * A finger held still: open the paste menu at this viewport and content point, or offer to
+     * release the locked item it landed on, which arrives as the third argument.
+     */
+    private val onContextMenu: (Pt, Pt, CanvasItem?) -> Unit = { _, _, _ -> },
     /** A tool this layer armed by itself, so the chrome can follow: a long-press grab and its end. */
     private val onToolChanged: (Tool) -> Unit = {},
 ) {
@@ -161,6 +164,7 @@ class InfiniteInteraction(
     private var longPressRunnable: Runnable? = null
     private var longPressAt = Pt.ZERO
     private var longPressCandidate: CanvasItem? = null
+    private var longPressLocked: CanvasItem? = null
 
     // The tool a long-press grab borrowed the canvas from, given back when the selection goes.
     private var longPressPrevTool: Tool? = null
@@ -301,8 +305,12 @@ class InfiniteInteraction(
         // without having to reach for the selection tool first.
         val grabbable = tool.isStroke || tool == Tool.PAN || tool == Tool.SELECT ||
             tool == Tool.LASSO || tool == Tool.SHAPE
-        if (hit != null && !grabbable) return
-        longPressCandidate = hit
+        // A locked item cannot be picked up, so a held finger offers to release it instead. That is
+        // the only way back: it is out of reach of the band, the lasso and every tap. The offer
+        // stands whatever tool is armed, since no tool can do anything else with one.
+        longPressLocked = hit?.takeIf { it.locked }
+        if (hit != null && longPressLocked == null && !grabbable) return
+        longPressCandidate = hit?.takeUnless { it.locked }
         longPressAt = at
         val r = Runnable { triggerLongPress() }
         longPressRunnable = r
@@ -313,12 +321,15 @@ class InfiniteInteraction(
         longPressRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable = null
         longPressCandidate = null
+        longPressLocked = null
     }
 
     private fun triggerLongPress() {
         longPressRunnable = null
         val candidate = longPressCandidate
         longPressCandidate = null
+        val locked = longPressLocked
+        longPressLocked = null
         // The gesture underway is only ever a pan or a stroke that has not moved; drop it so what
         // follows is not fighting a drag, and stop the press from also dismissing the selection.
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
@@ -329,7 +340,7 @@ class InfiniteInteraction(
             grabItem(candidate)
         } else {
             setInteractive(false, true)
-            onContextMenu(longPressAt, viewport.viewportToContent(longPressAt))
+            onContextMenu(longPressAt, viewport.viewportToContent(longPressAt), locked)
         }
         requestRender()
     }
@@ -628,8 +639,9 @@ class InfiniteInteraction(
             }
         }
         // A press that lands on an item picks that item up, as it does on a note. A band is what
-        // the empty canvas between items starts, not what selecting anything at all takes.
-        val hit = itemAt(at)
+        // the empty canvas between items starts, not what selecting anything at all takes. A locked
+        // item is not there as far as this is concerned, so a band can be started over one.
+        val hit = grabbableAt(at)
         if (hit != null) {
             if (sel.items.none { it === hit }) sel.select(listOf(hit))
             beginMoveAt(sel, at)
@@ -662,6 +674,9 @@ class InfiniteInteraction(
         // Last, not first: the index comes back in z-order, so the topmost item is the one hit.
         return itemsIn(near).lastOrNull { it.contains(content) }
     }
+
+    /** [itemAt] but skipping anything pinned, which is what a tap or a drag may actually grab. */
+    private fun grabbableAt(content: Pt): CanvasItem? = itemAt(content)?.takeUnless { it.locked }
 
     private fun extendBand(vx: Double, vy: Double) {
         val at = viewport.viewportToContent(Pt(vx, vy))

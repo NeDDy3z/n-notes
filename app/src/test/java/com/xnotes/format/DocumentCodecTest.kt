@@ -49,6 +49,47 @@ class DocumentCodecTest {
         return codec.read(ByteArrayInputStream(out.toByteArray()), imageDir = imageDir)
     }
 
+    @Test fun lockedItemsSurviveARoundTripAndOnlyThoseLockedComeBackLocked() {
+        val doc = Document(dpi = 150)
+        val page = Page(1240.0, 1754.0)
+        val pinnedStroke = Stroke(
+            Tool.PEN,
+            ToolDefaults.configFor(Tool.PEN),
+            mutableListOf(Sample(1.0, 2.0, 1.0), Sample(3.0, 4.0, 1.0)),
+        ).apply { locked = true }
+        val freeStroke = Stroke(
+            Tool.PEN,
+            ToolDefaults.configFor(Tool.PEN),
+            mutableListOf(Sample(5.0, 6.0, 1.0), Sample(7.0, 8.0, 1.0)),
+        )
+        page.items.add(pinnedStroke)
+        page.items.add(freeStroke)
+        page.items.add(ImageItem(ImageData(imageFile(), 20, 10), Rect(0.0, 0.0, 20.0, 10.0)).apply { locked = true })
+        page.items.add(TextItem(Pt(1.0, 1.0), 100.0, 0.0, "hi", Rgba(0, 0, 0), 12.0, measurer = FakeTextMeasurer()).apply { locked = true })
+        page.items.add(
+            ShapeItem(ShapeKind.RECTANGLE, Pt(0.0, 0.0), Pt(9.0, 9.0), Rgba(1, 2, 3, 255)).apply { locked = true },
+        )
+        doc.pages.add(page)
+
+        val back = roundTrip(doc).pages[0].items
+        assertEquals(5, back.size)
+        assertTrue(back[0].locked)
+        assertFalse(back[1].locked)
+        assertTrue(back[2].locked)
+        assertTrue(back[3].locked)
+        assertTrue(back[4].locked)
+    }
+
+    @Test fun anUnlockedNoteWritesNoLockField() {
+        val doc = Document(dpi = 150)
+        val page = Page(100.0, 100.0)
+        page.items.add(Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(1.0, 1.0, 1.0))))
+        doc.pages.add(page)
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        assertFalse(String(out.toByteArray(), Charsets.ISO_8859_1).contains("\"locked\""))
+    }
+
     @Test fun fullRoundTrip() {
         val doc = Document(dpi = 150)
         val page = Page(1240.0, 1754.0)

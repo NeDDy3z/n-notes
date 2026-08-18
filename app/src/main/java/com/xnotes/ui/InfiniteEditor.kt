@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.History
+import com.xnotes.core.history.LockItems
 import com.xnotes.core.history.RestyleItems
 import com.xnotes.core.infinite.AddCanvasItem
 import com.xnotes.core.infinite.AddCanvasItems
@@ -91,7 +92,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onLiftSelection = { items, at -> scene.setLift(items, at) },
         devicePxPerDp = { devicePxPerDp },
         onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
-        onContextMenu = { vp, content -> contextMenu = ContextMenuTarget(vp.x, vp.y, content) },
+        onContextMenu = { vp, content, locked -> contextMenu = ContextMenuTarget(vp.x, vp.y, content, locked) },
         onToolChanged = { adoptTool(it) },
     )
 
@@ -420,6 +421,29 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         markDirty()
         refresh()
         publishOverlay()
+    }
+
+    /**
+     * Pin the selection where it is, then put the selection away, since a locked item cannot stay
+     * selected. A held finger over it is the only way back, and it offers exactly that.
+     */
+    override fun lockSelection() {
+        if (selection.isEmpty) return
+        val items = selection.items.toList()
+        for (item in items) item.locked = true
+        history.push(LockItems(items, true))
+        interaction.clearSelection()
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    override fun unlockItem(item: CanvasItem) {
+        if (!item.locked) return
+        item.locked = false
+        history.push(LockItems(listOf(item), false))
+        markDirty()
+        refresh()
     }
 
     /** Paste the clipboard at [atContent], or a nudge from where it was copied. */
@@ -841,10 +865,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         return true
     }
 
-    /** Select everything on the canvas, which on an unbounded one means literally everything. */
+    /** Select everything unlocked on the canvas, which on an unbounded one means most of it. */
     fun selectAll() {
         if (document.isEmpty) return
-        selection.select(document.items.toList())
+        selection.select(document.items.filter { !it.locked })
         armTool(Tool.SELECT)
         publishOverlay()
     }

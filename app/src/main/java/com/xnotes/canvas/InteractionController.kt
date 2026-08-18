@@ -16,6 +16,7 @@ import com.xnotes.core.history.Command
 import com.xnotes.core.history.CompositeCommand
 import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
+import com.xnotes.core.history.LockItems
 import com.xnotes.core.history.EditText
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.ReorderItems
@@ -127,7 +128,8 @@ class InteractionController(
     /** Screenshot menu: a viewport rect to anchor the "copy as image" bar to, or null to hide. */
     private val onScreenshotMenu: (Rect?) -> Unit = {},
     /** Long-press on empty space: open a context menu at (viewport, content). */
-    private val onContextMenu: (Pt, Pt) -> Unit = { _, _ -> },
+    /** Long press on empty space, or on a locked item: the third argument is that item, if any. */
+    private val onContextMenu: (Pt, Pt, CanvasItem?) -> Unit = { _, _, _ -> },
     /** Pulled past the document's bottom end far enough and released: append a new page. */
     private val onAddPageAtEnd: () -> Unit = {},
     /** A short haptic tick (e.g. the overscroll pull crossed the add-page threshold). */
@@ -328,6 +330,7 @@ class InteractionController(
     private var longPressStart = Pt.ZERO
     private var longPressContent = Pt.ZERO
     private var longPressCandidate: Selected? = null
+    private var longPressLocked: CanvasItem? = null
     private var longPressPrevTool: Tool? = null
 
     // TEXT EDITING
@@ -1081,7 +1084,7 @@ class InteractionController(
      *  region, or null if nothing changed. */
     private fun eraseStrokesFromPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
         val toRemove = page.items.filter {
-            it !is ImageItem && it !is TextItem && it.intersectsCircle(cx, cy, radius)
+            !it.locked && it !is ImageItem && it !is TextItem && it.intersectsCircle(cx, cy, radius)
         }
         if (toRemove.isEmpty()) return null
         var dirty: Rect? = null
@@ -1102,10 +1105,14 @@ class InteractionController(
         var i = 0
         while (i < page.items.size) {
             val item = page.items[i]
-            val frags: List<CanvasItem>? = when (item) {
-                is Stroke -> item.erasedBy(cx, cy, radius)
-                is ShapeItem -> item.erasedBy(cx, cy, radius)
-                else -> null
+            val frags: List<CanvasItem>? = if (item.locked) {
+                null
+            } else {
+                when (item) {
+                    is Stroke -> item.erasedBy(cx, cy, radius)
+                    is ShapeItem -> item.erasedBy(cx, cy, radius)
+                    else -> null
+                }
             }
             if (frags == null) {
                 i++
@@ -1253,7 +1260,7 @@ class InteractionController(
         val pageIndex = state.pageIndexAtContent(content)
         if (pageIndex != null) {
             val local = state.toPageSpace(pageIndex, content)
-            val hit = state.document.pages[pageIndex].items.lastOrNull { it.contains(local) }
+            val hit = state.document.pages[pageIndex].items.lastOrNull { !it.locked && it.contains(local) }
             if (hit != null) {
                 if (selection.none { it.item === hit }) setSelection(listOf(Selected(pageIndex, hit)))
                 beginMove(content)
@@ -1887,10 +1894,15 @@ class InteractionController(
         }
         longPressStart = viewport
         longPressContent = content
-        longPressCandidate = if (grabEligible && hit != null) Selected(pageIndex!!, hit) else null
-        // Arm to grab an item, or (on empty space) to open the paste menu when there is content to paste.
+        // A locked item cannot be picked up, so a held finger offers to release it instead. That is
+        // the only way back: it is out of reach of the band, the lasso and every tap.
+        longPressLocked = hit?.takeIf { it.locked }
+        longPressCandidate =
+            if (grabEligible && hit != null && !hit.locked) Selected(pageIndex!!, hit) else null
+        // Arm to grab an item, to unlock one, or (on empty space) to open the paste menu when there
+        // is content to paste.
         val showEmptyMenu = hit == null && (hasClipboardItems() || clipboardHasImage())
-        if (longPressCandidate == null && !showEmptyMenu) return
+        if (longPressCandidate == null && longPressLocked == null && !showEmptyMenu) return
         val r = Runnable { triggerLongPress() }
         longPressRunnable = r
         handler.postDelayed(r, LONG_PRESS_MS)
@@ -1904,12 +1916,14 @@ class InteractionController(
         longPressRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable = null
         longPressCandidate = null
+        longPressLocked = null
     }
 
     private fun triggerLongPress() {
         longPressRunnable = null
         val candidate = longPressCandidate
         longPressCandidate = null
+        val locked = longPressLocked
         // Abort the in-progress gesture (keep eraser removals); commit any text edit.
         commitTextEdit()
         liveStroke = null
@@ -1926,10 +1940,11 @@ class InteractionController(
             setSelection(listOf(candidate))
             beginMove(state.viewportToContent(longPressStart))
         } else {
-            // Empty space: open the paste context menu at the press point.
+            // Empty space, or a locked item: open the context menu at the press point.
             mode = PointerMode.IDLE
-            onContextMenu(longPressStart, longPressContent)
+            onContextMenu(longPressStart, longPressContent, locked)
         }
+        longPressLocked = null
         requestRender()
     }
 
@@ -2082,7 +2097,9 @@ class InteractionController(
 
     fun selectAll() {
         val all = ArrayList<Selected>()
-        state.document.pages.forEachIndexed { i, page -> page.items.forEach { all.add(Selected(i, it)) } }
+        state.document.pages.forEachIndexed { i, page ->
+            page.items.forEach { if (!it.locked) all.add(Selected(i, it)) }
+        }
         setSelection(all)
     }
 
@@ -2184,6 +2201,30 @@ class InteractionController(
         copyToClipboard()
         clipboardFromCut = true
         deleteSelection() // also runs the select tool's switch-back, once
+    }
+
+    /**
+     * Pin the selection where it is, then put the selection away, since a locked item cannot stay
+     * selected. Clearing also repaints the items back into the page cache, which lifting them for
+     * the drag had taken them out of.
+     */
+    fun lockSelection() {
+        if (selection.isEmpty()) return
+        val items = selection.map { it.item }
+        for (item in items) item.locked = true
+        history.push(LockItems(items, true))
+        clearSelection()
+        maybeSwitchBackAfterSelect()
+        onContentChanged()
+        requestRender()
+    }
+
+    /** Release [item], so it can be selected again. Nothing else about it changes. */
+    fun unlockItem(item: CanvasItem) {
+        if (!item.locked) return
+        item.locked = false
+        history.push(LockItems(listOf(item), false))
+        onContentChanged()
     }
 
     fun duplicateSelection() {

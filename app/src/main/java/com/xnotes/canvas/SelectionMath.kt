@@ -9,7 +9,13 @@ import com.xnotes.core.model.Page
 /** A selected item plus the index of the page it lives on. */
 data class Selected(val pageIndex: Int, val item: CanvasItem)
 
-/** Pure selection-membership tests (spec 06 §6–7). */
+/**
+ * Pure selection-membership tests (spec 06 §6–7).
+ *
+ * A locked item is not a member of anything, whichever way the selection was drawn. Putting that
+ * here rather than at each call site is what makes it true of the band and the lasso on both
+ * canvases at once.
+ */
 object SelectionMath {
 
     /**
@@ -18,12 +24,12 @@ object SelectionMath {
      * front of it; sharing the rule is the point, so the two canvases select alike.
      */
     fun bandMembers(items: List<CanvasItem>, band: Rect): List<CanvasItem> =
-        items.filter { it.bounds().intersects(band) }
+        items.filter { !it.locked && it.bounds().intersects(band) }
 
     /** Lasso selection over a flat item list: every item whose centroid lies inside [polygon]. */
     fun lassoMembers(items: List<CanvasItem>, polygon: List<Pt>): List<CanvasItem> {
         if (polygon.size < 3) return emptyList()
-        return items.filter { Geometry.pointInPolygon(polygon, it.centroid()) }
+        return items.filter { !it.locked && Geometry.pointInPolygon(polygon, it.centroid()) }
     }
 
     /**
@@ -46,6 +52,7 @@ object SelectionMath {
             // may paint past its page edge (a neon glow, ink drawn over the margin).
             if (!pr.outset(OFF_PAGE_SLACK).intersects(band)) continue
             for (item in pages[i].items) {
+                if (item.locked) continue
                 if (toContentRect(i, item.bounds()).intersects(band)) out.add(Selected(i, item))
             }
         }
@@ -71,6 +78,7 @@ object SelectionMath {
         for (i in pages.indices) {
             if (pageRects.getOrNull(i) == null) continue
             for (item in pages[i].items) {
+                if (item.locked) continue
                 if (Geometry.pointInPolygon(polygon, toContent(i, item.centroid()))) {
                     out.add(Selected(i, item))
                 }

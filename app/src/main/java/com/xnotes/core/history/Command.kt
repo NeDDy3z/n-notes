@@ -178,6 +178,20 @@ class RestyleItems(private val entries: List<Entry>) : Command {
     }
 }
 
+/**
+ * Pin items in place, or release them. One command for the whole selection, so a lock and its undo
+ * are a single step however much was held.
+ */
+class LockItems(private val items: List<CanvasItem>, private val locked: Boolean) : Command {
+    override fun redo() {
+        for (item in items) item.locked = locked
+    }
+
+    override fun undo() {
+        for (item in items) item.locked = !locked
+    }
+}
+
 /** Replace a page's item list (bring-to-front), via full before/after snapshots. */
 class ReorderItems(
     private val page: Page,
