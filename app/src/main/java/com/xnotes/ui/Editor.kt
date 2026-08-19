@@ -40,6 +40,8 @@ import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.deepCopyYielding
+import com.xnotes.core.model.insets
+import com.xnotes.core.model.paintMarginPattern
 import com.xnotes.core.model.paintPagePattern
 import com.xnotes.core.model.resolvedPageColor
 import com.xnotes.core.model.resolvedPattern
@@ -1053,30 +1055,46 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.paintPageBackground = { page, renderer, res, region ->
             val src = pdfSource
             val pi = page.pdfPage
+            val content = com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height)
             if (src != null && pi != null) {
-                val fullW = (page.width * res).toInt()
-                val fullH = (page.height * res).toInt()
-                val rx = (region.left * res).toInt()
-                val ry = (region.top * res).toInt()
-                val rw = kotlin.math.ceil(region.w * res).toInt()
-                val rh = kotlin.math.ceil(region.h * res).toInt()
-                src.renderRegion(pi, fullW, fullH, rx, ry, rw, rh, pdfPageFilter())?.let { bg ->
-                    renderer.drawRaster(
-                        bg,
-                        com.xnotes.core.geometry.Rect(region.left, region.top, region.w, region.h),
-                    )
-                    bg.recycle()
+                // The raster covers the page's content box only; a margin is paper beside it.
+                val slice = clampToContent(region, page)
+                if (slice != null) {
+                    val fullW = (page.width * res).toInt()
+                    val fullH = (page.height * res).toInt()
+                    val rx = (slice.left * res).toInt()
+                    val ry = (slice.top * res).toInt()
+                    val rw = kotlin.math.ceil(slice.w * res).toInt()
+                    val rh = kotlin.math.ceil(slice.h * res).toInt()
+                    src.renderRegion(pi, fullW, fullH, rx, ry, rw, rh, pdfPageFilter())?.let { bg ->
+                        renderer.drawRaster(bg, slice)
+                        bg.recycle()
+                    }
                 }
             }
-            // Rulings belong to blank note pages only — never over an imported PDF page.
+            // A ruling covers a blank note page whole; on an imported PDF page it rules the
+            // margins only, so the page itself is never drawn over.
             val pattern = state.effectivePattern(page)
-            if (pi == null && pattern != PagePattern.NONE) {
-                paintPagePattern(
-                    renderer, pattern, state.effectivePatternColor(page), state.effectiveSpacing(page),
-                    page.width, page.height, region,
-                )
+            if (pattern != PagePattern.NONE) {
+                val color = state.effectivePatternColor(page)
+                val spacing = state.effectiveSpacing(page)
+                val cover = state.footprint(page)
+                if (pi == null) {
+                    paintPagePattern(renderer, pattern, color, spacing, cover, region)
+                } else {
+                    paintMarginPattern(renderer, pattern, color, spacing, cover, content, region)
+                }
             }
         }
+    }
+
+    /** [region] cropped to [page]'s content box (its stored size), or null when it misses it. */
+    private fun clampToContent(region: com.xnotes.core.geometry.Rect, page: Page): com.xnotes.core.geometry.Rect? {
+        val l = region.left.coerceAtLeast(0.0)
+        val t = region.top.coerceAtLeast(0.0)
+        val r = region.right.coerceAtMost(page.width)
+        val b = region.bottom.coerceAtMost(page.height)
+        return if (r > l && b > t) com.xnotes.core.geometry.Rect(l, t, r - l, b - t) else null
     }
 
     /**
@@ -1825,14 +1843,24 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper
 
     private fun paintExportRuling(doc: Document, page: Page, r: Renderer) {
-        if (page.pdfPage != null) return // rulings are for blank note pages only, not imported PDF pages
         val pattern = page.resolvedPattern(doc)
-        if (pattern != PagePattern.NONE) {
-            paintPagePattern(
-                r, pattern, page.resolvedPatternColor(doc), page.resolvedSpacing(doc),
-                page.width, page.height, com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height),
-            )
+        if (pattern == PagePattern.NONE) return
+        val color = page.resolvedPatternColor(doc)
+        val spacing = page.resolvedSpacing(doc)
+        val content = com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height)
+        val cover = exportFootprint(doc, page)
+        // Mirrors the canvas: a blank note page is ruled whole, an imported PDF page only in its margins.
+        if (page.pdfPage == null) {
+            paintPagePattern(r, pattern, color, spacing, cover, cover)
+        } else {
+            paintMarginPattern(r, pattern, color, spacing, cover, content, cover)
         }
+    }
+
+    /** [page]'s whole paper in page space, margins included, resolved against [doc] (export/thumbnails). */
+    private fun exportFootprint(doc: Document, page: Page): com.xnotes.core.geometry.Rect {
+        val i = page.insets(doc)
+        return com.xnotes.core.geometry.Rect(-i.left, -i.top, i.left + page.width + i.right, i.top + page.height + i.bottom)
     }
 
     private fun refreshContent() {
