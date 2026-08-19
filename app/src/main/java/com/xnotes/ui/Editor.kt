@@ -925,12 +925,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             r.withSave {
                 r.clipRect(pr)
                 r.fillRect(pr, state.paperColor(page))
-                r.translate(pr.left, pr.top) // into page-local space for the background + items
+                val cover = state.footprint(page)
+                r.translate(pr.left - cover.left, pr.top - cover.top) // into page space (past the margins)
                 val local = com.xnotes.core.geometry.Rect.ltrb(
-                    (content.left - pr.left).coerceAtLeast(0.0),
-                    (content.top - pr.top).coerceAtLeast(0.0),
-                    (content.right - pr.left).coerceAtMost(page.width),
-                    (content.bottom - pr.top).coerceAtMost(page.height),
+                    (content.left - pr.left).coerceAtLeast(0.0) + cover.left,
+                    (content.top - pr.top).coerceAtLeast(0.0) + cover.top,
+                    (content.right - pr.left).coerceAtMost(cover.w) + cover.left,
+                    (content.bottom - pr.top).coerceAtMost(cover.h) + cover.top,
                 )
                 if (local.w > 0.0 && local.h > 0.0) {
                     state.paintPageBackground?.invoke(page, r, res, local)
@@ -1896,13 +1897,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * the side-panel row scrolled out of view — bails out instead of burning CPU the scroll needs.
      */
     fun renderThumbnail(page: Page, widthPx: Int, active: () -> Boolean = { true }): android.graphics.Bitmap? {
-        val scale = widthPx / page.width
+        val cover = state.footprint(page)
+        val scale = widthPx / cover.w
         val w = widthPx.coerceAtLeast(1)
-        val h = (page.height * scale).toInt().coerceAtLeast(1)
+        val h = (cover.h * scale).toInt().coerceAtLeast(1)
         val surface = com.xnotes.platform.AndroidRasterSurface.create(w, h)
         surface.fill(state.paperColor(page))
         val r = surface.renderer()
         r.scale(scale, scale)
+        r.translate(-cover.left, -cover.top)
         if (!active()) return null
         val src = pdfSource
         val pi = page.pdfPage
@@ -1910,14 +1913,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // Pure consumer: never parses. Stamps real image colours only if the linear sweep has
             // already found this page's locations, otherwise draws it filtered; the row re-renders
             // with real colours once the sweep reaches the page (see onImagesReady → pdfThumbTick).
-            src.renderPage(pi, w, h, pdfPageFilter())?.let { bg ->
+            val pw = (page.width * scale).toInt().coerceAtLeast(1)
+            val ph = (page.height * scale).toInt().coerceAtLeast(1)
+            src.renderPage(pi, pw, ph, pdfPageFilter())?.let { bg ->
                 r.drawRaster(bg, com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height))
                 bg.recycle()
             }
+            // The margins are outside the raster, so their ruling still has to be painted.
+            state.paintPageBackground?.invoke(page, r, scale, cover)
         } else {
-            state.paintPageBackground?.invoke(page, r, scale, com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height))
+            state.paintPageBackground?.invoke(page, r, scale, cover)
         }
-        state.paintFlow?.invoke(page, r, com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height))
+        state.paintFlow?.invoke(page, r, cover)
         for (item in itemsSnapshot(page)) {
             if (!active()) return null
             item.paint(r)
@@ -1965,7 +1972,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return withContext(Dispatchers.Default) {
             cachedPageThumbnail(page)?.let { return@withContext it }
             // Render in page space sized so the rotated result lands at [widthPx] wide.
-            val renderW = (page.width * (widthPx / state.displayW(page))).roundToInt().coerceAtLeast(1)
+            val renderW = (state.outerW(page) * (widthPx / state.displayW(page))).roundToInt().coerceAtLeast(1)
             val bmp = renderThumbnail(page, renderW, active = { isActive })
                 ?.let { rotateForView(it) }?.asImageBitmap() ?: return@withContext null
             synchronized(pageThumbs) { pageThumbs.put(page, bmp) }
@@ -2117,18 +2124,22 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun renderDocThumbnailSquare(doc: Document, sidePx: Int, filter: com.xnotes.canvas.PdfPageFilter, rotation: Int = 0): android.graphics.Bitmap? {
         val page = doc.pages.firstOrNull() ?: return null
         val side = sidePx.coerceAtLeast(1)
-        val scale = side.toDouble() / page.width
+        val cover = exportFootprint(doc, page)
+        val scale = side.toDouble() / cover.w
         val surface = com.xnotes.platform.AndroidRasterSurface.create(side, side)
         // Resolve the paper colour against this note's own document/page style (not the open note's).
         surface.fill(page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper)
         val r = surface.renderer()
         r.scale(scale, scale)
+        r.translate(-cover.left, -cover.top)
         doc.pdfFile?.let { file ->
             runCatching {
                 com.xnotes.platform.PdfSource.create(appContext, file)?.let { src ->
                     page.pdfPage?.let { pi ->
                         if (filter.stampImages) src.ensureImageRects(pi)
-                        src.renderPage(pi, side, side, filter)?.let { bg ->
+                        val pw = (page.width * scale).toInt().coerceAtLeast(1)
+                        val ph = (page.height * scale).toInt().coerceAtLeast(1)
+                        src.renderPage(pi, pw, ph, filter)?.let { bg ->
                             r.drawRaster(bg, Rect(0.0, 0.0, page.width, page.height))
                             bg.recycle()
                         }
