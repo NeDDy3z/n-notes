@@ -9,6 +9,7 @@ import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
@@ -41,6 +42,19 @@ class DocumentCodecTest {
 
     private fun imageFile(bytes: ByteArray = byteArrayOf(1, 2, 3, 4)): File =
         File.createTempFile("img", null).apply { writeBytes(bytes); deleteOnExit() }
+
+    /** The manifest's JSON text out of a written bundle. */
+    private fun manifestOf(bundle: ByteArray): String {
+        ZipInputStream(ByteArrayInputStream(bundle)).use { zis ->
+            var e = zis.nextEntry
+            while (e != null) {
+                if (e.name == "manifest.json") return zis.readBytes().decodeToString()
+                zis.closeEntry()
+                e = zis.nextEntry
+            }
+        }
+        return ""
+    }
 
     private fun roundTrip(doc: Document): Document {
         val out = ByteArrayOutputStream()
@@ -619,5 +633,31 @@ class DocumentCodecTest {
         assertNull(s.patternColor)
         assertNull(s.spacing)
         assertTrue(doc.style.isEmpty)
+    }
+
+    @Test fun marginsRoundTripPerPageAndPerDocument() {
+        val doc = Document(pages = mutableListOf(Page(400.0, 800.0), Page(400.0, 800.0)))
+        doc.margins = PageMargins(left = 0.25, bottom = 0.4)
+        doc.pages[1].margins = PageMargins(top = 0.1)
+
+        val read = roundTrip(doc)
+
+        assertEquals(PageMargins(left = 0.25, bottom = 0.4), read.margins)
+        assertTrue(read.pages[0].margins.isEmpty)
+        assertEquals(PageMargins(top = 0.1), read.pages[1].margins)
+    }
+
+    @Test fun noMarginsWritesNoMarginsObject() {
+        val out = ByteArrayOutputStream()
+        codec.write(Document(pages = mutableListOf(Page(400.0, 800.0))), out)
+        assertFalse(manifestOf(out.toByteArray()).contains("margins"))
+    }
+
+    @Test fun outOfRangeMarginsAreClampedOnRead() {
+        val doc = Document(pages = mutableListOf(Page(400.0, 800.0)))
+        doc.pages[0].margins = PageMargins(left = 9.0, right = -3.0)
+        val read = roundTrip(doc)
+        assertEquals(1.0, read.pages[0].margins.left!!, 1e-9)
+        assertEquals(0.0, read.pages[0].margins.right!!, 1e-9)
     }
 }

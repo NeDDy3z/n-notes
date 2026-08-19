@@ -1684,21 +1684,23 @@ class InteractionController(
         val rect = Rect.fromPoints(startLocal, state.toPageSpace(pi, content))
         val draggedX = rect.w * state.zoom >= TEXT_DRAG_SLOP
         val draggedY = rect.h * state.zoom >= TEXT_DRAG_SLOP
+        // Measured to the paper's right edge, margins included: a box may be dropped in one.
+        val pageRight = state.footprint(page).right
         val item = if (draggedX || draggedY) {
             // Use the drawn rectangle for whichever axis was actually dragged.
             val left = if (draggedX) rect.left else startLocal.x
-            val maxW = (page.width - left - 8.0).coerceAtLeast(40.0)
-            val w = if (draggedX) rect.w.coerceIn(40.0, maxW) else defaultTextWidth(page.width, left)
+            val maxW = (pageRight - left - 8.0).coerceAtLeast(40.0)
+            val w = if (draggedX) rect.w.coerceIn(40.0, maxW) else defaultTextWidth(pageRight, left)
             val h = if (draggedY) rect.h else 0.0
             newTextItem(Pt(left, rect.top), w, h)
         } else {
-            newTextItem(startLocal, defaultTextWidth(page.width, startLocal.x), 0.0)
+            newTextItem(startLocal, defaultTextWidth(pageRight, startLocal.x), 0.0)
         }
         startEditing(item, pi, isNew = true)
     }
 
-    private fun defaultTextWidth(pageWidth: Double, left: Double): Double =
-        (pageWidth - left - 14.0).coerceIn(80.0, 300.0)
+    private fun defaultTextWidth(pageRight: Double, left: Double): Double =
+        (pageRight - left - 14.0).coerceIn(80.0, 300.0)
 
     private fun newTextItem(pos: Pt, width: Double, height: Double): TextItem =
         TextItem(pos, width, height, "", inkColor, textPointSize, textFace, textMeasurer)

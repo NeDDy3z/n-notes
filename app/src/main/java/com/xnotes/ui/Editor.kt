@@ -1294,8 +1294,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val scale = minOf(1.0, maxW / size.width, maxH / size.height)
         val w = size.width * scale
         val h = size.height * scale
+        // Placed anywhere on the paper, margins included, but never hanging off it.
+        val cover = state.footprint(page)
         val rect = if (atContent != null && pr != null) {
-            Rect((atContent.x - pr.left - w / 2).coerceIn(0.0, page.width - w), (atContent.y - pr.top - h / 2).coerceIn(0.0, page.height - h), w, h)
+            Rect(
+                (atContent.x - pr.left - w / 2 + cover.left).coerceIn(cover.left, cover.right - w),
+                (atContent.y - pr.top - h / 2 + cover.top).coerceIn(cover.top, cover.bottom - h),
+                w, h,
+            )
         } else {
             Rect((page.width - w) / 2.0, (page.height - h) / 2.0, w, h)
         }
@@ -3643,7 +3649,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (pdfKeepsImageColors()) {
             page.pdfPage?.let { pi -> pdfSource?.ensureImageRects(pi) }
         }
-        val bmp = renderThumbnail(page, page.width.toInt().coerceAtLeast(1)) ?: return null
+        val bmp = renderThumbnail(page, state.outerW(page).toInt().coerceAtLeast(1)) ?: return null
         return java.io.ByteArrayOutputStream().use { out ->
             bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
             out.toByteArray()
