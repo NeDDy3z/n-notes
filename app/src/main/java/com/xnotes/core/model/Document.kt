@@ -27,6 +27,8 @@ class Document(
     val bookmarks: MutableList<Bookmark> = mutableListOf(),
     /** Document-wide ("all pages") style override; per-page [Page.style] layers on top. */
     var style: PageStyle = PageStyle(),
+    /** Document-wide ("all pages") margin override; per-page [Page.margins] layers on top. */
+    var margins: PageMargins = PageMargins(),
     /** The document-wide flowing rich text (empty until typed into; persisted only when non-empty). */
     val flow: TextFlow = TextFlow(),
 ) {

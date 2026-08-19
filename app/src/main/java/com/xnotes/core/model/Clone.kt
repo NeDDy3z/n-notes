@@ -19,9 +19,9 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
     // would quietly unlock everything on the next save.
 }.also { it.locked = locked }
 
-/** A deep copy of a page — its items cloned ([deepCopy]) — keeping the size, PDF link and style. */
+/** A deep copy of a page — its items cloned ([deepCopy]) — keeping the size, PDF link, style and margins. */
 fun Page.deepCopy(measurer: TextMeasurer): Page =
-    Page(width, height, items.mapTo(mutableListOf()) { it.deepCopy(measurer) }, pdfPage, style)
+    Page(width, height, items.mapTo(mutableListOf()) { it.deepCopy(measurer) }, pdfPage, style, margins)
 
 /**
  * A deep copy of a document: pages cloned, bookmarks copied, the source PDF file and styles shared
@@ -38,6 +38,7 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
     pdfFile = pdfFile,
     bookmarks = bookmarks.mapTo(mutableListOf()) { Bookmark(it.page, it.label) },
     style = style,
+    margins = margins,
     // The flow must be cloned too or the autosave snapshot would race live edits.
     flow = flow.deepCopy(),
 )
@@ -66,6 +67,7 @@ suspend fun Document.deepCopyYielding(measurer: TextMeasurer): Document {
         pdfFile = pdfFile,
         bookmarks = bookmarks.mapTo(mutableListOf()) { Bookmark(it.page, it.label) },
         style = style,
+        margins = margins,
         flow = flow.deepCopy(),
     )
 }

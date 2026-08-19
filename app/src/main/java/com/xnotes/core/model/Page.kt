@@ -12,6 +12,8 @@ class Page(
     var pdfPage: Int? = null,
     /** Per-page style override (paper colour + ruling); null fields inherit. See [PageStyle]. */
     var style: PageStyle = PageStyle(),
+    /** Per-page margin override (extra paper outside the content box); null fields inherit. */
+    var margins: PageMargins = PageMargins(),
 ) {
     /**
      * A process-unique, stable id (not persisted). Pages compare by identity, but Compose list keys

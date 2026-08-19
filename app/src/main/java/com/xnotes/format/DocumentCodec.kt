@@ -11,6 +11,7 @@ import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
+import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
@@ -100,6 +101,7 @@ class DocumentCodec(
         for (page in doc.pages) writePage(j, page, assets)
         j.endArray()
         writeStyle(j, doc.style)
+        writeMargins(j, doc.margins)
         j.endObject()
     }
 
@@ -128,6 +130,7 @@ class DocumentCodec(
         }
         j.endArray()
         writeStyle(j, page.style)
+        writeMargins(j, page.margins)
         j.endObject()
     }
 
@@ -278,6 +281,17 @@ class DocumentCodec(
         j.endObject()
     }
 
+    /** A page/document margin override, written only when an edge is set (fractions 0..1). */
+    private fun writeMargins(j: JsonWrite, m: PageMargins) {
+        if (m.isEmpty) return
+        j.name("margins").beginObject()
+        m.left?.let { j.name("left").value(it) }
+        m.top?.let { j.name("top").value(it) }
+        m.right?.let { j.name("right").value(it) }
+        m.bottom?.let { j.name("bottom").value(it) }
+        j.endObject()
+    }
+
     /**
      * Read a `.xnote` from [input]. When [pdfDir] is non-null an embedded source PDF, and when
      * [imageDir] is non-null the inserted images, are streamed out to fresh temp files in those dirs
@@ -335,6 +349,7 @@ class DocumentCodec(
 
         val doc = Document(dpi = m.dpi)
         doc.style = m.style
+        doc.margins = m.margins
 
         if (m.hasPdf) {
             doc.pdfFile = pdfFile
@@ -391,6 +406,7 @@ class DocumentCodec(
         var dpi = PageSize.DEFAULT_DPI
         var hasPdf = false
         var style = PageStyle()
+        var margins = PageMargins()
         val bookmarks = ArrayList<Bookmark>()
         val pages = ArrayList<Page>()
         val pageImages = ArrayList<Pair<Page, List<PendingImage>>>()
@@ -421,6 +437,7 @@ class DocumentCodec(
                 "dpi" -> m.dpi = intOr(p, PageSize.DEFAULT_DPI)
                 "has_pdf" -> m.hasPdf = boolOr(p, false)
                 "style" -> m.style = parseStyle(p)
+                "margins" -> m.margins = parseMargins(p)
                 "bookmarks" -> parseBookmarks(p, m.bookmarks)
                 "pages" -> parsePages(p, m)
                 else -> p.skipValue()
@@ -467,6 +484,7 @@ class DocumentCodec(
             var height = fallbackH
             var pdfPage: Int? = null
             var style = PageStyle()
+            var margins = PageMargins()
             val items = mutableListOf<CanvasItem>()
             val pending = ArrayList<PendingImage>()
             p.beginObject()
@@ -476,12 +494,13 @@ class DocumentCodec(
                     "height" -> height = doubleOr(p, fallbackH)
                     "pdf_page" -> pdfPage = intOrNull(p)
                     "style" -> style = parseStyle(p)
+                    "margins" -> margins = parseMargins(p)
                     "items" -> parseItems(p, items, pending)
                     else -> p.skipValue()
                 }
             }
             p.endObject()
-            val page = Page(width = width, height = height, items = items, pdfPage = pdfPage, style = style)
+            val page = Page(width = width, height = height, items = items, pdfPage = pdfPage, style = style, margins = margins)
             m.pages.add(page)
             if (pending.isNotEmpty()) m.pageImages.add(page to pending)
         }
@@ -755,6 +774,31 @@ class DocumentCodec(
         }
         p.endObject()
         return PageStyle(pageColor = pageColor, pattern = pattern, patternColor = patternColor, spacing = spacing)
+    }
+
+    private fun parseMargins(p: JsonPull): PageMargins {
+        if (p.peek() != JsonPull.Token.BEGIN_OBJECT) {
+            p.skipValue()
+            return PageMargins()
+        }
+        var left: Double? = null
+        var top: Double? = null
+        var right: Double? = null
+        var bottom: Double? = null
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "left" -> left = doubleOrNull(p)
+                "top" -> top = doubleOrNull(p)
+                "right" -> right = doubleOrNull(p)
+                "bottom" -> bottom = doubleOrNull(p)
+                else -> p.skipValue()
+            }
+        }
+        p.endObject()
+        // A file from a newer/looser writer can carry anything; clamp to the range the UI offers.
+        fun clamp(v: Double?) = v?.coerceIn(0.0, PageMargins.MAX)
+        return PageMargins(clamp(left), clamp(top), clamp(right), clamp(bottom))
     }
 
     private fun materializeImage(spec: PendingImage, imageFiles: Map<String, File>): ImageItem? {
