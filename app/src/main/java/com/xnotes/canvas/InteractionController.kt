@@ -2742,7 +2742,7 @@ class InteractionController(
                 val pr = state.pageRects.getOrNull(sel.pageIndex) ?: continue
                 r.withSave {
                     r.translate(pr.left + moveOffset.x, pr.top + moveOffset.y)
-                    state.applyPageRotation(r, state.document.pages[sel.pageIndex])
+                    state.applyPageTransform(r, state.document.pages[sel.pageIndex])
                     sel.item.paint(r)
                 }
             }
@@ -2817,7 +2817,7 @@ class InteractionController(
         r.withSave {
             r.clipRect(pr)
             r.translate(pr.left, pr.top)
-            state.applyPageRotation(r, state.document.pages[pi])
+            state.applyPageTransform(r, state.document.pages[pi])
             paint()
         }
     }

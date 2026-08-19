@@ -6,9 +6,11 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageInsets
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.insets
 import com.xnotes.core.model.resolvedPageColor
 import com.xnotes.core.model.resolvedPattern
 import com.xnotes.core.model.resolvedPatternColor
@@ -138,32 +140,59 @@ class CanvasState(
     /**
      * Whole-file clockwise page rotation (0/90/180/270), applied by the view: pages lay
      * out with their rotated footprints ([displayW]/[displayH]) and their page-space
-     * content is painted through [applyPageRotation]. Model/page space never rotates —
+     * content is painted through [applyPageTransform]. Model/page space never rotates —
      * caches, items and hit geometry stay in page space and map through
      * [toPageSpace]/[fromPageSpace] at the display boundary.
      */
     var rotationDeg: Int = 0
 
-    /** On-screen (display) width of [page] under the current rotation. */
-    fun displayW(page: Page): Double = if (rotationDeg == 90 || rotationDeg == 270) page.height else page.width
+    /**
+     * [page]'s resolved margins in content px (page override -> document -> none). A margin grows
+     * the paper *outside* the page's content box without moving anything on it, so page space keeps
+     * its coordinates and simply starts negative on a margined edge — see [footprint].
+     */
+    fun insets(page: Page): PageInsets = page.insets(document)
 
-    /** On-screen (display) height of [page] under the current rotation. */
-    fun displayH(page: Page): Double = if (rotationDeg == 90 || rotationDeg == 270) page.width else page.height
+    /** Page width including its margins (unrotated). */
+    fun outerW(page: Page): Double = insets(page).let { it.left + page.width + it.right }
+
+    /** Page height including its margins (unrotated). */
+    fun outerH(page: Page): Double = insets(page).let { it.top + page.height + it.bottom }
+
+    /** The whole paper in page space, margins included: the rect every page-space painter fills. */
+    fun footprint(page: Page): Rect {
+        val i = insets(page)
+        return Rect(-i.left, -i.top, i.left + page.width + i.right, i.top + page.height + i.bottom)
+    }
+
+    /** On-screen (display) width of [page]'s footprint under the current rotation. */
+    fun displayW(page: Page): Double = if (rotationDeg == 90 || rotationDeg == 270) outerH(page) else outerW(page)
+
+    /** On-screen (display) height of [page]'s footprint under the current rotation. */
+    fun displayH(page: Page): Double = if (rotationDeg == 90 || rotationDeg == 270) outerW(page) else outerH(page)
 
     /** Map a page-local display point (relative to the page rect's top-left) into page space. */
-    fun displayToPage(page: Page, p: Pt): Pt = when (rotationDeg) {
-        90 -> Pt(p.y, page.height - p.x)
-        180 -> Pt(page.width - p.x, page.height - p.y)
-        270 -> Pt(page.width - p.y, p.x)
-        else -> p
+    fun displayToPage(page: Page, p: Pt): Pt {
+        val i = insets(page)
+        val q = when (rotationDeg) {
+            90 -> Pt(p.y, outerH(page) - p.x)
+            180 -> Pt(outerW(page) - p.x, outerH(page) - p.y)
+            270 -> Pt(outerW(page) - p.y, p.x)
+            else -> p
+        }
+        return if (i.isZero) q else Pt(q.x - i.left, q.y - i.top)
     }
 
     /** Map a page-space point into page-local display coordinates. */
-    fun pageToDisplay(page: Page, p: Pt): Pt = when (rotationDeg) {
-        90 -> Pt(page.height - p.y, p.x)
-        180 -> Pt(page.width - p.x, page.height - p.y)
-        270 -> Pt(p.y, page.width - p.x)
-        else -> p
+    fun pageToDisplay(page: Page, p: Pt): Pt {
+        val i = insets(page)
+        val q = if (i.isZero) p else Pt(p.x + i.left, p.y + i.top)
+        return when (rotationDeg) {
+            90 -> Pt(outerH(page) - q.y, q.x)
+            180 -> Pt(outerW(page) - q.x, outerH(page) - q.y)
+            270 -> Pt(q.y, outerW(page) - q.x)
+            else -> q
+        }
     }
 
     /** Map a page-local display rect into page space (axis-aligned; corners re-normalize). */
@@ -200,41 +229,52 @@ class CanvasState(
     }
 
     /**
-     * Rotate [r] — already translated to a page rect's top-left — so page-space painting
-     * lands rotated in the page's display footprint. The inverse of [displayToPage].
+     * Take [r] — already translated to a page rect's top-left — into page space: the view rotation,
+     * then the page's margins, so page-space painting lands inside the paper's display footprint.
+     * The inverse of [displayToPage].
      */
-    fun applyPageRotation(r: Renderer, page: Page) {
+    fun applyPageTransform(r: Renderer, page: Page) {
         when (rotationDeg) {
-            90 -> { r.translate(page.height, 0.0); r.rotate(90.0) }
-            180 -> { r.translate(page.width, page.height); r.rotate(180.0) }
-            270 -> { r.translate(0.0, page.width); r.rotate(270.0) }
+            90 -> { r.translate(outerH(page), 0.0); r.rotate(90.0) }
+            180 -> { r.translate(outerW(page), outerH(page)); r.rotate(180.0) }
+            270 -> { r.translate(0.0, outerW(page)); r.rotate(270.0) }
         }
+        val i = insets(page)
+        if (!i.isZero) r.translate(i.left, i.top)
     }
 
     /** [pageToDisplay] as an affine (page space → page-local display coords). */
-    private fun displayAffine(page: Page): Affine = when (rotationDeg) {
-        90 -> Affine(0.0, 1.0, -1.0, 0.0, page.height, 0.0)
-        180 -> Affine(-1.0, 0.0, 0.0, -1.0, page.width, page.height)
-        270 -> Affine(0.0, -1.0, 1.0, 0.0, 0.0, page.width)
-        else -> Affine.IDENTITY
+    private fun displayAffine(page: Page): Affine {
+        val rot = when (rotationDeg) {
+            90 -> Affine(0.0, 1.0, -1.0, 0.0, outerH(page), 0.0)
+            180 -> Affine(-1.0, 0.0, 0.0, -1.0, outerW(page), outerH(page))
+            270 -> Affine(0.0, -1.0, 1.0, 0.0, 0.0, outerW(page))
+            else -> Affine.IDENTITY
+        }
+        val i = insets(page)
+        return if (i.isZero) rot else rot.compose(Affine(1.0, 0.0, 0.0, 1.0, i.left, i.top))
     }
 
     /** [displayToPage] as an affine (page-local display coords → page space). */
-    private fun pageAffine(page: Page): Affine = when (rotationDeg) {
-        90 -> Affine(0.0, -1.0, 1.0, 0.0, 0.0, page.height)
-        180 -> Affine(-1.0, 0.0, 0.0, -1.0, page.width, page.height)
-        270 -> Affine(0.0, 1.0, -1.0, 0.0, page.width, 0.0)
-        else -> Affine.IDENTITY
+    private fun pageAffine(page: Page): Affine {
+        val rot = when (rotationDeg) {
+            90 -> Affine(0.0, -1.0, 1.0, 0.0, 0.0, outerH(page))
+            180 -> Affine(-1.0, 0.0, 0.0, -1.0, outerW(page), outerH(page))
+            270 -> Affine(0.0, 1.0, -1.0, 0.0, outerW(page), 0.0)
+            else -> Affine.IDENTITY
+        }
+        val i = insets(page)
+        return if (i.isZero) rot else Affine(1.0, 0.0, 0.0, 1.0, -i.left, -i.top).compose(rot)
     }
 
     /**
      * Express a content-space affine [world] in page [i]'s page space, so it can be baked
-     * into item geometry: conjugates by the page's display map (translation + rotation).
+     * into item geometry: conjugates by the page's display map (translation + rotation + margins).
      */
     fun affineToPageSpace(i: Int, world: Affine): Affine {
         val local = world.translatedFrame(pageRects[i].topLeft)
-        if (rotationDeg == 0) return local
         val page = document.pages[i]
+        if (rotationDeg == 0 && insets(page).isZero) return local
         return pageAffine(page).compose(local.compose(displayAffine(page)))
     }
 
@@ -905,8 +945,8 @@ class CanvasState(
 
     private fun clampedRes(page: Page): Double {
         var res = zoom * renderScale
-        val longest = max(page.width, page.height) * res
-        if (longest > maxCachePx) res = maxCachePx / max(page.width, page.height)
+        val longEdge = max(outerW(page), outerH(page))
+        if (longEdge * res > maxCachePx) res = maxCachePx / longEdge
         return res.coerceAtLeast(0.01)
     }
 
@@ -957,13 +997,15 @@ class CanvasState(
         renderInk(page, res, cacheItems(page), includeFlow = !flowLifted)
 
     private fun renderInk(page: Page, res: Double, items: List<CanvasItem>, includeFlow: Boolean): CacheEntry {
-        val w = ceil(page.width * res).toInt().coerceAtLeast(1)
-        val h = ceil(page.height * res).toInt().coerceAtLeast(1)
+        val cover = footprint(page)
+        val w = ceil(cover.w * res).toInt().coerceAtLeast(1)
+        val h = ceil(cover.h * res).toInt().coerceAtLeast(1)
         val surface = surfaceFactory.create(w, h, 1.0)
         surface.fill(TRANSPARENT)
         val r = surface.renderer()
         r.scale(res, res)
-        if (includeFlow) paintFlow?.invoke(page, r, Rect(0.0, 0.0, page.width, page.height))
+        r.translate(-cover.left, -cover.top) // the surface covers the margins, so page space starts inset
+        if (includeFlow) paintFlow?.invoke(page, r, cover)
         for (item in items) item.paint(r)
         noteGeometryBuilt(page)
         return CacheEntry(surface, res)
@@ -1077,13 +1119,15 @@ class CanvasState(
     }
 
     private fun buildBackground(page: Page, res: Double): CacheEntry {
-        val w = ceil(page.width * res).toInt().coerceAtLeast(1)
-        val h = ceil(page.height * res).toInt().coerceAtLeast(1)
+        val cover = footprint(page)
+        val w = ceil(cover.w * res).toInt().coerceAtLeast(1)
+        val h = ceil(cover.h * res).toInt().coerceAtLeast(1)
         val surface = surfaceFactory.create(w, h, 1.0)
         surface.fill(TRANSPARENT)
         val r = surface.renderer()
         r.scale(res, res)
-        paintPageBackground?.invoke(page, r, res, Rect(0.0, 0.0, page.width, page.height))
+        r.translate(-cover.left, -cover.top)
+        paintPageBackground?.invoke(page, r, res, cover)
         return CacheEntry(surface, res)
     }
 
@@ -1095,7 +1139,7 @@ class CanvasState(
      * presenter's current zoom, so a streamed page stays sharp at any quality setting.
      */
     private fun presRes(page: Page): Double =
-        (PRES_CACHE_PX / max(page.width, page.height)).coerceAtLeast(0.01)
+        (PRES_CACHE_PX / max(outerW(page), outerH(page))).coerceAtLeast(0.01)
 
     /** Presentation ink layer for [page] at [presRes] (built once, then kept current incrementally). */
     fun presCacheFor(page: Page): CacheEntry {
@@ -1128,17 +1172,21 @@ class CanvasState(
     /** Keep [page]'s presentation ink layer current with a just-committed [item], if it is cached. */
     private fun appendToPresCache(page: Page, item: CanvasItem) {
         val entry = presCaches[page] ?: return
+        val cover = footprint(page)
         val r = entry.surface.renderer()
         r.scale(entry.res, entry.res)
+        r.translate(-cover.left, -cover.top)
         item.paint(r)
     }
 
     /** Repair just [dirtyRect] of [page]'s presentation ink layer in place, if it is cached. */
     private fun repairPresRegion(page: Page, dirtyRect: Rect) {
         val entry = presCaches[page] ?: return
+        val cover = footprint(page)
         val r = entry.surface.renderer()
         r.save()
         r.scale(entry.res, entry.res)
+        r.translate(-cover.left, -cover.top)
         r.clipRect(dirtyRect)
         r.clear()
         paintFlow?.invoke(page, r, dirtyRect)
@@ -1160,8 +1208,10 @@ class CanvasState(
             invalidatePage(page)
             return
         }
+        val cover = footprint(page)
         val r = existing.surface.renderer()
         r.scale(res, res)
+        r.translate(-cover.left, -cover.top)
         item.paint(r)
     }
 
@@ -1180,9 +1230,11 @@ class CanvasState(
         if (pendingSharp) pendingSharpEdits.add(page to dirtyRect)
         repairPresRegion(page, dirtyRect) // erase from the presentation ink layer in place too
         val entry = caches[page] ?: return false
+        val cover = footprint(page)
         val r = entry.surface.renderer()
         r.save()
         r.scale(entry.res, entry.res)
+        r.translate(-cover.left, -cover.top)
         r.clipRect(dirtyRect)
         r.clear()
         if (!flowLifted) paintFlow?.invoke(page, r, dirtyRect)
@@ -1277,7 +1329,7 @@ class CanvasState(
      */
     fun repairAllInkInPlace() {
         for (page in (caches.keys + presCaches.keys).toSet()) {
-            repairRegion(page, Rect(0.0, 0.0, page.width, page.height))
+            repairRegion(page, footprint(page))
         }
         cacheGen++
     }
@@ -1361,7 +1413,8 @@ class CanvasState(
         for (i in pageRects.indices) {
             val pr = pageRects.getOrNull(i) ?: continue
             if (!pr.intersects(visible)) continue
-            if (target * max(document.pages[i].width, document.pages[i].height) > maxCachePx) return true
+            val page = document.pages[i]
+            if (target * max(outerW(page), outerH(page)) > maxCachePx) return true
         }
         return false
     }
@@ -1475,7 +1528,7 @@ class CanvasState(
             rb.save()
             rb.clipRect(d.pr)
             rb.translate(d.pr.left, d.pr.top)
-            applyPageRotation(rb, d.page)
+            applyPageTransform(rb, d.page)
             if (paintPageBackground != null && d.region.w > 0.0 && d.region.h > 0.0) {
                 paintPageBackground?.invoke(d.page, rb, res, d.region)
             }
@@ -1483,7 +1536,7 @@ class CanvasState(
             ri.save()
             ri.clipRect(d.pr)
             ri.translate(d.pr.left, d.pr.top)
-            applyPageRotation(ri, d.page)
+            applyPageTransform(ri, d.page)
             if (withFlow && d.region.w > 0.0 && d.region.h > 0.0) {
                 paintFlow?.invoke(d.page, ri, d.region)
             }
@@ -1504,7 +1557,7 @@ class CanvasState(
         r.scale(f.z, f.z)
         r.clipRect(pr)
         r.translate(pr.left, pr.top)
-        applyPageRotation(r, page)
+        applyPageTransform(r, page)
         item.paint(r)
         r.restore()
     }
@@ -1521,7 +1574,7 @@ class CanvasState(
         r.scale(f.z, f.z)
         r.clipRect(pr)
         r.translate(pr.left, pr.top)
-        applyPageRotation(r, page)
+        applyPageTransform(r, page)
         r.clipRect(dirtyRect)
         r.clear()
         if (!flowLifted) paintFlow?.invoke(page, r, dirtyRect)
@@ -1596,8 +1649,8 @@ class CanvasState(
         if (pages.isEmpty()) return 0 to 0
         val page = pages[currentPageIndex()]
         val res = clampedRes(page)
-        val w = ceil(page.width * res).toInt().coerceAtLeast(1)
-        val h = ceil(page.height * res).toInt().coerceAtLeast(1)
+        val w = ceil(outerW(page) * res).toInt().coerceAtLeast(1)
+        val h = ceil(outerH(page) * res).toInt().coerceAtLeast(1)
         return w to h
     }
 

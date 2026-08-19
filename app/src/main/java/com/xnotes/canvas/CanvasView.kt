@@ -457,7 +457,7 @@ class CanvasView @JvmOverloads constructor(
                 r.withSave {
                     r.clipRect(pr)
                     r.translate(pr.left, pr.top)
-                    st.applyPageRotation(r, page)
+                    st.applyPageTransform(r, page)
                     st.paintFlow?.invoke(page, r, st.displayRectToPage(page, visible.translate(-pr.left, -pr.top)))
                 }
             }
@@ -510,7 +510,7 @@ class CanvasView @JvmOverloads constructor(
                             r.withSave {
                                 r.clipRect(pr)
                                 r.translate(pr.left, pr.top)
-                                st.applyPageRotation(r, page)
+                                st.applyPageTransform(r, page)
                                 st.paintFlow?.invoke(page, r, st.displayRectToPage(page, visible.translate(-pr.left, -pr.top)))
                             }
                         }
@@ -547,7 +547,7 @@ class CanvasView @JvmOverloads constructor(
                 r.withSave {
                     r.clipRect(pr)
                     r.translate(pr.left, pr.top)
-                    st.applyPageRotation(r, page)
+                    st.applyPageTransform(r, page)
                     for (item in page.items) {
                         if (item is Stroke && item.isHighlighterInk() && !st.isLiftedItem(item) &&
                             item.bounds().intersects(visLocal)
@@ -583,7 +583,8 @@ class CanvasView @JvmOverloads constructor(
     /** Fires once the view has been still for [SHARP_SETTLE_MS], rendering the sharp viewport. */
     private val sharpDebounce = Runnable { state?.requestSharpViewport() }
 
-    /** Blit a page-space cache surface into the page's display rect, rotated per the view. */
+    /** Blit a page-space cache surface into the page's display rect, rotated per the view. The
+     *  surface covers the page's whole footprint (margins included), so it blits at [CanvasState.footprint]. */
     private fun blitPageSurface(r: AndroidRenderer, st: CanvasState, page: Page, pr: Rect, surface: com.xnotes.core.pal.RasterSurface) {
         if (st.rotationDeg == 0) {
             r.drawRaster(surface, pr)
@@ -591,8 +592,8 @@ class CanvasView @JvmOverloads constructor(
         }
         r.withSave {
             r.translate(pr.left, pr.top)
-            st.applyPageRotation(r, page)
-            r.drawRaster(surface, Rect(0.0, 0.0, page.width, page.height))
+            st.applyPageTransform(r, page)
+            r.drawRaster(surface, st.footprint(page))
         }
     }
 
