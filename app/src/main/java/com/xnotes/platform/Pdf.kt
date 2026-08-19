@@ -17,11 +17,13 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageInsets
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TextItem
+import com.xnotes.core.model.insets
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.tools.Tool
 import java.io.File
@@ -150,13 +152,15 @@ object PdfExporter {
             val n = srcDoc.numberOfPages
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
+                val ins = page.insets(doc)
                 if (index < n) {
-                    // Flow text counts as content too: a typed-only page must still annotate.
-                    if (page.items.isNotEmpty() || flow.bounds(page) != null) {
-                        annotatePage(srcDoc, srcDoc.getPage(index), page, s, paintRuling, flow)
+                    // Flow text counts as content too: a typed-only page must still annotate, and so
+                    // must a margined one — its extra paper is written by growing the page's boxes.
+                    if (page.items.isNotEmpty() || flow.bounds(page) != null || !ins.isZero) {
+                        annotatePage(srcDoc, srcDoc.getPage(index), page, ins, s, paintRuling, flow)
                     }
                 } else {
-                    vectorBlankPage(srcDoc, page, s, paperColor, paintRuling, flow) // a blank note page appended after the PDF
+                    vectorBlankPage(srcDoc, page, ins, s, paperColor, paintRuling, flow) // a blank note page appended after the PDF
                 }
                 releaseInkGeometry(page)
                 onProgress(index + 1, total)
@@ -182,14 +186,15 @@ object PdfExporter {
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
                 val srcIdx = page.pdfPage
+                val ins = page.insets(doc)
                 val hasSource = srcIdx != null && srcDoc != null && srcIdx in 0 until srcDoc.numberOfPages
                 when {
                     hasSource && srcDoc!!.getPage(srcIdx!!).rotation % 360 == 0 ->
-                        vectorImportedPage(outDoc, srcDoc, srcIdx, page, s, paintRuling, flow)
+                        vectorImportedPage(outDoc, srcDoc, srcIdx, page, ins, s, paintRuling, flow)
                     hasSource ->
-                        rasterFullPage(outDoc, page, source, paperColor, s, paintRuling, flow) // rotated source page
+                        rasterFullPage(outDoc, page, ins, source, paperColor, s, paintRuling, flow) // rotated source page
                     else ->
-                        vectorBlankPage(outDoc, page, s, paperColor, paintRuling, flow)
+                        vectorBlankPage(outDoc, page, ins, s, paperColor, paintRuling, flow)
                 }
                 releaseInkGeometry(page)
                 onProgress(index + 1, total)
@@ -227,24 +232,40 @@ object PdfExporter {
     }
 
     /** Copy a (rotation-0) source page in as vector, then overlay its ruling + annotations. */
-    private fun vectorImportedPage(outDoc: PDDocument, srcDoc: PDDocument, srcIdx: Int, page: Page, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
-        annotatePage(outDoc, outDoc.importPage(srcDoc.getPage(srcIdx)), page, s, paintRuling, flow)
+    private fun vectorImportedPage(outDoc: PDDocument, srcDoc: PDDocument, srcIdx: Int, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+        annotatePage(outDoc, outDoc.importPage(srcDoc.getPage(srcIdx)), page, ins, s, paintRuling, flow)
     }
 
     /** Append [page]'s ruling + annotations as a new content stream over an existing [pdfPage] of [doc]. */
-    private fun annotatePage(doc: PDDocument, pdfPage: PDPage, page: Page, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+    private fun annotatePage(doc: PDDocument, pdfPage: PDPage, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
         val crop = pdfPage.cropBox
+        // Page space's origin is the *imported* page's top-left, read before the box grows: the
+        // source content keeps its coordinates and the margins extend the paper around it.
         val ox = crop.lowerLeftX.toDouble()
         val oy = (crop.lowerLeftY + crop.height).toDouble()
+        growPageBox(pdfPage, crop, ins, s)
         PDPageContentStream(doc, pdfPage, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
-            paintItems(cs, doc, page, ox, oy, s, paintRuling, flow)
+            paintItems(cs, doc, page, ins, ox, oy, s, paintRuling, flow)
         }
     }
 
+    /** Grow an imported page's boxes outward by [ins] so the note's margins are part of the paper. */
+    private fun growPageBox(pdfPage: PDPage, crop: PDRectangle, ins: PageInsets, s: Double) {
+        if (ins.isZero) return
+        val grown = PDRectangle(
+            crop.lowerLeftX - (ins.left * s).toFloat(),
+            crop.lowerLeftY - (ins.bottom * s).toFloat(),
+            crop.width + ((ins.left + ins.right) * s).toFloat(),
+            crop.height + ((ins.top + ins.bottom) * s).toFloat(),
+        )
+        pdfPage.mediaBox = grown
+        pdfPage.cropBox = grown
+    }
+
     /** A note page with no PDF background: blank page filled with the paper colour, then ruling + annotations. */
-    private fun vectorBlankPage(outDoc: PDDocument, page: Page, s: Double, paperColor: (Page) -> Rgba, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
-        val wPts = (page.width * s).toFloat().coerceAtLeast(1f)
-        val hPts = (page.height * s).toFloat().coerceAtLeast(1f)
+    private fun vectorBlankPage(outDoc: PDDocument, page: Page, ins: PageInsets, s: Double, paperColor: (Page) -> Rgba, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+        val wPts = ((ins.left + page.width + ins.right) * s).toFloat().coerceAtLeast(1f)
+        val hPts = ((ins.top + page.height + ins.bottom) * s).toFloat().coerceAtLeast(1f)
         val pdfPage = PDPage(PDRectangle(wPts, hPts))
         outDoc.addPage(pdfPage)
         PDPageContentStream(outDoc, pdfPage).use { cs ->
@@ -252,21 +273,23 @@ object PdfExporter {
             cs.setNonStrokingColor(paper.r / 255f, paper.g / 255f, paper.b / 255f)
             cs.addRect(0f, 0f, wPts, hPts)
             cs.fill()
-            paintItems(cs, outDoc, page, ox = 0.0, oy = hPts.toDouble(), s, paintRuling, flow)
+            // Page space starts inside the paper by the left/top margins.
+            paintItems(cs, outDoc, page, ins, ox = ins.left * s, oy = hPts - ins.top * s, s, paintRuling, flow)
         }
     }
 
     /** Draw a page's ruling (behind ink), the flow text (raster), then its items in z-order. */
-    private fun paintItems(cs: PDPageContentStream, outDoc: PDDocument, page: Page, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+    private fun paintItems(cs: PDPageContentStream, outDoc: PDDocument, page: Page, ins: PageInsets, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
         val renderer = PdfBoxRenderer(cs, outDoc, ox, oy, s)
+        val cover = footprintOf(page, ins)
         paintRuling(page, renderer) // page ruling sits behind the ink
-        rasterizeFlow(page, flow)?.let { raster ->
+        rasterizeFlow(page, cover, flow)?.let { raster ->
             renderer.drawItemBitmap(raster.bmp, raster.rect, multiply = false)
             raster.bmp.recycle()
         }
         for (item in page.items) {
             if (needsRaster(item)) {
-                val raster = rasterizeItem(item, page) ?: continue
+                val raster = rasterizeItem(item, cover) ?: continue
                 renderer.drawItemBitmap(raster.bmp, raster.rect, raster.multiply)
                 raster.bmp.recycle()
             } else {
@@ -275,32 +298,43 @@ object PdfExporter {
         }
     }
 
+    /** [page]'s whole paper in page space, margins included (negative on a margined edge). */
+    private fun footprintOf(page: Page, ins: PageInsets): Rect =
+        Rect(-ins.left, -ins.top, ins.left + page.width + ins.right, ins.top + page.height + ins.bottom)
+
     /**
      * A source page with a non-zero rotation: render it (rotation already applied by [PdfSource])
      * plus its items into one upright bitmap and embed that as a full-page JPEG on a rotation-0 page.
      * Still vector for everything else; only these rare pages stay rasterized.
      */
-    private fun rasterFullPage(outDoc: PDDocument, page: Page, source: PdfSource?, paperColor: (Page) -> Rgba, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
-        val wPx = page.width.toInt().coerceIn(1, MAX_RASTER_DIM)
-        val hPx = page.height.toInt().coerceIn(1, MAX_RASTER_DIM)
+    private fun rasterFullPage(outDoc: PDDocument, page: Page, ins: PageInsets, source: PdfSource?, paperColor: (Page) -> Rgba, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+        val cover = footprintOf(page, ins)
+        // One scale for both axes, so a page bigger than the cap shrinks instead of being cropped.
+        val scale = minOf(1.0, MAX_RASTER_DIM / cover.w, MAX_RASTER_DIM / cover.h)
+        val wPx = ceil(cover.w * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
+        val hPx = ceil(cover.h * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
         val bmp = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         canvas.drawColor(paperColor(page).toArgb())
+        canvas.scale(scale.toFloat(), scale.toFloat())
+        canvas.translate(-cover.left.toFloat(), -cover.top.toFloat()) // into page space, past the margins
         val srcIdx = page.pdfPage
         if (srcIdx != null && source != null) {
-            val bg = source.renderPage(srcIdx, wPx, hPx)
+            val bgW = (page.width * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
+            val bgH = (page.height * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
+            val bg = source.renderPage(srcIdx, bgW, bgH)
             if (bg != null) {
-                canvas.drawBitmap(bg.bitmap, null, RectF(0f, 0f, wPx.toFloat(), hPx.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
+                canvas.drawBitmap(bg.bitmap, null, RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
                 bg.recycle()
             }
         }
         val r = AndroidRenderer(canvas)
         paintRuling(page, r) // ruling behind ink
-        flow.paint(page, r, Rect(0.0, 0.0, page.width, page.height))
+        flow.paint(page, r, cover)
         for (item in page.items) item.paint(r)
 
-        val wPts = (page.width * s).toFloat().coerceAtLeast(1f)
-        val hPts = (page.height * s).toFloat().coerceAtLeast(1f)
+        val wPts = (cover.w * s).toFloat().coerceAtLeast(1f)
+        val hPts = (cover.h * s).toFloat().coerceAtLeast(1f)
         val pdfPage = PDPage(PDRectangle(wPts, hPts))
         outDoc.addPage(pdfPage)
         PDPageContentStream(outDoc, pdfPage).use { cs ->
@@ -347,12 +381,12 @@ object PdfExporter {
     }
 
     /** Render the page's flow text, cropped to its extent, into a transparent bitmap (like an item). */
-    private fun rasterizeFlow(page: Page, flow: FlowExport): RasterItem? {
+    private fun rasterizeFlow(page: Page, cover: Rect, flow: FlowExport): RasterItem? {
         val fb = flow.bounds(page) ?: return null
-        val left = fb.left.coerceAtLeast(0.0)
-        val top = fb.top.coerceAtLeast(0.0)
-        val right = fb.right.coerceAtMost(page.width)
-        val bottom = fb.bottom.coerceAtMost(page.height)
+        val left = fb.left.coerceAtLeast(cover.left)
+        val top = fb.top.coerceAtLeast(cover.top)
+        val right = fb.right.coerceAtMost(cover.right)
+        val bottom = fb.bottom.coerceAtMost(cover.bottom)
         val cw = right - left
         val ch = bottom - top
         if (cw <= 0.0 || ch <= 0.0) return null
@@ -367,12 +401,12 @@ object PdfExporter {
     }
 
     /** Render a single item, cropped to its (page-clamped) paint bounds, into a transparent bitmap. */
-    private fun rasterizeItem(item: CanvasItem, page: Page): RasterItem? {
+    private fun rasterizeItem(item: CanvasItem, cover: Rect): RasterItem? {
         val pb = item.paintBounds()
-        val left = pb.left.coerceAtLeast(0.0)
-        val top = pb.top.coerceAtLeast(0.0)
-        val right = pb.right.coerceAtMost(page.width)
-        val bottom = pb.bottom.coerceAtMost(page.height)
+        val left = pb.left.coerceAtLeast(cover.left)
+        val top = pb.top.coerceAtLeast(cover.top)
+        val right = pb.right.coerceAtMost(cover.right)
+        val bottom = pb.bottom.coerceAtMost(cover.bottom)
         val cw = right - left
         val ch = bottom - top
         if (cw <= 0.0 || ch <= 0.0) return null
@@ -409,13 +443,15 @@ object PdfExporter {
             onProgress(0, total)
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
-                val wPts = (page.width / doc.dpi * 72).roundToInt().coerceAtLeast(1)
-                val hPts = (page.height / doc.dpi * 72).roundToInt().coerceAtLeast(1)
+                val cover = footprintOf(page, page.insets(doc))
+                val wPts = (cover.w / doc.dpi * 72).roundToInt().coerceAtLeast(1)
+                val hPts = (cover.h / doc.dpi * 72).roundToInt().coerceAtLeast(1)
                 val info = PdfDocument.PageInfo.Builder(wPts, hPts, index + 1).create()
                 val pdfPage = pdf.startPage(info)
                 val canvas = pdfPage.canvas
                 canvas.drawColor(paperColor(page).toArgb())
                 canvas.scale(scale, scale)
+                canvas.translate(-cover.left.toFloat(), -cover.top.toFloat())
 
                 val src = page.pdfPage
                 if (src != null && source != null) {
@@ -427,7 +463,7 @@ object PdfExporter {
                 }
                 val renderer = AndroidRenderer(canvas)
                 paintRuling(page, renderer) // ruling behind ink
-                flow.paint(page, renderer, Rect(0.0, 0.0, page.width, page.height))
+                flow.paint(page, renderer, cover)
                 for (item in page.items) item.paint(renderer)
                 pdf.finishPage(pdfPage)
                 releaseInkGeometry(page)
