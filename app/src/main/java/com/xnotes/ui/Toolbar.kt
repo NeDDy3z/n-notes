@@ -212,6 +212,7 @@ private fun ToolbarItemView(
         }
         ToolbarItem.PAGE_MENU -> PageMenu(editor)
         ToolbarItem.STYLES -> StylesButton(editor)
+        ToolbarItem.MARGINS -> MarginsButton(editor)
         ToolbarItem.VIEW -> ViewButton(editor)
 
         ToolbarItem.ZOOM -> {
@@ -315,6 +316,16 @@ private fun StylesButton(editor: Editor) {
     Box {
         ToolbarIcon(XnotesIcons.sliders, "Styles") { open = true }
         if (open) StylesPopup(editor) { open = false }
+    }
+}
+
+/** Opens the page-margins popup (extra paper on any edge, for the document or the current page). */
+@Composable
+private fun MarginsButton(editor: Editor) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ToolbarIcon(XnotesIcons.margins, "Margins") { open = true }
+        if (open) MarginsPopup(editor) { open = false }
     }
 }
 

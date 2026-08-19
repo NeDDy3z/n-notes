@@ -454,6 +454,7 @@ private fun itemIcon(item: ToolbarItem): ImageVector = when (item) {
     ToolbarItem.PAGE_NAV -> XnotesIcons.prev
     ToolbarItem.PAGE_MENU -> XnotesIcons.page
     ToolbarItem.STYLES -> XnotesIcons.sliders
+    ToolbarItem.MARGINS -> XnotesIcons.margins
     ToolbarItem.VIEW -> XnotesIcons.view
     ToolbarItem.ZOOM -> XnotesIcons.zoomIn
     ToolbarItem.FIT -> XnotesIcons.fit

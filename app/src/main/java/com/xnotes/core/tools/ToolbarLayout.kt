@@ -35,6 +35,7 @@ enum class ToolbarItem(val id: String, val label: String) {
     PAGE_NAV("page_nav", "Page nav"),
     PAGE_MENU("page_menu", "Page menu"),
     STYLES("styles", "Styles"),
+    MARGINS("margins", "Margins"),
     VIEW("view", "View"),
     ZOOM("zoom", "Zoom"),
     FIT("fit", "Fit"),
@@ -148,6 +149,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
         private val INSERT_AFTER = mapOf(
             ToolbarItem.TEXT_BOX to ToolbarItem.TEXT,
             ToolbarItem.VIEW to ToolbarItem.STYLES,
+            ToolbarItem.MARGINS to ToolbarItem.STYLES,
         )
 
         /**
@@ -183,7 +185,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.IMAGE),
             listOf(ToolbarItem.COLORS),
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
-            listOf(ToolbarItem.PAGE_NAV, ToolbarItem.PAGE_MENU, ToolbarItem.STYLES, ToolbarItem.VIEW),
+            listOf(ToolbarItem.PAGE_NAV, ToolbarItem.PAGE_MENU, ToolbarItem.STYLES, ToolbarItem.MARGINS, ToolbarItem.VIEW),
             listOf(ToolbarItem.ZOOM, ToolbarItem.FIT, ToolbarItem.ZOOM_LOCK),
             listOf(ToolbarItem.FULLSCREEN, ToolbarItem.PRESENT),
         )

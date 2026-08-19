@@ -32,6 +32,7 @@ import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageStyle
@@ -1816,6 +1817,43 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (prev == style) return
         page.style = style
         applyStyleChange(prev, style, listOf(page))
+    }
+
+    // --- page margins (extra paper on any edge): document-wide ("All Pages") and per-page ---
+
+    /** The document-wide margin override; per-page margins layer on top (see [PageMargins]). */
+    val documentMargins: PageMargins get() = state.document.margins
+
+    /** The current page's own margin override (an empty [PageMargins] when there is no page). */
+    val currentPageMargins: PageMargins
+        get() = state.document.pages.getOrNull(state.currentPageIndex())?.margins ?: PageMargins()
+
+    /** Replace the document-wide ("All Pages") margin override. */
+    fun setDocumentMargins(margins: PageMargins) {
+        if (state.document.margins == margins) return
+        state.document.margins = margins
+        applyMarginChange()
+    }
+
+    /** Replace the current page's margin override. */
+    fun setCurrentPageMargins(margins: PageMargins) {
+        val page = state.document.pages.getOrNull(state.currentPageIndex()) ?: return
+        if (page.margins == margins) return
+        page.margins = margins
+        applyMarginChange()
+    }
+
+    /**
+     * Apply a margin change and persist it (dirty -> autosave) — deliberately **not** onto the undo
+     * stack, like a style change. A margin resizes the paper, so every cached surface is now the
+     * wrong shape: they are dropped rather than repaired, and the document is laid out again.
+     */
+    private fun applyMarginChange() {
+        state.invalidateAllCaches()
+        state.relayout()
+        state.document.dirty = true
+        refreshContent()
+        view.requestRender()
     }
 
     /**

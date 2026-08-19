@@ -43,6 +43,8 @@ import androidx.compose.ui.window.PopupProperties
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
+import com.xnotes.core.model.PageEdge
+import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
@@ -310,6 +312,73 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     ModeChip("Reset", false) { apply(PageStyle()) }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Page-margins popup: two tabs — "All Pages" (the document-wide override) and "Current Page" — and
+ * within each, one tab per edge with a slider for how much paper to add there, as a percentage of
+ * the page's own width (left/right) or height (top/bottom). The extra space is ordinary page: it
+ * takes the paper colour and the ruling, and nothing on the page moves when it grows. Like
+ * [StylesPopup] the popup holds the edited value locally and pushes each change to the [Editor]
+ * (which persists, but never undoes); "Default" clears an edge so it inherits the level below.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
+    var tab by remember { mutableStateOf(0) } // 0 = All Pages, 1 = Current Page
+    var edge by remember { mutableStateOf(PageEdge.LEFT) }
+    var docMargins by remember { mutableStateOf(editor.documentMargins) }
+    var pageMargins by remember { mutableStateOf(editor.currentPageMargins) }
+    val margins = if (tab == 0) docMargins else pageMargins
+    fun apply(next: PageMargins) {
+        if (tab == 0) {
+            docMargins = next; editor.setDocumentMargins(next)
+        } else {
+            pageMargins = next; editor.setCurrentPageMargins(next)
+        }
+    }
+
+    val own = margins.edge(edge)
+    // An unset edge inherits: the current page falls back to the document, the document to none.
+    val inherited = if (tab == 1) docMargins.edge(edge) else null
+    val percent = ((own ?: inherited ?: 0.0) * 100).toFloat().coerceIn(0f, 100f)
+
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle("MARGINS")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip("All Pages", tab == 0) { tab = 0 }
+                ModeChip("Current Page", tab == 1) { tab = 1 }
+            }
+
+            Spacer(Modifier.size(12.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                PageEdge.entries.forEach { e ->
+                    ModeChip(e.label, edge == e) { edge = e }
+                }
+            }
+
+            Spacer(Modifier.size(12.dp))
+            StyleCaption("${edge.label.uppercase()}  ${percent.roundToInt()}%" + if (own == null) "  (default)" else "")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModeChip("Default", own == null) { apply(margins.withEdge(edge, null)) }
+                Slider(
+                    value = percent,
+                    onValueChange = { apply(margins.withEdge(edge, it.toDouble() / 100.0)) },
+                    valueRange = 0f..100f,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(Modifier.size(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                ModeChip("Reset", false) { apply(PageMargins()) }
             }
         }
     }
