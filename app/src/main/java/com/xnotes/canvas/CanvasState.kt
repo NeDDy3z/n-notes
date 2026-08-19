@@ -976,7 +976,10 @@ class CanvasState(
         val existing = caches[page]
         if (existing != null && existing.usableFor(page, res)) return existing
         scheduleInk(page, res)
-        return caches[page] // sync scheduler filled it; async leaves the stale entry (or null)
+        // Sync scheduler filled it; async leaves the stale entry (or null). A stale *resolution* is
+        // still blitted (scaled) so a pinch never flashes, but a stale *footprint* is not: stretching
+        // a whole page while a margin slider is dragged reads far worse than bare paper does.
+        return caches[page]?.takeIf { it.cover == footprint(page) }
     }
 
     private fun scheduleInk(page: Page, res: Double) {
@@ -1108,7 +1111,7 @@ class CanvasState(
         val existing = bgCaches[page]
         if (existing != null && existing.usableFor(page, res)) return existing
         scheduleBg(page, res)
-        return bgCaches[page]
+        return bgCaches[page]?.takeIf { it.cover == footprint(page) }
     }
 
     private fun scheduleBg(page: Page, res: Double) {
@@ -1289,10 +1292,11 @@ class CanvasState(
     }
 
     /**
-     * Page footprints changed (a margin edit). The surfaces stay in the maps and keep being blitted
-     * — stretched into the new page rect — until the rebuilds land, which is what a pinch already
-     * does; clearing them instead would blank every visible page to bare paper for the whole drag.
-     * The size mismatch itself is what schedules the rebuild (see [usableFor]).
+     * Page footprints changed (a margin edit). The surfaces are kept rather than cleared, but they
+     * are not drawn while they are the wrong size (see [cacheForOrSchedule]) — the page shows bare
+     * paper until its rebuild lands. Keeping them means a slider dragged back to a size already
+     * rasterized shows that page again at once, with nothing to rebuild. The size mismatch itself is
+     * what schedules the rebuild (see [usableFor]).
      */
     fun invalidatePageGeometry() {
         cacheGen++
