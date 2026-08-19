@@ -84,4 +84,30 @@ class PageMarginsTest {
         val content = com.xnotes.core.geometry.Rect(0.0, 0.0, 400.0, 800.0)
         assertTrue(marginStrips(content, content).isEmpty())
     }
+
+    @Test fun aRuledMarginDrawsOnlyOutsideThePage() {
+        val content = com.xnotes.core.geometry.Rect(0.0, 0.0, 400.0, 800.0)
+        val cover = com.xnotes.core.geometry.Rect(-128.0, -128.0, 528.0, 928.0)
+        val r = com.xnotes.core.FakeRenderer()
+        paintMarginPattern(r, PagePattern.GRID, Rgba(0, 0, 0, 255), 64.0, cover, content, cover)
+        assertTrue(r.segments.isNotEmpty())
+        // Every segment lies wholly in a margin strip: never over the page it frames.
+        for ((a, b) in r.segments) {
+            val outside = a.x <= content.left && b.x <= content.left ||
+                a.x >= content.right && b.x >= content.right ||
+                a.y <= content.top && b.y <= content.top ||
+                a.y >= content.bottom && b.y >= content.bottom
+            assertTrue("segment $a..$b crosses the page", outside)
+        }
+    }
+
+    @Test fun aRuledPageDrawsInsideAndOutside() {
+        val content = com.xnotes.core.geometry.Rect(0.0, 0.0, 400.0, 800.0)
+        val cover = com.xnotes.core.geometry.Rect(-128.0, 0.0, 528.0, 800.0)
+        val r = com.xnotes.core.FakeRenderer()
+        paintPagePattern(r, PagePattern.LINES, Rgba(0, 0, 0, 255), 64.0, cover, cover)
+        // Lines run the whole paper, and the first one is a full spacing below the top edge.
+        assertTrue(r.segments.all { (a, b) -> a.x == cover.left && b.x == cover.right })
+        assertEquals(64.0, r.segments.first().first.y, 1e-9)
+    }
 }

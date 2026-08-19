@@ -66,7 +66,9 @@ fun paintPagePattern(
 /**
  * Paints the ruling in [cover]'s margin strips only, leaving [content] untouched — what an imported
  * PDF page gets, so the extra space beside the page is ruled while the page itself is never drawn
- * over. Each strip is painted under its own clip because a ruling line spans the whole paper.
+ * over. Each strip bounds its own primitives rather than relying on a clip, because PDF export
+ * draws unclipped; the pattern is still anchored to page-space zero, so the strips line up with
+ * each other and with a neighbouring page's ruling.
  */
 fun paintMarginPattern(
     r: Renderer,
@@ -79,10 +81,7 @@ fun paintMarginPattern(
 ) {
     for (strip in marginStrips(cover, content)) {
         val slice = intersect(strip, region) ?: continue
-        r.withSave {
-            r.clipRect(strip)
-            paintPagePattern(r, pattern, color, spacing, cover, slice)
-        }
+        paintPagePattern(r, pattern, color, spacing, strip, slice)
     }
 }
 

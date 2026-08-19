@@ -29,6 +29,12 @@ class FakeRenderer : Renderer {
     /** Page-space rects a raster was blitted into. */
     val rasterDests = mutableListOf<Rect>()
 
+    /** Stroked polyline segments, as start/end pairs (the page ruling draws through these). */
+    val segments = mutableListOf<Pair<Pt, Pt>>()
+
+    /** Centres of filled circles (the dotted ruling). */
+    val circles = mutableListOf<Pt>()
+
     override fun fillDiskRibbon(centers: FloatArray, radii: FloatArray, from: Int, count: Int, color: Rgba) {
         ribbonRuns += from to count
         super.fillDiskRibbon(centers, radii, from, count, color)
@@ -49,10 +55,16 @@ class FakeRenderer : Renderer {
     override fun fillBackground(rect: Rect, color: Rgba) { ops += "fillBackground" }
     override fun fillRect(rect: Rect, color: Rgba) { ops += "fillRect" }
     override fun fillPolygon(points: List<Pt>, color: Rgba, rule: FillRule) { ops += "fillPolygon" }
-    override fun fillCircle(center: Pt, radius: Double, color: Rgba) { ops += "fillCircle" }
+    override fun fillCircle(center: Pt, radius: Double, color: Rgba) {
+        ops += "fillCircle"
+        circles += center
+    }
     override fun fillEllipse(center: Pt, rx: Double, ry: Double, color: Rgba) { ops += "fillEllipse" }
     override fun strokeRect(rect: Rect, pen: Pen) { ops += "strokeRect" }
-    override fun strokePolyline(points: List<Pt>, pen: Pen) { ops += "strokePolyline" }
+    override fun strokePolyline(points: List<Pt>, pen: Pen) {
+        ops += "strokePolyline"
+        for (i in 0 until points.size - 1) segments += points[i] to points[i + 1]
+    }
     override fun strokePolygon(points: List<Pt>, pen: Pen) { ops += "strokePolygon" }
     override fun strokeEllipse(center: Pt, rx: Double, ry: Double, pen: Pen) { ops += "strokeEllipse" }
     override fun drawRaster(raster: RasterSurface, dest: Rect, src: Rect?) {
