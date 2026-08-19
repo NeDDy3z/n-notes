@@ -67,6 +67,7 @@ class SettingsTest {
                 defaultPageSize = PageSize.LETTER,
                 defaultPageOrientation = Orientation.LANDSCAPE,
                 pageColor = Rgba(20, 20, 20),
+                hidePageBorders = true,
             ),
         )
         val back = Settings.fromJson(original.toJson())
@@ -79,6 +80,7 @@ class SettingsTest {
         assertEquals(PageSize.LETTER, back.prefs.defaultPageSize)
         assertEquals(Orientation.LANDSCAPE, back.prefs.defaultPageOrientation)
         assertEquals(Rgba(20, 20, 20, 255), back.prefs.pageColor)
+        assertTrue(back.prefs.hidePageBorders)
     }
 
     @Test fun malformedAppearanceFallsBackToSystem() {

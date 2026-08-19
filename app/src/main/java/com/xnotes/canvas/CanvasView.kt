@@ -448,7 +448,7 @@ class CanvasView @JvmOverloads constructor(
             cachedPages.add(page)
 
             r.fillRect(pr, st.paperColor(page))
-            r.strokeRect(pr, border)
+            if (st.pageBorders) r.strokeRect(pr, border)
             st.backgroundForOrSchedule(page)?.let { blitPageSurface(r, st, page, pr, it.surface) }
             // A live caret session lifts the flow out of the ink cache; paint it
             // immediate-mode here (under the ink, over the background) so every

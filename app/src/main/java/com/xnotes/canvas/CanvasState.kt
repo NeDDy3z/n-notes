@@ -117,6 +117,9 @@ class CanvasState(
     /** Horizontal margin on each side of the page column (0 ⇒ fit-width fills the viewport). */
     var sideMargin: Double = MARGIN
 
+    /** Whether the hairline outline around each page is drawn (a user preference). */
+    var pageBorders: Boolean = true
+
     /** Gap (content px) between pages — inside a spread, between rows, and between paginated
      *  rows alike — equal to [sideMargin] so spacing always matches the margin preference. */
     val pageGap: Double get() = sideMargin
@@ -1547,7 +1550,7 @@ class CanvasState(
         val border = Pen(palette.paperBorder, 1.0, cosmetic = true)
         for (d in draws) {
             rb.fillRect(d.pr, paperColor(d.page))
-            rb.strokeRect(d.pr, border)
+            if (pageBorders) rb.strokeRect(d.pr, border)
             rb.save()
             rb.clipRect(d.pr)
             rb.translate(d.pr.left, d.pr.top)

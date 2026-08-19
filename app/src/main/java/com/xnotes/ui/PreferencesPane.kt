@@ -320,6 +320,9 @@ fun PreferencesPane(
                     update(prefs.copy(defaultPageOrientation = Orientation.LANDSCAPE))
                 }
             }
+            CheckRow("Hide page borders", prefs.hidePageBorders) {
+                update(prefs.copy(hidePageBorders = it))
+            }
             FieldLabel("Side margin  ${prefs.sideMargin.toInt()} px")
             Slider(
                 value = prefs.sideMargin.toFloat(),

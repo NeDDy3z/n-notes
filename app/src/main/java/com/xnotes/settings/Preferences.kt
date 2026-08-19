@@ -51,6 +51,8 @@ data class Preferences(
     val stylusButtonTap: String = "none",
     /** Horizontal margin (px) on each side of the page column; 0 ⇒ fit-width fills the screen. */
     val sideMargin: Double = 16.0,
+    /** Whether the hairline outline around every page is left undrawn. */
+    val hidePageBorders: Boolean = false,
     /** User zoom floor: when enabled, no zoom path goes below [minZoomPercent]%. */
     val minZoomEnabled: Boolean = false,
     val minZoomPercent: Int = 50,
@@ -116,6 +118,7 @@ data class Preferences(
         .put("stylus_double_tap", stylusDoubleTap)
         .put("stylus_button_tap", stylusButtonTap)
         .put("side_margin", sideMargin)
+        .put("hide_page_borders", hidePageBorders)
         .put("min_zoom_enabled", minZoomEnabled)
         .put("min_zoom_percent", minZoomPercent)
         .put("max_zoom_enabled", maxZoomEnabled)
@@ -175,6 +178,7 @@ data class Preferences(
                 stylusDoubleTap = tapAction("stylus_double_tap"),
                 stylusButtonTap = tapAction("stylus_button_tap"),
                 sideMargin = o.optDouble("side_margin", 16.0).coerceIn(0.0, 80.0),
+                hidePageBorders = o.optBoolean("hide_page_borders", false),
                 minZoomEnabled = o.optBoolean("min_zoom_enabled", false),
                 minZoomPercent = o.optInt("min_zoom_percent", 50).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
                 maxZoomEnabled = o.optBoolean("max_zoom_enabled", false),

@@ -1534,6 +1534,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.penButtonTool = if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER)
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
+        state.pageBorders = !p.hidePageBorders
         state.maxCachePx = p.maxCacheResolution.toDouble()
         state.minZoom = if (p.minZoomEnabled) p.minZoomPercent / 100.0 else CanvasState.MIN_ZOOM
         state.maxZoom = (if (p.maxZoomEnabled) p.maxZoomPercent / 100.0 else CanvasState.MAX_ZOOM)
