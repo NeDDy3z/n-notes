@@ -206,6 +206,10 @@ class InteractionController(
     private var snappedSelectionPendingMenu = false
     /** This stroke began by dismissing an active selection; a bare tap then leaves no dot. */
     private var strokeDismissedSelection = false
+
+    /** Segments the current stroke left behind on pages it has already walked off, so the whole
+     *  crossing lifts and re-lays as one undo step. Empty for a stroke that stayed on its page. */
+    private val crossedSegments = mutableListOf<Command>()
     /** Viewport-px down point of the current stroke, for the tap-vs-drag dismiss test. */
     private var drawDownViewport = Pt.ZERO
 
@@ -857,6 +861,15 @@ class InteractionController(
         if (state.pageRects.getOrNull(pi) == null) return
         val vp = magnetize(Pt(vx, vy))
         val content = state.viewportToContent(vp)
+        // The pen has walked onto another page: carry the stroke over rather than let it slide
+        // under the paper. A straight line is one segment by definition and never hands over.
+        if (!stroke.straight) {
+            val onPage = state.pageIndexAtContent(content)
+            if (onPage != null && onPage != pi) {
+                handOverStroke(stroke, pi, onPage, content, pressure, timeMs)
+                return
+            }
+        }
         val local = state.toPageSpace(pi, content)
         if (stroke.straight) {
             // Straight-line mode: the stroke is always pen-down → current point, so the moving
@@ -883,6 +896,79 @@ class InteractionController(
             dwellAnchor = Pt(vx, vy)
             armDwell()
         }
+    }
+
+    /**
+     * Hand the stroke under the pen from one page to the next, so a line drawn across a page
+     * boundary keeps going instead of disappearing under the paper.
+     *
+     * The part already drawn is retired onto the page it belongs to, and a fresh segment picks up
+     * on the new one carrying the last point across: that bridging sample lands outside the new
+     * page and is clipped there, so the ribbon meets the paper's edge rather than starting a
+     * blunt millimetre inside it. Everything the crossing files is one undo step (see [endDraw]).
+     */
+    private fun handOverStroke(
+        stroke: Stroke,
+        fromPage: Int,
+        toPage: Int,
+        content: Pt,
+        pressure: Double,
+        timeMs: Long,
+    ) {
+        // A stroke long enough to reach the next page is a line, not a held shape.
+        cancelDwell()
+        dwellEligible = false
+        val last = stroke.samples.lastOrNull()
+        retireCrossedSegment(stroke, fromPage)
+        val next = Stroke(
+            stroke.tool,
+            stroke.config,
+            speedScale = stroke.speedScale,
+            smoothScale = stroke.smoothScale,
+        )
+        next.finished = false
+        if (last != null) {
+            val bridge = state.toPageSpace(toPage, state.fromPageSpace(fromPage, Pt(last.x, last.y)))
+            next.addSample(Sample(bridge.x, bridge.y, last.pressure, last.t))
+        }
+        val local = state.toPageSpace(toPage, content)
+        next.addSample(
+            Sample(local.x, local.y, pressure.coerceIn(0.0, 1.0), (timeMs - strokeStartTimeMs).toDouble()),
+        )
+        liveStroke = next
+        strokePageIndex = toPage
+        requestRender()
+    }
+
+    /** Put a crossed-off segment where it belongs: ephemeral ink waits for its fade, ordinary ink
+     *  joins the page it was drawn on and holds its command back for the one composite undo. */
+    private fun retireCrossedSegment(stroke: Stroke, pageIndex: Int) {
+        stroke.finished = true
+        if (wandMode && stroke.tool.isStroke) {
+            fadingStrokes.add(FadingStroke(stroke, pageIndex))
+            return
+        }
+        crossedSegments.add(fileStroke(stroke, pageIndex))
+    }
+
+    /** Push this stroke's whole edit — every page it crossed plus [last], if any — as one undo
+     *  step. A no-op when the stroke neither crossed a page nor committed anything. */
+    private fun pushStrokeEdit(last: Command?) {
+        val all = if (last == null) crossedSegments.toList() else crossedSegments + last
+        crossedSegments.clear()
+        if (all.isEmpty()) return
+        history.push(if (all.size == 1) all[0] else CompositeCommand(all))
+        onContentChanged()
+    }
+
+    /** Add a finished stroke to its page and its cache; returns the command that undoes it. */
+    private fun fileStroke(stroke: Stroke, pageIndex: Int): Command {
+        simplifyForCommit(stroke)
+        val page = state.document.pages[pageIndex]
+        page.items.add(stroke)
+        state.appendToCache(page, stroke)
+        state.document.dirty = true
+        return AddItem(page, stroke)
     }
 
     private fun endDraw(e: MotionEvent) {
@@ -914,17 +1000,12 @@ class InteractionController(
                     fadeAlpha = 1.0
                     scheduleFade()
                 }
-                else -> {
-                    simplifyForCommit(stroke)
-                    val page = state.document.pages[pi]
-                    page.items.add(stroke)
-                    state.appendToCache(page, stroke)
-                    history.push(AddItem(page, stroke))
-                    state.document.dirty = true
-                    onContentChanged()
-                }
+                else -> pushStrokeEdit(fileStroke(stroke, pi))
             }
         }
+        // Nothing was committed here (a dismissing tap, or ephemeral ink), but a crossing may
+        // still have filed segments that need their undo step.
+        pushStrokeEdit(null)
         strokeDismissedSelection = false
         liveStroke = null
         strokePageIndex = null
@@ -2583,6 +2664,7 @@ class InteractionController(
         clearOverscroll()
         cancelDwell()
         clearFading()
+        crossedSegments.clear() // they belong to the outgoing document, whose history is gone
         dwellEligible = false
         mode = PointerMode.IDLE
         lastPan = Pt.ZERO
@@ -2711,6 +2793,7 @@ class InteractionController(
         stopFling()
         clearFlipPull()
         clearOverscroll()
+        pushStrokeEdit(null) // a cancelled crossing still left segments on the pages behind it
         liveStroke = null
         strokePageIndex = null
         snapEngaged = false
