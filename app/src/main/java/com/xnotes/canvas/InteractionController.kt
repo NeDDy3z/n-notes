@@ -1257,6 +1257,13 @@ class InteractionController(
 
     private fun beginSelect(content: Pt) {
         if (tryGrabSelectionHandle(content)) return
+        // Inside the settled selection the press moves it, whatever it landed on. Hit-testing
+        // first would re-pick the stroke under the finger, and you meant to drag what is
+        // selected, not to select what happens to sit inside it.
+        if (selObb?.contains(content) == true) {
+            beginMove(content)
+            return
+        }
         val pageIndex = state.pageIndexAtContent(content)
         if (pageIndex != null) {
             val local = state.toPageSpace(pageIndex, content)
@@ -1266,10 +1273,6 @@ class InteractionController(
                 beginMove(content)
                 return
             }
-        }
-        if (selObb?.contains(content) == true) {
-            beginMove(content)
-            return
         }
         clearSelection()
         mode = PointerMode.BAND
