@@ -35,8 +35,12 @@ class PresentationFrameSource(
     class PageDraw(
         val left: Double,
         val top: Double,
+        /** The page's paper, margins included: the size its cache surfaces cover. */
         val width: Double,
         val height: Double,
+        /** Page space's origin within that paper (the left/top margins, 0 without them). */
+        val insetX: Double,
+        val insetY: Double,
         val paper: Rgba,
         val background: RasterSurface?,
         val cache: RasterSurface,
@@ -63,11 +67,12 @@ class PresentationFrameSource(
     fun planPage(longEdgeCap: Int): FramePlan? {
         val index = state.currentPageIndex().coerceIn(0, state.document.pages.lastIndex.coerceAtLeast(0))
         val page = state.document.pages.getOrNull(index) ?: return null
-        val scale = longEdgeCap / max(page.width, page.height)
+        val cover = state.footprint(page)
+        val scale = longEdgeCap / max(cover.w, cover.h)
         val w = ceil(state.displayW(page) * scale).toInt().coerceAtLeast(1)
         val h = ceil(state.displayH(page) * scale).toInt().coerceAtLeast(1)
         val draw = PageDraw(
-            0.0, 0.0, page.width, page.height, state.paperColor(page),
+            0.0, 0.0, cover.w, cover.h, -cover.left, -cover.top, state.paperColor(page),
             state.presBackgroundFor(page)?.surface, state.presCacheFor(page).surface, highlightsFor(page), liveSnapshotFor(index),
         )
         state.dropPresCachesExcept(setOf(page))
@@ -93,9 +98,10 @@ class PresentationFrameSource(
             if (!pr.intersects(visible)) continue
             val page = state.document.pages[i]
             presented.add(page)
+            val cover = state.footprint(page)
             draws.add(
                 PageDraw(
-                    pr.left, pr.top, page.width, page.height, state.paperColor(page),
+                    pr.left, pr.top, cover.w, cover.h, -cover.left, -cover.top, state.paperColor(page),
                     state.presBackgroundFor(page)?.surface, state.presCacheFor(page).surface, highlightsFor(page), liveSnapshotFor(i),
                 ),
             )
@@ -126,6 +132,8 @@ class PresentationFrameSource(
                 if (plan.follow) r.fillRect(Rect(0.0, 0.0, d.width, d.height), d.paper)
                 d.background?.let { r.drawRaster(it, Rect(0.0, 0.0, d.width, d.height)) }
                 r.drawRaster(d.cache, Rect(0.0, 0.0, d.width, d.height))
+                // The blits above are in paper coordinates; the live passes below draw in page space.
+                r.translate(d.insetX, d.insetY)
                 for (h in d.highlights) h.paint(r) // composite over the page so they MULTIPLY
                 d.live?.paint(r)
             }
