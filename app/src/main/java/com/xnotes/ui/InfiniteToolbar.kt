@@ -47,8 +47,8 @@ private val CANVAS_TOOL_OF: Map<ToolbarItem, Tool> = mapOf(
  * from the same pieces, so the two look like one app rather than two.
  *
  * It draws from its own [com.xnotes.core.tools.ToolbarLayout], arranged in Preferences exactly as
- * the paged bar is. Its own, not the paged one: a page menu means nothing here and a waypoint means
- * nothing there, so the two layouts hold different items and are stored apart.
+ * the paged bar is. Its own, not the paged one: page navigation means nothing here and a waypoint
+ * means nothing there, so the two layouts hold different items and are stored apart.
  */
 @Composable
 fun InfiniteToolbar(
@@ -126,6 +126,12 @@ fun InfiniteToolbar(
                                 }
                             }
                         }
+
+                        ToolbarItem.WAND -> ToolbarIcon(
+                            XnotesIcons.magicWand,
+                            "Disappearing ink",
+                            active = editor.wandEnabled,
+                        ) { editor.toggleWand() }
 
                         ToolbarItem.IMAGE -> ToolbarIcon(XnotesIcons.image, "Insert image") { onInsertImage() }
 

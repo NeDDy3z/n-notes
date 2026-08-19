@@ -5,6 +5,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.xnotes.canvas.InteractionController
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.History
@@ -17,6 +18,7 @@ import com.xnotes.core.infinite.CanvasSelection
 import com.xnotes.core.infinite.CanvasViewport
 import com.xnotes.core.infinite.EraseCanvasItems
 import com.xnotes.core.infinite.MeshPart
+import com.xnotes.core.infinite.MeshedItem
 import com.xnotes.core.infinite.Minimap
 import com.xnotes.core.infinite.OnCanvas
 import com.xnotes.core.infinite.OverlayTessellator
@@ -24,6 +26,7 @@ import com.xnotes.core.infinite.ReplaceCanvasItems
 import com.xnotes.core.infinite.StrokeTessellator
 import com.xnotes.core.infinite.EraseSession
 import com.xnotes.core.infinite.InfiniteDocument
+import com.xnotes.core.infinite.GlowSpec
 import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.Waypoint
@@ -149,6 +152,19 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     fun toggleMinimap() {
         minimapVisible = !minimapVisible
         view.minimapVisible = minimapVisible
+    }
+
+    /**
+     * Disappearing ink: strokes are held on screen and melt away instead of joining the document.
+     * The same hold and fade the paged canvas uses, so the wand behaves alike on either surface.
+     */
+    var wandEnabled by mutableStateOf(false)
+        private set
+
+    fun toggleWand() {
+        wandEnabled = !wandEnabled
+        interaction.wandEnabled = wandEnabled
+        if (!wandEnabled) clearFading()
     }
 
     /** Saved views, mirrored into Compose so the chrome can list them. */
@@ -664,6 +680,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      * are the taper pen and the straight-line tools, which have no settled run to speak of.
      */
     private fun publishWetStroke(stroke: Stroke?) {
+        // Pen back down under the wand: the held batch goes solid again, so a long stroke cannot
+        // outlive a fade that had already started.
+        if (wandEnabled && stroke != null && stroke !== wandLive) {
+            wandLive = stroke
+            solidifyFading()
+        }
         if (stroke == null) {
             forgetWetStroke()
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
@@ -813,8 +835,142 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private fun commitStroke(stroke: Stroke) {
         // The commit message releases the wet buffers on the GL thread, so forget what was in them.
         forgetWetStroke()
+        if (wandEnabled && stroke.tool.isStroke) {
+            holdEphemeral(stroke)
+            return
+        }
         commitItem(stroke)
     }
+
+    // --- disappearing ink (magic wand) ---
+
+    /** A held stroke and the triangles it was meshed into once, recoloured as the batch fades. */
+    private class FadingStroke(val stroke: Stroke, val meshed: MeshedItem)
+
+    private val fadingStrokes = mutableListOf<FadingStroke>()
+    private var fadeAlpha = 1.0
+    private var fading = false
+    private var fadeStartMs = 0L
+    private var fadeTimer: Runnable? = null
+
+    /** The stroke the wand last saw under the pen, so the next one can re-solidify the batch. */
+    private var wandLive: Stroke? = null
+    private val fadeHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    private val choreographer by lazy { android.view.Choreographer.getInstance() }
+    private val fadeFrame = android.view.Choreographer.FrameCallback { t -> stepFade(t) }
+
+    /**
+     * Pen up under the wand: hold the stroke rather than file it.
+     *
+     * It is handed to the renderer like any committed item, but never to the document — so it
+     * draws, culls and blends exactly as ink does while touching no model, no history, no autosave
+     * and nothing on disk. It is meshed once here and only recoloured as it melts, so a fading
+     * batch costs an upload a frame instead of a tessellation.
+     */
+    private fun holdEphemeral(stroke: Stroke) {
+        val meshed = ItemMesher.mesh(stroke)
+        if (meshed == null || meshed.isEmpty) {
+            scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
+            view.publish()
+            return
+        }
+        fadingStrokes.add(FadingStroke(stroke, meshed))
+        // clearsWet releases the buffer under the pen in the same message this stroke arrives in,
+        // so no frame can fall between the two and blink.
+        scene.upsert(stroke, meshed.parts, meshed.bounds, clearsWet = true)
+        solidifyFading()
+        view.publish()
+    }
+
+    /** Put the batch back to full strength and restart the hold, so it melts only once drawing
+     *  has paused. A no-op when nothing is being held. */
+    private fun solidifyFading() {
+        if (fadingStrokes.isEmpty()) return
+        fading = false
+        if (fadeAlpha != 1.0) {
+            fadeAlpha = 1.0
+            republishFading()
+        }
+        scheduleFade()
+    }
+
+    /** Drop the held batch and stop any pending or running fade. */
+    private fun clearFading() {
+        cancelFadeTimer()
+        fading = false
+        fadeAlpha = 1.0
+        wandLive = null
+        if (fadingStrokes.isEmpty()) return
+        for (f in fadingStrokes) scene.remove(f.stroke)
+        fadingStrokes.clear()
+        view.publish()
+    }
+
+    private fun scheduleFade() {
+        cancelFadeTimer()
+        val r = Runnable { startFade() }
+        fadeTimer = r
+        fadeHandler.postDelayed(r, InteractionController.WAND_HOLD_MS)
+    }
+
+    private fun cancelFadeTimer() {
+        fadeTimer?.let { fadeHandler.removeCallbacks(it) }
+        fadeTimer = null
+    }
+
+    private fun startFade() {
+        fadeTimer = null
+        if (fadingStrokes.isEmpty()) return
+        fading = true
+        fadeAlpha = 1.0
+        fadeStartMs = System.nanoTime() / 1_000_000L
+        choreographer.postFrameCallback(fadeFrame)
+    }
+
+    private fun stepFade(frameTimeNanos: Long) {
+        if (!fading) return
+        val now = frameTimeNanos / 1_000_000L
+        val t = ((now - fadeStartMs) / InteractionController.WAND_FADE_MS).coerceIn(0.0, 1.0)
+        fadeAlpha = (1.0 - t) * (1.0 - t) // ease-out, so the batch melts rather than blinking off
+        if (t >= 1.0) {
+            for (f in fadingStrokes) scene.remove(f.stroke)
+            fadingStrokes.clear()
+            fadeAlpha = 1.0
+            fading = false
+        } else {
+            republishFading()
+        }
+        view.publish()
+        if (fading) choreographer.postFrameCallback(fadeFrame)
+    }
+
+    /** Re-file every held stroke at the current alpha, from the triangles it already has. */
+    private fun republishFading() {
+        for (f in fadingStrokes) {
+            scene.upsert(f.stroke, f.meshed.parts.map { fadedPart(it, fadeAlpha) }, f.meshed.bounds)
+        }
+    }
+
+    /** One meshed run at [alpha] of its own opacity; neon's halos dim with the ink they come from. */
+    private fun fadedPart(part: MeshPart, alpha: Double): MeshPart {
+        if (alpha >= 1.0) return part
+        val g = part.glow
+        return MeshPart(
+            part.mesh,
+            part.color.scaledAlpha(alpha),
+            part.pass,
+            if (g == null) {
+                null
+            } else {
+                GlowSpec(
+                    g.wideRadius, g.wideAlpha * alpha, g.tightRadius, g.tightAlpha * alpha,
+                    g.bodyColor.scaledAlpha(alpha), g.coreColor.scaledAlpha(alpha), g.coreScale,
+                )
+            },
+        )
+    }
+
+    private fun Rgba.scaledAlpha(f: Double): Rgba = withAlpha((a * f).toInt().coerceIn(0, 255))
 
     private fun markDirty() {
         document.dirty = true
@@ -896,6 +1052,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     fun replaceDocument(next: InfiniteDocument) {
+        clearFading() // whatever was melting belongs to the outgoing canvas
         document.listener = null
         document = next
         next.listener = modelListener

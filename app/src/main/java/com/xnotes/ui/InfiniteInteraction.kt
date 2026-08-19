@@ -127,6 +127,9 @@ class InfiniteInteraction(
     /** Zoom lock: a pinch pans without changing the zoom, mirroring the paged canvas. */
     var zoomLocked: Boolean = false
 
+    /** Disappearing ink is armed, so a held stroke must not become a committed shape. */
+    var wandEnabled: Boolean = false
+
     /** Which pans still move a locked view: "single" (default) | "double" | "none". */
     var zoomLockPan: String = "single"
 
@@ -501,7 +504,8 @@ class InfiniteInteraction(
         liveStroke = stroke
         mode = CanvasPointerMode.DRAW
         // Only solid pens arm the snap: a highlighter or a straight-line drag never becomes a shape.
-        dwellEligible = detectShapes() && drawTool.isStroke && drawTool != Tool.HIGHLIGHTER && !straight
+        dwellEligible = detectShapes() && drawTool.isStroke && drawTool != Tool.HIGHLIGHTER &&
+            !straight && !wandEnabled
         if (dwellEligible) armDwell(Pt(vx, vy))
         onWetStroke(stroke)
         requestRender()
