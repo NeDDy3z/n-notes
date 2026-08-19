@@ -223,8 +223,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private var openPdfTemp: java.io.File? = null
 
     val state = CanvasState(
-        Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation)
-            .also { stampNewNoteDefaults(it) },
+        blankDocument().also { stampNewNoteDefaults(it) },
         AndroidSurfaceFactory(),
         buildPalette(settings.prefs),
     )
@@ -1802,6 +1801,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         settingsRepo.save(settings)
     }
 
+    /** A blank document at the user's default page size, custom dimensions included. */
+    private fun blankDocument(): Document {
+        val (w, h) = settings.prefs.newPagePixels()
+        return Document.blankPixels(Document.DEFAULT_NEW_PAGES, w, h)
+    }
+
     /** Stamp the saved new-note defaults (page style + flow config) onto a fresh [doc]. */
     private fun stampNewNoteDefaults(doc: Document): Document {
         doc.style = settings.newNoteStyle
@@ -2496,8 +2501,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Creates a blank `.xnote` under [parentDocId]; returns its URI, or null. IO — call off-thread. */
     fun createBlankNoteFile(treeUri: String, parentDocId: String, rawName: String): String? {
         val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
-        val blank = Document.blank(Document.DEFAULT_NEW_PAGES, settings.prefs.defaultPageSize, settings.prefs.defaultPageOrientation)
-            .also { stampNewNoteDefaults(it) }
+        val blank = blankDocument().also { stampNewNoteDefaults(it) }
         return createNoteFile(treeUri, parentDocId, name) { codec.write(blank, it) }
     }
 
@@ -4248,11 +4252,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         saveViewState()
         flushAutosave()
         autosaveUri = null
-        state.document = Document.blank(
-            Document.DEFAULT_NEW_PAGES,
-            settings.prefs.defaultPageSize,
-            settings.prefs.defaultPageOrientation,
-        ).also { stampNewNoteDefaults(it) }
+        state.document = blankDocument().also { stampNewNoteDefaults(it) }
         rebuildPdfSource() // close the outgoing note's PDF source (a blank note has none)
         adoptOpenPdf(state.document) // and reclaim its temp PDF file now it's released
         history.clear()

@@ -53,6 +53,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -311,13 +312,26 @@ fun PreferencesPane(
             SectionTitle("Page")
             FieldLabel("Default page size")
             SizeDropdown(prefs.defaultPageSize) { update(prefs.copy(defaultPageSize = it)) }
-            FieldLabel("Orientation")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("Portrait", prefs.defaultPageOrientation == Orientation.PORTRAIT) {
-                    update(prefs.copy(defaultPageOrientation = Orientation.PORTRAIT))
+            if (prefs.defaultPageSize == PageSize.CUSTOM) {
+                // A custom page is taken as typed, so the orientation chips have nothing to say
+                // about it and are left out rather than shown doing nothing.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MillimetreField("Width (mm)", prefs.customPageWidthMm) {
+                        update(prefs.copy(customPageWidthMm = it))
+                    }
+                    MillimetreField("Height (mm)", prefs.customPageHeightMm) {
+                        update(prefs.copy(customPageHeightMm = it))
+                    }
                 }
-                Chip("Landscape", prefs.defaultPageOrientation == Orientation.LANDSCAPE) {
-                    update(prefs.copy(defaultPageOrientation = Orientation.LANDSCAPE))
+            } else {
+                FieldLabel("Orientation")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Portrait", prefs.defaultPageOrientation == Orientation.PORTRAIT) {
+                        update(prefs.copy(defaultPageOrientation = Orientation.PORTRAIT))
+                    }
+                    Chip("Landscape", prefs.defaultPageOrientation == Orientation.LANDSCAPE) {
+                        update(prefs.copy(defaultPageOrientation = Orientation.LANDSCAPE))
+                    }
                 }
             }
             CheckRow("Hide page borders", prefs.hidePageBorders) {
@@ -730,6 +744,34 @@ private fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Uni
         Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 14.sp)
     }
 }
+
+/**
+ * One side of a custom page, in millimetres. The field keeps whatever is typed so a number can be
+ * cleared and retyped; only a value that parses inside the settable range reaches the preference.
+ */
+@Composable
+private fun MillimetreField(label: String, value: Double, onChange: (Double) -> Unit) {
+    var text by remember { mutableStateOf(formatMm(value)) }
+    // Adopt an outside change (Reset to defaults) without ever rewriting what is being typed.
+    LaunchedEffect(value) { if (text.trim().toDoubleOrNull() != value) text = formatMm(value) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            text = raw
+            raw.trim().toDoubleOrNull()?.let {
+                if (it in Preferences.CUSTOM_PAGE_MIN_MM..Preferences.CUSTOM_PAGE_MAX_MM) onChange(it)
+            }
+        },
+        singleLine = true,
+        label = { Text(label, fontSize = 12.sp) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+        modifier = Modifier.width(136.dp),
+    )
+}
+
+/** Drop a whole number's ".0" so the field reads "210", not "210.0". */
+private fun formatMm(v: Double): String =
+    if (v == Math.floor(v) && !v.isInfinite()) v.toInt().toString() else v.toString()
 
 @Composable
 private fun SizeDropdown(size: PageSize, onSelect: (PageSize) -> Unit) {

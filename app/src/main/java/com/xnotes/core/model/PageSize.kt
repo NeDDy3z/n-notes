@@ -16,11 +16,17 @@ enum class Orientation {
 /**
  * Named page sizes (spec 02 §1). Side lengths are listed **shorter × longer** in
  * millimetres; [pixels] applies the orientation and DPI conversion.
+ *
+ * [CUSTOM] is the exception: its side lengths live in the user's preferences, which the enum
+ * cannot see, so it carries A4's as a fallback and callers resolve it through
+ * [com.xnotes.settings.Preferences.newPagePixels] instead of through [pixels].
  */
 enum class PageSize(val displayName: String, val shortMm: Double, val longMm: Double) {
+    CUSTOM("Custom", 210.0, 297.0),
     A4("A4", 210.0, 297.0),
     A5("A5", 148.0, 210.0),
     LETTER("Letter", 215.9, 279.4),
+    LEGAL("Legal", 215.9, 355.6),
     SLIDE_16_9("Slide 16:9", 190.5, 338.7),
     SLIDE_4_3("Slide 4:3", 190.5, 254.0);
 

@@ -83,6 +83,40 @@ class SettingsTest {
         assertTrue(back.prefs.hidePageBorders)
     }
 
+    @Test fun customPageSizeRoundTripsAndSizesANewPage() {
+        val prefs = Preferences(
+            defaultPageSize = PageSize.CUSTOM,
+            defaultPageOrientation = Orientation.LANDSCAPE,
+            customPageWidthMm = 254.0,
+            customPageHeightMm = 127.0,
+        )
+        val back = Settings.fromJson(Settings(prefs = prefs).toJson()).prefs
+        assertEquals(PageSize.CUSTOM, back.defaultPageSize)
+        assertEquals(254.0, back.customPageWidthMm, 1e-9)
+        assertEquals(127.0, back.customPageHeightMm, 1e-9)
+        // Taken as typed: the landscape chip does not swap a custom page's sides.
+        val (w, h) = back.newPagePixels(150)
+        assertEquals(1500.0, w, 1e-6)
+        assertEquals(750.0, h, 1e-6)
+    }
+
+    @Test fun aNamedSizeStillFollowsTheOrientation() {
+        val prefs = Preferences(defaultPageSize = PageSize.LEGAL, defaultPageOrientation = Orientation.LANDSCAPE)
+        val (w, h) = prefs.newPagePixels(150)
+        assertEquals(PageSize.mmToPx(355.6, 150), w, 1e-6)
+        assertEquals(PageSize.mmToPx(215.9, 150), h, 1e-6)
+    }
+
+    @Test fun anOutOfRangeCustomSideIsPulledBackIn() {
+        val o = JSONObject().put(
+            "prefs",
+            JSONObject().put("custom_page_width_mm", 9000.0).put("custom_page_height_mm", 0.0),
+        )
+        val back = Settings.fromJson(o).prefs
+        assertEquals(Preferences.CUSTOM_PAGE_MAX_MM, back.customPageWidthMm, 1e-9)
+        assertEquals(Preferences.CUSTOM_PAGE_MIN_MM, back.customPageHeightMm, 1e-9)
+    }
+
     @Test fun malformedAppearanceFallsBackToSystem() {
         val o = JSONObject().put("prefs", JSONObject().put("ui_appearance", "rainbow"))
         assertEquals("system", Settings.fromJson(o).prefs.uiAppearance)

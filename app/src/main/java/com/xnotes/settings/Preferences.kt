@@ -28,6 +28,10 @@ data class Preferences(
     /** Filename template for new notes; see [com.xnotes.core.util.NameTemplate]. */
     val newNoteNameTemplate: String = NameTemplate.DEFAULT,
     val defaultPageOrientation: Orientation = Orientation.PORTRAIT,
+    /** Width of a [PageSize.CUSTOM] page, in millimetres. Ignored by every named size. */
+    val customPageWidthMm: Double = 210.0,
+    /** Height of a [PageSize.CUSTOM] page, in millimetres. Ignored by every named size. */
+    val customPageHeightMm: Double = 297.0,
     /** Whether a finger draws (true) or pans (false, default). The stylus always draws. */
     val fingerDraws: Boolean = false,
     /** Panning allowed while zoom is locked: "single" (default) | "double" | "none". */
@@ -76,6 +80,18 @@ data class Preferences(
     /** Language the format bar's code toggle last applied; "" until a language is picked. */
     val lastCodeLanguage: String = "",
 ) {
+    /**
+     * A new note's page size in document pixels. A named size is laid out under
+     * [defaultPageOrientation]; a custom one is taken as typed, since the two fields already say
+     * which way round the page goes.
+     */
+    fun newPagePixels(dpi: Int = PageSize.DEFAULT_DPI): Pair<Double, Double> =
+        if (defaultPageSize == PageSize.CUSTOM) {
+            PageSize.mmToPx(customPageWidthMm, dpi) to PageSize.mmToPx(customPageHeightMm, dpi)
+        } else {
+            defaultPageSize.pixels(defaultPageOrientation, dpi)
+        }
+
     /** The palette style of the active appearance mode. */
     val paletteStyle: String get() = paletteStyleFor(uiAppearance)
 
@@ -108,6 +124,8 @@ data class Preferences(
         .put("default_page_size", defaultPageSize.displayName)
         .put("new_note_name_template", newNoteNameTemplate)
         .put("default_page_orientation", defaultPageOrientation.toName())
+        .put("custom_page_width_mm", customPageWidthMm)
+        .put("custom_page_height_mm", customPageHeightMm)
         .put("finger_draws", fingerDraws)
         .put("zoom_lock_pan", zoomLockPan)
         .put("detect_shapes", detectShapes)
@@ -137,6 +155,10 @@ data class Preferences(
 
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118, 255)
+
+        /** Settable range of a custom page's sides, in millimetres. */
+        const val CUSTOM_PAGE_MIN_MM = 10.0
+        const val CUSTOM_PAGE_MAX_MM = 2000.0
 
         /** Settable range of the min/max zoom limits, in percent (within the hard zoom bounds). */
         const val ZOOM_LIMIT_MIN_PCT = 20
@@ -168,6 +190,10 @@ data class Preferences(
                 newNoteNameTemplate = o.optString("new_note_name_template", NameTemplate.DEFAULT)
                     .ifBlank { NameTemplate.DEFAULT },
                 defaultPageOrientation = Orientation.fromName(o.optString("default_page_orientation", "portrait")),
+                customPageWidthMm = o.optDouble("custom_page_width_mm", 210.0)
+                    .coerceIn(CUSTOM_PAGE_MIN_MM, CUSTOM_PAGE_MAX_MM),
+                customPageHeightMm = o.optDouble("custom_page_height_mm", 297.0)
+                    .coerceIn(CUSTOM_PAGE_MIN_MM, CUSTOM_PAGE_MAX_MM),
                 fingerDraws = o.optBoolean("finger_draws", false),
                 zoomLockPan = zoomLockPan,
                 detectShapes = o.optBoolean("detect_shapes", false),

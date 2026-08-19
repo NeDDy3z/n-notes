@@ -68,5 +68,17 @@ class Document(
             repeat(count) { doc.pages.add(Page.blank(size, orientation, dpi)) }
             return doc
         }
+
+        /** A blank document of [count] pages measured in document pixels, for a custom size. */
+        fun blankPixels(
+            count: Int = DEFAULT_NEW_PAGES,
+            width: Double,
+            height: Double,
+            dpi: Int = PageSize.DEFAULT_DPI,
+        ): Document {
+            val doc = Document(dpi = dpi)
+            repeat(count) { doc.pages.add(Page(width, height)) }
+            return doc
+        }
     }
 }
