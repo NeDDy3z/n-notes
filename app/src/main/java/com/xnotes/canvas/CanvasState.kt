@@ -35,8 +35,13 @@ import kotlin.math.min
  */
 internal fun CanvasItem.isHighlighterInk(): Boolean = this is Stroke && this.tool == Tool.HIGHLIGHTER
 
-/** A rasterized page cache plus the resolution it was built at. */
-class CacheEntry(val surface: RasterSurface, val res: Double)
+/**
+ * A rasterized page cache plus the resolution it was built at and the page-space rect it covers
+ * (the page's footprint at build time). A margin edit moves that rect, so the entry is rebuilt on a
+ * mismatch — and blitted stretched into the new one meanwhile, like a stale-resolution entry is
+ * during a pinch.
+ */
+class CacheEntry(val surface: RasterSurface, val res: Double, val cover: Rect = Rect(0.0, 0.0, 0.0, 0.0))
 
 /**
  * A cached highlighter ribbon: its opaque bitmap, the resolution + geometry + opaque colour it
@@ -952,10 +957,13 @@ class CanvasState(
 
     fun cacheFor(page: Page): CacheEntry {
         val res = clampedRes(page)
-        val existing = caches[page]
-        if (existing != null && (zoomingInProgress || abs(existing.res - res) < 1e-6)) return existing
+        caches[page]?.let { if (it.usableFor(page, res)) return it }
         return buildCache(page, res).also { caches[page] = it }
     }
+
+    /** Whether this entry still matches [page]'s footprint and the [target] resolution. */
+    private fun CacheEntry.usableFor(page: Page, target: Double): Boolean =
+        cover == footprint(page) && (zoomingInProgress || abs(res - target) < 1e-6)
 
     /**
      * Like [cacheFor] but never rasterizes on the calling (UI) thread: returns the ready
@@ -966,7 +974,7 @@ class CanvasState(
     fun cacheForOrSchedule(page: Page): CacheEntry? {
         val res = clampedRes(page)
         val existing = caches[page]
-        if (existing != null && (zoomingInProgress || abs(existing.res - res) < 1e-6)) return existing
+        if (existing != null && existing.usableFor(page, res)) return existing
         scheduleInk(page, res)
         return caches[page] // sync scheduler filled it; async leaves the stale entry (or null)
     }
@@ -1008,7 +1016,7 @@ class CanvasState(
         if (includeFlow) paintFlow?.invoke(page, r, cover)
         for (item in items) item.paint(r)
         noteGeometryBuilt(page)
-        return CacheEntry(surface, res)
+        return CacheEntry(surface, res, cover)
     }
 
     /** Record that [page]'s strokes now hold ribbon geometry. Called from the cache threads too, so
@@ -1089,7 +1097,7 @@ class CanvasState(
         if (!hasPageBackground(page)) return null
         val res = clampedRes(page)
         val existing = bgCaches[page]
-        if (existing != null && (zoomingInProgress || abs(existing.res - res) < 1e-6)) return existing
+        if (existing != null && existing.usableFor(page, res)) return existing
         return buildBackground(page, res).also { bgCaches[page] = it }
     }
 
@@ -1098,7 +1106,7 @@ class CanvasState(
         if (!hasPageBackground(page)) return null
         val res = clampedRes(page)
         val existing = bgCaches[page]
-        if (existing != null && (zoomingInProgress || abs(existing.res - res) < 1e-6)) return existing
+        if (existing != null && existing.usableFor(page, res)) return existing
         scheduleBg(page, res)
         return bgCaches[page]
     }
@@ -1128,7 +1136,7 @@ class CanvasState(
         r.scale(res, res)
         r.translate(-cover.left, -cover.top)
         paintPageBackground?.invoke(page, r, res, cover)
-        return CacheEntry(surface, res)
+        return CacheEntry(surface, res, cover)
     }
 
     // --- presentation cache ---
@@ -1144,7 +1152,7 @@ class CanvasState(
     /** Presentation ink layer for [page] at [presRes] (built once, then kept current incrementally). */
     fun presCacheFor(page: Page): CacheEntry {
         val res = presRes(page)
-        presCaches[page]?.let { if (abs(it.res - res) < 1e-6) return it }
+        presCaches[page]?.let { if (abs(it.res - res) < 1e-6 && it.cover == footprint(page)) return it }
         // The stream always includes the flow, lifted or not (it can't draw live passes).
         return renderInk(page, res, cacheItems(page), includeFlow = true).also { presCaches[page] = it }
     }
@@ -1153,7 +1161,7 @@ class CanvasState(
     fun presBackgroundFor(page: Page): CacheEntry? {
         if (!hasPageBackground(page)) return null
         val res = presRes(page)
-        presBgCaches[page]?.let { if (abs(it.res - res) < 1e-6) return it }
+        presBgCaches[page]?.let { if (abs(it.res - res) < 1e-6 && it.cover == footprint(page)) return it }
         return buildBackground(page, res).also { presBgCaches[page] = it }
     }
 
@@ -1172,7 +1180,7 @@ class CanvasState(
     /** Keep [page]'s presentation ink layer current with a just-committed [item], if it is cached. */
     private fun appendToPresCache(page: Page, item: CanvasItem) {
         val entry = presCaches[page] ?: return
-        val cover = footprint(page)
+        val cover = entry.cover
         val r = entry.surface.renderer()
         r.scale(entry.res, entry.res)
         r.translate(-cover.left, -cover.top)
@@ -1182,7 +1190,7 @@ class CanvasState(
     /** Repair just [dirtyRect] of [page]'s presentation ink layer in place, if it is cached. */
     private fun repairPresRegion(page: Page, dirtyRect: Rect) {
         val entry = presCaches[page] ?: return
-        val cover = footprint(page)
+        val cover = entry.cover
         val r = entry.surface.renderer()
         r.save()
         r.scale(entry.res, entry.res)
@@ -1204,11 +1212,11 @@ class CanvasState(
         appendToPresCache(page, item) // keep the presentation cache crisp too, if it's live
         val res = clampedRes(page)
         val existing = caches[page]
-        if (existing == null || abs(existing.res - res) > 1e-6) {
+        if (existing == null || !existing.usableFor(page, res)) {
             invalidatePage(page)
             return
         }
-        val cover = footprint(page)
+        val cover = existing.cover
         val r = existing.surface.renderer()
         r.scale(res, res)
         r.translate(-cover.left, -cover.top)
@@ -1230,7 +1238,7 @@ class CanvasState(
         if (pendingSharp) pendingSharpEdits.add(page to dirtyRect)
         repairPresRegion(page, dirtyRect) // erase from the presentation ink layer in place too
         val entry = caches[page] ?: return false
-        val cover = footprint(page)
+        val cover = entry.cover
         val r = entry.surface.renderer()
         r.save()
         r.scale(entry.res, entry.res)
@@ -1276,6 +1284,17 @@ class CanvasState(
     fun invalidateAllBackgrounds() {
         bgCaches.clear()
         presBgCaches.clear()
+        cacheGen++
+        sharpGen++
+    }
+
+    /**
+     * Page footprints changed (a margin edit). The surfaces stay in the maps and keep being blitted
+     * — stretched into the new page rect — until the rebuilds land, which is what a pinch already
+     * does; clearing them instead would blank every visible page to bare paper for the whole drag.
+     * The size mismatch itself is what schedules the rebuild (see [usableFor]).
+     */
+    fun invalidatePageGeometry() {
         cacheGen++
         sharpGen++
     }

@@ -95,4 +95,18 @@ class MarginLayoutTest {
         st.relayout()
         for (page in st.document.pages) assertEquals(page.width * 1.5, st.displayW(page), 1e-9)
     }
+
+    @Test fun aMarginEditRebuildsTheCacheAtTheNewSize() {
+        val st = state()
+        val page = st.document.pages[0]
+        val before = st.cacheFor(page)
+        assertEquals(st.footprint(page), before.cover)
+
+        page.margins = PageMargins(right = 0.5)
+        st.relayout()
+        st.invalidatePageGeometry()
+        val after = st.cacheFor(page)
+        assertEquals(st.footprint(page), after.cover)
+        assertEquals(page.width * 1.5, after.cover.w, 1e-9)
+    }
 }

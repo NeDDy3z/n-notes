@@ -1855,7 +1855,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * wrong shape: they are dropped rather than repaired, and the document is laid out again.
      */
     private fun applyMarginChange() {
-        state.invalidateAllCaches()
+        state.invalidatePageGeometry()
         state.relayout()
         state.document.dirty = true
         refreshContent()
