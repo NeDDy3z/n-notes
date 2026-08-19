@@ -33,7 +33,6 @@ enum class ToolbarItem(val id: String, val label: String) {
     UNDO("undo", "Undo"),
     REDO("redo", "Redo"),
     PAGE_NAV("page_nav", "Page nav"),
-    PAGE_MENU("page_menu", "Page menu"),
     STYLES("styles", "Styles"),
     MARGINS("margins", "Margins"),
     VIEW("view", "View"),
@@ -154,9 +153,9 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
 
         /**
          * The two bars hold different things, so each has its own set and neither can be handed the
-         * other's. A page menu means nothing on an unbounded canvas, and a waypoint means nothing in
-         * a paged note; an item outside a layout's set is dropped on load rather than drawn as a
-         * dead chip.
+         * other's. Page navigation means nothing on an unbounded canvas, and a waypoint means
+         * nothing in a paged note; an item outside a layout's set is dropped on load rather than
+         * drawn as a dead chip.
          */
         val CANVAS_ITEMS: Set<ToolbarItem> = setOf(
             ToolbarItem.HOME, ToolbarItem.TITLE,
@@ -185,7 +184,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.IMAGE),
             listOf(ToolbarItem.COLORS),
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
-            listOf(ToolbarItem.PAGE_NAV, ToolbarItem.PAGE_MENU, ToolbarItem.STYLES, ToolbarItem.MARGINS, ToolbarItem.VIEW),
+            listOf(ToolbarItem.PAGE_NAV, ToolbarItem.STYLES, ToolbarItem.MARGINS, ToolbarItem.VIEW),
             listOf(ToolbarItem.ZOOM, ToolbarItem.FIT, ToolbarItem.ZOOM_LOCK),
             listOf(ToolbarItem.FULLSCREEN, ToolbarItem.PRESENT),
         )

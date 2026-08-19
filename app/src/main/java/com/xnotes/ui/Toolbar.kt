@@ -210,7 +210,6 @@ private fun ToolbarItemView(
             }
             ToolbarIcon(XnotesIcons.next, "Next page") { editor.nextPage() }
         }
-        ToolbarItem.PAGE_MENU -> PageMenu(editor)
         ToolbarItem.STYLES -> StylesButton(editor)
         ToolbarItem.MARGINS -> MarginsButton(editor)
         ToolbarItem.VIEW -> ViewButton(editor)
@@ -515,18 +514,6 @@ private fun StickerTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().padding(3.dp),
             )
-        }
-    }
-}
-
-@Composable
-private fun PageMenu(editor: Editor) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        ToolbarIcon(XnotesIcons.page, "Pages") { expanded = true }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text("Add page") }, onClick = { editor.addPage(); expanded = false })
-            DropdownMenuItem(text = { Text("Delete current page") }, onClick = { editor.deleteCurrentPage(); expanded = false })
         }
     }
 }
