@@ -991,10 +991,12 @@ class CanvasState(
             val entry = renderInk(page, res, items, withFlow)
             postToMain {
                 pendingInk.remove(page)
-                if (gen == cacheGen) {
-                    caches[page] = entry
-                    onCacheReady?.invoke()
-                }
+                if (gen == cacheGen) caches[page] = entry
+                // Repaint either way. A build the page outgrew mid-flight (a margin drag bumps the
+                // generation on every tick) is discarded here, and the draw loop is what schedules
+                // its replacement — but every frame while this one was in flight was turned away by
+                // [pendingInk], so without this the page would sit blank until something else drew.
+                onCacheReady?.invoke()
             }
         }
     }
@@ -1121,10 +1123,8 @@ class CanvasState(
             val entry = buildBackground(page, res)
             postToMain {
                 pendingBg.remove(page)
-                if (gen == cacheGen) {
-                    bgCaches[page] = entry
-                    onCacheReady?.invoke()
-                }
+                if (gen == cacheGen) bgCaches[page] = entry
+                onCacheReady?.invoke() // discarded or not; see [scheduleInk]
             }
         }
     }

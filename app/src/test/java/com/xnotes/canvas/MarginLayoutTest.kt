@@ -147,4 +147,36 @@ class MarginLayoutTest {
         st.invalidatePageGeometry()
         assertSame(original, st.cacheForOrSchedule(page))
     }
+
+    @Test fun aBuildDiscardedMidDragStillBringsTheDrawLoopBack() {
+        val st = state()
+        val pending = mutableListOf<() -> Unit>()
+        var repaints = 0
+        st.runAsync = { pending += it }
+        st.onCacheReady = { repaints++ }
+        val page = st.document.pages[0]
+
+        // A frame schedules the page's ink; the slider moves before that build lands.
+        st.cacheForOrSchedule(page)
+        assertEquals(1, pending.size)
+        page.margins = PageMargins(right = 0.5)
+        st.relayout()
+        st.invalidatePageGeometry()
+
+        // The next frame is turned away: a build for this page is already in flight.
+        assertNull(st.cacheForOrSchedule(page))
+        assertEquals(1, pending.size)
+
+        // That build is now stale and is dropped — but it must still ask for a repaint, or nothing
+        // would ever schedule the replacement and the page would stay blank until a scroll.
+        pending.removeAt(0).invoke()
+        assertEquals(1, repaints)
+        assertNull(st.cacheForOrSchedule(page)) // the repaint's frame reschedules
+        assertEquals(1, pending.size)
+
+        pending.removeAt(0).invoke()
+        val rebuilt = st.cacheForOrSchedule(page)
+        assertNotNull(rebuilt)
+        assertEquals(st.footprint(page), rebuilt!!.cover)
+    }
 }
