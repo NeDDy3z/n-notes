@@ -512,6 +512,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // Only a canvas living under the granted folder autosaves; anything else is left alone,
         // matching how a note opened from outside the root behaves.
         canvasAutosaveUri = if (uri != null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
+        lastCanvasStamp = canvasAutosaveUri?.let { stampOf(it) }
         canvasOpen = true
         noteOpen = true
     }
@@ -526,6 +527,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
                         ?: return@runCatching false
                     out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it) } }
+                    lastCanvasStamp = stampOf(uri)
                     true
                 } finally {
                     tmp.delete()
@@ -541,12 +543,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             val canvas = infiniteOrNull ?: return@launch
             val doc = canvas.document
             if (!doc.dirty) return@launch
-            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                writeCanvasSafely(uri, doc)
+            val title = doc.displayName ?: doc.title
+            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                saveCanvasGuarded(uri, doc, title)
             }
-            if (ok) {
+            if (res != null) {
                 doc.dirty = false
-                invalidateThumb(uri)
+                res.fork?.let { adoptCanvasFork(it) }
+                invalidateThumb(res.uri)
             }
         }
     }
@@ -557,10 +561,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val uri = canvasAutosaveUri ?: return
         val canvas = infiniteOrNull ?: return
         if (!canvas.document.dirty) return
-        if (writeCanvasSafely(uri, canvas.document)) {
-            canvas.document.dirty = false
-            invalidateThumb(uri)
-        }
+        val doc = canvas.document
+        val res = saveCanvasGuarded(uri, doc, doc.displayName ?: doc.title) ?: return
+        doc.dirty = false
+        res.fork?.let { adoptCanvasFork(it) }
+        invalidateThumb(res.uri)
     }
 
     /** Bumped whenever page content changes, to refresh thumbnails. */
@@ -2815,8 +2820,136 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         fileId == treeId || fileId.startsWith("$treeId/")
     }.getOrDefault(false)
 
+    // --- divergence guard (something else rewrote the file underneath the open editor) ---
+
+    /** Size + last-modified of a SAF document: the evidence that a file did or did not move under us. */
+    private data class DocStamp(val size: Long, val modified: Long)
+
+    /** The stamp the note's autosave file carried after this editor last wrote it. */
+    @Volatile private var lastNoteStamp: DocStamp? = null
+
+    /** The canvas sibling of [lastNoteStamp]. */
+    @Volatile private var lastCanvasStamp: DocStamp? = null
+
+    /** Where a fork landed: the new file's uri, and the name to show the user. */
+    private class Fork(val uri: String, val name: String)
+
+    /** Where a guarded save landed; [fork] is null when it wrote the file in place as usual. */
+    private class SaveResult(val uri: String, val fork: Fork?)
+
+    /** Size + mtime of the document at [uri], or null when the provider will not report either. */
+    private fun stampOf(uri: String): DocStamp? = runCatching {
+        appContext.contentResolver.query(
+            android.net.Uri.parse(uri),
+            arrayOf(
+                android.provider.OpenableColumns.SIZE,
+                android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            ),
+            null, null, null,
+        )?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            val size = if (c.isNull(0)) -1L else c.getLong(0)
+            val modified = if (c.isNull(1)) -1L else c.getLong(1)
+            if (size < 0L && modified < 0L) null else DocStamp(size, modified)
+        }
+    }.getOrNull()
+
+    /**
+     * Has something else rewritten [uri] since this editor last wrote it? A folder-sync app pulling
+     * in the other device's copy does exactly that, and so does the other split pane holding the same
+     * note. Writing in place would then throw away whatever they put there, with no error and no
+     * conflict copy, so the caller forks instead.
+     *
+     * An unreadable stamp is **not** evidence. A provider that won't report size or mtime must never
+     * trigger a fork: a spurious duplicate file is a worse default than the plain write.
+     */
+    private fun changedUnderneath(uri: String, known: DocStamp?): Boolean {
+        if (known == null) return false
+        val now = stampOf(uri) ?: return false
+        return now != known
+    }
+
+    /** The parent folder's document id for the file at [uri], or null when it has none. */
+    private fun parentDocIdOf(uri: String): String? {
+        val id = runCatching {
+            android.provider.DocumentsContract.getDocumentId(android.net.Uri.parse(uri))
+        }.getOrNull() ?: return null
+        return id.substringBeforeLast('/', "").ifEmpty { null }
+    }
+
+    /** The name a fork of [title] takes: the note's own name, de-duplicated the usual way. */
+    private fun forkName(root: String, parentId: String, title: String, kind: com.xnotes.core.util.DocumentKind): String =
+        uniqueDocumentName(root, parentId, com.xnotes.core.util.DocumentKind.stripSuffix(title), kind)
+
+    /**
+     * Write [doc] to a new sibling of [uri], leaving the file that changed underneath us untouched.
+     * Both versions survive and both sync onward; nothing is merged and nothing is overwritten.
+     */
+    private fun forkNote(uri: String, doc: Document, title: String): Fork? {
+        val root = browseRoot ?: return null
+        val parentId = parentDocIdOf(uri) ?: return null
+        val name = forkName(root, parentId, title, com.xnotes.core.util.DocumentKind.NOTE)
+        val forked = createNoteFile(root, parentId, name) { codec.write(doc, it) } ?: return null
+        lastNoteStamp = stampOf(forked)
+        return Fork(forked, name)
+    }
+
+    /** The canvas sibling of [forkNote]. */
+    private fun forkCanvas(uri: String, doc: com.xnotes.core.infinite.InfiniteDocument, title: String): Fork? {
+        val root = browseRoot ?: return null
+        val parentId = parentDocIdOf(uri) ?: return null
+        val name = forkName(root, parentId, title, com.xnotes.core.util.DocumentKind.CANVAS)
+        val forked = createNoteFile(root, parentId, name) { canvasCodec.write(doc, it) } ?: return null
+        lastCanvasStamp = stampOf(forked)
+        return Fork(forked, name)
+    }
+
+    /** Autosave [doc] to [uri], forking instead of overwriting when the file moved under us. IO. */
+    private fun saveNoteGuarded(uri: String, doc: Document, title: String): SaveResult? = synchronized(saveLock) {
+        if (changedUnderneath(uri, lastNoteStamp)) {
+            val fork = forkNote(uri, doc, title) ?: return null
+            return SaveResult(fork.uri, fork)
+        }
+        if (!writeNoteSafely(uri, doc)) return null
+        SaveResult(uri, null)
+    }
+
+    /** The canvas sibling of [saveNoteGuarded]. IO. */
+    private fun saveCanvasGuarded(
+        uri: String,
+        doc: com.xnotes.core.infinite.InfiniteDocument,
+        title: String,
+    ): SaveResult? = synchronized(saveLock) {
+        if (changedUnderneath(uri, lastCanvasStamp)) {
+            val fork = forkCanvas(uri, doc, title) ?: return null
+            return SaveResult(fork.uri, fork)
+        }
+        if (!writeCanvasSafely(uri, doc)) return null
+        SaveResult(uri, null)
+    }
+
+    /** Point the open note at the copy it just forked into, and say so. Main thread. */
+    private fun adoptNoteFork(fork: Fork) {
+        state.document.path = fork.uri
+        state.document.displayName = fork.name
+        autosaveUri = fork.uri
+        refreshContent()
+        message = "This note changed elsewhere. Your edits are now in \u201c${com.xnotes.core.util.DocumentKind.stripSuffix(fork.name)}\u201d."
+    }
+
+    /** The canvas sibling of [adoptNoteFork]. Main thread. */
+    private fun adoptCanvasFork(fork: Fork) {
+        val canvas = infiniteOrNull ?: return
+        canvas.document.path = fork.uri
+        canvas.document.displayName = fork.name
+        canvasAutosaveUri = fork.uri
+        refreshContent()
+        message = "This canvas changed elsewhere. Your edits are now in \u201c${com.xnotes.core.util.DocumentKind.stripSuffix(fork.name)}\u201d."
+    }
+
     private fun maybeBindAutosave(uri: String?) {
         autosaveUri = if (uri != null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
+        lastNoteStamp = autosaveUri?.let { stampOf(it) }
     }
 
     /**
@@ -2835,6 +2968,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     ?: return@runCatching false
                 out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it) } }
                 state.lastSaveBytes = tmp.length() // live file size for the debug overlay
+                lastNoteStamp = stampOf(uri) // read back what the provider reports, not what we wrote
                 true
             } finally {
                 tmp.delete()
@@ -2860,15 +2994,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // Snapshot on the main thread so the off-thread write never iterates the live
             // (mutating) model — but page-by-page, so a dense note can't hitch pen input.
             val snapshot = snapshotDocument() ?: return@launch
+            val title = state.document.displayName ?: state.document.title
             state.autosaveStatus = "in progress"
-            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                writeNoteSafely(uri, snapshot)
+            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                saveNoteGuarded(uri, snapshot, title)
             }
-            if (ok) {
+            if (res != null) {
                 state.document.dirty = false; dirty = false
-                invalidateThumb(uri) // file changed on disk; drop the stale tile so the grid re-renders it
+                res.fork?.let { adoptNoteFork(it) }
+                invalidateThumb(res.uri) // file changed on disk; drop the stale tile so the grid re-renders it
             }
-            state.autosaveStatus = if (ok) "done" else "failed"
+            state.autosaveStatus = if (res != null) "done" else "failed"
         }
     }
 
@@ -2895,7 +3031,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         autosaveJob?.cancel()
         val uri = autosaveUri ?: return
         if (!state.document.dirty) return
-        if (writeNoteSafely(uri, state.document)) { state.document.dirty = false; dirty = false; invalidateThumb(uri) }
+        val title = state.document.displayName ?: state.document.title
+        val res = saveNoteGuarded(uri, state.document, title) ?: return
+        state.document.dirty = false; dirty = false
+        res.fork?.let { adoptNoteFork(it) }
+        invalidateThumb(res.uri)
     }
 
     /**
@@ -2909,12 +3049,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val uri = autosaveUri
         if (uri == null || !state.document.dirty) { onDone(); return }
         val snapshot = state.document.deepCopy(textMeasurer) // main thread: immune to edits during the write
+        val title = state.document.displayName ?: state.document.title
         if (showOverlay) savingNote = true
         state.autosaveStatus = "in progress"
         autosaveScope.launch {
-            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeNoteSafely(uri, snapshot) }
-            if (ok) { state.document.dirty = false; dirty = false; invalidateThumb(uri) }
-            state.autosaveStatus = if (ok) "done" else "failed"
+            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                saveNoteGuarded(uri, snapshot, title)
+            }
+            if (res != null) {
+                state.document.dirty = false; dirty = false
+                res.fork?.let { adoptNoteFork(it) }
+                invalidateThumb(res.uri)
+            }
+            state.autosaveStatus = if (res != null) "done" else "failed"
             savingNote = false
             onDone()
         }
