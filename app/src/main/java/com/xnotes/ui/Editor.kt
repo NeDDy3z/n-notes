@@ -568,6 +568,36 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         invalidateThumb(res.uri)
     }
 
+    /**
+     * Flush the open canvas to its folder file off the main thread, then run [onDone] on the main
+     * thread. Shows the "Saving your notes…" overlay while it runs when [showOverlay]. Runs [onDone]
+     * at once (no save) when the canvas isn't a folder canvas or isn't dirty, so the common case
+     * stays instant. The sibling of [flushThen], for the same reason: a dense canvas takes long
+     * enough to write that doing it on the main thread freezes the UI on close.
+     */
+    private fun flushCanvasThen(showOverlay: Boolean, onDone: () -> Unit) {
+        canvasAutosaveJob?.cancel()
+        val uri = canvasAutosaveUri
+        val doc = infiniteOrNull?.document
+        if (uri == null || doc == null || !doc.dirty) { onDone(); return }
+        val title = doc.displayName ?: doc.title
+        if (showOverlay) savingNote = true
+        autosaveScope.launch {
+            // The live document goes to the writer, as it already does for the debounced canvas
+            // autosave: there is no deep copy for an InfiniteDocument to snapshot through.
+            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                saveCanvasGuarded(uri, doc, title)
+            }
+            if (res != null) {
+                doc.dirty = false
+                res.fork?.let { adoptCanvasFork(it) }
+                invalidateThumb(res.uri)
+            }
+            savingNote = false
+            onDone()
+        }
+    }
+
     /** Bumped whenever page content changes, to refresh thumbnails. */
     var contentVersion by mutableStateOf(0)
         private set
@@ -4510,10 +4540,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // A canvas has none of the paged note's text sessions, autosave binding or thumbnails yet,
         // so leaving one is just popping the layer.
         if (canvasOpen) {
-            flushCanvasAutosave()
-            canvasAutosaveUri = null
-            canvasOpen = false
-            noteOpen = false
+            flushCanvasThen(showOverlay = true) {
+                canvasAutosaveUri = null
+                canvasOpen = false
+                noteOpen = false
+            }
             return
         }
         commitText() // commit an open text box before leaving (also hides its keyboard)
