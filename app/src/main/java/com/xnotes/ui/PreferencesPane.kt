@@ -280,12 +280,11 @@ fun PreferencesPane(
             FieldLabel("Stylus side button (tap)")
             OptionDropdown(tapGestureOptions, prefs.stylusButtonTap) { update(prefs.copy(stylusButtonTap = it)) }
 
-             SectionTitle("Stylus Buttons")
-             FieldLabel("Stylus Button 1 (Keycode 92)")
-             OptionDropdown(tapGestureOptions, prefs.stylusButton1Tap) { update(prefs.copy(stylusButton1Tap = it)) }
-             FieldLabel("Stylus Button 2 (Keycode 93)")
-             HorizontalDivider(color = palette.border.toComposeColor())
-             OptionDropdown(tapGestureOptions, prefs.stylusButton2Tap) { update(prefs.copy(stylusButton2Tap = it)) }
+            SectionTitle("Redmi Samrt Pen stylus buttons")
+            FieldLabel("Stylus Button 1")
+            OptionDropdown(tapGestureOptions, prefs.stylusButton2Tap) { update(prefs.copy(stylusButton2Tap = it)) }
+            FieldLabel("Stylus Button 2")
+            OptionDropdown(tapGestureOptions, prefs.stylusButton1Tap) { update(prefs.copy(stylusButton1Tap = it)) }
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle("New notes")
             FieldLabel("Filename template")
