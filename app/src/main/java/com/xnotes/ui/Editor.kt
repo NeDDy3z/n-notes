@@ -4241,10 +4241,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     // Some pens report the side button as a momentary vendor key click, not a held state, so it can't
     // drive the hold latch; fire the mapped gesture on key-down, ignore up. HONOR Magic-Pencil 4s ->
     // 333; Lenovo Tab Pen Plus -> 601 (its one code with a clean down; it also emits 600/603/604 ups).
-    private val penButtonTapKeycodes = setOf(333, 601)
+    // Stylus buttons with codes 92 and 93 for additional tap actions.
+    private val penButtonTapKeycodes = setOf(333, 601, 92, 93)
     private fun onPenButtonTapKey(e: android.view.KeyEvent): Boolean {
-        if (preferences.stylusButtonTap == "none") return false
-        if (e.action == android.view.KeyEvent.ACTION_DOWN) dispatchTapGesture(preferences.stylusButtonTap)
+        if (e.action != android.view.KeyEvent.ACTION_DOWN) return false
+        
+        if (e.keyCode == 333 && preferences.stylusButtonTap != "none") {
+            dispatchTapGesture(preferences.stylusButtonTap)
+        } else if (e.keyCode == 601 && preferences.stylusButtonTap != "none") {
+            dispatchTapGesture(preferences.stylusButtonTap)
+        } else if (e.keyCode == 92 && preferences.stylusButton1Tap != "none") {
+            dispatchTapGesture(preferences.stylusButton1Tap)
+        } else if (e.keyCode == 93 && preferences.stylusButton2Tap != "none") {
+            dispatchTapGesture(preferences.stylusButton2Tap)
+        }
         return true
     }
 
