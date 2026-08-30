@@ -223,20 +223,30 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         dirty.set(false)
         if (!ready) return
         if (!ink.draw(surfaceW, surfaceH, samples)) {
-            @Suppress("UNUSED_EXPRESSION")
-            if (traced < 6) {
+            if (traced < 4) {
                 traced++
                 Log.i(TAG, "wet pad drew nothing: surface ${surfaceW}x$surfaceH single=$single ${ink.why}")
             }
             return
         }
-        if (traced < 6) {
-            traced++
-            Log.i(TAG, "wet pad drew: surface ${surfaceW}x$surfaceH single=$single d${ink.lastDamage}")
-        }
+        samplePresent()
         // The whole publish step. Nothing is queued and nobody is waited on: the compositor is
         // already holding this buffer and auto refresh has it looking at it every scanout.
         GLES30.glFlush()
+    }
+
+    private fun samplePresent() {
+        presents++
+        val now = System.nanoTime()
+        if (sinceNs == 0L) {
+            sinceNs = now
+            return
+        }
+        val dt = now - sinceNs
+        if (dt < RATE_WINDOW_NS) return
+        rate = presents * 1_000_000_000.0 / dt
+        presents = 0
+        sinceNs = now
     }
 
     private fun clearSurface() {
@@ -300,8 +310,24 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         frontBuffered = false
     }
 
-    /** What the front buffer is doing, for the debug readout. */
-    val hud: String get() = "${if (frontBuffered) "front" else "back"} d${ink.lastDamage}"
+    /**
+     * What the front buffer is doing, for the debug readout: whether the surface is single
+     * buffered at all, whether the compositor is currently reading it, the last damage, and how
+     * many presents a second the pen is getting.
+     */
+    val hud: String
+        get() = buildString {
+            append(if (single) "single" else "back")
+            append(if (frontBuffered) " live" else " idle")
+            if (ink.lastDamage.isNotEmpty()) append(" d${ink.lastDamage}")
+            append(" %.0f/s".format(rate))
+        }
+
+    /** Presents a second, over the last window, so the pen's cadence is readable. */
+    @Volatile
+    private var rate = 0.0
+    private var presents = 0
+    private var sinceNs = 0L
 
     private fun fail(what: String) {
         Log.e(TAG, "wet pad unavailable: $what")
@@ -315,5 +341,7 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         const val EGL_SINGLE_BUFFER = 0x3085
         const val EGL_BACK_BUFFER = 0x3084
         const val EGL_FRONT_BUFFER_AUTO_REFRESH = 0x314C
+
+        const val RATE_WINDOW_NS = 500_000_000L
     }
 }

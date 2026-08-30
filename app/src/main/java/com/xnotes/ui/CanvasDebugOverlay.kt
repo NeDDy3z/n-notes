@@ -75,6 +75,7 @@ fun CanvasDebugOverlay(editor: InfiniteEditor) {
         add("visible   ${stats.visibleItems}")
         add("draws     ${stats.drawCalls}")
         add("wet verts ${stats.wetVertices}")
+        add("front     ${editor.pad.hud}")
         add("textures  ${stats.textures} (${stats.texturesPending} pending)")
         add("tex vram  ${fmtBytes(stats.textureBytes)}")
         add("tessel    %.2f ms".format(stats.lastTessellateMs))
