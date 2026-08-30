@@ -135,6 +135,7 @@ class GlRenderer : GLSurfaceView.Renderer {
         background = null
         contextGen++
         failure = null
+        FrontBufferProbe.log()
         rendererName = GLES30.glGetString(GLES30.GL_RENDERER) ?: ""
         glVersionName = GLES30.glGetString(GLES30.GL_VERSION) ?: ""
         frameCount = 0
