@@ -39,8 +39,11 @@ class InkShader(contextGen: Int) {
         zoom: Double,
         viewportW: Double,
         viewportH: Double,
+        originX: Double = 0.0,
+        originY: Double = 0.0,
     ) {
         program.use()
+        program.set("uOrigin", originX.toFloat(), originY.toFloat())
         program.set("uCamChunk", camChunkX.toFloat(), camChunkY.toFloat())
         program.set("uChunkSize", GeometryStore.CHUNK_SIZE.toFloat())
         program.set("uLocalScroll", localScrollX.toFloat(), localScrollY.toFloat())
@@ -131,6 +134,7 @@ class InkShader(contextGen: Int) {
             uniform vec2 uLocalScroll;
             uniform float uZoom;
             uniform vec2 uViewport;
+            uniform vec2 uOrigin;
             uniform float uOffsetScale;
             uniform float uMinHalfPx;
             uniform float uWidthScale;
@@ -184,7 +188,10 @@ class InkShader(contextGen: Int) {
                     fade = reach / uMinHalfPx;
                 }
 
-                vec2 device = (world - uLocalScroll) * uZoom;
+                // uOrigin frames the projection on a block of the surface rather than the whole
+                // of it, so a target the size of the damage can be drawn into at its own origin.
+                // Zero for anything painting the surface itself.
+                vec2 device = (world - uLocalScroll) * uZoom - uOrigin;
                 gl_Position = vec4(
                     device.x / uViewport.x * 2.0 - 1.0,
                     1.0 - device.y / uViewport.y * 2.0,
