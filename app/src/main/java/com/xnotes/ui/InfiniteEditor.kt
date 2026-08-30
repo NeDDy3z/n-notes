@@ -684,6 +684,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Points a run holds, which differs between the two paths. */
     private var runPoints = WET_RUN_POINTS
 
+    /** Whether this stroke's route has been chosen; it needs one meshed tail to look at. */
+    private var frontDecided = false
+
     /**
      * Hand the stroke under the pen to the scene, in two pieces where the pen allows it.
      *
@@ -725,10 +728,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             forgetWetStroke()
             wetOwner = stroke
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
-            frontInk = pad.beginStroke(viewport.scrollX, viewport.scrollY, viewport.zoom, view.msaaSamples)
-            // A shorter run on the front buffer, because there the tail is what a present has to
-            // clear and rebuild, and its extent is the size of everything that present does.
-            runPoints = if (frontInk) FRONT_RUN_POINTS else WET_RUN_POINTS
+            frontDecided = false
+            runPoints = WET_RUN_POINTS
         }
         val bounds = stroke.paintBounds()
         val settled = ribbon.settledCount
@@ -745,10 +746,28 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         val tailFrom = (wetMeshed - 1).coerceAtLeast(0)
         val tail = ItemMesher.meshRun(stroke, ribbon, tailFrom, ribbon.pointCount - tailFrom, wetArc)
         val parts = if (tail == null) emptyList() else listOf(tail)
+        if (!frontDecided) decideFrontInk(parts)
         if (frontInk) pad.setTail(parts) else scene.setWetTail(parts, bounds)
     }
 
-    /** Give the ink back to the canvas. Safe to call when the front buffer never had it. */
+    /**
+     * Whether this stroke can go on the front buffer, decided from what it meshes to rather than
+     * from the tool.
+     *
+     * The pad has no copy of what is under it, so anything that composites against the page cannot
+     * live there: a stencilled translucent pass, or a halo. Plain triangles can, and that is what
+     * a pen and a pencil are.
+     */
+    private fun decideFrontInk(parts: List<MeshPart>) {
+        frontDecided = true
+        if (parts.isEmpty() || parts.any { it.pass != InkPass.OPAQUE }) return
+        frontInk = pad.beginStroke(viewport.scrollX, viewport.scrollY, viewport.zoom, view.msaaSamples)
+        // A shorter run on the front buffer, because there the tail is what a present has to clear
+        // and rebuild, and its extent is the size of everything that present does.
+        if (frontInk) runPoints = FRONT_RUN_POINTS
+    }
+
+    /** Give the ink back with nothing to hand over, for a stroke that was abandoned. */
     private fun endFrontInk() {
         if (!frontInk) return
         frontInk = false
@@ -868,11 +887,17 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private fun commitStroke(stroke: Stroke) {
         // The commit message releases the wet buffers on the GL thread, so forget what was in them.
         forgetWetStroke()
+        val front = frontInk
+        frontInk = false
+        if (front) pad.freeze()
         if (wandEnabled && stroke.tool.isStroke) {
             holdEphemeral(stroke)
-            return
+        } else {
+            commitItem(stroke)
         }
-        commitItem(stroke)
+        // The pad holds the only copy of this stroke until the canvas has drawn the committed
+        // item, so it keeps its pixels until that frame is down and wipes them after.
+        if (front) view.publishThen { pad.release() }
     }
 
     // --- disappearing ink (magic wand) ---

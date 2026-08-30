@@ -74,6 +74,15 @@ class GlRenderer : GLSurfaceView.Renderer {
     @Volatile
     var scene: GlScene? = null
 
+    /**
+     * Run once at the end of the next frame, on the GL thread.
+     *
+     * This is how the front buffer hands a finished stroke back without a blink: the pad keeps its
+     * pixels until the canvas has drawn the committed item, and only then wipes them.
+     */
+    @Volatile
+    var afterFrame: (() -> Unit)? = null
+
     /** Bumped on every new EGL context. Everything GPU-resident is stamped with it. */
     @Volatile
     var contextGen: Int = 0
@@ -167,6 +176,8 @@ class GlRenderer : GLSurfaceView.Renderer {
     override fun onDrawFrame(unused: GL10?) {
         val f = frame
         if (f.widthPx <= 0 || f.heightPx <= 0) return
+        val after = afterFrame
+        afterFrame = null
         val started = System.nanoTime()
         val paper = f.paper
         GLES30.glClearColor(paper.r / 255f, paper.g / 255f, paper.b / 255f, 1f)
@@ -184,6 +195,9 @@ class GlRenderer : GLSurfaceView.Renderer {
             cursor?.draw(f.cursorX, f.cursorY, f.cursorRadius, cursorColor(f.paper), f.widthPx, f.heightPx)
         }
         sampleFrame(started, f)
+        // After the draw and before the swap, which is the earliest point at which this frame's
+        // pixels are certain to be the next thing the compositor latches for this layer.
+        after?.invoke()
     }
 
     /**

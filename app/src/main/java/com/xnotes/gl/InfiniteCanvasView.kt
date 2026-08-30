@@ -228,8 +228,18 @@ class InfiniteCanvasView @JvmOverloads constructor(
         publish()
     }
 
+    /** Publish, and run [action] on the GL thread once that frame has been drawn. */
+    fun publishThen(action: () -> Unit) {
+        glRenderer.afterFrame = action
+        publish()
+    }
+
     @Suppress("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        // Take the pen's samples as the driver produces them rather than batched to the frame the
+        // view tree is about to draw. The front buffer does not draw on that frame, so a batch is
+        // pure delay: the newest sample in it is already a refresh old by the time it arrives.
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) requestUnbufferedDispatch(event)
         if (trackFourFingerTap(event)) return true
         return input?.invoke(event) ?: super.onTouchEvent(event)
     }

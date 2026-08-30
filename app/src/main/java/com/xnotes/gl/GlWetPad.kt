@@ -106,7 +106,7 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         if (!ready) return false
         if (!ink.begin(scrollX, scrollY, zoom, width, height)) return false
         this.samples = samples
-        post { enterSingleBuffer() }
+        post { setAutoRefresh(true) }
         return true
     }
 
@@ -122,13 +122,24 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         offer()
     }
 
-    /** Give the stroke back to the canvas and the surface back to the compositor. */
-    fun endStroke() {
+    /**
+     * Stop drawing but keep the pixels, because they are the only copy of the stroke until the
+     * canvas has drawn the committed item.
+     */
+    fun freeze() {
         ink.end()
-        post {
-            clearSurface()
-            leaveSingleBuffer()
-        }
+    }
+
+    /** Wipe the pad and let the compositor rest. Call once the canvas is holding the same ink. */
+    fun release() = post {
+        clearSurface()
+        setAutoRefresh(false)
+    }
+
+    /** Both at once, for a stroke that was abandoned rather than committed. */
+    fun endStroke() {
+        freeze()
+        release()
     }
 
     private fun offer() {
@@ -160,8 +171,13 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         if (!EGL14.eglMakeCurrent(display, eglSurface, eglSurface, eglContext)) return fail("eglMakeCurrent")
         contextGen++
         ink.onContextCreated(contextGen)
-        ready = true
         Log.i(TAG, "wet pad surface up: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
+        // Once, and for the life of the surface. Going back to the back buffer and forward again
+        // leaves the compositor showing a buffer this is no longer writing to, so the mode stays
+        // and only the refresh is switched.
+        enterSingleBuffer()
+        setAutoRefresh(false)
+        ready = single
     }
 
     /**
@@ -244,32 +260,30 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         }
         // Before the transition swap, not after: set afterwards the compositor never looks at the
         // layer again and every write lands in a buffer nobody reads.
-        val auto = EGL14.eglSurfaceAttrib(display, eglSurface, EGL_FRONT_BUFFER_AUTO_REFRESH, 1)
-        val autoErr = EGL14.eglGetError()
+        EGL14.eglSurfaceAttrib(display, eglSurface, EGL_FRONT_BUFFER_AUTO_REFRESH, 1)
         GLES30.glClearColor(0f, 0f, 0f, 0f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         EGL14.eglSwapBuffers(display, eglSurface)
         val mode = IntArray(1)
         EGL14.eglQuerySurface(display, eglSurface, EGL_RENDER_BUFFER, mode, 0)
         single = mode[0] == EGL_SINGLE_BUFFER
-        frontBuffered = single
         Log.i(
             TAG,
-            "wet pad front buffer: asked single, got ${if (single) "SINGLE" else "BACK (0x%x)".format(mode[0])}" +
-                ", autoRefresh=$auto err=0x%x".format(autoErr),
+            "wet pad front buffer: asked single, got " +
+                if (single) "SINGLE" else "BACK (0x%x)".format(mode[0]),
         )
     }
 
-    private fun leaveSingleBuffer() {
+    /**
+     * Whether the compositor keeps reading the layer while nothing is posted.
+     *
+     * On is what makes a front buffer visible at all; off is what lets the display pipeline idle
+     * between strokes, since a shared buffer nobody refreshes is a layer nobody composites.
+     */
+    private fun setAutoRefresh(on: Boolean) {
         if (eglSurface == EGL14.EGL_NO_SURFACE || !single) return
-        GLES30.glClearColor(0f, 0f, 0f, 0f)
-        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-        GLES30.glFlush()
-        EGL14.eglSurfaceAttrib(display, eglSurface, EGL_FRONT_BUFFER_AUTO_REFRESH, 0)
-        EGL14.eglSurfaceAttrib(display, eglSurface, EGL_RENDER_BUFFER, EGL_BACK_BUFFER)
-        EGL14.eglSwapBuffers(display, eglSurface)
-        single = false
-        frontBuffered = false
+        EGL14.eglSurfaceAttrib(display, eglSurface, EGL_FRONT_BUFFER_AUTO_REFRESH, if (on) 1 else 0)
+        frontBuffered = on
     }
 
     private fun destroyEgl() {
