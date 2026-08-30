@@ -70,6 +70,18 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     val view = InfiniteCanvasView(appContext)
 
+    /** The front buffer wet ink goes into, above [view] and transparent whenever no pen is down. */
+    val pad = com.xnotes.gl.GlWetPad(appContext)
+
+    /**
+     * The two surfaces, in order. They are siblings rather than one view because the canvas needs a
+     * multisampled config and the front buffer cannot have one.
+     */
+    val surfaces = android.widget.FrameLayout(appContext).apply {
+        addView(view, android.widget.FrameLayout.LayoutParams(-1, -1))
+        addView(pad, android.widget.FrameLayout.LayoutParams(-1, -1))
+    }
+
     val viewport: CanvasViewport get() = view.viewport
 
     val interaction = InfiniteInteraction(
@@ -687,6 +699,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             solidifyFading()
         }
         if (stroke == null) {
+            pad.end()
             forgetWetStroke()
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
             return
@@ -704,6 +717,14 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             forgetWetStroke()
             wetOwner = stroke
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
+            pad.begin()
+        }
+        stroke.wetRibbon?.let { g ->
+            val n = g.pointCount
+            if (n > 0) {
+                val p = viewport.contentToViewport(com.xnotes.core.geometry.Pt(g.cx(n - 1), g.cy(n - 1)))
+                pad.paint(p.x.toInt() - 12, p.y.toInt() - 12, p.x.toInt() + 12, p.y.toInt() + 12)
+            }
         }
         val bounds = stroke.paintBounds()
         val settled = ribbon.settledCount

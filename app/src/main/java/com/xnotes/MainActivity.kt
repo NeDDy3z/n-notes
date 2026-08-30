@@ -1035,9 +1035,9 @@ private fun EditorPane(
             )
             Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                 AndroidView(
-                    factory = { detached(canvas.view) },
+                    factory = { detached(canvas.surfaces) },
                     modifier = Modifier.fillMaxSize(),
-                    update = { it.publish() },
+                    update = { canvas.view.publish() },
                 )
                 com.xnotes.ui.SelectionMenu(canvas)
                 com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
