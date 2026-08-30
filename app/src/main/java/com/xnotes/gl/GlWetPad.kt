@@ -12,6 +12,8 @@ import android.os.HandlerThread
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import com.xnotes.core.infinite.MeshPart
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The surface wet ink is drawn into while the pen is down, in the buffer the panel is scanning out.
@@ -32,8 +34,22 @@ import android.view.SurfaceView
  */
 class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
 
+    private val ink = GlWetPadInk()
+
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
+
+    /** Set when something has arrived that has not been drawn, so offers collapse into one draw. */
+    private val dirty = AtomicBoolean(false)
+
+    /** Samples the canvas got for its own surface; live ink is antialiased to the same standard. */
+    @Volatile
+    private var samples = 0
+
+    /** Whether the surface and its context exist, so a stroke knows there is anywhere to draw. */
+    @Volatile
+    var ready = false
+        private set
 
     // --- render thread only ---
 
@@ -42,8 +58,10 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     private var single = false
-    private var width = 0
-    private var height = 0
+    private var surfaceW = 0
+    private var surfaceH = 0
+    private var contextGen = 0
+    private var traced = 0
 
     /** Whether the surface is live and switched to the front buffer, for the debug readout. */
     @Volatile
@@ -78,19 +96,44 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         t.join(500)
     }
 
-    /** Take the front buffer for a stroke. Returns nothing: the switch is reported on [frontBuffered]. */
-    fun begin() = post { enterSingleBuffer() }
-
-    /** Give it back, so the surface goes back to posting buffers like any other. */
-    fun end() = post { leaveSingleBuffer() }
-
     /**
-     * Fill a rectangle of the surface, in view pixels counting down from the top left.
+     * Take the front buffer for a stroke, painted through the view as it stands now.
      *
-     * A scissored clear is the smallest write there is, which is what it is here for: it proves
-     * the mode end to end before there is any ink to draw through it.
+     * The switch is posted rather than awaited. The handler is in order, so it has happened before
+     * the first draw runs, and nothing here has to block the hand.
      */
-    fun paint(l: Int, t: Int, r: Int, b: Int) = post { fill(l, t, r, b) }
+    fun beginStroke(scrollX: Double, scrollY: Double, zoom: Double, samples: Int): Boolean {
+        if (!ready) return false
+        if (!ink.begin(scrollX, scrollY, zoom, width, height)) return false
+        this.samples = samples
+        post { enterSingleBuffer() }
+        return true
+    }
+
+    /** Ribbon that has stopped moving. */
+    fun appendRun(parts: List<MeshPart>) {
+        ink.appendRun(parts)
+        offer()
+    }
+
+    /** The points still under the nib, replacing whatever was there. */
+    fun setTail(parts: List<MeshPart>) {
+        ink.setTail(parts)
+        offer()
+    }
+
+    /** Give the stroke back to the canvas and the surface back to the compositor. */
+    fun endStroke() {
+        ink.end()
+        post {
+            clearSurface()
+            leaveSingleBuffer()
+        }
+    }
+
+    private fun offer() {
+        if (dirty.compareAndSet(false, true)) post { render() }
+    }
 
     private fun post(work: () -> Unit) {
         handler?.post(work)
@@ -115,6 +158,9 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         )
         if (eglSurface == EGL14.EGL_NO_SURFACE) return fail("eglCreateWindowSurface ${EGL14.eglGetError()}")
         if (!EGL14.eglMakeCurrent(display, eglSurface, eglSurface, eglContext)) return fail("eglMakeCurrent")
+        contextGen++
+        ink.onContextCreated(contextGen)
+        ready = true
         Log.i(TAG, "wet pad surface up: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
     }
 
@@ -146,8 +192,41 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     private fun resize(w: Int, h: Int) {
-        width = w
-        height = h
+        surfaceW = w
+        surfaceH = h
+    }
+
+    /**
+     * Draw whatever the stroke is now.
+     *
+     * Not what it was when an offer was made: the flag is taken first, so samples that arrive
+     * while this runs raise it again and are drawn by the next beat rather than queued behind
+     * this one. A backlog has to be a backlog of something, and nothing here carries a payload.
+     */
+    private fun render() {
+        dirty.set(false)
+        if (!ready) return
+        if (!ink.draw(surfaceW, surfaceH, samples)) {
+            @Suppress("UNUSED_EXPRESSION")
+            if (traced < 6) {
+                traced++
+                Log.i(TAG, "wet pad drew nothing: surface ${surfaceW}x$surfaceH single=$single ${ink.why}")
+            }
+            return
+        }
+        if (traced < 6) {
+            traced++
+            Log.i(TAG, "wet pad drew: surface ${surfaceW}x$surfaceH single=$single d${ink.lastDamage}")
+        }
+        // The whole publish step. Nothing is queued and nobody is waited on: the compositor is
+        // already holding this buffer and auto refresh has it looking at it every scanout.
+        GLES30.glFlush()
+    }
+
+    private fun clearSurface() {
+        if (!ready) return
+        ink.clearSurface()
+        GLES30.glFlush()
     }
 
     /**
@@ -163,7 +242,10 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         if (!EGL14.eglSurfaceAttrib(display, eglSurface, EGL_RENDER_BUFFER, EGL_SINGLE_BUFFER)) {
             return fail("eglSurfaceAttrib single buffer: ${EGL14.eglGetError()}")
         }
-        EGL14.eglSurfaceAttrib(display, eglSurface, EGL_FRONT_BUFFER_AUTO_REFRESH, 1)
+        // Before the transition swap, not after: set afterwards the compositor never looks at the
+        // layer again and every write lands in a buffer nobody reads.
+        val auto = EGL14.eglSurfaceAttrib(display, eglSurface, EGL_FRONT_BUFFER_AUTO_REFRESH, 1)
+        val autoErr = EGL14.eglGetError()
         GLES30.glClearColor(0f, 0f, 0f, 0f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         EGL14.eglSwapBuffers(display, eglSurface)
@@ -171,7 +253,11 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         EGL14.eglQuerySurface(display, eglSurface, EGL_RENDER_BUFFER, mode, 0)
         single = mode[0] == EGL_SINGLE_BUFFER
         frontBuffered = single
-        Log.i(TAG, "wet pad front buffer: asked single, got ${if (single) "SINGLE" else "BACK (0x%x)".format(mode[0])}")
+        Log.i(
+            TAG,
+            "wet pad front buffer: asked single, got ${if (single) "SINGLE" else "BACK (0x%x)".format(mode[0])}" +
+                ", autoRefresh=$auto err=0x%x".format(autoErr),
+        )
     }
 
     private fun leaveSingleBuffer() {
@@ -186,23 +272,6 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         frontBuffered = false
     }
 
-    private fun fill(l: Int, t: Int, r: Int, b: Int) {
-        if (!single || width <= 0 || height <= 0) return
-        val x = l.coerceIn(0, width)
-        val w = (r.coerceIn(0, width) - x).coerceAtLeast(0)
-        // GL counts up from the bottom and the caller counts down from the top.
-        val y = (height - b).coerceIn(0, height)
-        val h = (height - t.coerceIn(0, height) - y).coerceAtLeast(0)
-        if (w == 0 || h == 0) return
-        GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
-        GLES30.glScissor(x, y, w, h)
-        GLES30.glClearColor(1f, 0f, 0f, 1f)
-        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-        GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
-        // The whole publish step. Nothing is queued and nobody is waited on.
-        GLES30.glFlush()
-    }
-
     private fun destroyEgl() {
         if (display == EGL14.EGL_NO_DISPLAY) return
         EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
@@ -213,8 +282,12 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         eglContext = EGL14.EGL_NO_CONTEXT
         display = EGL14.EGL_NO_DISPLAY
         single = false
+        ready = false
         frontBuffered = false
     }
+
+    /** What the front buffer is doing, for the debug readout. */
+    val hud: String get() = "${if (frontBuffered) "front" else "back"} d${ink.lastDamage}"
 
     private fun fail(what: String) {
         Log.e(TAG, "wet pad unavailable: $what")

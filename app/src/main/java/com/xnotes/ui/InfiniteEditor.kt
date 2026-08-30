@@ -678,6 +678,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private var wetMeshed = 0
     private var wetArc = 0.0
 
+    /** Whether this stroke is being painted into the front buffer rather than into the scene. */
+    private var frontInk = false
+
+    /** Points a run holds, which differs between the two paths. */
+    private var runPoints = WET_RUN_POINTS
+
     /**
      * Hand the stroke under the pen to the scene, in two pieces where the pen allows it.
      *
@@ -699,13 +705,14 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             solidifyFading()
         }
         if (stroke == null) {
-            pad.end()
+            endFrontInk()
             forgetWetStroke()
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
             return
         }
         val ribbon = stroke.wetRibbon
         if (ribbon == null || !stroke.wetCacheable) {
+            endFrontInk()
             forgetWetStroke()
             val meshed = ItemMesher.mesh(stroke) ?: return
             // Every run, not just the first: a neon stroke is a halo, a lit body and a white core,
@@ -714,24 +721,21 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             return
         }
         if (wetOwner !== stroke) {
+            endFrontInk()
             forgetWetStroke()
             wetOwner = stroke
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
-            pad.begin()
-        }
-        stroke.wetRibbon?.let { g ->
-            val n = g.pointCount
-            if (n > 0) {
-                val p = viewport.contentToViewport(com.xnotes.core.geometry.Pt(g.cx(n - 1), g.cy(n - 1)))
-                pad.paint(p.x.toInt() - 12, p.y.toInt() - 12, p.x.toInt() + 12, p.y.toInt() + 12)
-            }
+            frontInk = pad.beginStroke(viewport.scrollX, viewport.scrollY, viewport.zoom, view.msaaSamples)
+            // A shorter run on the front buffer, because there the tail is what a present has to
+            // clear and rebuild, and its extent is the size of everything that present does.
+            runPoints = if (frontInk) FRONT_RUN_POINTS else WET_RUN_POINTS
         }
         val bounds = stroke.paintBounds()
         val settled = ribbon.settledCount
-        if (settled - wetMeshed >= WET_RUN_POINTS) {
+        if (settled - wetMeshed >= runPoints) {
             val from = (wetMeshed - 1).coerceAtLeast(0)
             ItemMesher.meshRun(stroke, ribbon, from, settled - from, wetArc)?.let {
-                scene.appendWetRun(listOf(it), bounds)
+                if (frontInk) pad.appendRun(listOf(it)) else scene.appendWetRun(listOf(it), bounds)
             }
             for (k in from + 1 until settled) {
                 wetArc += kotlin.math.hypot(ribbon.cx(k) - ribbon.cx(k - 1), ribbon.cy(k) - ribbon.cy(k - 1))
@@ -740,7 +744,15 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         }
         val tailFrom = (wetMeshed - 1).coerceAtLeast(0)
         val tail = ItemMesher.meshRun(stroke, ribbon, tailFrom, ribbon.pointCount - tailFrom, wetArc)
-        scene.setWetTail(if (tail == null) emptyList() else listOf(tail), bounds)
+        val parts = if (tail == null) emptyList() else listOf(tail)
+        if (frontInk) pad.setTail(parts) else scene.setWetTail(parts, bounds)
+    }
+
+    /** Give the ink back to the canvas. Safe to call when the front buffer never had it. */
+    private fun endFrontInk() {
+        if (!frontInk) return
+        frontInk = false
+        pad.endStroke()
     }
 
     private fun forgetWetStroke() {
@@ -1219,6 +1231,14 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
          * Uploading each point the moment it settled would be one buffer slice per sample.
          */
         const val WET_RUN_POINTS = 96
+
+        /**
+         * The same, for a stroke on the front buffer. Far shorter, because there the tail is what
+         * a present has to clear and rebuild, and it sets the size of everything that present does.
+         * At panel rate the nib moves about fourteen pixels between presents, so anything much
+         * above this repaints ink that has not moved.
+         */
+        const val FRONT_RUN_POINTS = 8
 
         /** The box that stands in for a vector image while it meshes, or where it cannot be drawn. */
         val VECTOR_PLACEHOLDER = Rgba(128, 128, 128, 36)
