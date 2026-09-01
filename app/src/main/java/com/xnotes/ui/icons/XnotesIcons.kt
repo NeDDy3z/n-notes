@@ -55,10 +55,12 @@ object XnotesIcons {
     )
     val pan = icon("M5 9 2 12l3 3", "M9 5l3-3 3 3", "M15 19l-3 3-3-3", "M19 9l3 3-3 3", "M2 12h20", "M12 2v20")
     val select = icon("M3 3l7.07 16.97 2.51-7.39 7.39-2.51Z", "M13 13l6 6")
+    // Free selection, drawn as the marquee it leaves behind: a freehand loop in marching ants.
     val lasso = icon(
-        "M7 22a5 5 0 0 1-2-4",
-        "M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1",
-        circle(5.0, 16.0, 2.0),
+        "M21.4 8.3Q22.9 10.4 21.7 12.8", "M19.7 14.9Q17.6 16.1 15.5 17.3",
+        "M13 18.8Q10.8 19.9 8.4 19.6", "M5.7 18.5Q3.7 16.9 3.6 14.4",
+        "M3.6 11.4Q3.7 9 4.9 6.9", "M7.1 4.9Q9.3 3.9 11.7 4.3",
+        "M14.6 4.8Q17 5.4 19.1 6.4",
     )
     val shape = icon(
         "M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z",
@@ -71,12 +73,12 @@ object XnotesIcons {
         "M7 21h1a4 4 0 0 0 4-4v-1",
         "M7 3h1a4 4 0 0 1 4 4v1",
     )
-    // The text box tool: the old serif "T" glyph shrunk into a box.
+    // The text box tool: a serif "T" held by corner handles, the box as it looks under edit.
+    // A full square would be the fourth identical frame in the bar (page, sidebar, split).
     val textBox = icon(
-        rect(3.0, 3.0, 18.0, 18.0),
-        "M8 9.5V7.5h8v2",
-        "M12 7.5v9",
-        "M10 16.5h4",
+        "M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8", "M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8",
+        "M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16", "M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16",
+        "M8 9.5v-1.5h8v1.5", "M12 8v8", "M9.5 16h5",
     )
 
     // The flow format bar's glyphs (Lucide: bold/italic/underline/strikethrough, lists,
@@ -137,9 +139,12 @@ object XnotesIcons {
     val thumbnails = icon(rect(3.0, 3.0, 7.0, 7.0), rect(14.0, 3.0, 7.0, 7.0), rect(3.0, 14.0, 7.0, 7.0), rect(14.0, 14.0, 7.0, 7.0))
     val lock = icon(rect(3.0, 11.0, 18.0, 11.0), "M7 11V7a5 5 0 0 1 10 0v4")
     val unlock = icon(rect(3.0, 11.0, 18.0, 11.0), "M7 11V7a5 5 0 0 1 9.9-1")
+    // The straightedge. The body is wider and the graduations hang from one edge so they read at
+    // the 22dp the toolbar draws; they are absolute movetos because icon() concatenates the
+    // strings into one path, where a relative "m" would start from the previous subpath.
     val ruler = icon(
-        "M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z",
-        "m14.5 12.5 2-2", "m11.5 9.5 2-2", "m8.5 6.5 2-2", "m17.5 15.5 2-2",
+        "M20.6 14.2a2.6 2.6 0 0 1 0 3.7l-2.7 2.7a2.6 2.6 0 0 1-3.7 0L3.4 9.8a2.6 2.6 0 0 1 0-3.7l2.7-2.7a2.6 2.6 0 0 1 3.7 0Z",
+        "M12 5.6 9.6 8", "M15.2 8.8 12.8 11.2", "M18.4 12 16 14.4",
     )
     val magicWand = icon(
         "m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z",
