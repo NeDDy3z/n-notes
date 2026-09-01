@@ -107,16 +107,36 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
      * turns cannot pinch. This is the shape outline's equivalent of the ink ribbon, and it draws the
      * same silhouette a round-capped, round-joined pen would.
      */
-    fun polylineRibbon(points: List<Pt>, halfWidth: Double, closed: Boolean, tolerance: Double) {
-        if (halfWidth <= 0.0 || points.size < 2) {
-            if (points.size == 1 && halfWidth > 0.0) circle(points[0].x, points[0].y, halfWidth, tolerance)
+    fun polylineRibbon(points: List<Pt>, halfWidth: Double, closed: Boolean, tolerance: Double) =
+        polylineRibbon(points, 0, points.size, halfWidth, closed, tolerance)
+
+    /**
+     * [count] points of [points] from [from], as their own ribbon.
+     *
+     * The range form is what lets a polyline that only grows at its end be built in pieces: the
+     * part that has stopped moving is tessellated once and the rest rebuilt, instead of the whole
+     * line being rebuilt every time a point lands on it.
+     */
+    fun polylineRibbon(
+        points: List<Pt>,
+        from: Int,
+        count: Int,
+        halfWidth: Double,
+        closed: Boolean,
+        tolerance: Double,
+    ) {
+        if (from < 0 || count <= 0 || from + count > points.size) return
+        if (halfWidth <= 0.0 || count < 2) {
+            if (count == 1 && halfWidth > 0.0) {
+                circle(points[from].x, points[from].y, halfWidth, tolerance)
+            }
             return
         }
-        val n = points.size
+        val n = count
         val segments = if (closed) n else n - 1
         for (i in 0 until segments) {
-            val a = points[i]
-            val b = points[(i + 1) % n]
+            val a = points[from + i]
+            val b = points[from + (i + 1) % n]
             val dx = b.x - a.x
             val dy = b.y - a.y
             val len = hypot(dx, dy)
@@ -131,8 +151,7 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
             triangle(v0, v3, v2)
         }
         // A disc at every vertex rounds the two ends and fills the notch at each corner.
-        val discs = if (closed) n else n
-        for (i in 0 until discs) circle(points[i].x, points[i].y, halfWidth, tolerance)
+        for (i in 0 until n) circle(points[from + i].x, points[from + i].y, halfWidth, tolerance)
     }
 
     /**

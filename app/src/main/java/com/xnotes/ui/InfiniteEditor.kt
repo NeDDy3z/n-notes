@@ -799,16 +799,15 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         refreshSelectionMenu()
         val accent = palette?.accent ?: InkPalette.DEFAULT
         val zoom = viewport.zoom
+        // A lasso drag owns the buffer on its own: it clears the selection when it starts and no
+        // marquee can be out at the same time, so nothing else needs a place in the same publish.
+        if (publishLasso(zoom, accent)) return
+        lassoSettled = 0
         val parts = ArrayList<MeshPart>(3)
         var bounds: Rect? = null
         interaction.bandRect?.let {
             parts += OverlayTessellator.band(it, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE)
             bounds = it.outset(4.0 / zoom)
-        }
-        if (interaction.lassoPoints.size >= 2) {
-            val points = interaction.lassoPoints.toList()
-            parts += OverlayTessellator.lasso(points, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE)
-            bounds = Rect.bounding(points).outset(4.0 / zoom)
         }
         selection.box?.let { box ->
             parts += OverlayTessellator.selection(box, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE)
@@ -821,6 +820,63 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             scene.setWetParts(parts, bounds ?: Rect(0.0, 0.0, 0.0, 0.0))
         }
         view.publish()
+    }
+
+    /** Lasso vertices already in the scene's settled runs; 0 when no lasso owns the buffer. */
+    private var lassoSettled = 0
+
+    /** The zoom those runs were tessellated at, since the marquee's width is an on-screen one. */
+    private var lassoZoom = 0.0
+
+    /** Running bounds of the lasso, and how many of its points are in them. */
+    private var lassoBounds = Rect(0.0, 0.0, 0.0, 0.0)
+    private var lassoBounded = 0
+
+    /**
+     * Publish the lasso as runs and a moving tail, and say whether it took the buffer.
+     *
+     * A lasso is a polyline that only grows at its end, and the marquee gives every vertex a disc
+     * of its own, so rebuilding the loop on every touch sample costs the whole loop again: a long
+     * one reached tens of thousands of triangles re-tessellated and re-uploaded at the pen's full
+     * rate, and the drag got heavier the longer it ran. The settled stretch is uploaded once and
+     * never rewritten; only the last few points and the chord closing back to the start are
+     * rebuilt, so a sample costs the same at the end of a lasso as at its start.
+     */
+    private fun publishLasso(zoom: Double, accent: Rgba): Boolean {
+        val points = interaction.lassoPoints
+        if (points.size < 2 || zoom <= 0.0) return false
+        // The marquee's width is an on-screen one, so a zoom would restate every run already up.
+        // Nothing can zoom under a lasso, but starting over is the honest way to say so. A list
+        // shorter than what is already published is a lasso that restarted, and starts over too.
+        if (lassoSettled == 0 || points.size < lassoSettled || zoom != lassoZoom) {
+            scene.setWetParts(emptyList(), EMPTY_RECT)
+            lassoZoom = zoom
+            lassoSettled = 1
+            lassoBounded = 0
+            lassoBounds = Rect(points[0].x, points[0].y, 0.0, 0.0)
+        }
+        while (lassoBounded < points.size) {
+            val p = points[lassoBounded++]
+            lassoBounds = lassoBounds.union(Rect(p.x, p.y, 0.0, 0.0))
+        }
+        val bounds = lassoBounds.outset(4.0 / zoom)
+        if (points.size - lassoSettled >= LASSO_RUN_POINTS) {
+            // From one point back, so the segment bridging this run to the last one is drawn.
+            val from = lassoSettled - 1
+            val run = OverlayTessellator.lassoRun(
+                points, from, points.size - from, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE,
+            )
+            if (run.isNotEmpty()) scene.appendWetRun(run, bounds)
+            lassoSettled = points.size
+        }
+        scene.setWetTail(
+            OverlayTessellator.lassoTail(
+                points, lassoSettled - 1, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE,
+            ),
+            bounds,
+        )
+        view.publish()
+        return true
     }
 
     /** A finished selection drag: record it, if it changed anything. */
@@ -1326,6 +1382,14 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
          * above this repaints ink that has not moved.
          */
         const val FRONT_RUN_POINTS = 8
+
+        /**
+         * Lasso vertices a settled run holds. Small, because the tail is rebuilt on every sample
+         * and carries the chord back to the start on top of whatever it holds.
+         */
+        const val LASSO_RUN_POINTS = 16
+
+        private val EMPTY_RECT = Rect(0.0, 0.0, 0.0, 0.0)
 
         /** The box that stands in for a vector image while it meshes, or where it cannot be drawn. */
         val VECTOR_PLACEHOLDER = Rgba(128, 128, 128, 36)
