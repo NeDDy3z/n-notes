@@ -3555,19 +3555,53 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun undo() {
         flowText.flushBurst() // the open typing burst is the first thing Ctrl+Z takes back
+        val command = history.nextUndo
         val pagesBefore = state.document.pages.size
+        val was = touchedRegions(command)
         history.undo()
-        afterHistory(structural = state.document.pages.size != pagesBefore)
+        afterHistory(state.document.pages.size != pagesBefore, spanning(was, touchedRegions(command)))
     }
 
     fun redo() {
         flowText.flushBurst()
+        val command = history.nextRedo
         val pagesBefore = state.document.pages.size
+        val was = touchedRegions(command)
         history.redo()
-        afterHistory(structural = state.document.pages.size != pagesBefore)
+        afterHistory(state.document.pages.size != pagesBefore, spanning(was, touchedRegions(command)))
     }
 
-    private fun afterHistory(structural: Boolean) {
+    /**
+     * Where [command]'s items sit right now, page-local. Read on both sides of an undo/redo so an
+     * item that moved, resized or reflowed is repaired where it was *and* where it landed; null
+     * (the command can't say) asks for the old full repaint of every cached page.
+     */
+    private fun touchedRegions(command: Command?): List<Pair<Page, Rect>>? {
+        if (command == null) return emptyList()
+        return command.touched(itemPageLocator())?.map { (page, item) -> page to item.paintBounds() }
+    }
+
+    private fun spanning(
+        before: List<Pair<Page, Rect>>?,
+        after: List<Pair<Page, Rect>>?,
+    ): List<Pair<Page, Rect>>? = if (before == null || after == null) null else before + after
+
+    /**
+     * Finds the page an item sits on, for commands that hold items but not pages. The index is built
+     * on first use and only then: most commands carry their own page and never ask.
+     */
+    private fun itemPageLocator(): (CanvasItem) -> Page? {
+        var index: HashMap<CanvasItem, Page>? = null
+        return { item ->
+            val built = index ?: HashMap<CanvasItem, Page>().also { map ->
+                for (page in state.document.pages) for (it in page.items) map[it] = page
+                index = map
+            }
+            built[item]
+        }
+    }
+
+    private fun afterHistory(structural: Boolean, regions: List<Pair<Page, Rect>>?) {
         controller.clearSelection()
         if (structural) state.relayout() // page add/remove shifts layout; page-keyed caches survive
         // The in-place repaint below reads the published flow snapshot: republish it first
@@ -3575,8 +3609,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         republishFlowIfStale()
         // Repair the ink caches in place rather than dropping them — dropping blanked every visible
         // page to bare paper for a frame (the undo/redo flicker). Only AddPage/DeletePage change the
-        // page set, so relayout (which re-renders the sharp viewport) is gated on that.
-        state.repairAllInkInPlace()
+        // page set, so relayout (which re-renders the sharp viewport) is gated on that. A command
+        // that named its regions repairs only those; one that couldn't still repaints every page.
+        if (regions == null) state.repairAllInkInPlace() else state.repairInkRegions(regions)
         if (flowText.active) flowInput.reconcile() // undone/redone text must reach the IME mirror
         state.document.dirty = true
         state.clampScroll()
