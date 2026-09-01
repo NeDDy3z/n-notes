@@ -3559,7 +3559,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val pagesBefore = state.document.pages.size
         val was = touchedRegions(command)
         history.undo()
-        afterHistory(state.document.pages.size != pagesBefore, spanning(was, touchedRegions(command)))
+        afterHistory(
+            structural = state.document.pages.size != pagesBefore,
+            regions = spanning(was, touchedRegions(command)),
+        )
     }
 
     fun redo() {
@@ -3568,7 +3571,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val pagesBefore = state.document.pages.size
         val was = touchedRegions(command)
         history.redo()
-        afterHistory(state.document.pages.size != pagesBefore, spanning(was, touchedRegions(command)))
+        afterHistory(
+            structural = state.document.pages.size != pagesBefore,
+            regions = spanning(was, touchedRegions(command)),
+        )
     }
 
     /**
