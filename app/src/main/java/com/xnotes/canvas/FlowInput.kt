@@ -22,8 +22,9 @@ import com.xnotes.core.text.TextFlow
  * A text watcher maps every mirror change back onto the model as a
  * [FlowTextController.applyReplace]; the model owns styles and paragraph
  * properties and never touches the mirror for them, so offsets stay stable.
- * The ONLY path that restarts input is a model-originated text change (undo,
- * paste, empty-line fill) detected by [reconcile]'s text comparison.
+ * Input restarts on exactly two things: a model-originated text change (undo,
+ * paste, empty-line fill) detected by [reconcile]'s text comparison, and a caret
+ * move out of a live composing run ([endComposing]).
  */
 class FlowInput(
     private val view: CanvasView,
@@ -94,7 +95,7 @@ class FlowInput(
     }
 
     init {
-        session.imeSync = { onCaretMovedExternally() }
+        session.imeSync = { onCaretMovedExternally(finishComposing = true) }
         session.onEdited = { reconcile() }
         session.requestIme = { showIme(restart = false) }
     }
@@ -135,7 +136,7 @@ class FlowInput(
     fun reconcile() {
         if (!session.active) return
         if (applyingFromMirror || mirror.toString() == flow().plainText()) {
-            onCaretMovedExternally()
+            onCaretMovedExternally(finishComposing = false)
             return
         }
         rebuildMirror()
@@ -143,12 +144,30 @@ class FlowInput(
     }
 
     /** Caret/selection moved without a text change (tap, arrows, drag selection). */
-    private fun onCaretMovedExternally() {
+    private fun onCaretMovedExternally(finishComposing: Boolean) {
         val (s, e) = selectionGlobal()
         suppressWatcher = true
         Selection.setSelection(mirror, s.coerceIn(0, mirror.length), e.coerceIn(0, mirror.length))
+        if (finishComposing) endComposing()
         suppressWatcher = false
         notifySelection()
+    }
+
+    /**
+     * End the composing run the caret is walking away from. [BaseInputConnection]
+     * replaces the composing span in preference to the selection, so a word left
+     * composing at the old caret would swallow the next keystroke and drag the caret
+     * back to it; the keyboard keeps a word buffer of its own that only a restart
+     * clears. Costs a restart only on a caret move that lands mid-composition.
+     */
+    private fun endComposing() {
+        if (BaseInputConnection.getComposingSpanStart(mirror) < 0 &&
+            BaseInputConnection.getComposingSpanEnd(mirror) < 0
+        ) {
+            return
+        }
+        BaseInputConnection.removeComposingSpans(mirror)
+        imm()?.restartInput(view)
     }
 
     private fun rebuildMirror() {
@@ -233,6 +252,7 @@ class FlowInput(
         val (s, e) = selectionGlobal()
         outAttrs.initialSelStart = s
         outAttrs.initialSelEnd = e
+        batchDepth = 0
         return FlowInputConnection()
     }
 
