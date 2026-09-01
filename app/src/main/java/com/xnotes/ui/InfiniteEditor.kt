@@ -768,15 +768,18 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         frontDecided = true
         if (parts.isEmpty() || parts.any { it.pass != InkPass.OPAQUE }) return
         frontInk = pad.beginStroke(viewport.scrollX, viewport.scrollY, viewport.zoom, view.msaaSamples)
+        if (!frontInk) return
         // A shorter run on the front buffer, because there the tail is what a present has to clear
         // and rebuild, and its extent is the size of everything that present does.
-        if (frontInk) runPoints = FRONT_RUN_POINTS
+        runPoints = FRONT_RUN_POINTS
+        view.setUnbufferedStylus(true)
     }
 
     /** Give the ink back with nothing to hand over, for a stroke that was abandoned. */
     private fun endFrontInk() {
         if (!frontInk) return
         frontInk = false
+        view.setUnbufferedStylus(false)
         pad.endStroke()
     }
 
@@ -900,6 +903,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             return
         }
         pad.freeze()
+        view.setUnbufferedStylus(false)
         // The wand's ink never becomes a committed item, so there is nothing to hand it over to.
         if (wandEnabled && stroke.tool.isStroke) {
             holdEphemeral(stroke)
