@@ -1,6 +1,8 @@
 package com.xnotes.canvas
 
+import com.xnotes.core.FakeRasterSurface
 import com.xnotes.core.FakeSurfaceFactory
+import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.Rgba
@@ -18,6 +20,9 @@ import org.junit.Test
  * page to bare paper for a frame. The old undo path called [CanvasState.invalidateAllCaches], which
  * drops both layers to 0; [CanvasState.repairAllInkInPlace] must leave them standing. Asserted at the
  * cache-map level via [CanvasState.cacheSnapshot] — mirrors [SelectionCacheRepairTest].
+ *
+ * [CanvasState.repairInkRegions] holds the same contract for the regions an undo actually disturbed,
+ * and must repaint only those: repainting every page on every undo tap is what timed out input.
  */
 class UndoCacheRepairTest {
 
@@ -67,5 +72,35 @@ class UndoCacheRepairTest {
         // flush it, which is what flickered the PDF layer on every undo/redo.
         assertEquals("undo must not flush the background/PDF cache", 1, st.cacheSnapshot().bgPages)
         assertEquals(1, st.cacheSnapshot().inkPages)
+    }
+
+    @Test fun regionRepairRepaintsOnlyWhatTheRegionCovers() {
+        val st = state()
+        val page = st.document.pages[0]
+        val painter = (st.cacheFor(page).surface as FakeRasterSurface).painter
+
+        // A command that named its region (an undone stroke at 20,20) must not cost the whole page:
+        // the dot at 120,120 is nowhere near it and stays as it was rasterized.
+        painter.ribbonRuns.clear()
+        st.repairInkRegions(listOf(page to Rect(10.0, 10.0, 20.0, 20.0)))
+        assertEquals("only the strokes overlapping the repaired region repaint", 1, painter.ribbonRuns.size)
+
+        painter.ribbonRuns.clear()
+        st.repairAllInkInPlace()
+        assertEquals("the whole-page fallback still repaints everything", 2, painter.ribbonRuns.size)
+    }
+
+    @Test fun regionRepairKeepsTheCacheInPlace() {
+        val st = state()
+        val page = st.document.pages[0]
+        st.cacheFor(page)
+
+        page.items.removeAt(page.items.size - 1)
+        st.repairInkRegions(listOf(page to Rect(100.0, 100.0, 40.0, 40.0)))
+
+        assertEquals(
+            "a region repair keeps the surface too, or undo flickers again",
+            1, st.cacheSnapshot().inkPages,
+        )
     }
 }

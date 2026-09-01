@@ -3,6 +3,7 @@ package com.xnotes.core.history
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Page
@@ -14,6 +15,7 @@ import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -154,5 +156,82 @@ class HistoryTest {
         h.clear()
         assertFalse(h.canUndo)
         assertFalse(h.canRedo)
+    }
+
+    // --- touched(): the regions an undo has to repaint (see CanvasState.repairInkRegions) ---
+
+    /** A locator for commands that hold items but not pages; [HistoryTest] only ever has one page. */
+    private fun onPage(page: Page): (CanvasItem) -> Page? = { page }
+
+    @Test fun addItemTouchesItsOwnPage() {
+        val page = Page(100.0, 100.0)
+        val s = strokeAt(1.0)
+        page.items.add(s)
+        val cmd = AddItem(page, s)
+
+        assertEquals(listOf(page to s), cmd.touched(onPage(page)))
+        cmd.undo() // still nameable once the item is off the page: that is where it has to be rubbed out
+        assertEquals(listOf(page to s), cmd.touched(onPage(page)))
+    }
+
+    @Test fun replacePageItemsTouchesOnlyTheDifference() {
+        val page = Page(100.0, 100.0)
+        val kept = strokeAt(1.0)
+        val gone = strokeAt(2.0)
+        val added = strokeAt(3.0)
+        val cmd = ReplacePageItems(page, listOf(kept, gone), listOf(kept, added))
+
+        val touched = cmd.touched(onPage(page))!!.map { it.second }
+        assertEquals(listOf(gone, added), touched) // the untouched majority of the page is not repainted
+    }
+
+    @Test fun moveItemsTouchesThePageItSitsOn() {
+        val page = Page(100.0, 100.0)
+        val img = ImageItem(ImageData(java.io.File("test-image"), 10, 10), Rect(0.0, 0.0, 10.0, 10.0))
+        page.items.add(img)
+        assertEquals(listOf(page to img), MoveItems(listOf(img), 5.0, 7.0).touched(onPage(page)))
+    }
+
+    @Test fun transferItemsTouchesBothPages() {
+        val from = Page(100.0, 100.0)
+        val to = Page(100.0, 100.0)
+        val img = ImageItem(ImageData(java.io.File("test-image"), 10, 10), Rect(0.0, 0.0, 10.0, 10.0))
+        val cmd = TransferItems(listOf(TransferItems.Transfer(from, to, img, 0.0, -120.0)))
+        assertEquals(listOf(from to img, to to img), cmd.touched(onPage(from)))
+    }
+
+    @Test fun pageCommandsCannotSay() {
+        // A page insert reflows the text flow across pages, so there is no small region to repair.
+        val doc = Document.blank(count = 2)
+        assertNull(AddPage(doc, Page(100.0, 100.0), 1).touched { null })
+        assertNull(DeletePage(doc, doc.pages[0], 0).touched { null })
+    }
+
+    @Test fun compositeGivesUpWhenOneStepDoes() {
+        val doc = Document.blank(count = 1)
+        val page = doc.pages[0]
+        val s = strokeAt(1.0)
+        page.items.add(s)
+        val known = AddItem(page, s)
+
+        assertEquals(listOf(page to s), CompositeCommand(listOf(known)).touched(onPage(page)))
+        assertNull(CompositeCommand(listOf(known, AddPage(doc, Page(100.0, 100.0), 1))).touched(onPage(page)))
+    }
+
+    @Test fun peeksReportTheNextCommandWithoutApplyingIt() {
+        val page = Page(100.0, 100.0)
+        val h = History()
+        val s = strokeAt(1.0)
+        page.items.add(s)
+        val cmd = AddItem(page, s)
+        h.push(cmd)
+
+        assertSame(cmd, h.nextUndo)
+        assertEquals(1, page.items.size) // peeking must not apply anything
+        assertNull(h.nextRedo)
+
+        h.undo()
+        assertNull(h.nextUndo)
+        assertSame(cmd, h.nextRedo)
     }
 }
