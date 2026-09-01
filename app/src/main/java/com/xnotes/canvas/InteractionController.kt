@@ -870,11 +870,8 @@ class InteractionController(
             e.getX(idx).toDouble(), e.getY(idx).toDouble(),
             if (drawingIsStylus) e.getPressure(idx).toDouble() else 1.0, e.eventTime, force = false,
         )
-        val front = frontInk
-        front?.wet(liveStroke, strokePageIndex)
-        // The canvas is not drawing this stroke, so a repaint would redraw the same frame; the ink
-        // is already on the glass by the time this returns.
-        if (front?.live != true) requestRender()
+        frontInk?.wet(liveStroke, strokePageIndex)
+        requestRender()
     }
 
     private fun addStrokePoint(vx: Double, vy: Double, pressure: Double, timeMs: Long, force: Boolean) {

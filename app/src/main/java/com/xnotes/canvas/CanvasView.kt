@@ -699,8 +699,9 @@ class CanvasView @JvmOverloads constructor(
             done = true
             action()
         }
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            viewTreeObserver.registerFrameCommitCallback(once)
+        // A detached view has no live observer to register with, and the timer covers it.
+        if (android.os.Build.VERSION.SDK_INT >= 29 && isAttachedToWindow) {
+            runCatching { viewTreeObserver.registerFrameCommitCallback(once) }
         }
         mainHandler.postDelayed(once, FRAME_COMMIT_TIMEOUT_MS)
         requestRender()

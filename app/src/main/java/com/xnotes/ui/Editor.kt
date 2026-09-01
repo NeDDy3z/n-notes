@@ -879,8 +879,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var presentationUrl by mutableStateOf("")
         private set
 
+    /**
+     * A repaint was asked for. The canvas skips it while the front buffer owns the stroke under the
+     * pen: it is not drawing that ink, so the frame would come out the same, and the blit is work
+     * on the thread the pen's samples have to get through. The presentation stream is told either
+     * way, since it paints the live stroke itself and is nowhere near this screen.
+     */
     private fun onRender() {
-        view.requestRender()
+        if (controller.frontInk?.live != true) view.requestRender()
         presentation.notifyChanged()
     }
 
