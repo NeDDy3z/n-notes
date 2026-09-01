@@ -34,6 +34,10 @@ object OverlayTessellator {
     /** Band and lasso outline thickness, in device pixels. */
     const val MARQUEE_PX = 1.4
 
+    /** Dash on/off runs for the lasso, in device px, matching the marquee a paged note draws. */
+    const val DASH_ON_PX = 6.0
+    const val DASH_GAP_PX = 4.0
+
     /** The selection box, its eight handles and the rotate grip and its stem. */
     fun selection(box: Obb, zoom: Double, accent: Rgba, tolerance: Double): List<MeshPart> {
         if (zoom <= 0.0) return emptyList()
@@ -75,21 +79,24 @@ object OverlayTessellator {
         return listOf(MeshPart(b.build(), accent, InkPass.OPAQUE))
     }
 
-    /** The lasso loop as drawn so far, closed back to its start so the enclosed area is obvious. */
-    fun lasso(points: List<Pt>, zoom: Double, accent: Rgba, tolerance: Double): List<MeshPart> {
-        if (zoom <= 0.0 || points.size < 2) return emptyList()
-        val b = MeshBuilder()
-        b.polylineRibbon(points, MARQUEE_PX / zoom / 2.0, closed = true, tolerance = tolerance)
-        if (b.isEmpty) return emptyList()
-        return listOf(MeshPart(b.build(), accent, InkPass.OPAQUE))
-    }
+    /**
+     * The lasso as drawn so far: a dashed, open line that stays where the pen put it.
+     *
+     * Open because the loop is the pen's, not a shape: drawing a chord back to the start would
+     * claim an edge the hand never made. What the lasso *encloses* is worked out at pen up, and is
+     * not what this shows.
+     */
+    fun lasso(points: List<Pt>, zoom: Double, accent: Rgba, tolerance: Double): List<MeshPart> =
+        lassoRun(points, 0, points.size, zoom, accent, tolerance, 0.0)
 
     /**
-     * A stretch of the lasso that has stopped moving: [count] points from [from], open.
+     * A stretch of the lasso: [count] points from [from], dashed and open, picking the pattern up
+     * [phase] content units in.
      *
      * A lasso only ever grows at its end, and every vertex carries a disc of its own, so building
-     * the loop whole on each touch sample costs the whole loop again. Uploaded once and never
-     * rewritten, exactly as a settled run of wet ink is.
+     * it whole on each touch sample costs the whole line again. A settled stretch is uploaded once
+     * and never rewritten, exactly as a settled run of wet ink is, and [phase] is the arc the runs
+     * before it spent so the dashes land where an unbroken line would have put them.
      */
     fun lassoRun(
         points: List<Pt>,
@@ -98,32 +105,30 @@ object OverlayTessellator {
         zoom: Double,
         accent: Rgba,
         tolerance: Double,
+        phase: Double,
     ): List<MeshPart> {
-        if (zoom <= 0.0 || count < 2) return emptyList()
+        if (zoom <= 0.0 || count < 2 || from < 0 || from + count > points.size) return emptyList()
         val b = MeshBuilder()
-        b.polylineRibbon(points, from, count, MARQUEE_PX / zoom / 2.0, closed = false, tolerance = tolerance)
+        val half = MARQUEE_PX / zoom / 2.0
+        val span = points.subList(from, from + count)
+        for (run in MeshBuilder.dashRuns(span, DASH_ON_PX / zoom, DASH_GAP_PX / zoom, closed = false, phase = phase)) {
+            b.polylineRibbon(run, half, closed = false, tolerance = tolerance)
+        }
         if (b.isEmpty) return emptyList()
         return listOf(MeshPart(b.build(), accent, InkPass.OPAQUE))
     }
 
-    /**
-     * The moving end of the lasso, from [from] to the last point, plus the chord closing back to
-     * the start. The chord moves with the pen, so it belongs here rather than in a settled run.
-     */
+    /** The moving end of the lasso, from [from] to the last point it has. */
     fun lassoTail(
         points: List<Pt>,
         from: Int,
         zoom: Double,
         accent: Rgba,
         tolerance: Double,
+        phase: Double,
     ): List<MeshPart> {
-        if (zoom <= 0.0 || points.size < 2 || from < 0 || from >= points.size) return emptyList()
-        val half = MARQUEE_PX / zoom / 2.0
-        val b = MeshBuilder()
-        b.polylineRibbon(points, from, points.size - from, half, closed = false, tolerance = tolerance)
-        b.polylineRibbon(listOf(points[points.size - 1], points[0]), half, closed = false, tolerance = tolerance)
-        if (b.isEmpty) return emptyList()
-        return listOf(MeshPart(b.build(), accent, InkPass.OPAQUE))
+        if (from < 0 || from >= points.size) return emptyList()
+        return lassoRun(points, from, points.size - from, zoom, accent, tolerance, phase)
     }
 
     /** Content-space bounds of an oriented box grown by its handles and grip, for the cover quad. */

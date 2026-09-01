@@ -832,6 +832,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private var lassoBounds = Rect(0.0, 0.0, 0.0, 0.0)
     private var lassoBounded = 0
 
+    /** Arc the settled runs spent, which is where the dash pattern has got to. */
+    private var lassoArc = 0.0
+
     /**
      * Publish the lasso as runs and a moving tail, and say whether it took the buffer.
      *
@@ -839,8 +842,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      * of its own, so rebuilding the loop on every touch sample costs the whole loop again: a long
      * one reached tens of thousands of triangles re-tessellated and re-uploaded at the pen's full
      * rate, and the drag got heavier the longer it ran. The settled stretch is uploaded once and
-     * never rewritten; only the last few points and the chord closing back to the start are
-     * rebuilt, so a sample costs the same at the end of a lasso as at its start.
+     * never rewritten and only the last few points are rebuilt, so a sample costs the same at the
+     * end of a lasso as at its start.
      */
     private fun publishLasso(zoom: Double, accent: Rgba): Boolean {
         val points = interaction.lassoPoints
@@ -853,6 +856,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             lassoZoom = zoom
             lassoSettled = 1
             lassoBounded = 0
+            lassoArc = 0.0
             lassoBounds = Rect(points[0].x, points[0].y, 0.0, 0.0)
         }
         while (lassoBounded < points.size) {
@@ -861,17 +865,22 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         }
         val bounds = lassoBounds.outset(4.0 / zoom)
         if (points.size - lassoSettled >= LASSO_RUN_POINTS) {
-            // From one point back, so the segment bridging this run to the last one is drawn.
+            // From one point back, so the segment bridging this run to the last one is drawn. The
+            // arc is measured through that same point, so it is both the phase this run starts at
+            // and, once its own length is added, the phase the tail starts at.
             val from = lassoSettled - 1
             val run = OverlayTessellator.lassoRun(
-                points, from, points.size - from, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE,
+                points, from, points.size - from, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE, lassoArc,
             )
             if (run.isNotEmpty()) scene.appendWetRun(run, bounds)
+            for (k in from + 1 until points.size) {
+                lassoArc += points[k].distanceTo(points[k - 1])
+            }
             lassoSettled = points.size
         }
         scene.setWetTail(
             OverlayTessellator.lassoTail(
-                points, lassoSettled - 1, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE,
+                points, lassoSettled - 1, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE, lassoArc,
             ),
             bounds,
         )
@@ -1383,10 +1392,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
          */
         const val FRONT_RUN_POINTS = 8
 
-        /**
-         * Lasso vertices a settled run holds. Small, because the tail is rebuilt on every sample
-         * and carries the chord back to the start on top of whatever it holds.
-         */
+        /** Lasso vertices a settled run holds; the tail is rebuilt on every sample. */
         const val LASSO_RUN_POINTS = 16
 
         private val EMPTY_RECT = Rect(0.0, 0.0, 0.0, 0.0)
