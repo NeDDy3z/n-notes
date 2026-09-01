@@ -13,6 +13,10 @@ import androidx.compose.ui.unit.dp
  * the reference SVG path bodies (Feather/Lucide). Each is a 24x24 viewBox, 2px
  * round-capped stroke, no fill; the stroke colour is a placeholder recoloured by
  * the `Icon` tint at use.
+ *
+ * [icon] joins its path strings into one path before parsing, so every string after
+ * the first must open with an ABSOLUTE moveto. A relative "m" there starts from the
+ * previous subpath's current point, not the origin, and the stroke lands off-canvas.
  */
 object XnotesIcons {
 
@@ -51,7 +55,7 @@ object XnotesIcons {
     // in res/drawable/ic_stroke_* (referenced from the toolbar), not built-in line glyphs.
     val eraser = icon(
         "m7 21-4.3-4.3a1.7 1.7 0 0 1 0-2.4l9.6-9.6a1.7 1.7 0 0 1 2.4 0l5.6 5.6a1.7 1.7 0 0 1 0 2.4L13 21Z",
-        "M22 21H7", "m5 11 9 9",
+        "M22 21H7", "M5 11 14 20",
     )
     val pan = icon("M5 9 2 12l3 3", "M9 5l3-3 3 3", "M15 19l-3 3-3-3", "M19 9l3 3-3 3", "M2 12h20", "M12 2v20")
     val select = icon("M3 3l7.07 16.97 2.51-7.39 7.39-2.51Z", "M13 13l6 6")
@@ -89,13 +93,13 @@ object XnotesIcons {
     val strikethrough = icon("M16 4H9a3 3 0 0 0-2.83 4", "M14 12a4 4 0 0 1 0 8H6", "M4 12h16")
     val listBullet = icon("M3 12h.01", "M3 18h.01", "M3 6h.01", "M8 12h13", "M8 18h13", "M8 6h13")
     val listOrdered = icon("M10 12h11", "M10 18h11", "M10 6h11", "M4 10h2", "M4 6h1v4", "M6 18H4c0-1 2-2 2-3s-1-1.5-2-1")
-    val checkboxItem = icon(rect(4.0, 4.0, 16.0, 16.0), "m9 12 2 2 4-4")
+    val checkboxItem = icon(rect(4.0, 4.0, 16.0, 16.0), "M9 12 11 14 15 10")
     val alignLeft = icon("M15 12H3", "M17 18H3", "M21 6H3")
     val alignCenter = icon("M17 12H7", "M19 18H5", "M21 6H3")
     val alignRight = icon("M21 12H9", "M21 18H7", "M21 6H3")
     val alignJustify = icon("M3 12h18", "M3 18h18", "M3 6h18")
-    val indentIncrease = icon("M21 12H11", "M21 18H11", "M21 6H11", "m3 8 4 4-4 4")
-    val indentDecrease = icon("M21 12H11", "M21 18H11", "M21 6H11", "m7 8-4 4 4 4")
+    val indentIncrease = icon("M21 12H11", "M21 18H11", "M21 6H11", "M3 8 7 12 3 16")
+    val indentDecrease = icon("M21 12H11", "M21 18H11", "M21 6H11", "M7 8 3 12 7 16")
     val image = icon(rect(3.0, 3.0, 18.0, 18.0), circle(8.5, 8.5, 1.5), "M21 15l-5-5L5 21")
     // The screenshot tool: plain scissors (Feather "scissors"), the same glyph as Cut.
     val scissors = icon(circle(6.0, 6.0, 3.0), circle(6.0, 18.0, 3.0), "M20 4 8.12 15.88", "M14.47 14.48 20 20", "M8.12 8.12 12 12")
@@ -148,7 +152,7 @@ object XnotesIcons {
     )
     val magicWand = icon(
         "m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z",
-        "m14 7 3 3", "M5 6v4", "M19 14v4", "M10 2v2", "M7 8H3", "M21 16h-4", "M11 3H9",
+        "M14 7 17 10", "M5 6v4", "M19 14v4", "M10 2v2", "M7 8H3", "M21 16h-4", "M11 3H9",
     )
     // Two sheets, the front one rounded and clear of the viewBox edge. Duplicate is the same
     // picture plus a "+", so the pair reads as one family; bring-to-front is deliberately not a
