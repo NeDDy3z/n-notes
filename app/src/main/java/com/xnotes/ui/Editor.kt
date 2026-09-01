@@ -229,6 +229,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     )
     val history = History()
     val view = CanvasView(context).also { it.state = state }
+
+    /** The front buffer wet ink goes into, above [view] and transparent whenever no pen is down. */
+    val pad = com.xnotes.gl.GlWetPad(context, onTop = true)
+
+    /**
+     * The two surfaces, in order. The pad is a sibling above the canvas rather than part of it: the
+     * canvas paints into the window and the front buffer has to be a surface of its own.
+     */
+    val surfaces = android.widget.FrameLayout(context).apply {
+        addView(view, android.widget.FrameLayout.LayoutParams(-1, -1))
+        addView(pad, android.widget.FrameLayout.LayoutParams(-1, -1))
+    }
     private val textMeasurer = AndroidTextMeasurer()
     private val imageCodec = AndroidImageCodec()
     private val codec = DocumentCodec(imageCodec, textMeasurer)
@@ -883,6 +895,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         view.hover = { controller.onHover(it) }
         view.genericMotion = { controller.onGenericMotion(it) }
         view.drawOverlay = { renderer, _ -> controller.drawOverlay(renderer) }
+        controller.frontInk = com.xnotes.canvas.FrontInk(state, view, pad)
+        view.debugOverlay.frontHud = { controller.frontInk?.hud }
         view.afterLayout = { refreshView() }
         view.onScrollbarScrolled = { refreshView() }
         // The canvas starts at built-in defaults; push any non-default global View settings

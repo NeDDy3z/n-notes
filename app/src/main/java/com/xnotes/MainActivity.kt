@@ -1064,9 +1064,9 @@ private fun EditorPane(
                 }
                 Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
                     AndroidView(
-                        factory = { detached(editor.view) },
+                        factory = { detached(editor.surfaces) },
                         modifier = Modifier.fillMaxSize(),
-                        update = { it.requestRender() }, // repaint on (re)attach so a push never flashes blank
+                        update = { editor.view.requestRender() }, // repaint on (re)attach so a push never flashes blank
                     )
                     editor.editingField?.let { field ->
                         com.xnotes.ui.TextEditorOverlay(editor, field)

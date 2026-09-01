@@ -187,7 +187,19 @@ class InteractionController(
     private var mode = PointerMode.IDLE
 
     // DRAW
-    private var liveStroke: Stroke? = null
+    private var liveStrokeField: Stroke? = null
+
+    /**
+     * The stroke under the pen. Clearing it is how every abort path in here ends, so that is where
+     * the front buffer is told to give its pixels back; a stroke that reached [fileStroke] has
+     * already handed them over and is not disturbed.
+     */
+    private var liveStroke: Stroke?
+        get() = liveStrokeField
+        set(value) {
+            liveStrokeField = value
+            if (value == null) frontInk?.abandon()
+        }
     private var strokePageIndex: Int? = null
 
     /** Event time of the live stroke's first sample; later samples store `eventTime − this` (the speed pen reads it). */
@@ -356,8 +368,13 @@ class InteractionController(
     private var textDragRect: Rect? = null // content space, for the live preview
     private var textDragPageIndex = -1
 
+    /** Front-buffered wet ink, installed by the host when the device can do it. */
+    var frontInk: FrontInk? = null
+
     init {
-        state.isLiftedItem = { item -> item === editingText || selection.any { it.item === item } }
+        state.isLiftedItem = { item ->
+            item === editingText || item === frontInk?.held || selection.any { it.item === item }
+        }
     }
 
     val hasSelection: Boolean get() = selection.isNotEmpty()
@@ -833,6 +850,7 @@ class InteractionController(
             dwellAnchor = downViewport
             armDwell()
         }
+        frontInk?.wet(stroke, pageIndex)
         requestRender()
     }
 
@@ -852,7 +870,11 @@ class InteractionController(
             e.getX(idx).toDouble(), e.getY(idx).toDouble(),
             if (drawingIsStylus) e.getPressure(idx).toDouble() else 1.0, e.eventTime, force = false,
         )
-        requestRender()
+        val front = frontInk
+        front?.wet(liveStroke, strokePageIndex)
+        // The canvas is not drawing this stroke, so a repaint would redraw the same frame; the ink
+        // is already on the glass by the time this returns.
+        if (front?.live != true) requestRender()
     }
 
     private fun addStrokePoint(vx: Double, vy: Double, pressure: Double, timeMs: Long, force: Boolean) {
@@ -966,7 +988,9 @@ class InteractionController(
         simplifyForCommit(stroke)
         val page = state.document.pages[pageIndex]
         page.items.add(stroke)
-        state.appendToCache(page, stroke)
+        // The front buffer is still showing this stroke, and drawing it here as well would put two
+        // antialiased edges over each other. It goes into the cache once the pad has let go.
+        if (frontInk?.hold(stroke, page) != true) state.appendToCache(page, stroke)
         state.document.dirty = true
         return AddItem(page, stroke)
     }
@@ -2837,7 +2861,9 @@ class InteractionController(
 
             // Live in-progress stroke / shape preview, clipped to its page. The stroke goes through
             // the wet cache, which blits whatever has stopped moving instead of refilling it.
-            liveStroke?.let { stroke -> paintClippedToPage(r, strokePageIndex) { state.paintLiveStroke(r, stroke) } }
+            if (frontInk?.live != true) {
+                liveStroke?.let { stroke -> paintClippedToPage(r, strokePageIndex) { state.paintLiveStroke(r, stroke) } }
+            }
             pendingShape?.let { shape -> paintClippedToPage(r, shapePageIndex) { shape.paint(r) } }
 
             // Disappearing ink (magic wand): ephemeral strokes drawn live at the shared fade alpha,

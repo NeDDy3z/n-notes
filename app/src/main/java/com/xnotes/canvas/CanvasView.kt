@@ -684,6 +684,43 @@ class CanvasView @JvmOverloads constructor(
     /** Request a vsync-aligned repaint (rides the display refresh while drawing). */
     fun requestRender() = postInvalidateOnAnimation()
 
+    /**
+     * Repaint, and run [action] once that frame has been handed to the compositor.
+     *
+     * The front buffer's handover needs it: the pad may only come down after the canvas has
+     * actually put the committed stroke on screen, and a plain [requestRender] says nothing about
+     * when that happened. A timer backs the callback up rather than replacing it, because a
+     * handover that never finishes leaves the pad holding the last stroke forever.
+     */
+    fun publishThen(action: () -> Unit) {
+        var done = false
+        val once = Runnable {
+            if (done) return@Runnable
+            done = true
+            action()
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            viewTreeObserver.registerFrameCommitCallback(once)
+        }
+        mainHandler.postDelayed(once, FRAME_COMMIT_TIMEOUT_MS)
+        requestRender()
+    }
+
+    /**
+     * Take the pen's samples as the driver produces them rather than batched to the frame the view
+     * tree is about to draw.
+     *
+     * Only while the front buffer has the stroke. There the canvas is not drawing the ink at all,
+     * so a batch is pure delay; on the ordinary path it is doing a job, since one frame's samples
+     * collapse into one repaint and a stroke re-filled per sample gets slower as it grows.
+     */
+    fun setUnbufferedStylus(on: Boolean) {
+        if (android.os.Build.VERSION.SDK_INT < 30) return
+        requestUnbufferedDispatch(
+            if (on) android.view.InputDevice.SOURCE_STYLUS else android.view.InputDevice.SOURCE_CLASS_NONE,
+        )
+    }
+
     companion object {
         /** Max gesture duration (ms) still counted as a tap. */
         private const val TAP_TIMEOUT_MS = 500L
@@ -705,5 +742,8 @@ class CanvasView @JvmOverloads constructor(
 
         /** Minimum thumb length (dp), matching the side panel's. */
         private const val SCROLLBAR_MIN_THUMB_DP = 28f
+
+        /** How long [publishThen] waits for a frame before running the action anyway (ms). */
+        private const val FRAME_COMMIT_TIMEOUT_MS = 120L
     }
 }

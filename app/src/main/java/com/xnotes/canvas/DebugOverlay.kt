@@ -21,6 +21,9 @@ class DebugOverlay {
     var enabled = false
         private set
 
+    /** What the front buffer is doing, when there is one; installed by the host. */
+    var frontHud: () -> String? = { null }
+
     fun toggle() {
         enabled = !enabled
     }
@@ -101,6 +104,7 @@ class DebugOverlay {
             add("pss    %.0f MB".format(pssMb))
             add("native %.0f MB".format(nativeMb))
             add("gfx    %.0f MB".format(gfxMb))
+            frontHud()?.let { add("front     $it") }
             add("autosave   ${state.autosaveStatus}")
             if (state.lastOpenTotalMs >= 0) {
                 add("open      ${state.lastOpenTotalMs} ms")
