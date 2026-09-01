@@ -35,20 +35,28 @@ object OverlayTessellator {
     const val MARQUEE_PX = 1.4
 
     /**
-     * Dash on/off runs for the lasso, in dp, so the marquee reads the same on any screen. Both
-     * canvases draw the lasso from these, which is what keeps the two looking alike.
+     * Dash on/off runs for every marquee, in dp, so chrome reads the same on any screen. Both
+     * canvases draw from these, which is what keeps a band, a lasso and a selection box looking
+     * like each other and like themselves on the other canvas.
      */
     const val DASH_ON_DP = 8.0
     const val DASH_GAP_DP = 5.0
 
     /** The selection box, its eight handles and the rotate grip and its stem. */
-    fun selection(box: Obb, zoom: Double, accent: Rgba, tolerance: Double): List<MeshPart> {
+    fun selection(
+        box: Obb,
+        zoom: Double,
+        accent: Rgba,
+        tolerance: Double,
+        devicePxPerDp: Double = 1.0,
+    ): List<MeshPart> {
         if (zoom <= 0.0) return emptyList()
         val outline = MeshBuilder()
         val half = OUTLINE_PX / zoom / 2.0
-        outline.polylineRibbon(box.corners(), half, closed = true, tolerance = tolerance)
+        dashInto(outline, box.corners(), half, closed = true, zoom = zoom, devicePxPerDp = devicePxPerDp, tolerance = tolerance)
 
-        // The stem out to the grip, so it reads as attached rather than floating.
+        // The stem out to the grip, so it reads as attached rather than floating. Solid: it is a
+        // join, not a boundary, and a dashed one at this length would be two ticks and a gap.
         val arm = GRIP_ARM_PX / zoom
         val top = com.xnotes.canvas.ResizeMath.obbTopMid(box)
         val grip = com.xnotes.canvas.ResizeMath.obbRotateGrip(box, arm)
@@ -67,8 +75,14 @@ object OverlayTessellator {
         return parts
     }
 
-    /** The rectangle a band-select drag has swept out so far. */
-    fun band(rect: Rect, zoom: Double, accent: Rgba, tolerance: Double): List<MeshPart> {
+    /** The rectangle a band-select drag has swept out so far, dashed like every other marquee. */
+    fun band(
+        rect: Rect,
+        zoom: Double,
+        accent: Rgba,
+        tolerance: Double,
+        devicePxPerDp: Double = 1.0,
+    ): List<MeshPart> {
         if (zoom <= 0.0 || rect.w <= 0.0 && rect.h <= 0.0) return emptyList()
         val b = MeshBuilder()
         val corners = listOf(
@@ -77,7 +91,7 @@ object OverlayTessellator {
             Pt(rect.right, rect.bottom),
             Pt(rect.left, rect.bottom),
         )
-        b.polylineRibbon(corners, MARQUEE_PX / zoom / 2.0, closed = true, tolerance = tolerance)
+        dashInto(b, corners, MARQUEE_PX / zoom / 2.0, closed = true, zoom = zoom, devicePxPerDp = devicePxPerDp, tolerance = tolerance)
         if (b.isEmpty) return emptyList()
         return listOf(MeshPart(b.build(), accent, InkPass.OPAQUE))
     }
@@ -119,13 +133,8 @@ object OverlayTessellator {
         if (zoom <= 0.0 || count < 2 || from < 0 || from + count > points.size) return emptyList()
         val b = MeshBuilder()
         val half = MARQUEE_PX / zoom / 2.0
-        // The dash is an on-screen length, so it comes back out of the zoom into content px.
-        val on = DASH_ON_DP * devicePxPerDp / zoom
-        val gap = DASH_GAP_DP * devicePxPerDp / zoom
         val span = points.subList(from, from + count)
-        for (run in MeshBuilder.dashRuns(span, on, gap, closed = false, phase = phase)) {
-            b.polylineRibbon(run, half, closed = false, tolerance = tolerance)
-        }
+        dashInto(b, span, half, closed = false, zoom = zoom, devicePxPerDp = devicePxPerDp, tolerance = tolerance, phase = phase)
         if (b.isEmpty) return emptyList()
         return listOf(MeshPart(b.build(), accent, InkPass.OPAQUE))
     }
@@ -142,6 +151,27 @@ object OverlayTessellator {
     ): List<MeshPart> {
         if (from < 0 || from >= points.size) return emptyList()
         return lassoRun(points, from, points.size - from, zoom, accent, tolerance, phase, devicePxPerDp)
+    }
+
+    /**
+     * [points] as a dashed ribbon into [b]. The dash is an on-screen length, so it comes back out
+     * of the zoom into content px; [phase] lets a line split into runs keep one rhythm.
+     */
+    private fun dashInto(
+        b: MeshBuilder,
+        points: List<Pt>,
+        half: Double,
+        closed: Boolean,
+        zoom: Double,
+        devicePxPerDp: Double,
+        tolerance: Double,
+        phase: Double = 0.0,
+    ) {
+        val on = DASH_ON_DP * devicePxPerDp / zoom
+        val gap = DASH_GAP_DP * devicePxPerDp / zoom
+        for (run in MeshBuilder.dashRuns(points, on, gap, closed = closed, phase = phase)) {
+            b.polylineRibbon(run, half, closed = false, tolerance = tolerance)
+        }
     }
 
     /** Content-space bounds of an oriented box grown by its handles and grip, for the cover quad. */

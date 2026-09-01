@@ -2870,10 +2870,10 @@ class InteractionController(
             }
 
             // Screenshot capture region: the live drag rect, kept frozen until "copy as image" is used.
-            screenshotRect?.let { r.strokeRect(it, Pen(state.palette.accent, 1.6, cosmetic = true, dashed = true)) }
+            screenshotRect?.let { r.strokeRect(it, chromePen(1.6)) }
 
             // Selection chrome.
-            val accent = Pen(state.palette.accent, 1.3, cosmetic = true, dashed = true)
+            val accent = chromePen(1.3)
             // Flow caret + selection highlight, under the selection chrome.
             flowText?.drawOverlay(r)
 
@@ -2881,7 +2881,7 @@ class InteractionController(
                 mode == PointerMode.BAND -> bandRect?.let { r.strokeRect(it, accent) }
                 mode == PointerMode.TEXT_DRAG -> textDragRect?.let { r.strokeRect(it, accent) }
                 mode == PointerMode.LASSO_DRAW && lassoPoints.size >= 2 ->
-                    r.strokePolyline(lassoPoints, lassoPen())
+                    r.strokePolyline(lassoPoints, chromePen(1.3))
                 selection.isNotEmpty() ->
                     selObb?.let { obb ->
                         r.strokePolygon(obb.corners().map { Pt(it.x + moveOffset.x, it.y + moveOffset.y) }, accent)
@@ -2919,13 +2919,14 @@ class InteractionController(
     }
 
     /**
-     * The lasso's marquee. Dashed, so it reads as a marquee rather than as ink, off the same dp
-     * runs the infinite canvas tessellates its own from, so the two look alike. A cosmetic pen
-     * takes its dash runs in device px, which is what the conversion here produces.
+     * A marquee pen: dashed, so chrome reads as chrome rather than as ink, off the same dp runs
+     * the infinite canvas tessellates its own from, so a band, a lasso and a selection box look
+     * like each other and like themselves on the other canvas. A cosmetic pen takes its dash runs
+     * in device px, which is what the conversion here produces.
      */
-    private fun lassoPen(): Pen = Pen(
+    private fun chromePen(width: Double): Pen = Pen(
         state.palette.accent,
-        1.3,
+        width,
         cosmetic = true,
         dashed = true,
         dashOn = com.xnotes.core.infinite.OverlayTessellator.DASH_ON_DP * state.devicePxPerDp,
