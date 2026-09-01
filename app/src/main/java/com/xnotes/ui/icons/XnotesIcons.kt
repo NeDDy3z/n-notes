@@ -177,7 +177,11 @@ object XnotesIcons {
     // distinctly from Share's up-and-out arrow; same picture as importDoc, named for the action.
     val download = importDoc
     val sliders = icon("M4 21v-7", "M4 10V3", "M12 21v-9", "M12 8V3", "M20 21v-5", "M20 12V3", "M1 14h6", "M9 8h6", "M17 16h6")
-    val margins = icon(rect(3.0, 3.0, 18.0, 18.0), "M16 3v13", "M3 16h13")
+    // Page margins: the sheet, with L brackets marking where the content area starts on each edge.
+    val margins = icon(
+        roundRect(3.0, 2.0, 18.0, 20.0, 2.0),
+        "M7 9.5V6h3.5", "M17 9.5V6h-3.5", "M7 14.5V18h3.5", "M17 14.5V18h-3.5",
+    )
     val view = icon("M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z", circle(12.0, 12.0, 3.0))
     val home = icon("M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z", "M9 22V12h6v10")
     val share = icon("M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M16 6l-4-4-4 4", "M12 2v13")
