@@ -53,9 +53,12 @@ object XnotesIcons {
 
     // Pen, calligraphy, speed, taper and highlighter use the designed vector drawables
     // in res/drawable/ic_stroke_* (referenced from the toolbar), not built-in line glyphs.
+    // The block and the paper it rests on, without Lucide's crease across the body. The crease
+    // spent its life off-canvas behind the relative-moveto bug, and the plain block turned out
+    // to read better at 22dp, so it stays gone on purpose.
     val eraser = icon(
         "m7 21-4.3-4.3a1.7 1.7 0 0 1 0-2.4l9.6-9.6a1.7 1.7 0 0 1 2.4 0l5.6 5.6a1.7 1.7 0 0 1 0 2.4L13 21Z",
-        "M22 21H7", "M5 11 14 20",
+        "M22 21H7",
     )
     val pan = icon("M5 9 2 12l3 3", "M9 5l3-3 3 3", "M15 19l-3 3-3-3", "M19 9l3 3-3 3", "M2 12h20", "M12 2v20")
     val select = icon("M3 3l7.07 16.97 2.51-7.39 7.39-2.51Z", "M13 13l6 6")
@@ -80,9 +83,9 @@ object XnotesIcons {
     // The text box tool: a serif "T" held by corner handles, the box as it looks under edit.
     // A full square would be the fourth identical frame in the bar (page, sidebar, split).
     val textBox = icon(
-        "M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8", "M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8",
-        "M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16", "M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16",
-        "M8 9.5v-1.5h8v1.5", "M12 8v8", "M9.5 16h5",
+        "M3 8V4.5A1.5 1.5 0 0 1 4.5 3H8", "M16 3h3.5A1.5 1.5 0 0 1 21 4.5V8",
+        "M21 16v3.5a1.5 1.5 0 0 1-1.5 1.5H16", "M8 21H4.5A1.5 1.5 0 0 1 3 19.5V16",
+        "M7.5 9.5v-2h9v2", "M12 7.5v9", "M9 16.5h6",
     )
 
     // The flow format bar's glyphs (Lucide: bold/italic/underline/strikethrough, lists,
