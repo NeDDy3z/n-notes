@@ -2918,6 +2918,20 @@ class InteractionController(
         if (ruler.visible) drawRuler(r)
     }
 
+    /**
+     * The lasso's marquee. Dashed, so it reads as a marquee rather than as ink, off the same dp
+     * runs the infinite canvas tessellates its own from, so the two look alike. A cosmetic pen
+     * takes its dash runs in device px, which is what the conversion here produces.
+     */
+    private fun lassoPen(): Pen = Pen(
+        state.palette.accent,
+        1.3,
+        cosmetic = true,
+        dashed = true,
+        dashOn = com.xnotes.core.infinite.OverlayTessellator.DASH_ON_DP * state.devicePxPerDp,
+        dashGap = com.xnotes.core.infinite.OverlayTessellator.DASH_GAP_DP * state.devicePxPerDp,
+    )
+
     private inline fun paintClippedToPage(r: Renderer, pageIndex: Int?, crossinline paint: () -> Unit) {
         val pi = pageIndex ?: -1
         val pr = state.pageRects.getOrNull(pi) ?: return

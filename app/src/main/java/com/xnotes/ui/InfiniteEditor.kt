@@ -870,7 +870,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             // and, once its own length is added, the phase the tail starts at.
             val from = lassoSettled - 1
             val run = OverlayTessellator.lassoRun(
-                points, from, points.size - from, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE, lassoArc,
+                points, from, points.size - from, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE,
+                lassoArc, devicePxPerDp,
             )
             if (run.isNotEmpty()) scene.appendWetRun(run, bounds)
             for (k in from + 1 until points.size) {
@@ -880,7 +881,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         }
         scene.setWetTail(
             OverlayTessellator.lassoTail(
-                points, lassoSettled - 1, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE, lassoArc,
+                points, lassoSettled - 1, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE,
+                lassoArc, devicePxPerDp,
             ),
             bounds,
         )
