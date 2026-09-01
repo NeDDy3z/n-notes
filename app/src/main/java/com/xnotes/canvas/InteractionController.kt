@@ -2881,7 +2881,7 @@ class InteractionController(
                 mode == PointerMode.BAND -> bandRect?.let { r.strokeRect(it, accent) }
                 mode == PointerMode.TEXT_DRAG -> textDragRect?.let { r.strokeRect(it, accent) }
                 mode == PointerMode.LASSO_DRAW && lassoPoints.size >= 2 ->
-                    r.strokePolyline(lassoPoints, Pen(state.palette.accent, 1.3, cosmetic = true))
+                    r.strokePolyline(lassoPoints, lassoPen())
                 selection.isNotEmpty() ->
                     selObb?.let { obb ->
                         r.strokePolygon(obb.corners().map { Pt(it.x + moveOffset.x, it.y + moveOffset.y) }, accent)
