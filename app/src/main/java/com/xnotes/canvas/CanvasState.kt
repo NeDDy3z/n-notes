@@ -1270,6 +1270,26 @@ class CanvasState(
     }
 
     /**
+     * The same in-place undo/redo repair as [repairAllInkInPlace], but confined to the regions the
+     * undone command actually disturbed (see [com.xnotes.core.history.Command.touched]) — surfaces
+     * kept, background layer untouched, sharp viewport patched, minus the full-page re-rasterization
+     * of every cached page that made a single undo tap cost the whole visible band. Rects are unioned
+     * per page, so each page is repainted at most once and never more than [repairAllInkInPlace]
+     * would have. A page with no live cache has nothing to repair and falls out of [repairRegion] on
+     * its own, having still patched the sharp layer.
+     */
+    fun repairInkRegions(regions: List<Pair<Page, Rect>>) {
+        if (regions.isNotEmpty()) {
+            val byPage = LinkedHashMap<Page, Rect>()
+            for ((page, rect) in regions) {
+                byPage[page] = byPage[page]?.union(rect) ?: rect
+            }
+            for ((page, rect) in byPage) repairRegion(page, rect.outset(SHARP_EDIT_PAD))
+        }
+        cacheGen++
+    }
+
+    /**
      * Re-render only [page]'s background layer (e.g. a PDF page whose embedded-image colours just
      * finished parsing), swapping the refreshed surface in when it's ready and leaving the current
      * one on screen until then so the page never blanks. Unlike a global background flush this
@@ -1595,7 +1615,7 @@ class CanvasState(
         /** Padding (content px) around a highlighter's bounds in its cached bitmap, for AA edges. */
         const val HL_PAD = 2.0
 
-        /** Padding (content px) around a replayed sharp edit's dirty rect, for AA edges. */
+        /** Padding (content px) around a replayed or repaired dirty rect, for AA edges. */
         const val SHARP_EDIT_PAD = 2.0
 
         /** Gap (viewport px) left above the page top so nothing hides behind the toolbar. */
