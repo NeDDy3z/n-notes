@@ -37,7 +37,7 @@ object PdfImporter {
         val doc = Document(dpi = dpi)
         doc.pdfFile = source.file
         for (i in 0 until source.pageCount) {
-            val (wPts, hPts) = source.pageSizePoints(i)
+            val (wPts, hPts) = source.pageSizePoints(i) ?: break
             val w = wPts / 72.0 * dpi
             val h = hPts / 72.0 * dpi
             doc.pages.add(Page(w, h, pdfPage = i))

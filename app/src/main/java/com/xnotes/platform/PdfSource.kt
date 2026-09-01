@@ -63,7 +63,8 @@ class PdfSource private constructor(
     private val pfd: ParcelFileDescriptor,
     private val renderer: PdfRenderer,
 ) {
-    val pageCount: Int get() = renderer.pageCount
+    /** Fixed for the document's life, so it is read once and never off a closed [renderer]. */
+    val pageCount: Int = renderer.pageCount
 
     /** PdfBox model, loaded lazily the first time image boxes are requested. Guarded by [pdfBoxLock]. */
     @Volatile private var pdfBoxDoc: PDDocument? = null
@@ -138,7 +139,8 @@ class PdfSource private constructor(
 
     /** Page size in points (1 pt = 1/72 inch). */
     @Synchronized
-    fun pageSizePoints(index: Int): Pair<Int, Int> {
+    fun pageSizePoints(index: Int): Pair<Int, Int>? {
+        if (closed || index !in 0 until pageCount) return null
         val page = renderer.openPage(index)
         val size = page.width to page.height
         page.close()
@@ -147,7 +149,7 @@ class PdfSource private constructor(
 
     @Synchronized
     fun renderPage(index: Int, widthPx: Int, heightPx: Int, filter: PdfPageFilter = PdfPageFilter.NONE): AndroidRasterSurface? {
-        if (index !in 0 until renderer.pageCount) return null
+        if (closed || index !in 0 until pageCount) return null
         val w = widthPx.coerceIn(1, MAX_DIM)
         val h = heightPx.coerceIn(1, MAX_DIM)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -184,7 +186,7 @@ class PdfSource private constructor(
         regionHpx: Int,
         filter: PdfPageFilter = PdfPageFilter.NONE,
     ): AndroidRasterSurface? {
-        if (index !in 0 until renderer.pageCount) return null
+        if (closed || index !in 0 until pageCount) return null
         val w = regionWpx.coerceIn(1, MAX_DIM)
         val h = regionHpx.coerceIn(1, MAX_DIM)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -408,7 +410,7 @@ class PdfSource private constructor(
     @Synchronized
     private fun parseNativeLinks(index: Int): List<PdfLink> {
         if (closed || Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return emptyList()
-        if (index !in 0 until renderer.pageCount) return emptyList()
+        if (index !in 0 until pageCount) return emptyList()
         val page = renderer.openPage(index)
         try {
             val w = page.width.toFloat()
@@ -464,7 +466,7 @@ class PdfSource private constructor(
     fun prepAllImages() {
         if (closed || sweepRequested) return
         sweepRequested = true
-        val total = renderer.pageCount
+        val total = pageCount
         val executor = imagesWorker() ?: return
         for (index in 0 until total) {
             runCatching {
@@ -521,8 +523,11 @@ class PdfSource private constructor(
             runCatching { linksExecutor?.shutdownNow() }
         }
         runCatching { pdfBoxDoc?.close() }
-        runCatching { renderer.close() }
-        runCatching { pfd.close() }
+        // On the render monitor: [closed] is already set, so this only waits out a live raster.
+        synchronized(this) {
+            runCatching { renderer.close() }
+            runCatching { pfd.close() }
+        }
         // [file] is owned by the caller (Document / import staging); deleting it here is not our job.
     }
 
