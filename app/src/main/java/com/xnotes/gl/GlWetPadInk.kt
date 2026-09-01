@@ -82,9 +82,35 @@ class GlWetPadInk {
     private val damage = PixelRect()
     private val lastTail = PixelRect()
 
+    /** The union of every damage this stroke has had, which is what the handover captures. */
+    private val strokeBox = PixelRect()
+
     /** What the last present drew, in view pixels, for the debug readout. */
     @Volatile
     var lastDamage = ""
+        private set
+
+    /**
+     * Every pixel this stroke has put ink on, in view pixels, read from the main thread.
+     *
+     * Four numbers rather than a rectangle because the render thread writes them and the handover
+     * reads them: each is written once per present and read once per stroke, and a box that is a
+     * pixel stale in either direction only widens what gets captured.
+     */
+    @Volatile
+    var boxLeft = 0
+        private set
+
+    @Volatile
+    var boxTop = 0
+        private set
+
+    @Volatile
+    var boxRight = 0
+        private set
+
+    @Volatile
+    var boxBottom = 0
         private set
 
     /** Why the last present drew nothing, for the trace. */
@@ -218,6 +244,11 @@ class GlWetPadInk {
             GLES30.GL_COLOR_BUFFER_BIT, GLES30.GL_NEAREST,
         )
         lastDamage = "${dw}x$dh"
+        strokeBox.union(damage)
+        boxLeft = strokeBox.left
+        boxTop = strokeBox.top
+        boxRight = strokeBox.right
+        boxBottom = strokeBox.bottom
         damage.clear()
         return true
     }
@@ -244,6 +275,11 @@ class GlWetPadInk {
         tailPieces = emptyList()
         lastTail.clear()
         damage.clear()
+        strokeBox.clear()
+        boxLeft = 0
+        boxTop = 0
+        boxRight = 0
+        boxBottom = 0
     }
 
     /** Take everything the main thread has handed over, and work out what it dirtied. */

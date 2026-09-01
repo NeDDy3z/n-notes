@@ -270,6 +270,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** Tessellate [item] and hand the triangles to the renderer, or drop it if it draws nothing. */
     private fun pushItem(item: CanvasItem) {
+        // Held back while the front buffer is still the only thing showing this stroke. The
+        // document and the history already have it; only its triangles wait.
+        if (item === heldItem) return
         if (item is ImageItem) {
             if (!pushVectorImage(item)) scene.upsertImage(item, item.paintBounds())
             return
@@ -687,6 +690,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Whether this stroke's route has been chosen; it needs one meshed tail to look at. */
     private var frontDecided = false
 
+    /** The committed stroke whose triangles are waiting for the front buffer to go opaque. */
+    private var heldItem: CanvasItem? = null
+
     /**
      * Hand the stroke under the pen to the scene, in two pieces where the pen allows it.
      *
@@ -889,15 +895,64 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         forgetWetStroke()
         val front = frontInk
         frontInk = false
-        if (front) pad.freeze()
+        if (!front) {
+            if (wandEnabled && stroke.tool.isStroke) holdEphemeral(stroke) else commitItem(stroke)
+            return
+        }
+        pad.freeze()
+        // The wand's ink never becomes a committed item, so there is nothing to hand it over to.
         if (wandEnabled && stroke.tool.isStroke) {
             holdEphemeral(stroke)
-        } else {
-            commitItem(stroke)
+            view.publishThen { pad.release() }
+            return
         }
-        // The pad holds the only copy of this stroke until the canvas has drawn the committed
-        // item, so it keeps its pixels until that frame is down and wipes them after.
-        if (front) view.publishThen { pad.release() }
+        // Its triangles are held until the pad is opaque, so the canvas cannot draw the stroke
+        // while the pad is also showing it. Everything else about the commit happens now.
+        heldItem = stroke
+        commitItem(stroke)
+        captureBehindStroke()
+    }
+
+    /**
+     * Take the canvas as it stands, put it behind the ink on the pad, and only then hand over.
+     *
+     * This is the step that makes the handover free rather than timed. Until it runs the pad is
+     * transparent and the screen is the two layers together, so hiding the pad has to be raced
+     * against the canvas drawing the committed stroke, and one refresh either way is a blink or a
+     * doubled antialiased edge. Once the capture is behind the ink the pad holds that composite
+     * opaquely, the canvas underneath can change unseen, and the hide lands wherever it likes.
+     *
+     * Every failure path ends the same way, because a handover that is merely timed is far better
+     * than a stroke that never reaches the canvas.
+     */
+    private fun captureBehindStroke() {
+        val box = pad.strokeBox()
+        if (box == null || box.width() <= 0 || box.height() <= 0) return handOffStroke()
+        val capture = try {
+            android.graphics.Bitmap.createBitmap(
+                box.width(), box.height(), android.graphics.Bitmap.Config.ARGB_8888,
+            )
+        } catch (e: OutOfMemoryError) {
+            return handOffStroke()
+        }
+        val handler = android.os.Handler(appContext.mainLooper)
+        // However the capture goes, the stroke reaches the canvas: late is a blink, never is a
+        // lost stroke. One Runnable, held, because a fresh method reference cannot be cancelled.
+        val timeout = Runnable { handOffStroke() }
+        handler.postDelayed(timeout, CAPTURE_TIMEOUT_MS)
+        android.view.PixelCopy.request(view, box, capture, { result ->
+            handler.removeCallbacks(timeout)
+            if (result != android.view.PixelCopy.SUCCESS) return@request handOffStroke()
+            pad.coverWith(capture, box) { handOffStroke() }
+        }, handler)
+    }
+
+    /** Let the held stroke reach the canvas, and take the pad down once that frame is out. */
+    private fun handOffStroke() {
+        val held = heldItem ?: return
+        heldItem = null
+        pushItem(held)
+        view.publishThen { pad.release() }
     }
 
     // --- disappearing ink (magic wand) ---
@@ -1248,6 +1303,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
         /** Content pixels a duplicate lands from its original, so the copy is visibly a copy. */
         const val DUPLICATE_NUDGE = 24.0
+
+        /** Longest a handover waits for a capture before giving the stroke back untimed. */
+        const val CAPTURE_TIMEOUT_MS = 120L
 
         /**
          * Ribbon points that have to settle before the wet stroke gives the scene another run.

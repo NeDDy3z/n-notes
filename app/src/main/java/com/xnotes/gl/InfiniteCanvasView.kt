@@ -228,9 +228,15 @@ class InfiniteCanvasView @JvmOverloads constructor(
         publish()
     }
 
-    /** Publish, and run [action] on the GL thread once that frame has been drawn. */
+    /**
+     * Publish, and run [action] on the GL thread once that frame has been *swapped*.
+     *
+     * The renderer's hook fires at the end of the draw, which is still before the swap, so it
+     * queues the action instead of running it. The GL thread drains that queue at the top of its
+     * next turn, by which time this frame has been handed to the compositor.
+     */
     fun publishThen(action: () -> Unit) {
-        glRenderer.afterFrame = action
+        glRenderer.afterFrame = { queueEvent(action) }
         publish()
     }
 
