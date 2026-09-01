@@ -70,7 +70,6 @@ fun Toolbar(
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit,
     onAddStickers: () -> Unit,
-    onPresent: () -> Unit,
     modifier: Modifier = Modifier,
     onClosePane: (() -> Unit)? = null,
 ) {
@@ -124,7 +123,6 @@ fun Toolbar(
                         onOpenBackstage = onOpenBackstage,
                         onInsertImage = onInsertImage,
                         onAddStickers = onAddStickers,
-                        onPresent = onPresent,
                         onToggleFullscreen = onToggleFullscreen,
                     )
                 }
@@ -160,7 +158,6 @@ private fun ToolbarItemView(
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit,
     onAddStickers: () -> Unit,
-    onPresent: () -> Unit,
     onToggleFullscreen: () -> Unit,
 ) {
     when (item) {
@@ -236,8 +233,6 @@ private fun ToolbarItemView(
         ) { editor.toggleZoomLock() }
 
         ToolbarItem.FULLSCREEN -> ToolbarIcon(XnotesIcons.fullscreen, "Full screen") { onToggleFullscreen() }
-        ToolbarItem.PRESENT ->
-            ToolbarIcon(XnotesIcons.present, "Present", active = editor.presentationRunning) { onPresent() }
 
         ToolbarItem.COLORS -> editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->
             Box {

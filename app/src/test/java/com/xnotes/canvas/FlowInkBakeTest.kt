@@ -21,8 +21,8 @@ import org.junit.Test
 
 /**
  * Locks the baked-flow contract: the flow paints onto the ink layer before the
- * items (text under ink), a lifted flow leaves screen caches but never the
- * presentation cache, and region repairs repaint the flow beneath surviving ink.
+ * items (text under ink), a lifted flow leaves the screen caches, and region
+ * repairs repaint the flow beneath surviving ink.
  */
 class FlowInkBakeTest {
 
@@ -71,16 +71,11 @@ class FlowInkBakeTest {
     }
 
     @Test
-    fun liftedFlowSkipsScreenCachesButNotPresentation() {
+    fun liftedFlowSkipsTheScreenCache() {
         val st = state()
         st.flowLifted = true
         st.cacheFor(st.document.pages[0])
         assertEquals(-1, factory.surfaces.last().recorder.ops.flowIndex())
-
-        st.presCacheFor(st.document.pages[0])
-        val presOps = factory.surfaces.last().recorder.ops
-        assertTrue(presOps.flowIndex() >= 0)
-        assertTrue(presOps.inkIndex() > presOps.flowIndex())
     }
 
     @Test

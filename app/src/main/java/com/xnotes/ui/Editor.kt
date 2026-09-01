@@ -393,7 +393,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         private set
 
     /** The open note's effective View settings: [viewOverrides] resolved over [viewDefaults].
-     *  This is what the canvas, caches, thumbnails and presentation all consume. */
+     *  This is what the canvas, caches and thumbnails all consume. */
     var viewSettings by mutableStateOf(settings.viewDefaults)
         private set
     var rulerVisible by mutableStateOf(false)
@@ -841,15 +841,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (live) onRender() else refreshContent()
     }
 
-    /** A burst landed: while presenting, repaint the stream's flow pages so it catches up. */
+    /** A burst landed. */
     private fun onFlowFlushed() {
-        if (state.presentationActive) {
-            publishedFlow?.frame?.pagesWithLines()?.forEach { i ->
-                publishedPageList.getOrNull(i)?.let { p ->
-                    state.repairRegion(p, Rect(0.0, 0.0, p.width, p.height))
-                }
-            }
-        }
         refreshContent()
     }
 
@@ -865,29 +858,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onRender()
     }
 
-    val presentation = com.xnotes.presentation.PresentationController(
-        state,
-        imageCodec,
-        liveStroke = { controller.activeLiveStrokePage?.let { pi -> controller.activeLiveStroke?.let { pi to it } } },
-        onStateChanged = { refreshPresentation() },
-    )
-
-    var presentationRunning by mutableStateOf(false)
-        private set
-    var presentationClients by mutableStateOf(0)
-        private set
-    var presentationUrl by mutableStateOf("")
-        private set
-
     /**
      * A repaint was asked for. The canvas skips it while the front buffer owns the stroke under the
      * pen: it is not drawing that ink, so the frame would come out the same, and the blit is work
-     * on the thread the pen's samples have to get through. The presentation stream is told either
-     * way, since it paints the live stroke itself and is nowhere near this screen.
+     * on the thread the pen's samples have to get through.
      */
     private fun onRender() {
         if (controller.frontInk?.live != true) view.requestRender()
-        presentation.notifyChanged()
     }
 
     init {
@@ -3199,7 +3176,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             synchronized(pageThumbs) { pageThumbs.evictAll() }
             pdfThumbTick++
             currentUri?.let { invalidateThumb(it) }
-            presentation.notifyChanged()
         }
         val filterChanged = prev.contrast != new.contrast || prev.invert != new.invert ||
             prev.brightness != new.brightness || prev.sepia != new.sepia ||
@@ -3876,41 +3852,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         sidebarVisible = !sidebarVisible
     }
 
-    // --- presentation ---
-
-    val presentationDefaults get() = settings.presentation
-
-    fun startPresentation(port: Int, scope: String, mode: String): String? {
-        val d = settings.presentation
-        // One server, one port: presenting from a pane takes the stream over from the other one.
-        sibling?.stopPresentation()
-        val error = presentation.start(port, scope == "lan", mode, d.quality, d.maxFps)
-        refreshPresentation()
-        if (error == null) {
-            settings = settings.copy(presentation = d.copy(port = port, scope = scope, mode = mode))
-            settingsRepo.save(settings)
-        }
-        return error
-    }
-
-    fun stopPresentation() {
-        presentation.stop()
-        refreshPresentation()
-        secondary?.stopPresentation()
-    }
-
-    fun setPresentationMode(mode: String) {
-        presentation.setMode(mode)
-        settings = settings.copy(presentation = settings.presentation.copy(mode = mode))
-        refreshPresentation()
-    }
-
-    private fun refreshPresentation() {
-        presentationRunning = presentation.running
-        presentationClients = presentation.clientCount
-        presentationUrl = presentation.url()
-    }
-
     // --- keyboard shortcuts (spec 11 §2) ---
 
     /** File-ish actions that live in the Compose layer (SAF launchers, dialogs). */
@@ -4540,7 +4481,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (other.noteOpen) { secondaryStarted = true; return }
         if (!secondaryStarted) return
         secondaryStarted = false
-        other.stopPresentation()
         other.sibling = null
         sibling = null
         secondary = null

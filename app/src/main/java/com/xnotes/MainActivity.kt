@@ -223,11 +223,6 @@ class MainActivity : ComponentActivity() {
         editor?.persist()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        editor?.stopPresentation()
-    }
-
     private fun applyFullscreen(fullscreen: Boolean) {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         if (fullscreen) {
@@ -250,7 +245,6 @@ private fun EditorScreen(
 ) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
-    var presentPane by remember { mutableStateOf<Editor?>(null) }
     // Backstage is the root of the stack; the editor is pushed on top only when a note is open
     // (editor.noteOpen). Every launch starts on backstage.
     var backstageView by remember { mutableStateOf(com.xnotes.ui.BackstageView.HOME) }
@@ -743,7 +737,6 @@ private fun EditorScreen(
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
-                onPresent = { presentPane = editor.active },
                 onSharePages = { pane, pages, asPdf -> sharePages(pane, pages, asPdf) },
                 onSavePagesAsPdf = { pane, pages -> savePagesAsPdf(pane, pages) },
                 onSavePagesAsImages = { pane, pages -> savePagesAsImages(pane, pages) },
@@ -773,9 +766,6 @@ private fun EditorScreen(
                 }
             },
         )
-    }
-    presentPane?.let { pane ->
-        com.xnotes.ui.PresentationDialog(editor = pane, onDismiss = { presentPane = null })
     }
     guardAction?.let { request ->
         val guarded = request.editor
@@ -870,7 +860,6 @@ private class PaneActions(
     val onInsertImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onAddStickers: () -> Unit,
-    val onPresent: () -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
     val onSavePagesAsPdf: (Editor, List<Int>) -> Unit,
     val onSavePagesAsImages: (Editor, List<Int>) -> Unit,
@@ -1050,7 +1039,6 @@ private fun EditorPane(
                 onOpenBackstage = actions.onOpenBackstage,
                 onInsertImage = { actions.onInsertImage(editor, null) },
                 onAddStickers = actions.onAddStickers,
-                onPresent = actions.onPresent,
                 onClosePane = onClose,
             )
             Row(modifier = Modifier.weight(1f).fillMaxWidth()) {

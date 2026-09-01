@@ -16,7 +16,7 @@ import kotlin.math.min
  * a page margin is ruled like the rest of the page — and the pattern is anchored to page-space zero,
  * so growing a margin extends the ruling outward instead of shifting it under the ink already
  * written on it. [region] is the page-local rect actually being painted — the whole footprint for
- * the page cache / thumbnails / presentation, or just the visible sub-rect for the deep-zoom sharp
+ * the page cache / thumbnails, or just the visible sub-rect for the deep-zoom sharp
  * viewport — used to skip primitives outside it. Thickness is fixed ([PageStyle.LINE_THICKNESS] /
  * [PageStyle.DOT_RADIUS]); [spacing] is the pattern period. The pen is content-space ([Pen.cosmetic]
  * = false) so the ruling scales with zoom like the page it belongs to.

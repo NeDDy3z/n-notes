@@ -44,7 +44,6 @@
 ## At a glance
 
 - **Pressure-sensitive ink**: a custom stroke engine turns raw stylus samples into a smooth, variable-width ribbon that swells and tapers with pen pressure, so handwriting and sketches feel natural instead of like a flat marker.
-- **Live presentation streaming**: broadcast your canvas to any web browser on the same network in real time. Turn a tablet into a wireless whiteboard for the room, with nothing to install on the other end.
 - **Vector PDF, in and out**: drop in a PDF as a page background to annotate, then export your notes back to PDF as true vector: ink and text stay crisp at any zoom instead of being flattened to pixels.
 - **Razor-sharp deep zoom**: a background renderer redraws a high-resolution viewport off the main thread, so you can zoom far in and the ink stays sharp rather than turning blocky.
 - **Real highlighter blending**: highlighters are composited live every frame with a true multiply blend, so overlapping strokes deepen like real ink instead of painting over one another.
@@ -52,7 +51,7 @@
 - **Smart PDF dark mode**: invert a PDF page for comfortable night reading while leaving embedded photos and images untouched.
 - **Nothing is ever flattened**: every stroke is stored as editable vector data in the open `.xnote` format, so you can re-select, move, restyle, or erase any mark at any time.
 - **Stylus-aware by design**: pen and finger are handled separately, so you can pan with a finger while you draw with the pen; on devices without a stylus, finger drawing turns on automatically.
-- **Private and open**: open source, no accounts, no telemetry. Files go through Android's Storage Access Framework, so the app needs no broad storage permission (network access exists only for the optional presentation server).
+- **Private and open**: open source, no accounts, no telemetry, no network access at all. Files go through Android's Storage Access Framework, so the app needs no broad storage permission either.
 
 ## Install
 

@@ -72,23 +72,6 @@ class GeometryEvictionTest {
         assertFalse("bounds() must not resurrect the geometry", stroke.hasGeometry)
     }
 
-    @Test fun presentedPagesKeepGeometryWhileScrolledAway() {
-        val st = state()
-        val onScreen = st.document.pages[0]
-        val presented = st.document.pages[3]
-        st.presCacheFor(presented) // the stream renders it every frame
-        st.cacheFor(onScreen)
-        assertTrue(presented.anyGeometry())
-
-        st.dropCachesExcept(setOf(onScreen)) // presented page is nowhere near the viewport
-        assertTrue("a streamed page must keep its ribbons", presented.anyGeometry())
-
-        st.clearPresentationCaches()
-        st.dropPresCachesExcept(emptySet())
-        st.dropCachesExcept(setOf(onScreen))
-        assertFalse("once presentation stops it is an ordinary off-band page", presented.anyGeometry())
-    }
-
     @Test fun geometryIsRebuiltOnDemandAfterEviction() {
         val st = state()
         val page = st.document.pages[0]

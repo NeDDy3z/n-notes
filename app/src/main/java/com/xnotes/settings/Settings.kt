@@ -17,32 +17,6 @@ import com.xnotes.core.tools.ToolbarLayout
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Presentation-server defaults (spec 09 §5 / 12 §10). */
-data class PresentationSettings(
-    val port: Int = 8000,
-    val scope: String = "localhost", // "localhost" | "lan"
-    val mode: String = "page", // "page" | "follow"
-    val quality: String = "medium", // "low" | "medium" | "high"
-    val maxFps: Int = 30,
-) {
-    fun toJson(): JSONObject = JSONObject()
-        .put("port", port).put("scope", scope).put("mode", mode)
-        .put("quality", quality).put("max_fps", maxFps)
-
-    companion object {
-        fun fromJson(o: JSONObject?): PresentationSettings {
-            if (o == null) return PresentationSettings()
-            return PresentationSettings(
-                port = o.optInt("port", 8000),
-                scope = if (o.optString("scope", "localhost") == "lan") "lan" else "localhost",
-                mode = if (o.optString("mode", "page") == "follow") "follow" else "page",
-                quality = o.optString("quality", "medium").let { if (it in setOf("low", "medium", "high")) it else "medium" },
-                maxFps = o.optInt("max_fps", 30),
-            )
-        }
-    }
-}
-
 /**
  * How the in-app explorer orders entries. The chosen key sorts within each group (folders first,
  * then files); [Settings.explorerSortDescending] flips the direction.
@@ -81,7 +55,6 @@ data class Settings(
     val explorerSortKey: ExplorerSortKey = ExplorerSortKey.MODIFIED,
     val explorerSortDescending: Boolean = true,
     val renderScale: Double = 1.0,
-    val presentation: PresentationSettings = PresentationSettings(),
     /** All Pages style stamped onto every newly created note; empty ⇒ none saved. */
     val newNoteStyle: PageStyle = PageStyle(),
     /** Flow (text tool) defaults stamped onto every newly created note; empty ⇒ none saved. */
@@ -117,7 +90,6 @@ data class Settings(
             .put("explorer_sort_key", explorerSortKey.id)
             .put("explorer_sort_descending", explorerSortDescending)
             .put("render_scale", renderScale)
-            .put("presentation", presentation.toJson())
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .apply { if (!newNoteFlow.isEmpty) put("new_note_flow", flowDefaultsJson(newNoteFlow)) }
             .put("prefs", prefs.toJson())
@@ -165,7 +137,6 @@ data class Settings(
                 explorerSortKey = ExplorerSortKey.fromId(o.optString("explorer_sort_key", "modified")),
                 explorerSortDescending = o.optBoolean("explorer_sort_descending", true),
                 renderScale = o.optDouble("render_scale", 1.0),
-                presentation = PresentationSettings.fromJson(o.optJSONObject("presentation")),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 newNoteFlow = flowDefaults(o.optJSONObject("new_note_flow")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),

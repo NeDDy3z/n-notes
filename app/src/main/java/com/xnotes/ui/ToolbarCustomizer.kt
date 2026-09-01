@@ -459,7 +459,6 @@ private fun itemIcon(item: ToolbarItem): ImageVector = when (item) {
     ToolbarItem.FIT -> XnotesIcons.fit
     ToolbarItem.ZOOM_LOCK -> XnotesIcons.lock
     ToolbarItem.FULLSCREEN -> XnotesIcons.fullscreen
-    ToolbarItem.PRESENT -> XnotesIcons.present
     ToolbarItem.COLORS -> XnotesIcons.more
     ToolbarItem.WAYPOINTS -> XnotesIcons.bookmark
     ToolbarItem.MINIMAP -> XnotesIcons.map

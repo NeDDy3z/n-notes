@@ -379,10 +379,6 @@ class InteractionController(
 
     val hasSelection: Boolean get() = selection.isNotEmpty()
 
-    /** The in-progress stroke and the page it is on (for the presentation frame). */
-    val activeLiveStroke: Stroke? get() = liveStroke
-    val activeLiveStrokePage: Int? get() = strokePageIndex
-
     fun configFor(t: Tool): ToolConfig = toolConfigs[t] ?: ToolDefaults.configFor(t)
 
     fun setToolConfig(t: Tool, config: ToolConfig) {

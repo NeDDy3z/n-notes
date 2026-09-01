@@ -31,7 +31,7 @@ class ToolbarLayoutTest {
             listOf(ToolbarItem.WAND, ToolbarItem.SHAPE, ToolbarItem.RULER, ToolbarItem.TEXT, ToolbarItem.TEXT_BOX),
             d.sections[4].entries.map { it.item },
         )
-        assertEquals(listOf(ToolbarItem.FULLSCREEN, ToolbarItem.PRESENT), d.sections[10].entries.map { it.item })
+        assertEquals(listOf(ToolbarItem.FULLSCREEN), d.sections[10].entries.map { it.item })
     }
 
     @Test fun defaultContainsEveryItemOnce() {
@@ -66,11 +66,11 @@ class ToolbarLayoutTest {
 
     @Test fun missingItemsAppendedToLastSectionVisible() {
         val raw = ToolbarLayout.DEFAULT.toRaw()
-            .map { s -> s.filterNot { it.first == ToolbarItem.PRESENT.id || it.first == ToolbarItem.STYLES.id } }
+            .map { s -> s.filterNot { it.first == ToolbarItem.FULLSCREEN.id || it.first == ToolbarItem.STYLES.id } }
         val back = ToolbarLayout.fromRaw(raw)
         assertEquals(ToolbarLayout.NOTE_ITEMS, back.items().toSet())
         val last = back.sections.last().entries
-        assertTrue(last.any { it.item == ToolbarItem.PRESENT && it.visible })
+        assertTrue(last.any { it.item == ToolbarItem.FULLSCREEN && it.visible })
         assertTrue(last.any { it.item == ToolbarItem.STYLES && it.visible })
     }
 

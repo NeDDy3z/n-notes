@@ -23,7 +23,6 @@ import com.xnotes.core.pal.TextFlags
 /**
  * A [Renderer] backed by an [android.graphics.Canvas]. The same implementation
  * draws to the on-screen view, into page-cache/thumbnail bitmaps, to PDF export
- * and to presentation frames.
  *
  * Only translation and uniform scaling are used; the cumulative scale is tracked
  * so a cosmetic pen's width stays constant in device pixels regardless of zoom.

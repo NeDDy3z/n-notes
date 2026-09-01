@@ -40,7 +40,6 @@ enum class ToolbarItem(val id: String, val label: String) {
     FIT("fit", "Fit"),
     ZOOM_LOCK("zoom_lock", "Zoom lock"),
     FULLSCREEN("fullscreen", "Full screen"),
-    PRESENT("present", "Present"),
     COLORS("colors", "Colours"),
 
     /** Canvas only: saved views, which are what page numbers are on an unbounded surface. */
@@ -188,7 +187,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
             listOf(ToolbarItem.PAGE_NAV, ToolbarItem.STYLES, ToolbarItem.MARGINS, ToolbarItem.VIEW),
             listOf(ToolbarItem.ZOOM, ToolbarItem.FIT, ToolbarItem.ZOOM_LOCK),
-            listOf(ToolbarItem.FULLSCREEN, ToolbarItem.PRESENT),
+            listOf(ToolbarItem.FULLSCREEN),
         )
 
         /** Mirrors the hardcoded canvas bar (see InfiniteToolbar.kt). */

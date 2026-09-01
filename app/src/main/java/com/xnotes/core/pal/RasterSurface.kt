@@ -4,7 +4,7 @@ import com.xnotes.core.model.Rgba
 
 /**
  * An off-screen ARGB pixel buffer (spec 01 §2): the per-page ink cache,
- * thumbnails, decoded images and presentation frames. A host MUST allow drawing
+ * thumbnails and decoded images. A host MUST allow drawing
  * additional content into an existing surface (a finished stroke is *appended*
  * to its page cache rather than re-rendering the whole page).
  */
