@@ -45,11 +45,14 @@ class PixelRect(
     }
 
     /** Cut down to a surface [w] by [h], which can leave it empty. */
-    fun clampTo(w: Int, h: Int) {
-        left = left.coerceIn(0, w)
-        right = right.coerceIn(0, w)
-        top = top.coerceIn(0, h)
-        bottom = bottom.coerceIn(0, h)
+    fun clampTo(w: Int, h: Int) = clampTo(0, 0, w, h)
+
+    /** Cut down to a box, which can leave it empty. */
+    fun clampTo(l: Int, t: Int, r: Int, b: Int) {
+        left = left.coerceIn(l, r)
+        right = right.coerceIn(l, r)
+        top = top.coerceIn(t, b)
+        bottom = bottom.coerceIn(t, b)
     }
 
     /** Whether this and [o] share a pixel. An empty rectangle meets nothing. */

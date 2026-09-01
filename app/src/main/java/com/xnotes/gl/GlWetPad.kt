@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Everything EGL and GL belongs to [thread]. The main thread posts messages and reads nothing.
  */
-class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
+class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context), SurfaceHolder.Callback {
 
     private val ink = GlWetPadInk()
 
@@ -89,7 +89,11 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         private set
 
     init {
-        setZOrderMediaOverlay(true)
+        // Above the window, for a canvas that draws into the window itself: a surface below it
+        // punches a transparent hole through everything under it, which would take the page with
+        // it. Above the canvas but still below the window otherwise, which is where a GL canvas
+        // wants it.
+        if (onTop) setZOrderOnTop(true) else setZOrderMediaOverlay(true)
         holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
         holder.addCallback(this)
     }
@@ -125,9 +129,15 @@ class GlWetPad(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
      * The switch is posted rather than awaited. The handler is in order, so it has happened before
      * the first draw runs, and nothing here has to block the hand.
      */
-    fun beginStroke(scrollX: Double, scrollY: Double, zoom: Double, samples: Int): Boolean {
+    fun beginStroke(
+        scrollX: Double,
+        scrollY: Double,
+        zoom: Double,
+        samples: Int,
+        clip: com.xnotes.core.infinite.PixelRect? = null,
+    ): Boolean {
         if (!ready) return false
-        if (!ink.begin(scrollX, scrollY, zoom, width, height)) return false
+        if (!ink.begin(scrollX, scrollY, zoom, width, height, clip)) return false
         // Read here, on the main thread, because the delay the handover needs is one of these and
         // the pad's own thread has no display.
         val hz = display?.refreshRate ?: 0f

@@ -27,7 +27,7 @@ import kotlin.math.max
  * ### Threads
  *
  * The main thread owns the queue and the session; the render thread owns every GL object and never
- * reads the model. What crosses is five numbers baked at pen down and triangles that were built
+ * reads the model. What crosses is the view baked at pen down and triangles that were built
  * before they were handed over. The viewport cannot move while a stroke is down, which is what lets
  * the session be baked once.
  */
@@ -40,6 +40,8 @@ class GlWetPadInk {
         val zoom: Double,
         val width: Int,
         val height: Int,
+        /** Where the stroke is allowed to show, in view pixels: a page's paper, or the surface. */
+        val clip: PixelRect,
     )
 
     /** Triangles handed over, already meshed. A run is appended once; the tail replaces the last. */
@@ -120,11 +122,28 @@ class GlWetPadInk {
 
     // --- main thread ---
 
-    /** Take the stroke. The view given here is the view the whole stroke is painted through. */
-    fun begin(scrollX: Double, scrollY: Double, zoom: Double, width: Int, height: Int): Boolean {
+    /**
+     * Take the stroke. The view given here is the view the whole stroke is painted through, and
+     * [clip] is the only part of the surface it may reach, in view pixels: the paged canvas clips
+     * live ink to the paper it is on, and a pen crossing the edge must meet it here too.
+     */
+    fun begin(
+        scrollX: Double,
+        scrollY: Double,
+        zoom: Double,
+        width: Int,
+        height: Int,
+        clip: PixelRect? = null,
+    ): Boolean {
         if (width <= 0 || height <= 0 || !zoom.isFinite() || zoom <= 0.0) return false
+        val box = PixelRect(0, 0, width, height)
+        if (clip != null) {
+            box.set(clip)
+            box.clampTo(width, height)
+            if (box.isEmpty) return false
+        }
         pending.clear()
-        session = Session(scrollX, scrollY, zoom, width, height)
+        session = Session(scrollX, scrollY, zoom, width, height, box)
         return true
     }
 
@@ -187,7 +206,7 @@ class GlWetPadInk {
         }
 
         drain(s)
-        damage.clampTo(surfaceW, surfaceH)
+        damage.clampTo(s.clip.left, s.clip.top, s.clip.right, s.clip.bottom)
         if (damage.isEmpty) { why = "no damage, runs=${runPieces.size} tail=${tailPieces.size}"; return false }
 
         val dw = damage.width
