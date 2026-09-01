@@ -18,6 +18,18 @@ import com.xnotes.core.model.TextStyle
 interface Command {
     fun redo()
     fun undo()
+
+    /**
+     * The items this command's undo/redo can change, each paired with the page it sits on, so the
+     * view repairs just those regions instead of re-rasterizing every cached page. The caller reads
+     * the items' bounds on **both** sides of the swap, so a moved or resized item reports where it
+     * was as well as where it lands; a command only has to name the items it will disturb.
+     *
+     * Null means "can't say" and the caller repaints everything, which is what a command whose edit
+     * isn't item-shaped (a page insert, a text-flow reflow) must return. [locate] finds the page an
+     * item currently sits on, for commands that hold items but not pages.
+     */
+    fun touched(locate: (CanvasItem) -> Page?): List<Pair<Page, CanvasItem>>? = null
 }
 
 /** Append an item to a page (finishing a stroke, pasting/inserting, new text). */
@@ -29,6 +41,8 @@ class AddItem(private val page: Page, private val item: CanvasItem) : Command {
     override fun undo() {
         page.items.removeRef(item)
     }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = listOf(page to item)
 }
 
 /** Append several items to a page as one edit (paste / duplicate). */
@@ -40,6 +54,8 @@ class AddItems(private val page: Page, private val items: List<CanvasItem>) : Co
     override fun undo() {
         for (item in items) page.items.removeRef(item)
     }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = items.map { page to it }
 }
 
 /** Remove a set of (page, item) pairs (object erase, or delete selection). */
@@ -51,6 +67,8 @@ class EraseItems(private val removals: List<Pair<Page, CanvasItem>>) : Command {
     override fun undo() {
         for ((page, item) in removals) if (!page.items.containsRef(item)) page.items.add(item)
     }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = removals
 }
 
 /**
@@ -65,6 +83,16 @@ class ReplacePageItems(
 ) : Command {
     override fun redo() = page.items.replaceWith(after)
     override fun undo() = page.items.replaceWith(before)
+
+    /** Only the fragments the split added or removed moved; the untouched majority of the page didn't. */
+    override fun touched(locate: (CanvasItem) -> Page?): List<Pair<Page, CanvasItem>> {
+        val out = ArrayList<Pair<Page, CanvasItem>>()
+        val kept = identitySetOf(after)
+        for (item in before) if (item !in kept) out.add(page to item)
+        val was = identitySetOf(before)
+        for (item in after) if (item !in was) out.add(page to item)
+        return out
+    }
 }
 
 /** Translate a selection by a fixed delta. */
@@ -80,6 +108,8 @@ class MoveItems(
     override fun undo() {
         for (it in items) it.translate(-dx, -dy)
     }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(items, locate)
 }
 
 /**
@@ -111,6 +141,10 @@ class TransferItems(private val transfers: List<Transfer>) : Command {
             if (!t.from.items.containsRef(t.item)) t.from.items.add(t.item)
         }
     }
+
+    /** Both pages: the item has to be rubbed out of the one it left and painted onto the one it joins. */
+    override fun touched(locate: (CanvasItem) -> Page?) =
+        transfers.flatMap { listOf(it.from to it.item, it.to to it.item) }
 }
 
 /** Resize an item by swapping its opaque geometry handle. */
@@ -121,6 +155,9 @@ class ResizeItem(
 ) : Command {
     override fun redo() = item.setGeometry(newGeom)
     override fun undo() = item.setGeometry(oldGeom)
+
+    override fun touched(locate: (CanvasItem) -> Page?) =
+        (item as? CanvasItem)?.let { pagedItems(listOf(it), locate) }
 }
 
 /**
@@ -135,6 +172,8 @@ class TransformItems(
 ) : Command {
     override fun redo() = items.forEachIndexed { i, it -> it.restoreGeometry(after[i]) }
     override fun undo() = items.forEachIndexed { i, it -> it.restoreGeometry(before[i]) }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(items, locate)
 }
 
 /** Change the text of an existing text box. */
@@ -150,6 +189,8 @@ class EditText(
     override fun undo() {
         item.text = oldText
     }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(listOf(item), locate)
 }
 
 /** Restyle a text box (colour, point size, face) — geometry and text are untouched. */
@@ -160,6 +201,8 @@ class RestyleText(
 ) : Command {
     override fun redo() = newStyle.applyTo(item)
     override fun undo() = oldStyle.applyTo(item)
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(listOf(item), locate)
 }
 
 /**
@@ -176,6 +219,8 @@ class RestyleItems(private val entries: List<Entry>) : Command {
     override fun undo() {
         for (e in entries) e.before.applyTo(e.item)
     }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(entries.map { it.item }, locate)
 }
 
 /**
@@ -190,6 +235,8 @@ class LockItems(private val items: List<CanvasItem>, private val locked: Boolean
     override fun undo() {
         for (item in items) item.locked = !locked
     }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(items, locate)
 }
 
 /** Replace a page's item list (bring-to-front), via full before/after snapshots. */
@@ -200,6 +247,19 @@ class ReorderItems(
 ) : Command {
     override fun redo() = page.items.replaceWith(newOrder)
     override fun undo() = page.items.replaceWith(oldOrder)
+
+    /** Nothing moved, so only where the items that changed depth overlap can look different. */
+    override fun touched(locate: (CanvasItem) -> Page?): List<Pair<Page, CanvasItem>> {
+        val out = ArrayList<Pair<Page, CanvasItem>>()
+        for (i in 0 until maxOf(oldOrder.size, newOrder.size)) {
+            val was = oldOrder.getOrNull(i)
+            val now = newOrder.getOrNull(i)
+            if (was === now) continue
+            if (was != null) out.add(page to was)
+            if (now != null) out.add(page to now)
+        }
+        return out
+    }
 }
 
 /** Insert a page at an index. */
@@ -228,6 +288,13 @@ class CompositeCommand(private val commands: List<Command>) : Command {
     override fun undo() {
         for (c in commands.asReversed()) c.undo()
     }
+
+    /** One vague step makes the whole composite vague: the caller has to repaint everything. */
+    override fun touched(locate: (CanvasItem) -> Page?): List<Pair<Page, CanvasItem>>? {
+        val out = ArrayList<Pair<Page, CanvasItem>>()
+        for (c in commands) out.addAll(c.touched(locate) ?: return null)
+        return out
+    }
 }
 
 /** Delete a page (reversible by re-inserting at its original index). */
@@ -246,6 +313,21 @@ class DeletePage(
         }
     }
 }
+
+// --- touched-region helpers ---
+
+/**
+ * Pair each item with the page it currently sits on. An item on no page (never happens for a live
+ * command, but a stale reference would) has no cache to repair, so it drops out rather than forcing
+ * the whole command to give up.
+ */
+private fun pagedItems(
+    items: List<CanvasItem>,
+    locate: (CanvasItem) -> Page?,
+): List<Pair<Page, CanvasItem>> = items.mapNotNull { item -> locate(item)?.let { it to item } }
+
+/** Items never override equals, so a plain hash set already compares by reference. */
+private fun identitySetOf(items: List<CanvasItem>): Set<CanvasItem> = HashSet(items)
 
 // --- identity-based list helpers (items/pages compare by reference) ---
 

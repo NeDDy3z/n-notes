@@ -12,6 +12,11 @@ class History {
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
+    /** The command the next [undo]/[redo] would apply, so a caller can read what it is about to
+     *  disturb (see [Command.touched]) before and after the swap. */
+    val nextUndo: Command? get() = undoStack.lastOrNull()
+    val nextRedo: Command? get() = redoStack.lastOrNull()
+
     /** Record an already-applied edit and invalidate any redo branch. */
     fun push(command: Command) {
         undoStack.addLast(command)
