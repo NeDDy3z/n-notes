@@ -35,6 +35,8 @@ class GlWetPadInk {
 
     /** Everything a present needs from the main thread, baked at pen down and never revisited. */
     private class Session(
+        /** Counts up per stroke, so a batch can say which view it was meshed through. */
+        val serial: Long,
         val scrollX: Double,
         val scrollY: Double,
         val zoom: Double,
@@ -45,7 +47,7 @@ class GlWetPadInk {
     )
 
     /** Triangles handed over, already meshed. A run is appended once; the tail replaces the last. */
-    private class Batch(val parts: List<MeshPart>, val settled: Boolean)
+    private class Batch(val serial: Long, val parts: List<MeshPart>, val settled: Boolean)
 
     /** An uploaded slice with the pixels it can reach, so a present that misses it can skip it. */
     private class Piece(val slice: BufferSlice, val bounds: PixelRect?)
@@ -54,6 +56,9 @@ class GlWetPadInk {
 
     @Volatile
     private var session: Session? = null
+
+    /** Serials handed out, read and written on the main thread only. */
+    private var serials = 0L
 
     // --- render thread ---
 
@@ -142,20 +147,21 @@ class GlWetPadInk {
             box.clampTo(width, height)
             if (box.isEmpty) return false
         }
-        pending.clear()
-        session = Session(scrollX, scrollY, zoom, width, height, box)
+        session = Session(++serials, scrollX, scrollY, zoom, width, height, box)
         return true
     }
 
     /** Ribbon that has stopped moving, added to what is already down. */
     fun appendRun(parts: List<MeshPart>) {
         if (parts.isEmpty()) return
-        pending.add(Batch(parts, settled = true))
+        val s = session ?: return
+        pending.add(Batch(s.serial, parts, settled = true))
     }
 
     /** The points still in play, replacing whatever was there. */
     fun setTail(parts: List<MeshPart>) {
-        pending.add(Batch(parts, settled = false))
+        val s = session ?: return
+        pending.add(Batch(s.serial, parts, settled = false))
     }
 
     fun end() {
@@ -301,10 +307,21 @@ class GlWetPadInk {
         boxBottom = 0
     }
 
-    /** Take everything the main thread has handed over, and work out what it dirtied. */
+    /**
+     * Take everything the main thread has handed over for *this* stroke, and work out what it
+     * dirtied.
+     *
+     * A present reads the session once and can still be here when the next pen down installs the
+     * following one, so a batch says which view it was meshed through rather than being assumed to
+     * belong to whatever is being drawn. Anything older is left over from a stroke already handed
+     * over; anything newer belongs to a present that has not started yet, and waits for it.
+     */
     private fun drain(s: Session) {
         while (true) {
-            val batch = pending.poll() ?: break
+            val batch = pending.peek() ?: break
+            if (batch.serial > s.serial) break
+            pending.poll()
+            if (batch.serial < s.serial) continue
             if (batch.settled) {
                 val added = upload(batch.parts, runs, s)
                 if (added.isNotEmpty()) runPieces = runPieces + added
