@@ -4624,20 +4624,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     // Some pens report the side button as a momentary vendor key click, not a held state, so it can't
     // drive the hold latch; fire the mapped gesture on key-down, ignore up. HONOR Magic-Pencil 4s ->
     // 333; Lenovo Tab Pen Plus -> 601 (its one code with a clean down; it also emits 600/603/604 ups).
-    // Stylus buttons with codes 92 and 93 for additional tap actions.
+    // Redmi Smart Pen sends its two buttons as the plain page keys, so 92/93 stay claimable by a
+    // hardware keyboard: an unmapped button falls through and still pages the note.
     private val penButtonTapKeycodes = setOf(333, 601, 92, 93)
     private fun onPenButtonTapKey(e: android.view.KeyEvent): Boolean {
-        if (e.action != android.view.KeyEvent.ACTION_DOWN) return false
-        
-        if (e.keyCode == 333 && preferences.stylusButtonTap != "none") {
-            dispatchTapGesture(preferences.stylusButtonTap)
-        } else if (e.keyCode == 601 && preferences.stylusButtonTap != "none") {
-            dispatchTapGesture(preferences.stylusButtonTap)
-        } else if (e.keyCode == 92 && preferences.stylusButton1Tap != "none") {
-            dispatchTapGesture(preferences.stylusButton1Tap)
-        } else if (e.keyCode == 93 && preferences.stylusButton2Tap != "none") {
-            dispatchTapGesture(preferences.stylusButton2Tap)
+        val action = when (e.keyCode) {
+            android.view.KeyEvent.KEYCODE_PAGE_UP -> preferences.stylusButton1Tap
+            android.view.KeyEvent.KEYCODE_PAGE_DOWN -> preferences.stylusButton2Tap
+            else -> preferences.stylusButtonTap
         }
+        if (action == "none") return false
+        if (e.action == android.view.KeyEvent.ACTION_DOWN) dispatchTapGesture(action)
         return true
     }
 

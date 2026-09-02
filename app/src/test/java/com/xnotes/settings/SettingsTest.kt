@@ -83,6 +83,24 @@ class SettingsTest {
         assertTrue(back.prefs.hidePageBorders)
     }
 
+    @Test fun everyTapGestureMappingRoundTrips() {
+        val prefs = Preferences(
+            twoFingerTap = "undo",
+            threeFingerTap = "redo",
+            stylusDoubleTap = "toggle_eraser",
+            stylusButtonTap = "toggle_pan",
+            stylusButton1Tap = "toggle_previous",
+            stylusButton2Tap = "undo",
+        )
+        val back = Settings.fromJson(Settings(prefs = prefs).toJson()).prefs
+        assertEquals("undo", back.twoFingerTap)
+        assertEquals("redo", back.threeFingerTap)
+        assertEquals("toggle_eraser", back.stylusDoubleTap)
+        assertEquals("toggle_pan", back.stylusButtonTap)
+        assertEquals("toggle_previous", back.stylusButton1Tap)
+        assertEquals("undo", back.stylusButton2Tap)
+    }
+
     @Test fun customPageSizeRoundTripsAndSizesANewPage() {
         val prefs = Preferences(
             defaultPageSize = PageSize.CUSTOM,
