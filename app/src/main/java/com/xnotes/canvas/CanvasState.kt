@@ -1606,6 +1606,15 @@ class CanvasState(
     var openFileBytes = -1L
     var lastSaveBytes = -1L
 
+    /** Last note-save timings (ms), for the debug overlay; -1 until the first save.
+     *  [lastSaveTotalMs] is the whole save the editor runs, from snapshot to bookkeeping done;
+     *  the other three are its phases: the model deep copy, the encode+deflate into the temp
+     *  file, and the temp-to-SAF byte copy. Set by the editor's note-save paths only. */
+    var lastSaveTotalMs = -1L
+    var lastSaveSnapshotMs = -1L
+    var lastSaveEncodeMs = -1L
+    var lastSaveCopyMs = -1L
+
     /** Autosave status for the debug overlay, set by the editor: "idle", "pending", "in progress",
      *  "done" or "failed". */
     var autosaveStatus = "idle"

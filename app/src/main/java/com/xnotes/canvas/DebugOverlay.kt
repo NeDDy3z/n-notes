@@ -114,6 +114,11 @@ class DebugOverlay {
                 add("file orig  ${fmtBytes(state.openFileBytes)}")
             }
             if (state.lastSaveBytes >= 0) add("file live  ${fmtBytes(state.lastSaveBytes)}")
+            if (state.lastSaveTotalMs >= 0) {
+                add("save      ${state.lastSaveTotalMs} ms")
+                add("  snap ${state.lastSaveSnapshotMs} / enc ${state.lastSaveEncodeMs}" +
+                    " / saf ${state.lastSaveCopyMs}")
+            }
         }
 
         val lineH = AndroidText.lineHeight(FONT)

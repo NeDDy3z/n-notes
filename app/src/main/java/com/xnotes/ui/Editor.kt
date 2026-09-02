@@ -2164,6 +2164,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  failed encode never truncates the note. Returns false (and shows a message) on failure, e.g.
      *  so the caller can fall back to a Save-As picker. */
     fun saveTo(uri: String): Boolean {
+        val startNs = System.nanoTime()
         if (!writeNoteSafely(uri, state.document)) {
             message = "Could not save the note."
             return false
@@ -2173,6 +2174,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         maybeBindAutosave(uri)
         refreshContent()
         invalidateThumb(uri)
+        state.lastSaveSnapshotMs = 0L // writes the live document; no snapshot phase
+        state.lastSaveTotalMs = msSince(startNs)
         return true
     }
 
@@ -2990,10 +2993,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         runCatching {
             val tmp = java.io.File.createTempFile("save", ".xnote", saveTmpDir)
             try {
+                val encodeStart = System.nanoTime()
                 java.io.FileOutputStream(tmp).use { codec.write(doc, it) }
+                val copyStart = System.nanoTime()
                 val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
                     ?: return@runCatching false
                 out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it) } }
+                state.lastSaveEncodeMs = msBetween(encodeStart, copyStart) // both for the debug overlay
+                state.lastSaveCopyMs = msSince(copyStart)
                 state.lastSaveBytes = tmp.length() // live file size for the debug overlay
                 lastNoteStamp = stampOf(uri) // read back what the provider reports, not what we wrote
                 true
@@ -3002,6 +3009,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
         }.getOrDefault(false)
     }
+
+    /** Elapsed milliseconds since a [System.nanoTime] mark, for the debug overlay's save timings. */
+    private fun msSince(startNs: Long): Long = msBetween(startNs, System.nanoTime())
+
+    private fun msBetween(startNs: Long, endNs: Long): Long = (endNs - startNs) / 1_000_000L
 
     /** The on-disk size of the SAF document at [uri] in bytes, or -1 when the provider won't say. */
     private fun fileSizeOf(uri: String): Long = runCatching {
@@ -3018,9 +3030,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.autosaveStatus = "pending" // debounce running; drives the debug overlay
         autosaveJob = autosaveScope.launch {
             kotlinx.coroutines.delay(1200L) // debounce: write after a short idle
+            val startNs = System.nanoTime() // the debug overlay's save timings start once the debounce fires
             // Snapshot on the main thread so the off-thread write never iterates the live
             // (mutating) model — but page-by-page, so a dense note can't hitch pen input.
             val snapshot = snapshotDocument() ?: return@launch
+            state.lastSaveSnapshotMs = msSince(startNs)
             val title = state.document.displayName ?: state.document.title
             state.autosaveStatus = "in progress"
             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -3032,6 +3046,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 invalidateThumb(res.uri) // file changed on disk; drop the stale tile so the grid re-renders it
             }
             state.autosaveStatus = if (res != null) "done" else "failed"
+            state.lastSaveTotalMs = msSince(startNs)
         }
     }
 
@@ -3059,10 +3074,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val uri = autosaveUri ?: return
         if (!state.document.dirty) return
         val title = state.document.displayName ?: state.document.title
+        val startNs = System.nanoTime()
         val res = saveNoteGuarded(uri, state.document, title) ?: return
         state.document.dirty = false; dirty = false
         res.fork?.let { adoptNoteFork(it) }
         invalidateThumb(res.uri)
+        state.lastSaveSnapshotMs = 0L // this path writes the live document, so there is no copy
+        state.lastSaveTotalMs = msSince(startNs)
     }
 
     /**
@@ -3075,7 +3093,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         autosaveJob?.cancel()
         val uri = autosaveUri
         if (uri == null || !state.document.dirty) { onDone(); return }
+        val startNs = System.nanoTime()
         val snapshot = state.document.deepCopy(textMeasurer) // main thread: immune to edits during the write
+        state.lastSaveSnapshotMs = msSince(startNs)
         val title = state.document.displayName ?: state.document.title
         if (showOverlay) savingNote = true
         state.autosaveStatus = "in progress"
@@ -3089,6 +3109,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 invalidateThumb(res.uri)
             }
             state.autosaveStatus = if (res != null) "done" else "failed"
+            state.lastSaveTotalMs = msSince(startNs)
             savingNote = false
             onDone()
         }
