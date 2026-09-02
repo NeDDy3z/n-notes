@@ -181,15 +181,11 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             if (s.config.highlighterInverse) j.name("highlighter_inverse").value(true)
         }
         j.endObject()
-        // Samples are almost all of a dense manifest's bytes, so they serialize rounded: 0.01
+        // Samples are almost all of a dense manifest's bytes, so they go out through [JsonWrite.samplePoint], which rounds them: 0.01
         // content px and 0.001 pressure are far below anything visible. Rounding is idempotent,
         // so re-saving an untouched canvas stays byte-stable.
         j.name("samples").beginArray()
-        for (sm in s.samples) {
-            j.beginArray().value(round2(sm.x)).value(round2(sm.y)).value(round3(sm.pressure))
-            if (withTime) j.value(sm.t)
-            j.endArray()
-        }
+        for (sm in s.samples) j.samplePoint(sm.x, sm.y, sm.pressure, if (withTime) sm.t else null)
         j.endArray()
         if (withTime) j.name("speed_scale").value(s.speedScale)
         // The zoom the stroke was drawn at, as the scale on the ink low-pass lengths, so it
@@ -247,10 +243,6 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
     private fun writeRgba(j: JsonWrite, c: Rgba) {
         j.beginArray().value(c.r).value(c.g).value(c.b).value(c.a).endArray()
     }
-
-    private fun round2(v: Double): Double = if (v.isFinite()) Math.round(v * 100.0) / 100.0 else v
-
-    private fun round3(v: Double): Double = if (v.isFinite()) Math.round(v * 1000.0) / 1000.0 else v
 
     // --- streaming json -> model ---
 
