@@ -272,7 +272,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private fun pushItem(item: CanvasItem) {
         // Held back while the front buffer is still the only thing showing this stroke. The
         // document and the history already have it; only its triangles wait.
-        if (item === heldItem) return
+        for (h in heldItems) if (h === item) return
         if (item is ImageItem) {
             if (!pushVectorImage(item)) scene.upsertImage(item, item.paintBounds())
             return
@@ -690,8 +690,25 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Whether this stroke's route has been chosen; it needs one meshed tail to look at. */
     private var frontDecided = false
 
-    /** The committed stroke whose triangles are waiting for the front buffer to go opaque. */
-    private var heldItem: CanvasItem? = null
+    /**
+     * Committed strokes whose triangles are waiting for the front buffer to go opaque.
+     *
+     * More than one when strokes joined each other on the pad, which is what a hand quicker than
+     * the handover produces.
+     */
+    private var heldItems: List<CanvasItem> = emptyList()
+
+    /** Bumped by anything that outdates a handover in flight, so a stale capture cannot land. */
+    @Volatile
+    private var handoffGen = 0
+
+    /** The tail as it was last meshed, which a stroke joining this one has to settle first. */
+    private var wetTail: List<MeshPart> = emptyList()
+
+    /** [wetTail] of the stroke just committed, waiting for a joiner or for the handover. */
+    private var handoverTail: List<MeshPart> = emptyList()
+
+    private val mainHandler = android.os.Handler(appContext.mainLooper)
 
     /**
      * Hand the stroke under the pen to the scene, in two pieces where the pen allows it.
@@ -752,7 +769,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         val tailFrom = (wetMeshed - 1).coerceAtLeast(0)
         val tail = ItemMesher.meshRun(stroke, ribbon, tailFrom, ribbon.pointCount - tailFrom, wetArc)
         val parts = if (tail == null) emptyList() else listOf(tail)
-        if (!frontDecided) decideFrontInk(parts)
+        if (!frontDecided) decideFrontInk(stroke, parts)
+        wetTail = parts
         if (frontInk) pad.setTail(parts) else scene.setWetTail(parts, bounds)
     }
 
@@ -764,21 +782,111 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      * live there: a stencilled translucent pass, or a halo. Plain triangles can, and that is what
      * a pen and a pencil are.
      */
-    private fun decideFrontInk(parts: List<MeshPart>) {
+    private fun decideFrontInk(stroke: Stroke, parts: List<MeshPart>) {
         frontDecided = true
         if (parts.isEmpty() || parts.any { it.pass != InkPass.OPAQUE }) return
+        if (joinFrontInk()) return
+        // Nothing joined, so the pad has to be wiped for this stroke, and whatever it is holding has
+        // to reach the canvas first. Those pixels may not go before the canvas has published them.
+        if (heldItems.isNotEmpty()) return waitToStartFrontInk(stroke)
+        startFrontInk()
+    }
+
+    /**
+     * Lay this stroke over the ones the pad is still holding, on the same view.
+     *
+     * A hand that comes back down inside the handover is quicker than the handover is, and wiping
+     * the pad for it would take ink off the glass that the canvas has not drawn yet. The pad keeps
+     * every pixel instead; only the tail changes hands, and it is settled into a run first because
+     * this stroke's own tail replaces it. One handover at the end covers every stroke in the run.
+     */
+    private fun joinFrontInk(): Boolean {
+        if (heldItems.isEmpty() || !roomToJoin()) return false
+        if (!pad.extendStroke(viewport.scrollX, viewport.scrollY, viewport.zoom)) return false
+        // The capture the last stroke started is of a box this one is about to grow past.
+        handoffGen++
+        if (handoverTail.isNotEmpty()) pad.appendRun(handoverTail)
+        handoverTail = emptyList()
+        pad.setTail(emptyList())
+        frontInk = true
+        runPoints = FRONT_RUN_POINTS
+        view.setUnbufferedStylus(true)
+        return true
+    }
+
+    /**
+     * Whether the pad may grow any further.
+     *
+     * The handover ends with an opaque copy of the canvas under the whole run, and the canvas is
+     * frozen behind it for a few refreshes. A sliver of it is invisible; most of the screen is not.
+     */
+    private fun roomToJoin(): Boolean {
+        val box = pad.strokeBox() ?: return true
+        val seen = view.width.toLong() * view.height
+        return seen <= 0L || box.width().toLong() * box.height() * 2 <= seen
+    }
+
+    /**
+     * Take the pad once the canvas has published the ink it was showing.
+     *
+     * A wipe of a front buffer is on the glass at the next scanout, while the canvas's frame is only
+     * latched at the vsync after it is handed over, so wiping on the handover drops the last stroke
+     * for a refresh or two. One frame further on and the two overlap instead, which is the lesser
+     * artefact by a distance. The stroke goes into the scene's wet buffer until then, as every
+     * stroke does before it is decided, and is taken back out when the pad takes over.
+     */
+    private fun waitToStartFrontInk(stroke: Stroke) {
+        settleHeld()
+        val gen = handoffGen
+        view.publishThen {
+            mainHandler.post {
+                // A moved generation means another stroke has taken the pad and is answerable for it.
+                if (gen != handoffGen) return@post
+                android.view.Choreographer.getInstance().postFrameCallback {
+                    if (gen != handoffGen) return@postFrameCallback
+                    if (wetOwner !== stroke || !startFrontInk()) {
+                        // Nobody is going to take the pad, and the canvas has what it is showing.
+                        pad.release()
+                        return@postFrameCallback
+                    }
+                    // Out of the scene's wet buffer and onto the pad, in that order.
+                    wetMeshed = 0
+                    wetArc = 0.0
+                    scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
+                    publishWetStroke(stroke)
+                    view.publish()
+                }
+            }
+        }
+    }
+
+    /** Give the held strokes to the scene, leaving the pad alone, and outdate any capture for them. */
+    private fun settleHeld(): Boolean {
+        handoffGen++
+        val items = heldItems
+        if (items.isEmpty()) return false
+        heldItems = emptyList()
+        handoverTail = emptyList()
+        for (item in items) pushItem(item)
+        return true
+    }
+
+    private fun startFrontInk(): Boolean {
         frontInk = pad.beginStroke(viewport.scrollX, viewport.scrollY, viewport.zoom, view.msaaSamples)
-        if (!frontInk) return
+        if (!frontInk) return false
         // A shorter run on the front buffer, because there the tail is what a present has to clear
         // and rebuild, and its extent is the size of everything that present does.
         runPoints = FRONT_RUN_POINTS
         view.setUnbufferedStylus(true)
+        return true
     }
 
     /** Give the ink back with nothing to hand over, for a stroke that was abandoned. */
     private fun endFrontInk() {
         if (!frontInk) return
         frontInk = false
+        // Strokes that joined this one are still the pad's, and the pad is about to be wiped.
+        settleHeld()
         view.setUnbufferedStylus(false)
         pad.endStroke()
     }
@@ -787,6 +895,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         wetOwner = null
         wetMeshed = 0
         wetArc = 0.0
+        wetTail = emptyList()
     }
 
     /**
@@ -962,6 +1071,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Pen up: the finished stroke joins the document, and the edit joins the undo stack. */
     private fun commitStroke(stroke: Stroke) {
         // The commit message releases the wet buffers on the GL thread, so forget what was in them.
+        val tail = wetTail
         forgetWetStroke()
         val front = frontInk
         frontInk = false
@@ -970,16 +1080,22 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             return
         }
         pad.freeze()
+        // The tail was never settled into a run, so a stroke that joins this one has to do it.
+        handoverTail = tail
         view.setUnbufferedStylus(false)
         // The wand's ink never becomes a committed item, so there is nothing to hand it over to.
         if (wandEnabled && stroke.tool.isStroke) {
             holdEphemeral(stroke)
-            view.publishThen { pad.release() }
+            settleHeld()
+            val gen = handoffGen
+            view.publishThen { if (gen == handoffGen) pad.release() }
             return
         }
+        // A capture in flight was started for a run this stroke has since grown.
+        handoffGen++
         // Its triangles are held until the pad is opaque, so the canvas cannot draw the stroke
         // while the pad is also showing it. Everything else about the commit happens now.
-        heldItem = stroke
+        heldItems = heldItems + stroke
         commitItem(stroke)
         captureBehindStroke()
     }
@@ -1006,24 +1122,26 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         } catch (e: OutOfMemoryError) {
             return handOffStroke()
         }
-        val handler = android.os.Handler(appContext.mainLooper)
+        val gen = handoffGen
         // However the capture goes, the stroke reaches the canvas: late is a blink, never is a
         // lost stroke. One Runnable, held, because a fresh method reference cannot be cancelled.
-        val timeout = Runnable { handOffStroke() }
-        handler.postDelayed(timeout, CAPTURE_TIMEOUT_MS)
+        val timeout = Runnable { if (gen == handoffGen) handOffStroke() }
+        mainHandler.postDelayed(timeout, CAPTURE_TIMEOUT_MS)
         android.view.PixelCopy.request(view, box, capture, { result ->
-            handler.removeCallbacks(timeout)
+            mainHandler.removeCallbacks(timeout)
+            if (gen != handoffGen) return@request
             if (result != android.view.PixelCopy.SUCCESS) return@request handOffStroke()
-            pad.coverWith(capture, box) { handOffStroke() }
-        }, handler)
+            pad.coverWith(capture, box) { if (gen == handoffGen) handOffStroke() }
+        }, mainHandler)
     }
 
-    /** Let the held stroke reach the canvas, and take the pad down once that frame is out. */
+    /** Let the held strokes reach the canvas, and take the pad down once that frame is out. */
     private fun handOffStroke() {
-        val held = heldItem ?: return
-        heldItem = null
-        pushItem(held)
-        view.publishThen { pad.release() }
+        if (!settleHeld()) return
+        // The wait is a frame long, which is long enough for a new stroke to have taken the pad.
+        // Its ink would then be the only copy on screen, and this would wipe it.
+        val gen = handoffGen
+        view.publishThen { if (gen == handoffGen) pad.release() }
     }
 
     // --- disappearing ink (magic wand) ---

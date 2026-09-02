@@ -251,13 +251,18 @@ class FrontInk(
     ) {
         val gen = handoffGen
         view.publishThen {
-            if (gen != handoffGen || owner !== stroke) return@publishThen
+            // A moved generation means another stroke has taken the pad and is answerable for it.
+            if (gen != handoffGen) return@publishThen
             Choreographer.getInstance().postFrameCallback {
-                if (gen != handoffGen || owner !== stroke) return@postFrameCallback
-                if (!start(scrollX, scrollY, zoom, clip)) return@postFrameCallback
-                // Straight into a present, so the pad has the stroke before the canvas drops it.
-                wet(stroke, pageIndex)
-                view.requestRender()
+                if (gen != handoffGen) return@postFrameCallback
+                if (owner === stroke && start(scrollX, scrollY, zoom, clip)) {
+                    // Straight into a present, so the pad has the stroke before the canvas drops it.
+                    wet(stroke, pageIndex)
+                    view.requestRender()
+                } else {
+                    // Nobody is going to take the pad, and it is still showing ink the canvas has.
+                    pad.release()
+                }
             }
         }
     }
