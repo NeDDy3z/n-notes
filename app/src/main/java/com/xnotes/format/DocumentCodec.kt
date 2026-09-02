@@ -998,26 +998,19 @@ private fun ZipOutputStream.putDeflated(name: String, data: ByteArray) {
 
 /**
  * Stream [file] into a STORED (uncompressed) zip entry without ever holding it whole in memory.
- * STORED entries need size+CRC up front, so the file is read twice — once to checksum, once to
- * copy — both in small buffers. [isCancelled] is polled per buffer so a long copy can abort by
- * throwing [DocumentCodec.WriteCancelled] (the entry is left unfinished for the caller to discard).
+ * STORED entries need size+CRC up front, so the checksum has to be known before the copy starts;
+ * it comes from [AssetCrc], which remembers it rather than re-reading the file for it. [isCancelled]
+ * is polled per buffer so a long copy can abort by throwing [DocumentCodec.WriteCancelled] (the
+ * entry is left unfinished for the caller to discard).
  */
 private fun ZipOutputStream.putStored(name: String, file: File, isCancelled: () -> Boolean) {
-    val crc = CRC32()
     val buf = ByteArray(64 * 1024)
-    FileInputStream(file).use { input ->
-        while (true) {
-            val n = input.read(buf)
-            if (n < 0) break
-            crc.update(buf, 0, n)
-        }
-    }
     val size = file.length()
     val entry = ZipEntry(name).apply {
         method = ZipEntry.STORED
         this.size = size
         compressedSize = size
-        this.crc = crc.value
+        this.crc = AssetCrc.of(file)
     }
     putNextEntry(entry)
     FileInputStream(file).use { input ->

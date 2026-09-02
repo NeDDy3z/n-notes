@@ -766,21 +766,13 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
 }
 
 private fun ZipOutputStream.putStored(name: String, file: File, isCancelled: () -> Boolean) {
-    val crc = CRC32()
     val buf = ByteArray(64 * 1024)
-    FileInputStream(file).use { input ->
-        while (true) {
-            val n = input.read(buf)
-            if (n < 0) break
-            crc.update(buf, 0, n)
-        }
-    }
     val size = file.length()
     val entry = ZipEntry(name).apply {
         method = ZipEntry.STORED
         this.size = size
         compressedSize = size
-        this.crc = crc.value
+        this.crc = AssetCrc.of(file)
     }
     putNextEntry(entry)
     FileInputStream(file).use { input ->
