@@ -218,6 +218,21 @@ class HistoryTest {
         assertNull(CompositeCommand(listOf(known, AddPage(doc, Page(100.0, 100.0), 1))).touched(onPage(page)))
     }
 
+    @Test fun theStackDropsTheOldestEditPastItsLimit() {
+        val page = Page(100.0, 100.0)
+        val h = History(limit = 3)
+        val added = (0 until 5).map { strokeAt(it.toDouble()) }
+        for (s in added) {
+            page.items.add(s)
+            h.push(AddItem(page, s))
+        }
+
+        // Only the last three are reachable; undoing them all leaves the first two in place.
+        repeat(3) { h.undo() }
+        assertFalse(h.canUndo)
+        assertEquals(listOf(added[0], added[1]), page.items)
+    }
+
     @Test fun peeksReportTheNextCommandWithoutApplyingIt() {
         val page = Page(100.0, 100.0)
         val h = History()
