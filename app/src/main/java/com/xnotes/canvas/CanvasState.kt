@@ -1598,6 +1598,13 @@ class CanvasState(
     var lastOpenReadMs = -1L
     var lastOpenTotalMs = -1L
 
+    /** [lastOpenReadMs] broken into its phases: decompressing the manifest, turning that text into
+     *  the model, streaming the images and PDF out, and re-simplifying ink from an old writer. */
+    var lastOpenInflateMs = -1L
+    var lastOpenParseMs = -1L
+    var lastOpenAssetsMs = -1L
+    var lastOpenCompactMs = -1L
+
     /** Whether the open compacted legacy ink (pre-writer-43 file), for the debug overlay. */
     var lastOpenCompacted = false
 

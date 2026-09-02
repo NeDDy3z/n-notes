@@ -2152,11 +2152,22 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         try {
             val readStart = System.nanoTime()
             var fileBytes = -1L
+            val timing = com.xnotes.format.DocumentCodec.ReadTiming()
             val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 fileBytes = fileSizeOf(uri)
-                appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { codec.read(it, pdfDir, imageDir) }
+                appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))
+                    ?.use { codec.read(it, pdfDir, imageDir, timing) }
             }
             readMs = (System.nanoTime() - readStart) / 1_000_000
+            state.lastOpenInflateMs = timing.inflateMs
+            state.lastOpenParseMs = timing.parseMs
+            state.lastOpenAssetsMs = timing.assetsMs
+            state.lastOpenCompactMs = timing.compactMs
+            android.util.Log.i(
+                "xnotes.save",
+                "open read ${readMs}ms = inflate ${timing.inflateMs} + parse ${timing.parseMs}" +
+                    " + assets ${timing.assetsMs} + compact ${timing.compactMs}, $fileBytes bytes",
+            )
             if (doc == null) { message = "Could not open that note."; return }
             if (openCancelled.get()) { doc.pdfFile?.delete(); deleteImageTemps(doc); return } // tapped Cancel mid-read; stay put
             doc.path = uri

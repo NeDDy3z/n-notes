@@ -68,6 +68,43 @@ class DocumentCodec(
         var manifestBytes = 0L
     }
 
+    /** Where a [read] spent its time, the mirror of [WriteTiming]. Milliseconds. */
+    class ReadTiming {
+        /** Inside the inflater and the stream under it, reading the manifest entry. */
+        var inflateMs = 0L
+
+        /** Turning that text into the model: everything in the manifest parse that is not [inflateMs]. */
+        var parseMs = 0L
+
+        /** Streaming the images and the embedded PDF out to their own files. */
+        var assetsMs = 0L
+
+        /** Re-simplifying ink from a writer older than sample reduction, which builds every
+         *  stroke's ribbon to do it. Zero for anything this build wrote. */
+        var compactMs = 0L
+    }
+
+    /** Times what a read spends inside the inflater, so parsing can be told apart from it. */
+    private class InflateProbe(private val source: InputStream) : InputStream() {
+        var nanos = 0L
+
+        override fun read(): Int {
+            val t = System.nanoTime()
+            val v = source.read()
+            nanos += System.nanoTime() - t
+            return v
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            val t = System.nanoTime()
+            val n = source.read(b, off, len)
+            nanos += System.nanoTime() - t
+            return n
+        }
+
+        override fun close() = Unit
+    }
+
     /** Times what the manifest spends being compressed, so the two halves of [WriteTiming.manifestMs]
      *  can be told apart. Never closes what it wraps: the zip entry outlives it. */
     private class DeflateProbe(private val out: OutputStream) : OutputStream() {
@@ -387,7 +424,12 @@ class DocumentCodec(
      * (so neither is ever held in RAM) and the caller owns those files' lifetime. When a dir is null
      * that asset is skipped, which is what validation-only reads want.
      */
-    fun read(input: InputStream, pdfDir: File? = null, imageDir: File? = null): Document {
+    fun read(
+        input: InputStream,
+        pdfDir: File? = null,
+        imageDir: File? = null,
+        timing: ReadTiming? = null,
+    ): Document {
         var manifest: ParsedManifest? = null
         var flowBytes: ByteArray? = null
         val imageFiles = HashMap<String, File>()
@@ -402,26 +444,34 @@ class DocumentCodec(
                         // materialized as bytes, a String, or an org.json DOM (which held a boxed
                         // wrapper per number and made big notes cost minutes and ~3x their heap).
                         if (manifest == null) {
+                            val probe = InflateProbe(zis)
+                            val started = System.nanoTime()
                             manifest = try {
-                                parseManifest(JsonPull(InputStreamReader(zis, Charsets.UTF_8)))
+                                parseManifest(JsonPull(InputStreamReader(probe, Charsets.UTF_8)))
                             } catch (_: JsonPullException) {
                                 throw XNoteFormatException(NOT_XNOTE)
                             }
+                            timing?.inflateMs = probe.nanos / 1_000_000L
+                            timing?.parseMs = (System.nanoTime() - started - probe.nanos) / 1_000_000L
                         }
                     } else if (name == "assets/source.pdf") {
                         // Never slurp the PDF into memory: stream it to disk (or skip it).
                         if (pdfDir != null) {
+                            val started = System.nanoTime()
                             val f = File.createTempFile("src", ".pdf", pdfDir)
                             FileOutputStream(f).use { zis.copyTo(it) }
                             pdfFile = f
+                            timing?.assetsMs += (System.nanoTime() - started) / 1_000_000L
                         }
                     } else if (name.startsWith("assets/image-")) {
                         // Stream images to disk too (or skip): a note full of large images must never
                         // load all their encoded bytes into the heap at once.
                         if (imageDir != null) {
+                            val started = System.nanoTime()
                             val f = File.createTempFile("img", null, imageDir)
                             FileOutputStream(f).use { zis.copyTo(it) }
                             imageFiles[name] = f
+                            timing?.assetsMs += (System.nanoTime() - started) / 1_000_000L
                         }
                     } else if (name == FlowXml.ENTRY_NAME) {
                         flowBytes = zis.readBytes()
@@ -469,6 +519,7 @@ class DocumentCodec(
         // all) carries far more samples than the ribbon needs; compact it once at load. In-memory
         // only — the file shrinks whenever the user next edits and saves.
         if (m.writer < SIMPLIFIED_SINCE && StrokeSimplify.enabled) {
+            val compactStart = System.nanoTime()
             doc.compactedOnLoad = true
             for (page in doc.pages) {
                 for (item in page.items) {
@@ -483,6 +534,7 @@ class DocumentCodec(
                     item.invalidate() // also frees the geometry built for the width channel
                 }
             }
+            timing?.compactMs = (System.nanoTime() - compactStart) / 1_000_000L
         }
         return doc
     }

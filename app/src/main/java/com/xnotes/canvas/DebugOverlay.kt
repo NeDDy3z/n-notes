@@ -106,8 +106,12 @@ class DebugOverlay {
             frontHud()?.let { add("front     $it") }
             add("autosave   ${state.autosaveStatus}")
             if (state.lastOpenTotalMs >= 0) {
-                add("open      ${state.lastOpenTotalMs} ms")
-                add("open read ${state.lastOpenReadMs} ms")
+                add("open       ${state.lastOpenTotalMs} ms")
+                add(" read      ${state.lastOpenReadMs} ms")
+                add("  inflate  ${state.lastOpenInflateMs} ms")
+                add("  parse    ${state.lastOpenParseMs} ms")
+                add("  assets   ${state.lastOpenAssetsMs} ms")
+                add("  compact  ${state.lastOpenCompactMs} ms")
             }
             if (state.openFileBytes >= 0) {
                 add("compact    ${if (state.lastOpenCompacted) "yes" else "no"}")
