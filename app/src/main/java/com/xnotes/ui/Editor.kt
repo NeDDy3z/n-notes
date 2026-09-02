@@ -609,17 +609,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** Write the open canvas to its file now; a no-op when it is not a folder canvas or not dirty. */
+    /** Start writing the open canvas to its file; a no-op when it is not a folder canvas or not
+     *  dirty. The sibling of [flushAutosave]: [startCanvasWrite] snapshots on the main thread and
+     *  puts the bytes out on IO, so pausing over a dense canvas never blocks on SAF. */
     fun flushCanvasAutosave() {
         canvasDebounceJob?.cancel() // only the debounce; a write already going out is left to finish
         val uri = canvasAutosaveUri ?: return
-        val canvas = infiniteOrNull ?: return
-        if (!canvas.document.dirty) return
-        val doc = canvas.document
-        val res = saveCanvasGuarded(uri, doc, doc.displayName ?: doc.title) ?: return // synchronous: no snapshot needed
-        doc.dirty = false
-        res.fork?.let { adoptCanvasFork(it) }
-        invalidateThumb(res.uri)
+        val doc = infiniteOrNull?.document ?: return
+        if (!doc.dirty) return
+        startCanvasWrite(uri, doc, doc.displayName ?: doc.title)
     }
 
     /**
