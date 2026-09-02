@@ -53,6 +53,10 @@ data class Preferences(
      *  key press rather than a held state, e.g. HONOR Magic-Pencil whose click arrives as keycode
      *  333); "none" (default) disables it. */
     val stylusButtonTap: String = "none",
+    /** Action mapped to a momentary stylus side-button click (keycode 92). */
+    val stylusButton1Tap: String = "none",
+    /** Action mapped to a momentary stylus side-button click (keycode 93). */
+    val stylusButton2Tap: String = "none",
     /** Horizontal margin (px) on each side of the page column; 0 ⇒ fit-width fills the screen. */
     val sideMargin: Double = 16.0,
     /** Whether the hairline outline around every page is left undrawn. */
@@ -203,6 +207,8 @@ data class Preferences(
                 threeFingerTap = tapAction("three_finger_tap"),
                 stylusDoubleTap = tapAction("stylus_double_tap"),
                 stylusButtonTap = tapAction("stylus_button_tap"),
+                 stylusButton1Tap = tapAction("stylus_button_1_tap"),
+                 stylusButton2Tap = tapAction("stylus_button_2_tap"),
                 sideMargin = o.optDouble("side_margin", 16.0).coerceIn(0.0, 80.0),
                 hidePageBorders = o.optBoolean("hide_page_borders", false),
                 minZoomEnabled = o.optBoolean("min_zoom_enabled", false),
