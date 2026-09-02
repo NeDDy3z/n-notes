@@ -4,12 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.Rect as AndroidRect
 import android.os.Handler
 import android.os.Looper
+import android.view.Choreographer
 import android.view.PixelCopy
 import android.view.Window
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.infinite.InkPass
 import com.xnotes.core.infinite.ItemMesher
+import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.infinite.PixelRect
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Page
@@ -41,6 +43,16 @@ import kotlin.math.hypot
  * composite the screen was showing, the canvas underneath can take the stroke unseen, and taking
  * the pad down is a no-op on any refresh. Without it the two layers have to be raced, and one
  * refresh either way is a blink or a doubled antialiased edge.
+ *
+ * ### A hand that comes back down first
+ *
+ * The handover takes a capture and a canvas frame, which is tens of milliseconds, and handwriting
+ * is quicker than that. A stroke that starts inside one *joins* the pad instead of taking it:
+ * nothing is wiped, nothing is handed over, and the strokes accumulate until the hand pauses long
+ * enough for one handover to cover all of them. Joining needs the new stroke to be painted through
+ * exactly the view the pad was given, so a page crossing, a scroll or a zoom between the two ends
+ * the run. There the pad is wiped as before, but only once the canvas has published what it was
+ * showing; until then the new stroke rides the ordinary path, as it does at the start of any stroke.
  */
 class FrontInk(
     private val state: CanvasState,
@@ -60,6 +72,12 @@ class FrontInk(
     /** Points a run holds; a front-buffered stroke uses a much shorter one (see [decide]). */
     private var runPoints = WET_RUN_POINTS
 
+    /** The tail as it was last meshed, which a stroke joining this one has to settle first. */
+    private var tailPart: MeshPart? = null
+
+    /** [tailPart] of the stroke just committed, waiting for a joiner or for the handover. */
+    private var handoverTail: MeshPart? = null
+
     /** Whether this stroke's route has been chosen. */
     private var decided = false
 
@@ -67,22 +85,36 @@ class FrontInk(
     var live = false
         private set
 
-    /**
-     * The committed item the pad is still showing, kept out of the ink cache until it is not.
-     *
-     * The document and the undo stack take it immediately; only its pixels wait, so nothing about
-     * the edit is delayed by the handover.
-     */
-    var held: CanvasItem? = null
-        private set
+    /** A committed item whose pixels are still the pad's, and the page it belongs to. */
+    private class Held(val item: CanvasItem, val page: Page)
 
-    private var heldPage: Page? = null
+    /**
+     * The committed items the pad is still showing, kept out of the ink cache until it lets go.
+     *
+     * The document and the undo stack take each one immediately; only the pixels wait, so nothing
+     * about the edit is delayed by the handover. More than one when strokes joined each other, and
+     * replaced rather than mutated because the cache threads read it.
+     */
+    @Volatile
+    private var holds: List<Held> = emptyList()
+
+    /** Whether the pad, not the canvas, is showing [item], so the cache has to leave it out. */
+    fun holding(item: CanvasItem): Boolean {
+        val list = holds
+        for (i in list.indices) if (list[i].item === item) return true
+        return false
+    }
 
     /** Bumped by anything that outdates a handover in flight, so a stale capture cannot land. */
     private var handoffGen = 0
 
     /** What the front buffer is doing, for the debug HUD, or null when there is no pad. */
-    val hud: String? get() = if (pad.ready) pad.hud else null
+    val hud: String?
+        get() {
+            if (!pad.ready) return null
+            val waiting = holds.size
+            return if (waiting == 0) pad.hud else "${pad.hud} h$waiting"
+        }
 
     // --- the stroke under the pen ---
 
@@ -117,6 +149,7 @@ class FrontInk(
         }
         val tailFrom = (meshed - 1).coerceAtLeast(0)
         val tail = ItemMesher.meshRun(stroke, ribbon, tailFrom, ribbon.pointCount - tailFrom, arc)
+        tailPart = tail
         pad.setTail(if (tail == null) emptyList() else listOf(tail))
     }
 
@@ -127,8 +160,13 @@ class FrontInk(
         arc = 0.0
         decided = false
         runPoints = WET_RUN_POINTS
+        tailPart = null
+        // Called on the way into every stroke as well, where the pad is not live and a tail may be
+        // waiting for this one to join it. Only a stroke actually being dropped goes further.
         if (!live) return
         live = false
+        // Strokes that joined this one are still the pad's, and the pad is about to be wiped.
+        settle()
         view.setUnbufferedStylus(false)
         pad.endStroke()
     }
@@ -153,15 +191,85 @@ class FrontInk(
         val insets = state.insets(page)
         val scrollX = -(rect.left + insets.left + origin.x / zoom)
         val scrollY = -(rect.top + insets.top + origin.y / zoom)
-        // A stroke committed moments ago may still be held: the pad is about to be cleared for
-        // this one, so its pixels are gone either way and the canvas has to take it now.
-        settle()
-        live = pad.beginStroke(scrollX, scrollY, zoom, SAMPLES, paperClip(rect))
-        if (!live) return
+        val clip = paperClip(rect)
+        if (join(scrollX, scrollY, zoom, clip)) return
+        // Nothing joined, so the pad has to be wiped for this stroke, and whatever it is holding has
+        // to reach the canvas first. Those pixels may not go before the canvas has published them.
+        if (settle()) return waitToStart(stroke, pageIndex, scrollX, scrollY, zoom, clip)
+        start(scrollX, scrollY, zoom, clip)
+    }
+
+    /**
+     * Lay this stroke over the one the pad is still holding, on the same view.
+     *
+     * The pad keeps every pixel it has; only the tail changes hands, and it has to be settled into
+     * a run first because the joining stroke's own tail replaces it. Nothing is captured, nothing is
+     * wiped, and one handover at the end of the run covers every stroke in it.
+     */
+    private fun join(scrollX: Double, scrollY: Double, zoom: Double, clip: PixelRect): Boolean {
+        if (holds.isEmpty() || !roomToJoin()) return false
+        if (!pad.extendStroke(scrollX, scrollY, zoom, clip)) return false
+        // The capture the last stroke started is of a box this one is about to grow past.
+        handoffGen++
+        handoverTail?.let { pad.appendRun(listOf(it)) }
+        handoverTail = null
+        pad.setTail(emptyList())
+        live = true
+        runPoints = FRONT_RUN_POINTS
+        view.setUnbufferedStylus(true)
+        return true
+    }
+
+    /**
+     * Whether the pad may grow any further.
+     *
+     * The handover ends with an opaque copy of the canvas under the whole run, and the canvas is
+     * frozen behind it for a few refreshes. A sliver of it is invisible; most of the screen is not.
+     */
+    private fun roomToJoin(): Boolean {
+        val box = pad.strokeBox() ?: return true
+        val seen = view.width.toLong() * view.height
+        return seen <= 0L || box.width().toLong() * box.height() * 2 <= seen
+    }
+
+    /**
+     * Take the pad once the canvas has published the ink it was showing.
+     *
+     * A wipe of a front buffer is on the glass at the next scanout, while the canvas's frame is only
+     * latched at the vsync after it is handed over, so wiping on the handover drops the old stroke
+     * for a refresh or two. One frame further on and the two overlap instead, which is the lesser
+     * artefact by a distance. The stroke draws through the canvas until then, as every stroke does
+     * before it is decided.
+     */
+    private fun waitToStart(
+        stroke: Stroke,
+        pageIndex: Int,
+        scrollX: Double,
+        scrollY: Double,
+        zoom: Double,
+        clip: PixelRect,
+    ) {
+        val gen = handoffGen
+        view.publishThen {
+            if (gen != handoffGen || owner !== stroke) return@publishThen
+            Choreographer.getInstance().postFrameCallback {
+                if (gen != handoffGen || owner !== stroke) return@postFrameCallback
+                if (!start(scrollX, scrollY, zoom, clip)) return@postFrameCallback
+                // Straight into a present, so the pad has the stroke before the canvas drops it.
+                wet(stroke, pageIndex)
+                view.requestRender()
+            }
+        }
+    }
+
+    private fun start(scrollX: Double, scrollY: Double, zoom: Double, clip: PixelRect): Boolean {
+        live = pad.beginStroke(scrollX, scrollY, zoom, SAMPLES, clip)
+        if (!live) return false
         // A shorter run on the front buffer, because there the tail is what a present has to clear
         // and rebuild, and its extent is the size of everything that present does.
         runPoints = FRONT_RUN_POINTS
         view.setUnbufferedStylus(true)
+        return true
     }
 
     /** The paper's own pixels, so ink running off the page is cut at the edge as the canvas cuts it. */
@@ -179,16 +287,15 @@ class FrontInk(
     /**
      * Take the just-committed [item] if the pad is showing it, so the caller leaves it out of the
      * ink cache. Returns false when the stroke was never on the front buffer and the caller should
-     * file it as it always has.
+     * file it as it always has. The pad keeps it until the handover, or until a stroke that joins
+     * this one has been handed over with it.
      */
     fun hold(item: CanvasItem, page: Page): Boolean {
         if (!live) return false
         abandonToHold()
-        // Any handover still in flight belongs to an older stroke, whose pixels this stroke has
-        // already painted over. Give it to the canvas, and leave the pad to this one.
-        settle()
-        held = item
-        heldPage = page
+        // A capture in flight was started for a run this stroke has since grown.
+        handoffGen++
+        holds = holds + Held(item, page)
         capture()
         return true
     }
@@ -201,6 +308,9 @@ class FrontInk(
         decided = false
         runPoints = WET_RUN_POINTS
         live = false
+        // The tail was never settled into a run, so a stroke that joins this one has to do it.
+        handoverTail = tailPart
+        tailPart = null
         pad.freeze()
         view.setUnbufferedStylus(false)
     }
@@ -238,7 +348,7 @@ class FrontInk(
         }
     }
 
-    /** Let the held item reach the canvas, and take the pad down once that frame is out. */
+    /** Let the held items reach the canvas, and take the pad down once that frame is out. */
     private fun finish() {
         if (!settle()) return
         // The wait is a frame long, which is long enough for a new stroke to have taken the pad.
@@ -248,16 +358,16 @@ class FrontInk(
     }
 
     /**
-     * Give the held item back to the canvas, leaving the pad alone, and outdate whatever capture
-     * was still coming for it.
+     * Give the held items back to the canvas, leaving the pad alone, and outdate whatever capture
+     * was still coming for them.
      */
     private fun settle(): Boolean {
         handoffGen++
-        val item = held ?: return false
-        val page = heldPage
-        held = null
-        heldPage = null
-        if (page != null) state.appendToCache(page, item)
+        val items = holds
+        if (items.isEmpty()) return false
+        holds = emptyList()
+        handoverTail = null
+        for (h in items) state.appendToCache(h.page, h.item)
         view.requestRender()
         return true
     }

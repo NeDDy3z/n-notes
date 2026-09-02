@@ -57,6 +57,9 @@ class GlWetPadInk {
     @Volatile
     private var session: Session? = null
 
+    /** The session [end] put down, kept so a stroke starting on the same view can pick it up. */
+    private var frozen: Session? = null
+
     /** Serials handed out, read and written on the main thread only. */
     private var serials = 0L
 
@@ -147,7 +150,37 @@ class GlWetPadInk {
             box.clampTo(width, height)
             if (box.isEmpty) return false
         }
+        frozen = null
         session = Session(++serials, scrollX, scrollY, zoom, width, height, box)
+        return true
+    }
+
+    /**
+     * Pick the frozen stroke's view back up for a stroke starting on exactly it, so the ink already
+     * on the pad stays where it is and this one is laid over the top.
+     *
+     * Exact equality on every number, because the alternative to being the same view is being a
+     * slightly wrong one, and the ink already down cannot be redrawn through the new one.
+     */
+    fun extend(
+        scrollX: Double,
+        scrollY: Double,
+        zoom: Double,
+        width: Int,
+        height: Int,
+        clip: PixelRect? = null,
+    ): Boolean {
+        val s = frozen ?: return false
+        if (s.width != width || s.height != height) return false
+        if (s.scrollX != scrollX || s.scrollY != scrollY || s.zoom != zoom) return false
+        val box = PixelRect(0, 0, width, height)
+        if (clip != null) {
+            box.set(clip)
+            box.clampTo(width, height)
+        }
+        if (!box.sameAs(s.clip)) return false
+        frozen = null
+        session = s
         return true
     }
 
@@ -165,7 +198,16 @@ class GlWetPadInk {
     }
 
     fun end() {
+        // Not an unconditional swap: ending twice would put the frozen stroke's view down as well,
+        // and a stroke that could have joined it would find nothing to join.
+        if (session != null) frozen = session
         session = null
+    }
+
+    /** Drop both, for a surface that is going away and taking every pixel on it. */
+    fun forget() {
+        session = null
+        frozen = null
     }
 
     /** Whether a stroke is live, so the pad knows whether a beat has anything to do. */

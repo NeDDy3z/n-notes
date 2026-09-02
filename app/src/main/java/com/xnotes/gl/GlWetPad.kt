@@ -71,7 +71,14 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     private var contextGen = 0
     private var traced = 0
 
-    /** Whether the pad is holding an opaque copy of what is under it, so hiding it shows nothing. */
+    /**
+     * Whether the pad is holding an opaque copy of what is under it, so hiding it shows nothing.
+     *
+     * Written by the present that draws the cover, read on the main thread by [extendStroke]: a
+     * stroke may not join a pad that has gone opaque, because what is under its ink is a snapshot
+     * and the canvas has moved on.
+     */
+    @Volatile
     private var covered = false
 
     private val mainHandler = Handler(context.mainLooper)
@@ -115,6 +122,8 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        // Every pixel goes with the surface, so nothing left on it may be joined afterwards.
+        ink.forget()
         val t = thread ?: return
         post { destroyEgl() }
         thread = null
@@ -154,6 +163,28 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
             // refresh, and the first present has landed in the buffer well before that.
             setLayerVisible(true)
         }
+        return true
+    }
+
+    /**
+     * Take the pad for a stroke starting on the view the last one was drawn through, keeping every
+     * pixel already on it.
+     *
+     * The handover is a wipe timed against a canvas frame, and a pen that comes back down before it
+     * has finished would either wipe ink the canvas has not drawn yet or wait for it. Neither is
+     * needed when the new stroke is painted through the same view: the pad simply keeps drawing,
+     * and one handover at the end covers every stroke that joined.
+     */
+    fun extendStroke(
+        scrollX: Double,
+        scrollY: Double,
+        zoom: Double,
+        clip: com.xnotes.core.infinite.PixelRect? = null,
+    ): Boolean {
+        if (!ready || covered) return false
+        if (!ink.extend(scrollX, scrollY, zoom, width, height, clip)) return false
+        // Cancels a handover still waiting to wipe the pad this stroke has just taken over.
+        post { releaseGen++ }
         return true
     }
 

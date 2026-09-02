@@ -373,7 +373,7 @@ class InteractionController(
 
     init {
         state.isLiftedItem = { item ->
-            item === editingText || item === frontInk?.held || selection.any { it.item === item }
+            item === editingText || frontInk?.holding(item) == true || selection.any { it.item === item }
         }
     }
 
