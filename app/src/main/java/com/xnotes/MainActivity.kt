@@ -430,7 +430,9 @@ private fun EditorScreen(
     fun saveOrPrompt() {
         val target = editor.active
         val uri = target.currentUri
-        if (uri == null || !target.saveTo(uri)) launchSaveAs(target)
+        if (uri == null) { launchSaveAs(target); return }
+        // The write is off the main thread now, so the Save-As fallback fires from its callback.
+        target.saveToThen(uri) { ok -> if (!ok) launchSaveAs(target) }
     }
 
     // The prompt is about one pane's note, so it asks about — and saves — the pane being acted on.
@@ -779,8 +781,8 @@ private fun EditorScreen(
                     guardAction = null
                     val uri = guarded.currentUri
                     if (uri != null) {
-                        guarded.saveTo(uri)
-                        action()
+                        // Off-thread: what the prompt was guarding runs once the bytes have landed.
+                        guarded.saveToThen(uri) { action() }
                     } else {
                         pendingAfterSave = action
                         launchSaveAs(guarded)

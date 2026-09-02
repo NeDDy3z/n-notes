@@ -1110,7 +1110,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  swap so a closed note's (possibly huge) cached PDF doesn't linger on disk. */
     private fun adoptOpenPdf(doc: Document) {
         val keep = doc.pdfFile
-        openPdfTemp?.let { if (it != keep) it.delete() }
+        // The outgoing note's flush is still streaming this file into its bundle, so the delete waits
+        // that write out rather than pulling the source out from under it.
+        val pending = noteWriteJob
+        openPdfTemp?.let { old ->
+            if (old != keep) autosaveScope.launch { pending?.join(); old.delete() }
+        }
         openPdfTemp = keep
     }
 
@@ -2209,23 +2214,50 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** Save the current document over its existing SAF file at [uri] via [writeNoteSafely], so a
-     *  failed encode never truncates the note. Returns false (and shows a message) on failure, e.g.
-     *  so the caller can fall back to a Save-As picker. */
-    fun saveTo(uri: String): Boolean {
+    /**
+     * Save the current document over its existing SAF file at [uri] via [writeNoteSafely], so a
+     * failed encode never truncates the note, then run [onDone] on the main thread with whether the
+     * bytes landed. A failure shows a message, and lets the caller fall back to a Save-As picker.
+     *
+     * The write goes out on [autosaveScope] + IO like every other save here. Doing it inline was an
+     * ANR: an explicit save targets whatever the system picker handed over, and openOutputStream on
+     * a cloud provider is an untimed binder call into that provider's process.
+     */
+    fun saveToThen(uri: String, onDone: (Boolean) -> Unit) {
+        noteDebounceJob?.cancel() // this write supersedes a pending debounce
+        val doc = state.document
         val startNs = System.nanoTime()
-        if (!writeNoteSafely(uri, state.document)) {
-            message = "Could not save the note."
-            return false
+        // Pointers, on the main thread: the writer gets its own page lists over the live items.
+        val snapshot = doc.snapshot()
+        state.lastSaveSnapshotMs = msSince(startNs)
+        // Clean from here, not once the bytes land; see [startNoteWrite] for why.
+        val wasDirty = doc.dirty
+        doc.dirty = false
+        dirty = false
+        savingNote = true
+        val pending = noteWriteJob // captured, so the join below is on the previous write, not itself
+        noteWriteJob = autosaveScope.launch {
+            pending?.join() // a write already going out finishes first rather than racing this one
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                writeNoteSafely(uri, snapshot)
+            }
+            savingNote = false
+            if (ok) {
+                // The note may have been switched while the bytes were going out; only the document
+                // this save belongs to may have its path and autosave binding touched.
+                if (state.document === doc) {
+                    doc.path = uri
+                    maybeBindAutosave(uri)
+                    refreshContent()
+                }
+                invalidateThumb(uri)
+            } else {
+                if (wasDirty && state.document === doc) { doc.dirty = true; dirty = true }
+                message = "Could not save the note."
+            }
+            state.lastSaveTotalMs = msSince(startNs)
+            onDone(ok)
         }
-        state.document.path = uri
-        state.document.dirty = false
-        maybeBindAutosave(uri)
-        refreshContent()
-        invalidateThumb(uri)
-        state.lastSaveSnapshotMs = 0L // writes the live document; no snapshot phase
-        state.lastSaveTotalMs = msSince(startNs)
-        return true
     }
 
     // --- explorer thumbnails & document identity ---
@@ -3223,19 +3255,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** Write the current note to its autosave file now (synchronous, main thread); a no-op when not autosaving. */
+    /**
+     * Start writing the current note to its autosave file; a no-op when not autosaving or clean.
+     * Returns as soon as the snapshot is taken, so a document swap never blocks the main thread on
+     * SAF; the bytes go out through [startNoteWrite]. That is safe for the swap callers because the
+     * snapshot already holds every edit. Callers that must see the write *finish* use [flushThen].
+     *
+     * No join on a write already going out: [saveLock] serializes the two, so this one cannot land
+     * before the earlier one has finished with the file.
+     */
     fun flushAutosave() {
         noteDebounceJob?.cancel() // only the debounce; a write already going out is left to finish
         val uri = autosaveUri ?: return
         if (!state.document.dirty) return
-        val title = state.document.displayName ?: state.document.title
         val startNs = System.nanoTime()
-        val res = saveNoteGuarded(uri, state.document, title) ?: return
-        state.document.dirty = false; dirty = false
-        res.fork?.let { adoptNoteFork(it) }
-        invalidateThumb(res.uri)
-        state.lastSaveSnapshotMs = 0L // this path writes the live document, so there is no copy
-        state.lastSaveTotalMs = msSince(startNs)
+        val snapshot = state.document.snapshot() // main thread: its own page lists over the live items
+        state.lastSaveSnapshotMs = msSince(startNs)
+        startNoteWrite(uri, snapshot, state.document.displayName ?: state.document.title, startNs)
     }
 
     /**
