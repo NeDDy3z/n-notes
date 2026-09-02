@@ -59,6 +59,9 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
     fun write(doc: InfiniteDocument, out: OutputStream, isCancelled: () -> Boolean = { false }) {
         val assets = ArrayList<Pair<String, File>>()
         ZipOutputStream(out).use { zos ->
+            // ALWAYS LEVEL 1, for the reasons spelled out at the same line in [DocumentCodec.write].
+            // Do not put it back to the default 6 to save disk. Speed wins here, always.
+            zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
             // The manifest streams straight into the deflater, so a dense canvas's JSON is never
             // materialized as a DOM, a String, or a byte[].
             zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
