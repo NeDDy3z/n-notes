@@ -30,6 +30,10 @@ object AndroidText {
             .setIncludePad(false)
             .build()
 
+    /** The height [text] actually occupies laid out at [widthPx]: one line height per wrapped line. */
+    fun blockHeight(text: CharSequence, widthPx: Int, font: FontSpec): Double =
+        layout(text, widthPx, textPaint(font)).height.toDouble()
+
     fun lineHeight(font: FontSpec): Double {
         val fm = textPaint(font).fontMetrics
         return (fm.descent - fm.ascent).toDouble()

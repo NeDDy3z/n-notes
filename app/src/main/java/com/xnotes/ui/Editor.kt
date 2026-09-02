@@ -3112,6 +3112,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
             state.autosaveStatus = if (res != null) "done" else "failed"
             state.lastSaveTotalMs = msSince(startNs)
+            android.util.Log.i(
+                "xnotes.save",
+                "save ${state.lastSaveTotalMs}ms = snapshot ${state.lastSaveSnapshotMs}" +
+                    " + encode ${state.lastSaveEncodeMs} (json ${state.lastSaveManifestMs}," +
+                    " assets ${state.lastSaveAssetsMs}) + saf ${state.lastSaveCopyMs}" +
+                    ", ${state.lastSaveBytes} bytes, ${res != null}",
+            )
             onDone?.invoke()
         }
     }

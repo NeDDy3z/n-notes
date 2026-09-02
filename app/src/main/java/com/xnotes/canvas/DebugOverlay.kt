@@ -115,26 +115,31 @@ class DebugOverlay {
             }
             if (state.lastSaveBytes >= 0) add("file live  ${fmtBytes(state.lastSaveBytes)}")
             if (state.lastSaveTotalMs >= 0) {
-                add("save      ${state.lastSaveTotalMs} ms")
-                add("  snap ${state.lastSaveSnapshotMs} / enc ${state.lastSaveEncodeMs}" +
-                    " / saf ${state.lastSaveCopyMs}")
-                add("  json ${state.lastSaveManifestMs} / assets ${state.lastSaveAssetsMs}")
+                add("save       ${state.lastSaveTotalMs} ms")
+                add(" snapshot  ${state.lastSaveSnapshotMs} ms")
+                add(" encode    ${state.lastSaveEncodeMs} ms")
+                add("  json     ${state.lastSaveManifestMs} ms")
+                add("  assets   ${state.lastSaveAssetsMs} ms")
+                add(" saf copy  ${state.lastSaveCopyMs} ms")
             }
         }
 
-        val lineH = AndroidText.lineHeight(FONT)
+        // Measure each row as it will actually be laid out, not as one line: [Renderer.drawText]
+        // wraps to the rect's width, so a row too long for the panel used to be drawn over the one
+        // below it. Advancing by the wrapped height pushes the rest down instead.
+        val textW = PANEL_W - PAD_X * 2
+        val rowH = lines.map { AndroidText.blockHeight(it, textW.toInt(), FONT) }
         val hintH = AndroidText.lineHeight(HINT_FONT)
-        val panelH = PAD_Y * 2 + lines.size * lineH + HINT_GAP + hintH
+        val panelH = PAD_Y * 2 + rowH.sum() + HINT_GAP + hintH
         val x = state.viewportW - PANEL_W - MARGIN
         val y = MARGIN
 
         r.fillRect(Rect(x, y, PANEL_W, panelH), PANEL_BG)
 
-        val textW = PANEL_W - PAD_X * 2
         var ty = y + PAD_Y
-        for (line in lines) {
-            r.drawText(line, Rect(x + PAD_X, ty, textW, lineH), FONT, TEXT)
-            ty += lineH
+        for (i in lines.indices) {
+            r.drawText(lines[i], Rect(x + PAD_X, ty, textW, rowH[i]), FONT, TEXT)
+            ty += rowH[i]
         }
         r.drawText(HINT, Rect(x + PAD_X, ty + HINT_GAP, textW, hintH), HINT_FONT, TEXT_DIM)
     }
