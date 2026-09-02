@@ -12,17 +12,22 @@ import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.ui.theme.Palette
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 /**
- * Guards the undo/redo flicker fix: applying an undo/redo must repair the page caches **in place**
- * (keeping the surfaces) rather than dropping them for an async rebuild, which blanked every visible
- * page to bare paper for a frame. The old undo path called [CanvasState.invalidateAllCaches], which
- * drops both layers to 0; [CanvasState.repairAllInkInPlace] must leave them standing. Asserted at the
- * cache-map level via [CanvasState.cacheSnapshot] — mirrors [SelectionCacheRepairTest].
+ * Guards the two things an undo/redo must not do to the page caches.
  *
- * [CanvasState.repairInkRegions] holds the same contract for the regions an undo actually disturbed,
- * and must repaint only those: repainting every page on every undo tap is what timed out input.
+ * It must not **drop** them: the old path called [CanvasState.invalidateAllCaches], which blanked
+ * every visible page to bare paper for a frame (the undo/redo flicker). Asserted at the cache-map
+ * level via [CanvasState.cacheSnapshot] — mirrors [SelectionCacheRepairTest].
+ *
+ * And it must not **rasterize them on the calling thread**: a full-page repaint per cached page is
+ * what timed out input on a dense note. [CanvasState.repairInkRegions] avoids it by repainting only
+ * the regions a command named; [CanvasState.refreshAllInk], the fallback for a command that can't
+ * name any, avoids it by handing the pages to the cache thread and keeping the pre-edit surfaces on
+ * screen until the rebuilds land.
  */
 class UndoCacheRepairTest {
 
@@ -41,19 +46,37 @@ class UndoCacheRepairTest {
         }
     }
 
-    @Test fun undoRepairsInkCacheInPlace() {
+    @Test fun undoFallbackRebuildsOffThreadAndBlitsThePreEditSurfaceMeanwhile() {
         val st = state()
         val page = st.document.pages[0]
-        st.cacheFor(page) // warm the ink cache, as a draw frame would
-        assertEquals(1, st.cacheSnapshot().inkPages)
+        val jobs = ArrayDeque<() -> Unit>()
+        st.runAsync = { jobs.addLast(it) } // hold the build, as a real cache thread would for a frame or two
 
-        // Mimic an undo that removed the last-added stroke, then run the undo repair path.
+        val before = st.cacheFor(page) // warm the ink cache, as a draw frame would
+        val painter = (before.surface as FakeRasterSurface).painter
+        painter.ribbonRuns.clear()
+
+        // Mimic an undo that removed the last-added stroke, then run the whole-page fallback.
         page.items.removeAt(page.items.size - 1)
-        st.repairAllInkInPlace()
+        st.refreshAllInk()
 
+        assertEquals("the fallback must not rasterize on the thread the tap arrived on", 0, painter.ribbonRuns.size)
+        assertEquals("undo must not drop the ink cache (the blank-frame flicker)", 1, st.cacheSnapshot().inkPages)
+        assertSame(
+            "the pre-edit surface keeps being blitted until the rebuild lands",
+            before.surface,
+            st.cacheForOrSchedule(page)?.surface,
+        )
+        assertEquals("and asking again while it is in flight must not queue it twice", 1, jobs.size)
+
+        jobs.removeFirst().invoke()
+
+        val after = st.cacheForOrSchedule(page)
+        assertNotSame("the rebuilt surface replaces it once ready", before.surface, after?.surface)
         assertEquals(
-            "undo must repair the ink cache in place, not drop it (the blank-frame flicker)",
-            1, st.cacheSnapshot().inkPages,
+            "and it holds the post-undo page: one stroke left, one ribbon painted",
+            1,
+            (after!!.surface as FakeRasterSurface).painter.ribbonRuns.size,
         )
     }
 
@@ -66,7 +89,7 @@ class UndoCacheRepairTest {
         assertEquals(1, st.cacheSnapshot().bgPages)
 
         page.items.removeAt(page.items.size - 1)
-        st.repairAllInkInPlace()
+        st.refreshAllInk()
 
         // The expensive PDF/template background must survive undo — invalidateAllCaches() used to
         // flush it, which is what flickered the PDF layer on every undo/redo.
@@ -84,10 +107,6 @@ class UndoCacheRepairTest {
         painter.ribbonRuns.clear()
         st.repairInkRegions(listOf(page to Rect(10.0, 10.0, 20.0, 20.0)))
         assertEquals("only the strokes overlapping the repaired region repaint", 1, painter.ribbonRuns.size)
-
-        painter.ribbonRuns.clear()
-        st.repairAllInkInPlace()
-        assertEquals("the whole-page fallback still repaints everything", 2, painter.ribbonRuns.size)
     }
 
     @Test fun regionRepairKeepsTheCacheInPlace() {
