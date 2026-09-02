@@ -163,9 +163,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         val hz = display?.refreshRate ?: 0f
         refreshMs = if (hz > 1f) (1000f / hz).toLong().coerceIn(4L, 40L) else DEFAULT_REFRESH_MS
         this.samples = samples
-        trace("beginStroke queued")
         post {
-            trace("beginStroke: wipe")
             // Cancels a handover still waiting to wipe the pad, and takes the last stroke's pixels
             // off it, which the canvas has been holding since long before a hand can come back down.
             releaseGen++
@@ -267,7 +265,6 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     }
 
     private fun wipe() {
-        trace("wipe active=${ink.active} covered=$covered")
         // A stroke that took the pad while this was in flight owns it now, and its ink is the only
         // copy of itself on screen. Whoever queued this was talking about a stroke that is gone.
         if (ink.active) return
@@ -279,7 +276,6 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
             // racing. Hiding the instant the canvas's frame is queued shows the canvas as it was
             // one refresh earlier, before the committed stroke was in it.
             handler?.postDelayed({
-                trace("hide covered gen=$gen now=$releaseGen")
                 if (gen == releaseGen) setLayerVisible(false)
             }, refreshMs * 4)
         } else {
@@ -291,7 +287,6 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
             // hiding later leaves both layers drawing it, and two antialiased edges at half
             // coverage composite to three quarters rather than to a half.
             Choreographer.getInstance().postFrameCallback {
-                trace("hide bare gen=$gen now=$releaseGen")
                 if (gen == releaseGen) setLayerVisible(false)
             }
         }
@@ -349,9 +344,8 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         post {
             val gen = ++releaseGen
             Choreographer.getInstance().postFrameCallback {
-                trace("standDown gen=$gen now=$releaseGen")
                 if (gen == releaseGen) setLayerVisible(false)
-                handler?.postDelayed({ trace("standDown: down"); mainHandler.post(then) }, refreshMs * 2)
+                handler?.postDelayed({ mainHandler.post(then) }, refreshMs * 2)
             }
         }
     }
@@ -377,7 +371,6 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
      * the blend leaves every pixel the ink already claimed alone.
      */
     private fun drawCover(capture: Bitmap, box: Rect) {
-        trace("drawCover $box")
         if (!single || surfaceW <= 0 || surfaceH <= 0) return
         val painter = cover ?: return
         if (coverTex == 0) {
@@ -593,16 +586,9 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         Log.e(TAG, "wet pad unavailable: $what")
     }
 
-    /** Temporary: the handover, timestamped, for chasing a blink that only a long stroke shows. */
-    private fun trace(what: String) {
-        if (!TRACE) return
-        Log.i(TRACE_TAG, "${android.os.SystemClock.uptimeMillis() % 1000000} pad $what")
-    }
 
     companion object {
         private const val TAG = "xnotes.gl"
-        private const val TRACE = true
-        private const val TRACE_TAG = "xnotes.front"
 
         /** EGL constants for the mutable render buffer, none of which EGL14 declares. */
         const val EGL_RENDER_BUFFER = 0x3086
