@@ -108,6 +108,15 @@ class FrontInk(
     /** Bumped by anything that outdates a handover in flight, so a stale capture cannot land. */
     private var handoffGen = 0
 
+    /**
+     * Whether ink given back to the canvas is still only in its cache and not yet on the glass.
+     *
+     * Being held is not the same as being shown. A settled stroke is the canvas's, but the canvas
+     * paints on its own frame, and until that frame is out the pad's pixels are still the only copy
+     * of it anyone can see. A wipe inside that window is the blink this whole file exists to avoid.
+     */
+    private var awaitingPublish = false
+
     /** What the front buffer is doing, for the debug HUD, or null when there is no pad. */
     val hud: String?
         get() {
@@ -192,10 +201,19 @@ class FrontInk(
         val scrollX = -(rect.left + insets.left + origin.x / zoom)
         val scrollY = -(rect.top + insets.top + origin.y / zoom)
         val clip = paperClip(rect)
+        trace(
+            "decide holds=${holds.size} waiting=$awaitingPublish box=${pad.strokeBox()} " +
+                "room=${roomToJoin()} covered=${pad.covered}",
+        )
         if (join(scrollX, scrollY, zoom, clip)) return
-        // Nothing joined, so the pad has to be wiped for this stroke, and whatever it is holding has
-        // to reach the canvas first. Those pixels may not go before the canvas has published them.
-        if (settle()) return waitToStart(stroke, pageIndex, scrollX, scrollY, zoom, clip)
+        // Nothing joined, so the pad has to be wiped for this stroke, and whatever it was showing
+        // has to be on the glass first. Settling is not that: the canvas has the ink, but its frame
+        // carrying it may still be a refresh or two out, and a handover a moment ago is exactly the
+        // case where it is, since giving a long stroke to the cache is tens of milliseconds of it.
+        val settled = settle()
+        if (settled || awaitingPublish) {
+            return waitToStart(stroke, pageIndex, scrollX, scrollY, zoom, clip)
+        }
         start(scrollX, scrollY, zoom, clip)
     }
 
@@ -209,6 +227,7 @@ class FrontInk(
     private fun join(scrollX: Double, scrollY: Double, zoom: Double, clip: PixelRect): Boolean {
         if (holds.isEmpty() || !roomToJoin()) return false
         if (!pad.extendStroke(scrollX, scrollY, zoom, clip)) return false
+        trace("join")
         // The capture the last stroke started is of a box this one is about to grow past.
         handoffGen++
         handoverTail?.let { pad.appendRun(listOf(it)) }
@@ -250,10 +269,13 @@ class FrontInk(
         clip: PixelRect,
     ) {
         val gen = handoffGen
+        trace("wait: scheduled")
         view.publishThen {
+            trace("wait: committed gen=$gen now=$handoffGen")
             // A moved generation means another stroke has taken the pad and is answerable for it.
             if (gen != handoffGen) return@publishThen
             Choreographer.getInstance().postFrameCallback {
+                trace("wait: frame gen=$gen now=$handoffGen owner=${owner === stroke}")
                 if (gen != handoffGen) return@postFrameCallback
                 if (owner === stroke && start(scrollX, scrollY, zoom, clip)) {
                     // Straight into a present, so the pad has the stroke before the canvas drops it.
@@ -297,6 +319,7 @@ class FrontInk(
      */
     fun hold(item: CanvasItem, page: Page): Boolean {
         if (!live) return false
+        trace("hold box=${pad.strokeBox()}")
         abandonToHold()
         // A capture in flight was started for a run this stroke has since grown.
         handoffGen++
@@ -327,14 +350,15 @@ class FrontInk(
      * than a stroke that never reaches the canvas.
      */
     private fun capture() {
-        val box = pad.strokeBox() ?: return finish()
-        val window = window() ?: return finish()
-        val src = inWindow(window, box) ?: return finish()
+        val box = pad.strokeBox() ?: return finish().also { trace("capture: no box") }
+        val window = window() ?: return finish().also { trace("capture: no window") }
+        val src = inWindow(window, box) ?: return finish().also { trace("capture: outside window $box") }
         val shot = try {
             Bitmap.createBitmap(src.width(), src.height(), Bitmap.Config.ARGB_8888)
         } catch (e: OutOfMemoryError) {
-            return finish()
+            return finish().also { trace("capture: oom ${src.width()}x${src.height()}") }
         }
+        trace("capture: request ${src.width()}x${src.height()}")
         val gen = handoffGen
         // However the capture goes, the stroke reaches the canvas: late is a blink, never is a lost
         // stroke. One Runnable, held, because a fresh method reference cannot be cancelled.
@@ -344,8 +368,9 @@ class FrontInk(
             PixelCopy.request(window, src, shot, { result ->
                 handler.removeCallbacks(timeout)
                 if (gen != handoffGen) return@request
+                trace("capture: result=$result gen=$gen now=$handoffGen")
                 if (result != PixelCopy.SUCCESS) return@request finish()
-                pad.coverWith(shot, box) { if (gen == handoffGen) finish() }
+                pad.coverWith(shot, box) { trace("capture: covered"); if (gen == handoffGen) finish() }
             }, handler)
         } catch (e: IllegalArgumentException) {
             handler.removeCallbacks(timeout)
@@ -356,6 +381,7 @@ class FrontInk(
     /** Let the held items reach the canvas, and take the pad down once that frame is out. */
     private fun finish() {
         if (!settle()) return
+        trace("finish")
         // The wait is a frame long, which is long enough for a new stroke to have taken the pad.
         // Its ink would then be the only copy on screen, and this would wipe it.
         val gen = handoffGen
@@ -372,8 +398,16 @@ class FrontInk(
         if (items.isEmpty()) return false
         holds = emptyList()
         handoverTail = null
+        val started = android.os.SystemClock.uptimeMillis()
         for (h in items) state.appendToCache(h.page, h.item)
-        view.requestRender()
+        trace("settle n=${items.size} took=${android.os.SystemClock.uptimeMillis() - started}ms")
+        // Every settle tracks its own publication, whichever path settled: what the caller does
+        // next is not what says when these pixels reached the glass.
+        awaitingPublish = true
+        view.publishThen {
+            trace("published")
+            awaitingPublish = false
+        }
         return true
     }
 
@@ -405,7 +439,16 @@ class FrontInk(
         return src
     }
 
+    /** Temporary: the handover, timestamped, for chasing a blink that only a long stroke shows. */
+    private fun trace(what: String) {
+        if (!TRACE) return
+        android.util.Log.i(TRACE_TAG, "${android.os.SystemClock.uptimeMillis() % 1000000} ink $what")
+    }
+
     private companion object {
+        const val TRACE = true
+        const val TRACE_TAG = "xnotes.front"
+
         /** Points a run holds on the ordinary path, matching the wet cache's own bake size. */
         const val WET_RUN_POINTS = 96
 

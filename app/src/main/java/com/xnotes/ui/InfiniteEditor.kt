@@ -702,6 +702,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     @Volatile
     private var handoffGen = 0
 
+    /**
+     * Whether ink given back to the scene is still only in its buffers and not yet on the glass.
+     *
+     * Being handed over is not the same as being shown, and a wipe inside that window is a blink.
+     */
+    private var awaitingPublish = false
+
     /** The tail as it was last meshed, which a stroke joining this one has to settle first. */
     private var wetTail: List<MeshPart> = emptyList()
 
@@ -786,9 +793,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         frontDecided = true
         if (parts.isEmpty() || parts.any { it.pass != InkPass.OPAQUE }) return
         if (joinFrontInk()) return
-        // Nothing joined, so the pad has to be wiped for this stroke, and whatever it is holding has
-        // to reach the canvas first. Those pixels may not go before the canvas has published them.
-        if (heldItems.isNotEmpty()) return waitToStartFrontInk(stroke)
+        // Nothing joined, so the pad has to be wiped for this stroke, and whatever it was showing
+        // has to be on the glass first. Being handed over is not that: the scene has the triangles,
+        // but the frame carrying them may still be out, and a handover a moment ago is exactly the
+        // case where it is.
+        if (heldItems.isNotEmpty() || awaitingPublish) return waitToStartFrontInk(stroke)
         startFrontInk()
     }
 
@@ -868,6 +877,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         heldItems = emptyList()
         handoverTail = emptyList()
         for (item in items) pushItem(item)
+        // Every handover tracks its own publication, whichever path settled: what the caller does
+        // next is not what says when these triangles reached the glass.
+        awaitingPublish = true
+        view.publishThen { mainHandler.post { awaitingPublish = false } }
         return true
     }
 

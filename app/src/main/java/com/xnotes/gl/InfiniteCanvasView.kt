@@ -236,7 +236,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
      * next turn, by which time this frame has been handed to the compositor.
      */
     fun publishThen(action: () -> Unit) {
-        glRenderer.afterFrame = { queueEvent(action) }
+        glRenderer.runAfterFrame { queueEvent(action) }
         publish()
     }
 

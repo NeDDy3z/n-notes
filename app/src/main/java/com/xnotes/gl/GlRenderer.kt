@@ -79,9 +79,16 @@ class GlRenderer : GLSurfaceView.Renderer {
      *
      * This is how the front buffer hands a finished stroke back without a blink: the pad keeps its
      * pixels until the canvas has drawn the committed item, and only then wipes them.
+     *
+     * A queue rather than a slot, because more than one thing can be waiting on the same frame and
+     * a slot silently drops all but the last: a stroke waiting to know it is on the glass and the
+     * pad waiting to come down are two of them, and losing either is the blink itself.
      */
-    @Volatile
-    var afterFrame: (() -> Unit)? = null
+    private val afterFrame = java.util.concurrent.ConcurrentLinkedQueue<() -> Unit>()
+
+    fun runAfterFrame(action: () -> Unit) {
+        afterFrame.add(action)
+    }
 
     /** Bumped on every new EGL context. Everything GPU-resident is stamped with it. */
     @Volatile
@@ -176,8 +183,10 @@ class GlRenderer : GLSurfaceView.Renderer {
     override fun onDrawFrame(unused: GL10?) {
         val f = frame
         if (f.widthPx <= 0 || f.heightPx <= 0) return
-        val after = afterFrame
-        afterFrame = null
+        // Taken before the frame, not after: something added while this one draws is waiting on
+        // the next frame, not on this one.
+        val after = ArrayList<() -> Unit>(afterFrame.size)
+        while (true) after.add(afterFrame.poll() ?: break)
         val started = System.nanoTime()
         val paper = f.paper
         GLES30.glClearColor(paper.r / 255f, paper.g / 255f, paper.b / 255f, 1f)
@@ -197,7 +206,7 @@ class GlRenderer : GLSurfaceView.Renderer {
         sampleFrame(started, f)
         // After the draw and before the swap, which is the earliest point at which this frame's
         // pixels are certain to be the next thing the compositor latches for this layer.
-        after?.invoke()
+        for (action in after) action()
     }
 
     /**
