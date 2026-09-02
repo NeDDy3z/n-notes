@@ -5,9 +5,9 @@ import com.xnotes.core.geometry.Pt
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class CloneTest {
@@ -32,9 +32,9 @@ class CloneTest {
         return doc
     }
 
-    @Test fun yieldingCopyMatchesTheAtomicCopy() {
+    @Test fun deepCopyGivesEveryStrokeStorageOfItsOwn() {
         val doc = denseDoc()
-        val copy = runBlocking { doc.deepCopyYielding(FakeTextMeasurer()) }
+        val copy = doc.deepCopy(FakeTextMeasurer())
 
         assertEquals(doc.pages.size, copy.pages.size)
         for (pi in doc.pages.indices) {
@@ -56,16 +56,41 @@ class CloneTest {
         assertEquals("b", copy.bookmarks[0].label)
     }
 
-    @Test fun yieldingCopyIsIndependentOfLaterEdits() {
+    @Test fun snapshotSharesTheItemsButNotTheLists() {
         val doc = denseDoc()
-        val copy = runBlocking { doc.deepCopyYielding(FakeTextMeasurer()) }
+        val snap = doc.snapshot()
 
-        (doc.pages[0].items[0] as Stroke).addSample(Sample(9.0, 9.0, 1.0))
+        assertEquals(doc.pages.size, snap.pages.size)
+        for (pi in doc.pages.indices) {
+            assertNotSame(doc.pages[pi], snap.pages[pi]) // its own page...
+            assertNotSame(doc.pages[pi].items, snap.pages[pi].items) // ...and its own list...
+            for (ii in doc.pages[pi].items.indices) {
+                assertSame(doc.pages[pi].items[ii], snap.pages[pi].items[ii]) // ...over the live items
+            }
+        }
+    }
+
+    @Test fun snapshotSurvivesPagesAndItemsGoingAway() {
+        val doc = denseDoc()
+        val snap = doc.snapshot()
+
         doc.pages[1].items.clear()
         doc.pages.removeAt(2)
 
-        assertEquals(3, copy.pages.size)
-        assertEquals(2, (copy.pages[0].items[0] as Stroke).samples.size)
-        assertEquals(5, copy.pages[1].items.size)
+        assertEquals(3, snap.pages.size)
+        assertEquals(5, snap.pages[1].items.size)
+    }
+
+    /** The flow has no volatile-publish discipline, so it is the one thing still copied. */
+    @Test fun snapshotCopiesTheFlow() {
+        val doc = denseDoc()
+        doc.flow.paragraphs.clear()
+        doc.flow.paragraphs.add(com.xnotes.core.text.Paragraph(mutableListOf(com.xnotes.core.text.Run("hi"))))
+        val snap = doc.snapshot()
+
+        doc.flow.paragraphs.clear()
+
+        assertEquals(1, snap.flow.paragraphs.size)
+        assertEquals("hi", snap.flow.paragraphs[0].runs[0].text)
     }
 }

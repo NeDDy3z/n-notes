@@ -44,30 +44,30 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
 )
 
 /**
- * [Document.deepCopy] sliced for the main thread: pages copy one per dispatch ([yield] between
- * them), so snapshotting a dense note for autosave can't block pen input for one long stretch.
- * The caller owns consistency: it must abort (cancel, or discard via a revision check) when the
- * document is edited mid-copy, since pages copied before and after an edit could disagree.
+ * The document as the writer should see it: fresh [Page] objects over fresh item *lists*, sharing
+ * the items themselves. O(items) pointers rather than O(samples) floats, so an autosave no longer
+ * needs a second copy of the note on the heap (which is what used to run a big note out of it).
+ *
+ * What makes sharing safe is that the main thread only ever *replaces* an item's state, never
+ * edits it under a reader: adding, deleting and reordering touch the live lists this snapshot
+ * copied, and a [Stroke]'s samples are published whole through one volatile field. So the writer
+ * always serializes a coherent item, though an edit landing mid-write may or may not be in the
+ * file; that edit marks the document dirty again and the next autosave carries it.
+ *
+ * The flow is the exception: it is a tree of mutable lists with no such discipline, so it is still
+ * deep-copied. It is small. Use [deepCopy] wherever the copy has to be independently editable.
  */
-suspend fun Document.deepCopyYielding(measurer: TextMeasurer): Document {
-    val pagesCopy = mutableListOf<Page>()
-    var i = 0
-    while (i < pages.size) {
-        val page = pages.getOrNull(i) ?: break // list shrank mid-copy; the revision check discards this
-        pagesCopy.add(page.deepCopy(measurer))
-        i++
-        kotlinx.coroutines.yield()
-    }
-    return Document(
-        pages = pagesCopy,
-        dpi = dpi,
-        path = path,
-        displayName = displayName,
-        dirty = dirty,
-        pdfFile = pdfFile,
-        bookmarks = bookmarks.mapTo(mutableListOf()) { Bookmark(it.page, it.label) },
-        style = style,
-        margins = margins,
-        flow = flow.deepCopy(),
-    )
-}
+fun Document.snapshot(): Document = Document(
+    pages = pages.mapTo(mutableListOf()) {
+        Page(it.width, it.height, ArrayList(it.items), it.pdfPage, it.style, it.margins)
+    },
+    dpi = dpi,
+    path = path,
+    displayName = displayName,
+    dirty = dirty,
+    pdfFile = pdfFile,
+    bookmarks = bookmarks.mapTo(mutableListOf()) { Bookmark(it.page, it.label) },
+    style = style,
+    margins = margins,
+    flow = flow.deepCopy(),
+)

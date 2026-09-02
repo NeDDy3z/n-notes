@@ -40,7 +40,7 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.model.deepCopy
-import com.xnotes.core.model.deepCopyYielding
+import com.xnotes.core.model.snapshot
 import com.xnotes.core.model.insets
 import com.xnotes.core.model.paintMarginPattern
 import com.xnotes.core.model.paintPagePattern
@@ -1720,7 +1720,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         lastSessionContentVersion = contentVersion
         // Snapshot a changed document on the main thread, then write the session off-thread, so saving a
         // big note's session never freezes the UI. A view-state-only refresh shares the live doc (cheap).
-        val snapshot = if (contentChanged) state.document.deepCopy(textMeasurer) else state.document
+        val snapshot = if (contentChanged) state.document.snapshot() else state.document
         val zoom = state.zoom
         val sx = state.scrollX
         val sy = state.scrollY
@@ -3054,9 +3054,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             kotlinx.coroutines.delay(1200L) // debounce: write after a short idle
             noteWriteJob?.join() // wait out a write already going out rather than racing it
             val startNs = System.nanoTime() // the debug overlay's save timings start once the debounce fires
-            // Snapshot on the main thread so the off-thread write never iterates the live
-            // (mutating) model — but page-by-page, so a dense note can't hitch pen input.
-            val snapshot = snapshotDocument() ?: return@launch
+            // Pointers, on the main thread: the writer gets its own page lists over the live items
+            // (see [snapshot]), so it never iterates a list the pen is adding to.
+            val snapshot = state.document.snapshot()
             state.lastSaveSnapshotMs = msSince(startNs)
             startNoteWrite(uri, snapshot, state.document.displayName ?: state.document.title, startNs)
         }
@@ -3076,6 +3076,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onDone: (() -> Unit)? = null,
     ) {
         val doc = state.document
+        // Clean from here, not once the bytes land: [snapshot] already holds these edits, so an edit
+        // arriving mid-write has to mark the document again and be carried by the next autosave.
+        // Clearing the flag afterwards instead would swallow that edit until something else set it.
+        val wasDirty = doc.dirty
+        doc.dirty = false
+        dirty = false
         state.autosaveStatus = "in progress"
         noteWriteJob = autosaveScope.launch {
             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -3084,34 +3090,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             if (res != null) {
                 // The note may have been closed or switched while the bytes were going out. The write
                 // still counts, but only the document it belongs to may have its flags touched.
-                if (state.document === doc) {
-                    doc.dirty = false; dirty = false
-                    res.fork?.let { adoptNoteFork(it) }
-                }
+                if (state.document === doc) res.fork?.let { adoptNoteFork(it) }
                 invalidateThumb(res.uri) // file changed on disk; drop the stale tile so the grid re-renders it
+            } else if (wasDirty && state.document === doc) {
+                doc.dirty = true; dirty = true // nothing was written; the edits are still unsaved
             }
             state.autosaveStatus = if (res != null) "done" else "failed"
             state.lastSaveTotalMs = msSince(startNs)
             onDone?.invoke()
         }
-    }
-
-    /**
-     * The autosave snapshot, copied one page per main-loop slice ([deepCopyYielding]) so pen input
-     * stays smooth while a dense note snapshots. Any content edit mid-copy bumps [contentVersion]
-     * and reschedules the autosave (cancelling this job at a yield); the version check discards a
-     * copy that an edit tore anyway, retrying, and after repeated churn falls back to the atomic
-     * copy so the job always terminates. Returns null when a different note replaced this one.
-     */
-    private suspend fun snapshotDocument(): Document? {
-        val doc = state.document
-        repeat(3) {
-            val version = contentVersion
-            val snapshot = doc.deepCopyYielding(textMeasurer)
-            if (state.document !== doc) return null
-            if (contentVersion == version) return snapshot
-        }
-        return doc.deepCopy(textMeasurer)
     }
 
     /** Write the current note to its autosave file now (synchronous, main thread); a no-op when not autosaving. */
@@ -3144,7 +3131,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             noteWriteJob?.join() // a write already going out finishes first; it may be all there was
             if (!state.document.dirty) { savingNote = false; onDone(); return@launch }
             val startNs = System.nanoTime()
-            val snapshot = state.document.deepCopy(textMeasurer) // main thread: immune to edits during the write
+            val snapshot = state.document.snapshot() // main thread: its own page lists over the live items
             state.lastSaveSnapshotMs = msSince(startNs)
             startNoteWrite(uri, snapshot, state.document.displayName ?: state.document.title, startNs) {
                 savingNote = false
