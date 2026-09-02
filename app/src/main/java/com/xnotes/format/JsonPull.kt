@@ -80,6 +80,21 @@ internal class JsonPull(private val reader: Reader) {
 
     fun nextDouble(): Double {
         expect(Token.NUMBER)
+        // Fast path: the number lies whole inside the buffer and is plain fixed point, which is
+        // what every coordinate and pressure in a manifest is. Reading it straight out of the
+        // buffer skips a String per number and the general parser behind it; a dense note holds
+        // millions of them. Anything else (an exponent, a mantissa too long to stay exact, a
+        // number straddling the buffer edge) falls through to the general path below.
+        var i = pos
+        while (i < limit && isNumberChar(buf[i])) i++
+        if (i < limit) {
+            val v = fixedPoint(pos, i)
+            if (v != null) {
+                pos = i
+                startValue()
+                return v
+            }
+        }
         val t = scanNumber()
         startValue()
         return try {
@@ -87,6 +102,51 @@ internal class JsonPull(private val reader: Reader) {
         } catch (_: NumberFormatException) {
             throw JsonPullException("Malformed number")
         }
+    }
+
+    /**
+     * `buf[from until to]` as a double, or null when that is not a plain fixed-point number this
+     * can read exactly.
+     *
+     * Exactly is the whole point: an integer mantissa under 2^53 and a power of ten up to 1e22 are
+     * both exact doubles, so one IEEE division of the two is correctly rounded, which is the same
+     * double [String.toDouble] returns. Outside that range it declines rather than approximate.
+     */
+    private fun fixedPoint(from: Int, to: Int): Double? {
+        var i = from
+        if (i >= to) return null
+        var negative = false
+        if (buf[i] == '-') {
+            negative = true
+            i++
+        }
+        var mantissa = 0L
+        var digits = 0
+        var decimals = -1
+        while (i < to) {
+            val c = buf[i]
+            when {
+                c in '0'..'9' -> {
+                    if (digits >= 17) return null // past where a Long stays exact
+                    mantissa = mantissa * 10 + (c - '0')
+                    digits++
+                    if (decimals >= 0) decimals++
+                }
+                c == '.' -> {
+                    if (decimals >= 0) return null
+                    decimals = 0
+                }
+                else -> return null // an exponent, a sign in the middle, anything unexpected
+            }
+            i++
+        }
+        if (digits == 0) return null
+        if (mantissa > MAX_EXACT_MANTISSA) return null
+        val k = if (decimals < 0) 0 else decimals
+        if (k >= POW10.size) return null
+        if (mantissa == 0L) return if (negative) -0.0 else 0.0
+        val v = if (k == 0) mantissa.toDouble() else mantissa.toDouble() / POW10[k]
+        return if (negative) -v else v
     }
 
     fun nextInt(): Int {
@@ -288,6 +348,14 @@ internal class JsonPull(private val reader: Reader) {
         }
         if (sb.isEmpty()) throw JsonPullException("Malformed number")
         return sb.toString()
+    }
+
+    private companion object {
+        /** Largest integer every double can hold exactly, 2^53. */
+        private const val MAX_EXACT_MANTISSA = 9007199254740992L
+
+        /** Powers of ten that are themselves exact doubles; past 1e22 they are not. */
+        private val POW10 = DoubleArray(23) { java.math.BigDecimal.TEN.pow(it).toDouble() }
     }
 
     private fun isNumberChar(c: Char): Boolean =
