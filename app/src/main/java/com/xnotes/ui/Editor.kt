@@ -335,6 +335,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  large note into thousands of round trips through the provider; a megabyte at a time doesn't. */
     private val copyBuffer = 1024 * 1024
 
+    /** Below this much ahead of the manifest, a note is rebuilt whole rather than spliced: writing
+     *  in place is only worth its (brief) window of an invalid file when the assets are the save. */
+    private val MIN_SPLICE_BYTES = 1024L * 1024L
+
     var tool by mutableStateOf(Tool.DEFAULT)
         private set
     var palette by mutableStateOf(state.palette)
@@ -3024,6 +3028,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * throw mid-encode left the note as 0 bytes. Returns true only when [uri] now holds the note.
      */
     private fun writeNoteSafely(uri: String, doc: Document): Boolean = synchronized(saveLock) {
+        // Replace only the manifest when everything ahead of it is already right. A splice that
+        // fails part way leaves a file that is not a valid zip, and falling through to the full
+        // rewrite below is what puts it right, so this must stay ordered this way.
+        if (writeNoteInPlace(uri, doc)) return true
         runCatching {
             val tmp = java.io.File.createTempFile("save", ".xnote", saveTmpDir)
             try {
@@ -3053,6 +3061,83 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun msSince(startNs: Long): Long = msBetween(startNs, System.nanoTime())
 
     private fun msBetween(startNs: Long, endNs: Long): Long = (endNs - startNs) / 1_000_000L
+
+    /**
+     * Save by replacing only the tail of the note already at [uri]: its manifest, and the flow
+     * entry with it. Everything ahead of them is left exactly where it lies, which for a note built
+     * from a PDF is nearly the whole file. See [com.xnotes.format.ZipTail].
+     *
+     * Returns false, having written nothing, when this is not a bundle it can patch: a different
+     * set of assets, a provider that will not hand out a writable handle, a zip with anything
+     * unexpected in it, or too little ahead of the manifest for the splice to be worth its risk.
+     */
+    private fun writeNoteInPlace(uri: String, doc: Document): Boolean = runCatching {
+        val assets = codec.imageAssets(doc)
+        val expected = ArrayList<Pair<String, Long>>(assets.size + 1)
+        for ((name, file) in assets) expected.add(name to file.length())
+        doc.pdfFile?.let { expected.add("assets/source.pdf" to it.length()) }
+        if (expected.isEmpty()) return@runCatching false
+
+        val target = android.net.Uri.parse(uri)
+        // Streams built on a descriptor the provider owns are never closed here: closing one closes
+        // that descriptor, and the ParcelFileDescriptor would then close a number the system may
+        // already have handed to something else. Only the descriptor itself is closed, once.
+        val existing = appContext.contentResolver.openFileDescriptor(target, "r")?.use { pfd ->
+            com.xnotes.format.ZipTail.read(java.io.FileInputStream(pfd.fileDescriptor).channel)
+        } ?: return@runCatching false
+
+        // Every asset has to still be the same file in the same place, or the manifest is not the
+        // only thing that changed and the whole bundle has to be rebuilt.
+        val ordered = existing.entries.sortedBy { it.localOffset }
+        if (ordered.size <= expected.size) return@runCatching false
+        for (i in expected.indices) {
+            val e = ordered[i]
+            if (e.name != expected[i].first || e.size != expected[i].second) return@runCatching false
+            if (e.method != java.util.zip.ZipEntry.STORED) return@runCatching false
+        }
+        val tailStart = ordered[expected.size].localOffset
+        if (tailStart < MIN_SPLICE_BYTES) return@runCatching false
+
+        val encodeStart = System.nanoTime()
+        val timing = com.xnotes.format.DocumentCodec.WriteTiming()
+        val tmp = java.io.File.createTempFile("tail", ".zip", saveTmpDir)
+        try {
+            // The new tail is built as an ordinary little zip of its own, so java.util.zip keeps
+            // doing the deflating, the checksums and the entry headers.
+            java.io.FileOutputStream(tmp).use { out ->
+                java.util.zip.ZipOutputStream(out).use { zos ->
+                    zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
+                    codec.writeTail(zos, doc, assets, timing)
+                }
+            }
+            val spliceStart = System.nanoTime()
+            val length = java.io.FileInputStream(tmp).use { tail ->
+                val tailDir = com.xnotes.format.ZipTail.read(tail.channel)
+                    ?: return@runCatching false
+                appContext.contentResolver.openFileDescriptor(target, "rw")?.use { pfd ->
+                    com.xnotes.format.ZipTail.splice(
+                        java.io.FileOutputStream(pfd.fileDescriptor).channel,
+                        tailStart,
+                        ordered.subList(0, expected.size),
+                        tail.channel,
+                        tailDir,
+                    )
+                } ?: -1L
+            }
+            if (length < 0L) return@runCatching false
+            state.lastSaveEncodeMs = msBetween(encodeStart, spliceStart) // all six for the overlay
+            state.lastSaveCopyMs = msSince(spliceStart)
+            state.lastSaveManifestMs = msBetween(encodeStart, spliceStart)
+            state.lastSaveAssetsMs = 0L // the whole point: nothing ahead of the manifest is touched
+            state.lastSaveDeflateMs = timing.deflateMs
+            state.lastSaveManifestBytes = timing.manifestBytes
+            state.lastSaveBytes = length
+            lastNoteStamp = stampOf(uri) // read back what the provider reports, not what we wrote
+            true
+        } finally {
+            tmp.delete()
+        }
+    }.getOrDefault(false)
 
     /** The on-disk size of the SAF document at [uri] in bytes, or -1 when the provider won't say. */
     private fun fileSizeOf(uri: String): Long = runCatching {
