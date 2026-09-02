@@ -61,6 +61,36 @@ class DocumentCodec(
     class WriteTiming {
         var manifestMs = 0L
         var assetsMs = 0L
+
+        /** Of [manifestMs], the part spent inside the deflater; the rest generated the JSON.
+         *  [manifestBytes] is the uncompressed size that went in. */
+        var deflateMs = 0L
+        var manifestBytes = 0L
+    }
+
+    /** Times what the manifest spends being compressed, so the two halves of [WriteTiming.manifestMs]
+     *  can be told apart. Never closes what it wraps: the zip entry outlives it. */
+    private class DeflateProbe(private val out: OutputStream) : OutputStream() {
+        var nanos = 0L
+        var bytes = 0L
+
+        override fun write(b: Int) {
+            val t = System.nanoTime()
+            out.write(b)
+            nanos += System.nanoTime() - t
+            bytes++
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            val t = System.nanoTime()
+            out.write(b, off, len)
+            nanos += System.nanoTime() - t
+            bytes += len
+        }
+
+        override fun flush() = out.flush()
+
+        override fun close() = Unit
     }
 
     fun write(
@@ -75,10 +105,13 @@ class DocumentCodec(
             // The manifest streams straight into the deflater: a dense note's JSON is never
             // materialized as an org.json DOM, a String, or a byte[] (three copies per save).
             zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
-            val w = java.io.BufferedWriter(java.io.OutputStreamWriter(zos, Charsets.UTF_8), 32 * 1024)
+            val probe = DeflateProbe(zos)
+            val w = java.io.BufferedWriter(java.io.OutputStreamWriter(probe, Charsets.UTF_8), 32 * 1024)
             writeManifest(JsonWrite(w), doc, assets)
             w.flush()
             zos.closeEntry()
+            timing?.deflateMs = probe.nanos / 1_000_000L
+            timing?.manifestBytes = probe.bytes
             // The flow lives in its own ODF entry, written only when non-empty (or carrying
             // custom defaults) so untouched notes stay byte-identical to old readers.
             if (!doc.flow.isEmpty || !com.xnotes.core.text.FlowDefaults.of(doc.flow).isEmpty) {

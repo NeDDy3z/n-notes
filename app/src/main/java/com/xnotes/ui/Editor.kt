@@ -3038,6 +3038,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 state.lastSaveCopyMs = msSince(copyStart)
                 state.lastSaveManifestMs = timing.manifestMs
                 state.lastSaveAssetsMs = timing.assetsMs
+                state.lastSaveDeflateMs = timing.deflateMs
+                state.lastSaveManifestBytes = timing.manifestBytes
                 state.lastSaveBytes = tmp.length() // live file size for the debug overlay
                 lastNoteStamp = stampOf(uri) // read back what the provider reports, not what we wrote
                 true
@@ -3115,8 +3117,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             android.util.Log.i(
                 "xnotes.save",
                 "save ${state.lastSaveTotalMs}ms = snapshot ${state.lastSaveSnapshotMs}" +
-                    " + encode ${state.lastSaveEncodeMs} (json ${state.lastSaveManifestMs}," +
-                    " assets ${state.lastSaveAssetsMs}) + saf ${state.lastSaveCopyMs}" +
+                    " + encode ${state.lastSaveEncodeMs} (json ${state.lastSaveManifestMs}" +
+                    " of which deflate ${state.lastSaveDeflateMs} over" +
+                    " ${state.lastSaveManifestBytes} raw bytes, assets ${state.lastSaveAssetsMs})" +
+                    " + saf ${state.lastSaveCopyMs}" +
                     ", ${state.lastSaveBytes} bytes, ${res != null}",
             )
             onDone?.invoke()

@@ -119,6 +119,8 @@ class DebugOverlay {
                 add(" snapshot  ${state.lastSaveSnapshotMs} ms")
                 add(" encode    ${state.lastSaveEncodeMs} ms")
                 add("  json     ${state.lastSaveManifestMs} ms")
+                add("   deflate ${state.lastSaveDeflateMs} ms")
+                add("   raw     ${fmtBytes(state.lastSaveManifestBytes)}")
                 add("  assets   ${state.lastSaveAssetsMs} ms")
                 add(" saf copy  ${state.lastSaveCopyMs} ms")
             }

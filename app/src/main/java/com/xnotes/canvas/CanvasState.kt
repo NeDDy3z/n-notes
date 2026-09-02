@@ -1620,6 +1620,11 @@ class CanvasState(
     var lastSaveManifestMs = -1L
     var lastSaveAssetsMs = -1L
 
+    /** Of [lastSaveManifestMs], the part spent compressing rather than generating the JSON, and the
+     *  uncompressed size that went into the deflater. */
+    var lastSaveDeflateMs = -1L
+    var lastSaveManifestBytes = -1L
+
     /** Autosave status for the debug overlay, set by the editor: "idle", "pending", "in progress",
      *  "done" or "failed". */
     var autosaveStatus = "idle"
