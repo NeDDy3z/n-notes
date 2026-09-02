@@ -1615,6 +1615,11 @@ class CanvasState(
     var lastSaveEncodeMs = -1L
     var lastSaveCopyMs = -1L
 
+    /** [lastSaveEncodeMs] split in two: the deflated manifest against the stored assets (images and
+     *  the embedded PDF) streamed in behind it, which a PDF-backed note re-copies on every save. */
+    var lastSaveManifestMs = -1L
+    var lastSaveAssetsMs = -1L
+
     /** Autosave status for the debug overlay, set by the editor: "idle", "pending", "in progress",
      *  "done" or "failed". */
     var autosaveStatus = "idle"

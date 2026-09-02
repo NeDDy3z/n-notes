@@ -56,7 +56,20 @@ class DocumentCodec(
     /** Thrown out of [write] when [isCancelled] turns true mid-copy, so the caller can discard the partial file. */
     class WriteCancelled : Exception()
 
-    fun write(doc: Document, out: OutputStream, isCancelled: () -> Boolean = { false }) {
+    /** Where a [write] spent its time, for the debug overlay: the deflated manifest (and the flow
+     *  entry with it) against the stored assets streamed in behind it. Milliseconds. */
+    class WriteTiming {
+        var manifestMs = 0L
+        var assetsMs = 0L
+    }
+
+    fun write(
+        doc: Document,
+        out: OutputStream,
+        timing: WriteTiming? = null,
+        isCancelled: () -> Boolean = { false },
+    ) {
+        val started = System.nanoTime()
         val assets = ArrayList<Pair<String, File>>()
         ZipOutputStream(out).use { zos ->
             // The manifest streams straight into the deflater: a dense note's JSON is never
@@ -73,10 +86,13 @@ class DocumentCodec(
             }
             // Stream each image straight from its temp file into the bundle, never as a byte[], so a
             // note full of large images doesn't materialize them all in the heap on every save.
+            val manifestDone = System.nanoTime()
             for ((name, file) in assets) zos.putStored(name, file, isCancelled)
             // Stream the source PDF straight from disk into the bundle so a big PDF is never
             // materialized as a byte[]. [isCancelled] lets a long copy abort (e.g. import cancel).
             doc.pdfFile?.let { zos.putStored("assets/source.pdf", it, isCancelled) }
+            timing?.manifestMs = (manifestDone - started) / 1_000_000L
+            timing?.assetsMs = (System.nanoTime() - manifestDone) / 1_000_000L
         }
     }
 

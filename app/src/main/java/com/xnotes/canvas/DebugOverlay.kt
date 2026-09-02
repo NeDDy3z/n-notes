@@ -118,6 +118,7 @@ class DebugOverlay {
                 add("save      ${state.lastSaveTotalMs} ms")
                 add("  snap ${state.lastSaveSnapshotMs} / enc ${state.lastSaveEncodeMs}" +
                     " / saf ${state.lastSaveCopyMs}")
+                add("  json ${state.lastSaveManifestMs} / assets ${state.lastSaveAssetsMs}")
             }
         }
 

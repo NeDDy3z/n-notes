@@ -3028,13 +3028,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             val tmp = java.io.File.createTempFile("save", ".xnote", saveTmpDir)
             try {
                 val encodeStart = System.nanoTime()
-                java.io.FileOutputStream(tmp).use { codec.write(doc, it) }
+                val timing = com.xnotes.format.DocumentCodec.WriteTiming()
+                java.io.FileOutputStream(tmp).use { codec.write(doc, it, timing = timing) }
                 val copyStart = System.nanoTime()
                 val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
                     ?: return@runCatching false
                 out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it, copyBuffer) } }
-                state.lastSaveEncodeMs = msBetween(encodeStart, copyStart) // both for the debug overlay
+                state.lastSaveEncodeMs = msBetween(encodeStart, copyStart) // all four for the debug overlay
                 state.lastSaveCopyMs = msSince(copyStart)
+                state.lastSaveManifestMs = timing.manifestMs
+                state.lastSaveAssetsMs = timing.assetsMs
                 state.lastSaveBytes = tmp.length() // live file size for the debug overlay
                 lastNoteStamp = stampOf(uri) // read back what the provider reports, not what we wrote
                 true
