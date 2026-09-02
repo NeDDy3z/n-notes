@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Rect as AndroidRect
 import android.os.Handler
 import android.os.Looper
-import android.view.Choreographer
 import android.view.PixelCopy
 import android.view.Window
 import com.xnotes.core.geometry.Pt
@@ -206,15 +205,21 @@ class FrontInk(
                 "room=${roomToJoin()} covered=${pad.covered}",
         )
         if (join(scrollX, scrollY, zoom, clip)) return
-        // Nothing joined, so the pad has to be wiped for this stroke, and whatever it was showing
-        // has to be on the glass first. Settling is not that: the canvas has the ink, but its frame
-        // carrying it may still be a refresh or two out, and a handover a moment ago is exactly the
-        // case where it is, since giving a long stroke to the cache is tens of milliseconds of it.
+        // Nothing joined, so the pad has to be taken over, and anything it was showing has to be on
+        // the canvas first. Settling is not that: the canvas has the ink, but the frame carrying it
+        // may still be out, and a handover a moment ago is exactly when it is, since giving a long
+        // stroke to the cache is tens of milliseconds. Only then may the pad be taken, and taking it
+        // is itself a wait: see [takePad].
         val settled = settle()
         if (settled || awaitingPublish) {
-            return waitToStart(stroke, pageIndex, scrollX, scrollY, zoom, clip)
+            val gen = handoffGen
+            trace("wait: scheduled")
+            return view.publishThen {
+                trace("wait: committed gen=$gen now=$handoffGen")
+                if (gen == handoffGen) takePad(stroke, pageIndex, scrollX, scrollY, zoom, clip)
+            }
         }
-        start(scrollX, scrollY, zoom, clip)
+        takePad(stroke, pageIndex, scrollX, scrollY, zoom, clip)
     }
 
     /**
@@ -252,15 +257,20 @@ class FrontInk(
     }
 
     /**
-     * Take the pad once the canvas has published the ink it was showing.
+     * Take the pad, once it is down.
      *
-     * A wipe of a front buffer is on the glass at the next scanout, while the canvas's frame is only
-     * latched at the vsync after it is handed over, so wiping on the handover drops the old stroke
-     * for a refresh or two. One frame further on and the two overlap instead, which is the lesser
-     * artefact by a distance. The stroke draws through the canvas until then, as every stroke does
-     * before it is decided.
+     * Never by clearing it where it stands. A wipe of a front buffer is on the glass at the next
+     * scanout whatever the canvas has queued, and a canvas frame that has been *committed* is only
+     * queued: it is latched a vsync later. So a wipe timed against a commit still drops whatever the
+     * pad was showing for the refresh in between, which is the blink. [GlWetPad.standDown] hides the
+     * layer instead, by a transaction, which is latched like a buffer and so lands in the same
+     * composite as the canvas's frame. Only then are the pixels this stroke's to take.
+     *
+     * A pad that is already down hands the surface over on the spot, which is every stroke that
+     * starts after any sort of pause. The rest draw through the canvas for a refresh or two first,
+     * as every stroke does before it is decided.
      */
-    private fun waitToStart(
+    private fun takePad(
         stroke: Stroke,
         pageIndex: Int,
         scrollX: Double,
@@ -268,23 +278,24 @@ class FrontInk(
         zoom: Double,
         clip: PixelRect,
     ) {
+        // Already down, which is every stroke that starts after any sort of pause: take it here so
+        // the caller's own present is the first one, rather than re-entering it.
+        if (!pad.showing) {
+            start(scrollX, scrollY, zoom, clip)
+            return
+        }
         val gen = handoffGen
-        trace("wait: scheduled")
-        view.publishThen {
-            trace("wait: committed gen=$gen now=$handoffGen")
+        pad.standDown {
+            trace("take: down gen=$gen now=$handoffGen owner=${owner === stroke}")
             // A moved generation means another stroke has taken the pad and is answerable for it.
-            if (gen != handoffGen) return@publishThen
-            Choreographer.getInstance().postFrameCallback {
-                trace("wait: frame gen=$gen now=$handoffGen owner=${owner === stroke}")
-                if (gen != handoffGen) return@postFrameCallback
-                if (owner === stroke && start(scrollX, scrollY, zoom, clip)) {
-                    // Straight into a present, so the pad has the stroke before the canvas drops it.
-                    wet(stroke, pageIndex)
-                    view.requestRender()
-                } else {
-                    // Nobody is going to take the pad, and it is still showing ink the canvas has.
-                    pad.release()
-                }
+            if (gen != handoffGen) return@standDown
+            if (owner === stroke && start(scrollX, scrollY, zoom, clip)) {
+                // Straight into a present, so the pad has the stroke before the canvas drops it.
+                wet(stroke, pageIndex)
+                view.requestRender()
+            } else {
+                // Nobody is taking it, so let it clear itself and let the compositor rest.
+                pad.release()
             }
         }
     }

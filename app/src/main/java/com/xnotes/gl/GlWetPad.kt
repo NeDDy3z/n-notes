@@ -96,6 +96,16 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     var frontBuffered = false
         private set
 
+    /**
+     * Whether the pad's layer is up, which is what says whether its pixels may be touched.
+     *
+     * Clearing a front buffer is on the glass at the next scanout whatever the canvas has queued,
+     * so a visible pad may not be cleared for a new stroke: see [standDown].
+     */
+    @Volatile
+    var showing = true
+        private set
+
     init {
         // Above the window, for a canvas that draws into the window itself: a surface below it
         // punches a transparent hole through everything under it, which would take the page with
@@ -311,6 +321,38 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         SurfaceControl.Transaction().use { t ->
             t.setVisibility(control, visible)
             t.apply()
+        }
+        showing = visible
+    }
+
+    /**
+     * Take the layer down for a stroke that wants the surface back, and say when it is down.
+     *
+     * The surface is the one being scanned out, so clearing it is on the glass at the next scanout
+     * whether or not the canvas has caught up: a frame the canvas has *committed* is only queued,
+     * and is latched a vsync later. Wiping a pad that is still up therefore drops whatever it was
+     * showing for the refresh in between, which is the blink. Hiding is a transaction and is latched
+     * like a buffer, so the two layers change in one composite; only then are the pixels anyone's to
+     * take. At a vsync rather than at once, for the same reason [release] hides at one.
+     *
+     * Applying the transaction is not the layer going down. One applied *at* a vsync is latched at
+     * the one after, so the compositor is still scanning this buffer out for the refresh in between
+     * and a clear inside it is on the glass. Hence the second wait, which is what makes the whole
+     * sequence hold: queue the hide at a vsync, let a refresh carry it, and only then hand over.
+     *
+     * A pad already down has nothing to time, and hands the surface over on the spot, which is what
+     * a stroke that starts after any sort of pause gets.
+     */
+    fun standDown(then: () -> Unit) {
+        ink.forgetFrozen()
+        if (!showing) return then()
+        post {
+            val gen = ++releaseGen
+            Choreographer.getInstance().postFrameCallback {
+                trace("standDown gen=$gen now=$releaseGen")
+                if (gen == releaseGen) setLayerVisible(false)
+                handler?.postDelayed({ trace("standDown: down"); mainHandler.post(then) }, refreshMs * 2)
+            }
         }
     }
 

@@ -798,7 +798,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         // but the frame carrying them may still be out, and a handover a moment ago is exactly the
         // case where it is.
         if (heldItems.isNotEmpty() || awaitingPublish) return waitToStartFrontInk(stroke)
-        startFrontInk()
+        takePad(stroke)
     }
 
     /**
@@ -838,11 +838,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /**
      * Take the pad once the canvas has published the ink it was showing.
      *
-     * A wipe of a front buffer is on the glass at the next scanout, while the canvas's frame is only
-     * latched at the vsync after it is handed over, so wiping on the handover drops the last stroke
-     * for a refresh or two. One frame further on and the two overlap instead, which is the lesser
-     * artefact by a distance. The stroke goes into the scene's wet buffer until then, as every
-     * stroke does before it is decided, and is taken back out when the pad takes over.
+     * The canvas has to have published the last stroke, and then the pad has to come *down*: a
+     * committed frame is only queued, and a wipe of a front buffer is on the glass at the next
+     * scanout whatever the canvas has queued, so wiping on the commit still drops the stroke for the
+     * refresh in between. Hiding is a transaction, latched like a buffer, so both layers change in
+     * one composite. The stroke goes into the scene's wet buffer until then, as every stroke does
+     * before it is decided, and is taken back out when the pad takes over.
      */
     private fun waitToStartFrontInk(stroke: Stroke) {
         settleHeld()
@@ -850,22 +851,37 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         view.publishThen {
             mainHandler.post {
                 // A moved generation means another stroke has taken the pad and is answerable for it.
-                if (gen != handoffGen) return@post
-                android.view.Choreographer.getInstance().postFrameCallback {
-                    if (gen != handoffGen) return@postFrameCallback
-                    if (wetOwner !== stroke || !startFrontInk()) {
-                        // Nobody is going to take the pad, and the canvas has what it is showing.
-                        pad.release()
-                        return@postFrameCallback
-                    }
-                    // Out of the scene's wet buffer and onto the pad, in that order.
-                    wetMeshed = 0
-                    wetArc = 0.0
-                    scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
-                    publishWetStroke(stroke)
-                    view.publish()
-                }
+                if (gen == handoffGen) takePad(stroke)
             }
+        }
+    }
+
+    /**
+     * Take the pad, once it is down.
+     *
+     * Never by clearing it where it stands. A wipe of a front buffer is on the glass at the next
+     * scanout whatever the canvas has queued, and a frame the canvas has *committed* is only queued:
+     * it is latched a vsync later. So a wipe timed against a commit still drops whatever the pad was
+     * showing for the refresh in between, which is the blink. Hiding is a transaction, latched like
+     * a buffer, so both layers change in one composite; only then are the pixels this stroke's.
+     */
+    private fun takePad(stroke: Stroke) {
+        // Already down, which is every stroke that starts after any sort of pause: take it here so
+        // the caller's own publish is the first one, rather than re-entering it.
+        if (!pad.showing) {
+            startFrontInk()
+            return
+        }
+        val gen = handoffGen
+        pad.standDown {
+            if (gen != handoffGen) return@standDown
+            if (wetOwner !== stroke || !startFrontInk()) return@standDown pad.release()
+            // Out of the scene's wet buffer and onto the pad, in that order.
+            wetMeshed = 0
+            wetArc = 0.0
+            scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
+            publishWetStroke(stroke)
+            view.publish()
         }
     }
 
