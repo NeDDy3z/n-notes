@@ -385,6 +385,14 @@ class CanvasState(
     private val pendingBg = HashSet<Page>()
 
     /**
+     * Pages whose cached ink is known to be out of date and is being rebuilt off-thread (see
+     * [refreshAllInk]). The surface stays in [caches] and keeps being blitted meanwhile, so the page
+     * shows its pre-edit content for a frame or two rather than blanking; the flag is what makes
+     * [usableFor] say no, since an edit leaves the entry's cover and resolution both matching.
+     */
+    private val staleInk = HashSet<Page>()
+
+    /**
      * Bumped by every cache invalidation. An in-flight async build captures the value at
      * schedule time and its result is discarded if the generation has since moved on, so
      * an edit (or zoom) that lands mid-build never gets overwritten by the stale surface.
@@ -944,12 +952,13 @@ class CanvasState(
     fun cacheFor(page: Page): CacheEntry {
         val res = clampedRes(page)
         caches[page]?.let { if (it.usableFor(page, res)) return it }
-        return buildCache(page, res).also { caches[page] = it }
+        return buildCache(page, res).also { caches[page] = it; staleInk.remove(page) }
     }
 
-    /** Whether this entry still matches [page]'s footprint and the [target] resolution. */
+    /** Whether this entry still matches [page]'s footprint and the [target] resolution, and holds
+     *  the page's current content ([staleInk]). */
     private fun CacheEntry.usableFor(page: Page, target: Double): Boolean =
-        cover == footprint(page) && (zoomingInProgress || abs(res - target) < 1e-6)
+        page !in staleInk && cover == footprint(page) && (zoomingInProgress || abs(res - target) < 1e-6)
 
     /**
      * Like [cacheFor] but never rasterizes on the calling (UI) thread: returns the ready
@@ -977,7 +986,10 @@ class CanvasState(
             val entry = renderInk(page, res, items, withFlow)
             postToMain {
                 pendingInk.remove(page)
-                if (gen == cacheGen) caches[page] = entry
+                if (gen == cacheGen) {
+                    caches[page] = entry
+                    staleInk.remove(page)
+                }
                 // Repaint either way. A build the page outgrew mid-flight (a margin drag bumps the
                 // generation on every tick) is discarded here, and the draw loop is what schedules
                 // its replacement — but every frame while this one was in flight was turned away by
@@ -1177,6 +1189,7 @@ class CanvasState(
 
     fun invalidatePage(page: Page) {
         caches.remove(page)
+        staleInk.remove(page)
         cacheGen++
         sharpGen++
     }
@@ -1221,6 +1234,7 @@ class CanvasState(
 
     fun invalidateAllCaches() {
         caches.clear()
+        staleInk.clear()
         bgCaches.clear()
         hlCaches.clear()
         wetInk.clear()
@@ -1250,33 +1264,42 @@ class CanvasState(
     }
 
     /**
-     * Repaint every live page ink cache in place — the whole page — instead of dropping it: the
-     * undo/redo path. Keeps each surface in [caches] so [cacheForOrSchedule] never
-     * returns null and the draw loop never blanks the page for a frame (the flicker that
-     * [invalidateAllCaches] caused). The (PDF/template) background layer is left untouched — undo/
-     * redo never edits it, so it must not flash either. The sharp viewport is patched in place by
-     * [repairRegion] (via [repairSharpInk]), so it stays valid without a [sharpGen] bump.
+     * Rebuild every live page ink cache **off-thread**: the undo/redo path for a command that can't
+     * say what it touched ([com.xnotes.core.history.Command.touched] returned null), so there are no
+     * regions to repair and the whole page has to be re-rendered. Doing that inline is what timed
+     * out input — a full page of ink is the same work [renderInk] does on the cache thread, times
+     * every cached page, on the thread the tap arrived on.
      *
-     * Bumps [cacheGen] so an ink build scheduled before the edit (e.g. a page mid scroll-in) is
-     * discarded on publish instead of overwriting the page with its pre-edit snapshot; because the
-     * surfaces are kept (not cleared), this costs no blank frame — [cacheForOrSchedule] keeps
-     * returning the repaired surface (its resolution is unchanged by an edit).
+     * So it schedules instead, exactly like [refreshBackground] does for a PDF page: the current
+     * surface stays in [caches] and keeps being blitted until the rebuild lands, so the page shows
+     * its pre-edit content for a frame or two rather than blanking (the flicker [invalidateAllCaches]
+     * caused). [staleInk] is what stops [usableFor] handing that surface back as current — an edit
+     * changes neither the cover nor the resolution, so nothing else would notice.
+     *
+     * Bumps [cacheGen] so a build scheduled before the edit is discarded on publish rather than
+     * overwriting the page with its pre-edit snapshot, and [sharpGen] because the sharp viewport can
+     * only be patched by region ([repairSharpInk]) and there are none: it drops to the soft cache
+     * underneath and re-renders once the view settles. The (PDF/template) background layer is left
+     * untouched — undo/redo never edits it, so it must not flash either.
      */
-    fun repairAllInkInPlace() {
-        for (page in caches.keys.toList()) {
-            repairRegion(page, footprint(page))
-        }
+    fun refreshAllInk() {
         cacheGen++
+        sharpGen++
+        for (page in caches.keys.toList()) {
+            staleInk.add(page)
+            scheduleInk(page, clampedRes(page))
+        }
     }
 
     /**
-     * The same in-place undo/redo repair as [repairAllInkInPlace], but confined to the regions the
+     * The in-place undo/redo repair, confined to the regions the
      * undone command actually disturbed (see [com.xnotes.core.history.Command.touched]) — surfaces
      * kept, background layer untouched, sharp viewport patched, minus the full-page re-rasterization
      * of every cached page that made a single undo tap cost the whole visible band. Rects are unioned
-     * per page, so each page is repainted at most once and never more than [repairAllInkInPlace]
-     * would have. A page with no live cache has nothing to repair and falls out of [repairRegion] on
-     * its own, having still patched the sharp layer.
+     * per page, so each page is repainted at most once — and the sharp viewport is patched rather
+     * than dropped, which is what keeps a deep zoom crisp across an undo. A page with no live cache
+     * has nothing to repair and falls out of [repairRegion] on its own, having still patched the
+     * sharp layer. The unbounded fallback is [refreshAllInk].
      */
     fun repairInkRegions(regions: List<Pair<Page, Rect>>) {
         if (regions.isNotEmpty()) {
@@ -1327,6 +1350,7 @@ class CanvasState(
 
     fun dropCachesExcept(visible: Set<Page>) {
         caches.keys.retainAll(visible)
+        staleInk.retainAll(visible)
         bgCaches.keys.retainAll(visible)
         if (hlCaches.isNotEmpty()) {
             val keep = HashSet<Stroke>()

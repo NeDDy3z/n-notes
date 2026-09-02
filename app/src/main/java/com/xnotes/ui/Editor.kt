@@ -3613,11 +3613,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // The in-place repaint below reads the published flow snapshot: republish it first
         // so an undone/redone flow edit repaints at its post-history layout.
         republishFlowIfStale()
-        // Repair the ink caches in place rather than dropping them — dropping blanked every visible
-        // page to bare paper for a frame (the undo/redo flicker). Only AddPage/DeletePage change the
-        // page set, so relayout (which re-renders the sharp viewport) is gated on that. A command
-        // that named its regions repairs only those; one that couldn't still repaints every page.
-        if (regions == null) state.repairAllInkInPlace() else state.repairInkRegions(regions)
+        // Repair the ink caches rather than dropping them — dropping blanked every visible page to
+        // bare paper for a frame (the undo/redo flicker). Only AddPage/DeletePage change the page
+        // set, so relayout (which re-renders the sharp viewport) is gated on that. A command that
+        // named its regions repairs just those, here and now; one that couldn't hands every cached
+        // page to the cache thread instead, because repainting them all inline is a stall long
+        // enough to time out input on a dense note.
+        if (regions == null) state.refreshAllInk() else state.repairInkRegions(regions)
         if (flowText.active) flowInput.reconcile() // undone/redone text must reach the IME mirror
         state.document.dirty = true
         state.clampScroll()
