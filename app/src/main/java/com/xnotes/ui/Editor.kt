@@ -331,6 +331,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  copy the same destination at once (which would corrupt it). */
     private val saveLock = Any()
 
+    /** Buffer for the temp-to-storage copy every save ends with. `copyTo`'s 8 KB default turns a
+     *  large note into thousands of round trips through the provider; a megabyte at a time doesn't. */
+    private val copyBuffer = 1024 * 1024
+
     var tool by mutableStateOf(Tool.DEFAULT)
         private set
     var palette by mutableStateOf(state.palette)
@@ -551,7 +555,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     java.io.FileOutputStream(tmp).use { canvasCodec.write(doc, it) }
                     val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
                         ?: return@runCatching false
-                    out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it) } }
+                    out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it, copyBuffer) } }
                     lastCanvasStamp = stampOf(uri)
                     true
                 } finally {
@@ -1724,9 +1728,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!noteOpen || canvasOpen) { session.clear(); return } // nothing paged on top: wipe any stale session
         val contentChanged = contentVersion != lastSessionContentVersion
         lastSessionContentVersion = contentVersion
-        // Snapshot a changed document on the main thread, then write the session off-thread, so saving a
-        // big note's session never freezes the UI. A view-state-only refresh shares the live doc (cheap).
-        val snapshot = if (contentChanged) state.document.snapshot() else state.document
+        // Snapshot on the main thread, then write the session off-thread, so saving a big note's
+        // session never freezes the UI. Unconditionally, even for a view-state-only refresh: the
+        // store re-encodes whatever it is handed when the session file is missing, and handing it
+        // the live document would put the writer back on the mutating model.
+        val snapshot = state.document.snapshot()
         val zoom = state.zoom
         val sx = state.scrollX
         val sy = state.scrollY
@@ -3026,7 +3032,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 val copyStart = System.nanoTime()
                 val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
                     ?: return@runCatching false
-                out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it) } }
+                out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it, copyBuffer) } }
                 state.lastSaveEncodeMs = msBetween(encodeStart, copyStart) // both for the debug overlay
                 state.lastSaveCopyMs = msSince(copyStart)
                 state.lastSaveBytes = tmp.length() // live file size for the debug overlay
