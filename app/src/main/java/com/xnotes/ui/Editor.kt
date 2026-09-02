@@ -314,7 +314,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var autosaveUri: String? = null
         private set
     private val autosaveScope = kotlinx.coroutines.MainScope()
-    private var autosaveJob: kotlinx.coroutines.Job? = null
+
+    /** The note autosave's debounce timer. Cancelled freely: nothing has been written yet. */
+    private var noteDebounceJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * The note write itself, from snapshot to bookkeeping. Never cancelled. The write blocks with
+     * no suspension point, so cancelling it does not stop the bytes; it only skips everything after
+     * them, leaving the note dirty, the thumbnail stale and a fork unadopted (so the next save forks
+     * again). Callers [kotlinx.coroutines.Job.join] it instead, which also keeps at most one write
+     * in flight and one waiting behind it.
+     */
+    private var noteWriteJob: kotlinx.coroutines.Job? = null
 
     /** Serializes every write to a note file so an autosave and a flush/Save-As can't truncate and
      *  copy the same destination at once (which would corrupt it). */
@@ -484,7 +495,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var canvasAutosaveUri: String? = null
         private set
 
-    private var canvasAutosaveJob: kotlinx.coroutines.Job? = null
+    /** The canvas siblings of [noteDebounceJob] / [noteWriteJob], for the same reasons. */
+    private var canvasDebounceJob: kotlinx.coroutines.Job? = null
+    private var canvasWriteJob: kotlinx.coroutines.Job? = null
 
     /** Open a fresh, unsaved infinite canvas on top of backstage. */
     fun newCanvas() {
@@ -549,27 +562,42 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun scheduleCanvasAutosave() {
         val uri = canvasAutosaveUri ?: return
-        canvasAutosaveJob?.cancel()
-        canvasAutosaveJob = autosaveScope.launch {
+        canvasDebounceJob?.cancel()
+        canvasDebounceJob = autosaveScope.launch {
             kotlinx.coroutines.delay(1200L) // debounce: write after a short idle
+            canvasWriteJob?.join() // wait out a write already going out rather than racing it
             val canvas = infiniteOrNull ?: return@launch
             val doc = canvas.document
             if (!doc.dirty) return@launch
-            val title = doc.displayName ?: doc.title
+            startCanvasWrite(uri, doc, doc.displayName ?: doc.title)
+        }
+    }
+
+    /** The canvas sibling of [startNoteWrite], tracked as [canvasWriteJob] and never cancelled. */
+    private fun startCanvasWrite(
+        uri: String,
+        doc: com.xnotes.core.infinite.InfiniteDocument,
+        title: String,
+        onDone: (() -> Unit)? = null,
+    ) {
+        canvasWriteJob = autosaveScope.launch {
             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 saveCanvasGuarded(uri, doc, title)
             }
             if (res != null) {
-                doc.dirty = false
-                res.fork?.let { adoptCanvasFork(it) }
+                if (infiniteOrNull?.document === doc) {
+                    doc.dirty = false
+                    res.fork?.let { adoptCanvasFork(it) }
+                }
                 invalidateThumb(res.uri)
             }
+            onDone?.invoke()
         }
     }
 
     /** Write the open canvas to its file now; a no-op when it is not a folder canvas or not dirty. */
     fun flushCanvasAutosave() {
-        canvasAutosaveJob?.cancel()
+        canvasDebounceJob?.cancel() // only the debounce; a write already going out is left to finish
         val uri = canvasAutosaveUri ?: return
         val canvas = infiniteOrNull ?: return
         if (!canvas.document.dirty) return
@@ -588,25 +616,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * enough to write that doing it on the main thread freezes the UI on close.
      */
     private fun flushCanvasThen(showOverlay: Boolean, onDone: () -> Unit) {
-        canvasAutosaveJob?.cancel()
+        canvasDebounceJob?.cancel()
         val uri = canvasAutosaveUri
         val doc = infiniteOrNull?.document
         if (uri == null || doc == null || !doc.dirty) { onDone(); return }
         val title = doc.displayName ?: doc.title
         if (showOverlay) savingNote = true
         autosaveScope.launch {
-            // The live document goes to the writer, as it already does for the debounced canvas
-            // autosave: there is no deep copy for an InfiniteDocument to snapshot through.
-            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                saveCanvasGuarded(uri, doc, title)
+            canvasWriteJob?.join() // a write already going out finishes first; it may be all there was
+            if (!doc.dirty) { savingNote = false; onDone(); return@launch }
+            startCanvasWrite(uri, doc, title) {
+                savingNote = false
+                onDone()
             }
-            if (res != null) {
-                doc.dirty = false
-                res.fork?.let { adoptCanvasFork(it) }
-                invalidateThumb(res.uri)
-            }
-            savingNote = false
-            onDone()
         }
     }
 
@@ -2718,7 +2740,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // reset if the user has meanwhile opened another note.
         if (currentUri?.let { matches(it) } == true) {
             val deleted = state.document
-            autosaveJob?.cancel()
+            noteDebounceJob?.cancel()
             autosaveUri = null
             deleted.path = null
             deleted.dirty = false
@@ -3026,27 +3048,51 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun scheduleAutosave() {
         val uri = autosaveUri ?: return
-        autosaveJob?.cancel()
+        noteDebounceJob?.cancel()
         state.autosaveStatus = "pending" // debounce running; drives the debug overlay
-        autosaveJob = autosaveScope.launch {
+        noteDebounceJob = autosaveScope.launch {
             kotlinx.coroutines.delay(1200L) // debounce: write after a short idle
+            noteWriteJob?.join() // wait out a write already going out rather than racing it
             val startNs = System.nanoTime() // the debug overlay's save timings start once the debounce fires
             // Snapshot on the main thread so the off-thread write never iterates the live
             // (mutating) model — but page-by-page, so a dense note can't hitch pen input.
             val snapshot = snapshotDocument() ?: return@launch
             state.lastSaveSnapshotMs = msSince(startNs)
-            val title = state.document.displayName ?: state.document.title
-            state.autosaveStatus = "in progress"
+            startNoteWrite(uri, snapshot, state.document.displayName ?: state.document.title, startNs)
+        }
+    }
+
+    /**
+     * Write [snapshot] to [uri] off the main thread and do the bookkeeping after it, tracked as
+     * [noteWriteJob]. Launched into [autosaveScope] rather than as a child of the caller, so that
+     * cancelling a debounce (or a flush) can never cancel a write that is already going out.
+     * [startNs] is when the caller began the save, for the debug overlay's total.
+     */
+    private fun startNoteWrite(
+        uri: String,
+        snapshot: Document,
+        title: String,
+        startNs: Long,
+        onDone: (() -> Unit)? = null,
+    ) {
+        val doc = state.document
+        state.autosaveStatus = "in progress"
+        noteWriteJob = autosaveScope.launch {
             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 saveNoteGuarded(uri, snapshot, title)
             }
             if (res != null) {
-                state.document.dirty = false; dirty = false
-                res.fork?.let { adoptNoteFork(it) }
+                // The note may have been closed or switched while the bytes were going out. The write
+                // still counts, but only the document it belongs to may have its flags touched.
+                if (state.document === doc) {
+                    doc.dirty = false; dirty = false
+                    res.fork?.let { adoptNoteFork(it) }
+                }
                 invalidateThumb(res.uri) // file changed on disk; drop the stale tile so the grid re-renders it
             }
             state.autosaveStatus = if (res != null) "done" else "failed"
             state.lastSaveTotalMs = msSince(startNs)
+            onDone?.invoke()
         }
     }
 
@@ -3070,7 +3116,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Write the current note to its autosave file now (synchronous, main thread); a no-op when not autosaving. */
     fun flushAutosave() {
-        autosaveJob?.cancel()
+        noteDebounceJob?.cancel() // only the debounce; a write already going out is left to finish
         val uri = autosaveUri ?: return
         if (!state.document.dirty) return
         val title = state.document.displayName ?: state.document.title
@@ -3090,28 +3136,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * Off-threading the write is what stops a large note from freezing the UI (ANR) on close/pause.
      */
     private fun flushThen(showOverlay: Boolean, onDone: () -> Unit) {
-        autosaveJob?.cancel()
+        noteDebounceJob?.cancel()
         val uri = autosaveUri
         if (uri == null || !state.document.dirty) { onDone(); return }
-        val startNs = System.nanoTime()
-        val snapshot = state.document.deepCopy(textMeasurer) // main thread: immune to edits during the write
-        state.lastSaveSnapshotMs = msSince(startNs)
-        val title = state.document.displayName ?: state.document.title
         if (showOverlay) savingNote = true
-        state.autosaveStatus = "in progress"
         autosaveScope.launch {
-            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                saveNoteGuarded(uri, snapshot, title)
+            noteWriteJob?.join() // a write already going out finishes first; it may be all there was
+            if (!state.document.dirty) { savingNote = false; onDone(); return@launch }
+            val startNs = System.nanoTime()
+            val snapshot = state.document.deepCopy(textMeasurer) // main thread: immune to edits during the write
+            state.lastSaveSnapshotMs = msSince(startNs)
+            startNoteWrite(uri, snapshot, state.document.displayName ?: state.document.title, startNs) {
+                savingNote = false
+                onDone()
             }
-            if (res != null) {
-                state.document.dirty = false; dirty = false
-                res.fork?.let { adoptNoteFork(it) }
-                invalidateThumb(res.uri)
-            }
-            state.autosaveStatus = if (res != null) "done" else "failed"
-            state.lastSaveTotalMs = msSince(startNs)
-            savingNote = false
-            onDone()
         }
     }
 
