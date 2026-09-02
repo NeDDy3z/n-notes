@@ -247,10 +247,16 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
      * Measured on this panel over a delay sweep: 0 ms leaves two frames at 15% of the ink,
      * 22 ms and up leave a growing run of frames 13.8% too heavy, and one period leaves neither.
      */
-    fun release() = post {
+    fun release() {
+        // Nothing on the pad survives this, so no later stroke may lay itself over what is on it.
+        ink.forgetFrozen()
+        post { wipe() }
+    }
+
+    private fun wipe() {
         // A stroke that took the pad while this was in flight owns it now, and its ink is the only
         // copy of itself on screen. Whoever queued this was talking about a stroke that is gone.
-        if (ink.active) return@post
+        if (ink.active) return
         val gen = ++releaseGen
         if (covered) {
             // The pad is holding an opaque copy of the composite the screen was already showing,

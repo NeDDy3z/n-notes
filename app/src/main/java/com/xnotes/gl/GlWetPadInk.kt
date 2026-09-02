@@ -57,7 +57,12 @@ class GlWetPadInk {
     @Volatile
     private var session: Session? = null
 
-    /** The session [end] put down, kept so a stroke starting on the same view can pick it up. */
+    /**
+     * The session [end] put down, kept so a stroke starting on the same view can pick it up.
+     *
+     * Volatile because the pad drops it from whichever thread queued the release that wipes it.
+     */
+    @Volatile
     private var frozen: Session? = null
 
     /** Serials handed out, read and written on the main thread only. */
@@ -207,6 +212,11 @@ class GlWetPadInk {
     /** Drop both, for a surface that is going away and taking every pixel on it. */
     fun forget() {
         session = null
+        frozen = null
+    }
+
+    /** Drop only the frozen one, for a wipe: nothing that survives it can be joined. */
+    fun forgetFrozen() {
         frozen = null
     }
 
