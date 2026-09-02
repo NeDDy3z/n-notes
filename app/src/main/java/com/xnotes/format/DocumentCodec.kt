@@ -100,7 +100,8 @@ class DocumentCodec(
         isCancelled: () -> Boolean = { false },
     ) {
         val started = System.nanoTime()
-        val assets = ArrayList<Pair<String, File>>()
+        // Named up front by the same walk the manifest makes, so the entries can go in before it.
+        val assets = imageAssets(doc)
         ZipOutputStream(out).use { zos ->
             // ALWAYS LEVEL 1. Do not put this back to the default 6, ever, however tempting the
             // file size looks. A manifest is nearly all sample digits and they compress about as
@@ -108,36 +109,73 @@ class DocumentCodec(
             // deflating against level 1's 315 ms, for a file ~18% bigger. Saving is time the user
             // waits through; disk is cheap. Never trade their seconds for a few megabytes.
             zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
-            // The manifest streams straight into the deflater: a dense note's JSON is never
-            // materialized as an org.json DOM, a String, or a byte[] (three copies per save).
-            zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
-            val probe = DeflateProbe(zos)
-            val w = java.io.BufferedWriter(java.io.OutputStreamWriter(probe, Charsets.UTF_8), 32 * 1024)
-            writeManifest(JsonWrite(w), doc, assets)
-            w.flush()
-            zos.closeEntry()
-            timing?.deflateMs = probe.nanos / 1_000_000L
-            timing?.manifestBytes = probe.bytes
-            // The flow lives in its own ODF entry, written only when non-empty (or carrying
-            // custom defaults) so untouched notes stay byte-identical to old readers.
-            if (!doc.flow.isEmpty || !com.xnotes.core.text.FlowDefaults.of(doc.flow).isEmpty) {
-                zos.putDeflated(FlowXml.ENTRY_NAME, FlowXml.write(doc.flow))
-            }
-            // Stream each image straight from its temp file into the bundle, never as a byte[], so a
-            // note full of large images doesn't materialize them all in the heap on every save.
-            val manifestDone = System.nanoTime()
+            // Assets first and the manifest LAST, which is what lets a later save replace the
+            // manifest in place: nothing sits behind it, so it can grow or shrink without moving a
+            // byte of the (possibly enormous) PDF ahead of it. See [ZipTail]. Entry order means
+            // nothing to a reader, which matches entries by name, so old builds read this fine.
+            // Each image streams straight from its temp file, never as a byte[], so a note full of
+            // large images doesn't materialize them all in the heap on every save.
             for ((name, file) in assets) zos.putStored(name, file, isCancelled)
-            // Stream the source PDF straight from disk into the bundle so a big PDF is never
-            // materialized as a byte[]. [isCancelled] lets a long copy abort (e.g. import cancel).
+            // The source PDF streams straight from disk for the same reason. [isCancelled] lets a
+            // long copy abort (e.g. import cancel).
             doc.pdfFile?.let { zos.putStored("assets/source.pdf", it, isCancelled) }
-            timing?.manifestMs = (manifestDone - started) / 1_000_000L
-            timing?.assetsMs = (System.nanoTime() - manifestDone) / 1_000_000L
+            val assetsDone = System.nanoTime()
+            writeTail(zos, doc, assets, timing)
+            timing?.assetsMs = (assetsDone - started) / 1_000_000L
+            timing?.manifestMs = (System.nanoTime() - assetsDone) / 1_000_000L
         }
+    }
+
+    /**
+     * The entries that follow the assets: the flow, when there is one, and the manifest. Split out
+     * because [ZipTail] rewrites exactly this part of an existing bundle in place, and the two must
+     * produce the same thing.
+     */
+    internal fun writeTail(
+        zos: ZipOutputStream,
+        doc: Document,
+        assets: List<Pair<String, File>>,
+        timing: WriteTiming? = null,
+    ) {
+        // The flow lives in its own ODF entry, written only when non-empty (or carrying
+        // custom defaults) so untouched notes stay byte-identical to old readers.
+        if (!doc.flow.isEmpty || !com.xnotes.core.text.FlowDefaults.of(doc.flow).isEmpty) {
+            zos.putDeflated(FlowXml.ENTRY_NAME, FlowXml.write(doc.flow))
+        }
+        // The manifest streams straight into the deflater: a dense note's JSON is never
+        // materialized as an org.json DOM, a String, or a byte[] (three copies per save).
+        zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
+        val probe = DeflateProbe(zos)
+        val w = java.io.BufferedWriter(java.io.OutputStreamWriter(probe, Charsets.UTF_8), 32 * 1024)
+        writeManifest(JsonWrite(w), doc, assets)
+        w.flush()
+        zos.closeEntry()
+        timing?.deflateMs = probe.nanos / 1_000_000L
+        timing?.manifestBytes = probe.bytes
+    }
+
+    /**
+     * The image entries a document needs, named in the order the manifest mentions them. The
+     * manifest walks the same pages and items and takes the names from this list positionally, so
+     * there is one naming walk rather than two that could drift apart.
+     */
+    internal fun imageAssets(doc: Document): List<Pair<String, File>> {
+        val out = ArrayList<Pair<String, File>>()
+        for (page in doc.pages) {
+            for (item in page.items) {
+                if (item !is ImageItem) continue
+                // Readers match assets by manifest name (any extension); .svg keeps the bundle
+                // honest and older readers skip the item they can't decode.
+                val ext = if (Svg.isSvgFile(item.image.file)) "svg" else "png"
+                out.add("assets/image-%03d.%s".format(out.size, ext) to item.image.file)
+            }
+        }
+        return out
     }
 
     // --- model -> streaming json ---
 
-    private fun writeManifest(j: JsonWrite, doc: Document, assets: MutableList<Pair<String, File>>) {
+    private fun writeManifest(j: JsonWrite, doc: Document, assets: List<Pair<String, File>>) {
         j.beginObject()
         j.name("format").value(FORMAT)
         j.name("version").value(VERSION)
@@ -153,14 +191,20 @@ class DocumentCodec(
         }
         j.endArray()
         j.name("pages").beginArray()
-        for (page in doc.pages) writePage(j, page, assets)
+        val nextAsset = intArrayOf(0)
+        for (page in doc.pages) writePage(j, page, assets, nextAsset)
         j.endArray()
         writeStyle(j, doc.style)
         writeMargins(j, doc.margins)
         j.endObject()
     }
 
-    private fun writePage(j: JsonWrite, page: Page, assets: MutableList<Pair<String, File>>) {
+    private fun writePage(
+        j: JsonWrite,
+        page: Page,
+        assets: List<Pair<String, File>>,
+        nextAsset: IntArray,
+    ) {
         j.beginObject()
         j.name("width").value(page.width)
         j.name("height").value(page.height)
@@ -171,11 +215,9 @@ class DocumentCodec(
             when (item) {
                 is Stroke -> writeStroke(j, item)
                 is ImageItem -> {
-                    // Readers match assets by manifest name (any extension); .svg keeps the
-                    // bundle honest and older readers skip the item they can't decode.
-                    val ext = if (Svg.isSvgFile(item.image.file)) "svg" else "png"
-                    val name = "assets/image-%03d.%s".format(assets.size, ext)
-                    assets.add(name to item.image.file)
+                    // The name was decided by [imageAssets]' walk of these same items; taking it
+                    // from there keeps the entry and the manifest agreeing by construction.
+                    val name = assets.getOrNull(nextAsset[0]++)?.first ?: continue
                     writeImage(j, item, name)
                 }
                 is TextItem -> writeText(j, item)

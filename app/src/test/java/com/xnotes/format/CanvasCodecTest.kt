@@ -296,7 +296,9 @@ class CanvasCodecTest {
                 e = zis.nextEntry
             }
         }
-        assertEquals(listOf("manifest.json", "assets/image-000.png"), names)
+        // The manifest goes last, always: an in-place save replaces the tail of the file, which
+        // only works while nothing sits behind it. See ZipTail.
+        assertEquals(listOf("assets/image-000.png", "manifest.json"), names)
         assertEquals(ZipEntry.DEFLATED, methods["manifest.json"])
         assertEquals(ZipEntry.STORED, methods["assets/image-000.png"])
     }

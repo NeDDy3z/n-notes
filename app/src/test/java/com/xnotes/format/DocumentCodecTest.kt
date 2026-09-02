@@ -168,6 +168,9 @@ class DocumentCodecTest {
         }
         assertTrue(names.contains("manifest.json"))
         assertTrue(names.contains("assets/image-000.png"))
+        // The manifest goes last, always: an in-place save replaces the tail of the file, which
+        // only works while nothing sits behind it. See ZipTail.
+        assertEquals("manifest.json", names.last())
     }
 
     @Test fun svgImageIsStoredWithSvgExtensionAndRoundTrips() {

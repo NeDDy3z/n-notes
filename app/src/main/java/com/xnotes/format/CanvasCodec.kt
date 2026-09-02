@@ -57,11 +57,16 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
     class WriteCancelled : Exception()
 
     fun write(doc: InfiniteDocument, out: OutputStream, isCancelled: () -> Boolean = { false }) {
-        val assets = ArrayList<Pair<String, File>>()
+        // Named up front by the same walk the manifest makes, so the entries can go in before it.
+        val assets = imageAssets(doc)
         ZipOutputStream(out).use { zos ->
             // ALWAYS LEVEL 1, for the reasons spelled out at the same line in [DocumentCodec.write].
             // Do not put it back to the default 6 to save disk. Speed wins here, always.
             zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
+            // Assets first and the manifest LAST, matching [DocumentCodec.write]: nothing behind
+            // the manifest means it can be replaced in place later without moving the assets.
+            // Each image streams straight from its temp file into the bundle, never as a byte[].
+            for ((name, file) in assets) zos.putStored(name, file, isCancelled)
             // The manifest streams straight into the deflater, so a dense canvas's JSON is never
             // materialized as a DOM, a String, or a byte[].
             zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
@@ -69,14 +74,29 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             writeManifest(JsonWrite(w), doc, assets)
             w.flush()
             zos.closeEntry()
-            // Each image streams straight from its temp file into the bundle, never as a byte[].
-            for ((name, file) in assets) zos.putStored(name, file, isCancelled)
         }
     }
 
     // --- model -> streaming json ---
 
-    private fun writeManifest(j: JsonWrite, doc: InfiniteDocument, assets: MutableList<Pair<String, File>>) {
+    /**
+     * The image entries a canvas needs, named in the order the manifest mentions them. The manifest
+     * walks the same items and takes the names from this list positionally, so there is one naming
+     * walk rather than two that could drift apart.
+     */
+    private fun imageAssets(doc: InfiniteDocument): List<Pair<String, File>> {
+        val out = ArrayList<Pair<String, File>>()
+        for (item in doc.items) {
+            if (item !is ImageItem) continue
+            // Readers match assets by manifest name (any extension); .svg keeps the bundle honest
+            // and older readers skip the item they can't decode.
+            val ext = if (Svg.isSvgFile(item.image.file)) "svg" else "png"
+            out.add("assets/image-%03d.%s".format(out.size, ext) to item.image.file)
+        }
+        return out
+    }
+
+    private fun writeManifest(j: JsonWrite, doc: InfiniteDocument, assets: List<Pair<String, File>>) {
         j.beginObject()
         j.name("format").value(FORMAT)
         j.name("version").value(VERSION)
@@ -94,21 +114,24 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             j.endArray()
         }
         j.name("items").beginArray()
-        for (item in doc.items) writeItem(j, item, assets)
+        val nextAsset = intArrayOf(0)
+        for (item in doc.items) writeItem(j, item, assets, nextAsset)
         j.endArray()
         j.endObject()
     }
 
-    private fun writeItem(j: JsonWrite, item: CanvasItem, assets: MutableList<Pair<String, File>>) {
+    private fun writeItem(
+        j: JsonWrite,
+        item: CanvasItem,
+        assets: List<Pair<String, File>>,
+        nextAsset: IntArray,
+    ) {
         when (item) {
             is Stroke -> writeStroke(j, item)
             is ImageItem -> {
-                // Readers match assets by manifest name (any extension); .svg keeps the bundle
-                // honest and older readers skip the item they can't decode.
-                val ext = if (Svg.isSvgFile(item.image.file)) "svg" else "png"
-                val name = "assets/image-%03d.%s".format(assets.size, ext)
-                assets.add(name to item.image.file)
-                writeImage(j, item, name)
+                // The name was decided by [imageAssets]' walk of these same items; taking it from
+                // there keeps the entry and the manifest agreeing by construction.
+                assets.getOrNull(nextAsset[0]++)?.let { writeImage(j, item, it.first) }
             }
             is ShapeItem -> writeShape(j, item)
             else -> {} // text and any unrecognized kind: not written, the canvas has none
