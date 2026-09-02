@@ -241,7 +241,10 @@ class FrontInk(
     /** Let the held item reach the canvas, and take the pad down once that frame is out. */
     private fun finish() {
         if (!settle()) return
-        view.publishThen { pad.release() }
+        // The wait is a frame long, which is long enough for a new stroke to have taken the pad.
+        // Its ink would then be the only copy on screen, and this would wipe it.
+        val gen = handoffGen
+        view.publishThen { if (gen == handoffGen) pad.release() }
     }
 
     /**
