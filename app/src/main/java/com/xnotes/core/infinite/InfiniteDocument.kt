@@ -93,6 +93,22 @@ class InfiniteDocument(
             ?: path?.let { Paths.stem(it) }
             ?: "Untitled"
 
+    /**
+     * A pointer snapshot for the writer: this document's metadata, its own copy of the item list and
+     * waypoints, and the very same items. The autosave serializes it off the main thread while the
+     * pen keeps drawing here, which iterating [items] directly could not survive: a stroke added
+     * mid-write threw ConcurrentModificationException, and the writer's runCatching swallowed it, so
+     * the save silently did nothing.
+     *
+     * It carries no spatial index and no listener. It exists to be serialized and dropped, never
+     * drawn or edited.
+     */
+    fun snapshotForWrite(): InfiniteDocument {
+        val copy = InfiniteDocument(dpi, path, displayName, dirty, background, waypoints.toMutableList(), lastView)
+        copy.backing.addAll(backing)
+        return copy
+    }
+
     // --- structural mutation ---
 
     fun add(item: CanvasItem) {

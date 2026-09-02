@@ -32,6 +32,27 @@ class InfiniteDocumentTest {
         override fun onReset() { log += "reset" }
     }
 
+    /** The writer's snapshot: its own list, the same items, and immune to edits made during a save. */
+    @Test fun snapshotForWriteSharesItemsOverItsOwnList() {
+        val doc = InfiniteDocument()
+        val a = strokeAt(0.0, 0.0)
+        val b = strokeAt(5.0, 5.0)
+        doc.add(a)
+        doc.add(b)
+        doc.waypoints.add(Waypoint("w", 0.0, 0.0, 1.0))
+
+        val snap = doc.snapshotForWrite()
+        doc.remove(b)
+        doc.add(strokeAt(9.0, 9.0))
+        doc.waypoints.clear()
+
+        assertEquals(2, snap.itemCount)
+        assertSame(a, snap.items[0])
+        assertSame(b, snap.items[1])
+        assertEquals(1, snap.waypoints.size)
+        assertEquals(doc.dpi, snap.dpi)
+    }
+
     @Test fun aNewCanvasIsEmpty() {
         val doc = InfiniteDocument()
         assertTrue(doc.isEmpty)

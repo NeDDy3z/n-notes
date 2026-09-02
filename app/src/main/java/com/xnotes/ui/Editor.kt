@@ -573,23 +573,29 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** The canvas sibling of [startNoteWrite], tracked as [canvasWriteJob] and never cancelled. */
+    /**
+     * The canvas sibling of [startNoteWrite], tracked as [canvasWriteJob] and never cancelled. The
+     * writer gets its own item list over the live items ([InfiniteDocument.snapshotForWrite]), taken
+     * here on the main thread; the bookkeeping stays on the live [doc].
+     */
     private fun startCanvasWrite(
         uri: String,
         doc: com.xnotes.core.infinite.InfiniteDocument,
         title: String,
         onDone: (() -> Unit)? = null,
     ) {
+        val snapshot = doc.snapshotForWrite()
+        val wasDirty = doc.dirty
+        doc.dirty = false // the snapshot holds these edits; see [startNoteWrite]
         canvasWriteJob = autosaveScope.launch {
             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                saveCanvasGuarded(uri, doc, title)
+                saveCanvasGuarded(uri, snapshot, title)
             }
             if (res != null) {
-                if (infiniteOrNull?.document === doc) {
-                    doc.dirty = false
-                    res.fork?.let { adoptCanvasFork(it) }
-                }
+                if (infiniteOrNull?.document === doc) res.fork?.let { adoptCanvasFork(it) }
                 invalidateThumb(res.uri)
+            } else if (wasDirty && infiniteOrNull?.document === doc) {
+                doc.dirty = true // nothing was written; the edits are still unsaved
             }
             onDone?.invoke()
         }
@@ -602,7 +608,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val canvas = infiniteOrNull ?: return
         if (!canvas.document.dirty) return
         val doc = canvas.document
-        val res = saveCanvasGuarded(uri, doc, doc.displayName ?: doc.title) ?: return
+        val res = saveCanvasGuarded(uri, doc, doc.displayName ?: doc.title) ?: return // synchronous: no snapshot needed
         doc.dirty = false
         res.fork?.let { adoptCanvasFork(it) }
         invalidateThumb(res.uri)
