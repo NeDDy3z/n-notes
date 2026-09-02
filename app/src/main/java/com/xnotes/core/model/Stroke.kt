@@ -148,6 +148,35 @@ class Stroke(
     }
 
     /**
+     * Replace every sample from parallel raw arrays [count] long, which is how the codec hands them
+     * over: a dense note otherwise materializes one boxed [Sample] per point on the way in and then
+     * walks the whole list again to pack it. Same result as [setSamples], one copy earlier.
+     */
+    fun setSamples(xs: DoubleArray, ys: DoubleArray, ps: DoubleArray, ts: DoubleArray?, count: Int) {
+        if (count == 0) {
+            pts = Samples.EMPTY
+            invalidate()
+            return
+        }
+        val ox = xs[0]
+        val oy = ys[0]
+        var timed = false
+        if (ts != null) for (i in 0 until count) if (ts[i] != 0.0) { timed = true; break }
+        val xa = FloatArray(count)
+        val ya = FloatArray(count)
+        val pa = FloatArray(count)
+        val ta = if (timed) FloatArray(count) else null
+        for (i in 0 until count) {
+            xa[i] = (xs[i] - ox).toFloat()
+            ya[i] = (ys[i] - oy).toFloat()
+            pa[i] = ps[i].toFloat()
+            ta?.set(i, ts!![i].toFloat())
+        }
+        pts = Samples(ox, oy, xa, ya, pa, ta, count)
+        invalidate()
+    }
+
+    /**
      * Hand back the slack [addSample]'s doubling left over. A live stroke grows by doubling, so at
      * pen-up it holds up to twice the arrays it needs, and it never grows again. Called once the
      * stroke is committed.

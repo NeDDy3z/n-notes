@@ -149,6 +149,77 @@ internal class JsonPull(private val reader: Reader) {
         return if (negative) -v else v
     }
 
+    /**
+     * One stroke sample, `[x,y,p]` or `[x,y,p,t]`, into [out], returning how many numbers it held.
+     * Slots that held nothing readable come back as NaN, so the caller can tell an absent channel
+     * from a zero one.
+     *
+     * Its own method for the same reason [JsonWrite.samplePoint] is: samples are nearly all of a
+     * manifest, and reading one through the general token machinery costs about fifteen calls per
+     * point. The fast path takes the whole element in one scan of the buffer, and declines (having
+     * consumed nothing) whenever it is not the plain shape or does not lie whole in the buffer,
+     * leaving the general path below to read it.
+     */
+    fun nextSample(out: DoubleArray): Int {
+        expect(Token.BEGIN_ARRAY)
+        for (i in out.indices) out[i] = Double.NaN
+        val fast = scanTuple(out)
+        if (fast >= 0) {
+            startValue()
+            return fast
+        }
+        pos++ // what beginArray does after its own expect
+        startValue()
+        push(false)
+        var n = 0
+        while (hasNext()) {
+            if (n >= out.size) {
+                skipValue()
+                continue
+            }
+            // One value consumed per slot whatever its type, so a null cannot shift the rest along.
+            when (peek()) {
+                Token.NUMBER -> out[n] = nextDouble()
+                Token.STRING -> out[n] = nextString().toDoubleOrNull() ?: Double.NaN
+                else -> skipValue()
+            }
+            n++
+        }
+        endArray()
+        return n
+    }
+
+    /**
+     * `[` number (`,` number)* `]` starting at [pos], read straight into [out]. Returns how many
+     * numbers it read and leaves [pos] past the `]`, or -1 having touched nothing: whitespace,
+     * anything but plain fixed-point numbers, or an element running past what is buffered.
+     */
+    private fun scanTuple(out: DoubleArray): Int {
+        var i = pos
+        if (i >= limit || buf[i] != '[') return -1
+        i++
+        var n = 0
+        while (true) {
+            if (i >= limit) return -1
+            var c = buf[i]
+            if (c == ']') {
+                pos = i + 1
+                return n
+            }
+            if (n > 0) {
+                if (c != ',') return -1
+                i++
+                if (i >= limit) return -1
+                c = buf[i]
+            }
+            if (n >= out.size) return -1
+            val start = i
+            while (i < limit && isNumberChar(buf[i])) i++
+            if (i >= limit || i == start) return -1 // ran off the buffer, or was not a number
+            out[n++] = fixedPoint(start, i) ?: return -1
+        }
+    }
+
     fun nextInt(): Int {
         expect(Token.NUMBER)
         val t = scanNumber()

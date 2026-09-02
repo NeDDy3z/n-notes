@@ -661,7 +661,7 @@ class DocumentCodec(
         var kind: String? = null
         var tool: String? = null
         var config: ConfigScratch? = null
-        var samples: MutableList<Sample>? = null
+        var samples: RawSamples? = null
         var speedScale = 1.0
         var smoothScale = 1.0
         var straight = false
@@ -810,7 +810,9 @@ class DocumentCodec(
             highlighterAlpha = c?.highlighterAlpha ?: def.highlighterAlpha,
             highlighterInverse = c?.highlighterInverse ?: def.highlighterInverse,
         )
-        return Stroke(tool, config, s.samples ?: mutableListOf(), s.speedScale, s.straight, s.smoothScale)
+        val stroke = Stroke(tool, config, emptyList(), s.speedScale, s.straight, s.smoothScale)
+        s.samples?.let { stroke.setSamples(it.xs, it.ys, it.ps, it.ts, it.n) }
+        return stroke
     }
 
     private fun buildShape(s: ItemScratch): ShapeItem {
@@ -868,27 +870,29 @@ class DocumentCodec(
         return c
     }
 
-    private fun parseSamples(p: JsonPull): MutableList<Sample>? {
+    private fun parseSamples(p: JsonPull): RawSamples? {
         if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
             p.skipValue()
             return null
         }
-        val out = ArrayList<Sample>()
+        val out = RawSamples()
+        val tuple = DoubleArray(4)
         p.beginArray()
         while (p.hasNext()) {
             if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
                 p.skipValue()
                 continue
             }
-            p.beginArray()
-            val x = if (p.hasNext()) doubleOr(p, 0.0) else 0.0
-            val y = if (p.hasNext()) doubleOr(p, 0.0) else 0.0
-            val pressure = if (p.hasNext()) doubleOr(p, 1.0) else 1.0
-            // 4th element (relative ms) is present only for speed-pen strokes; absent ⇒ 0.
-            val t = if (p.hasNext()) doubleOr(p, 0.0) else 0.0
-            while (p.hasNext()) p.skipValue()
-            p.endArray()
-            out.add(Sample(x, y, pressure, t))
+            // NaN back from [JsonPull.nextSample] means the slot held nothing readable, which is
+            // not the same as a zero: pressure then defaults to full, and the 4th element
+            // (relative ms, only speed-pen strokes carry it) to none.
+            p.nextSample(tuple)
+            out.add(
+                if (tuple[0].isNaN()) 0.0 else tuple[0],
+                if (tuple[1].isNaN()) 0.0 else tuple[1],
+                if (tuple[2].isNaN()) 1.0 else tuple[2],
+                if (tuple[3].isNaN()) 0.0 else tuple[3],
+            )
         }
         p.endArray()
         return out

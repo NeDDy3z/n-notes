@@ -1,6 +1,7 @@
 package com.xnotes.format
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.StringReader
 import kotlin.random.Random
@@ -62,6 +63,60 @@ class JsonPullNumberTest {
     /** Scientific notation has no fast path and must come back through the general parser. */
     @Test fun exponentsStillParse() {
         sameAsPlatform(listOf("1.0E-4", "1e7", "-2.5E10", "5.0E-324", "1.7976931348623157E308"))
+    }
+
+    private fun samples(text: String): List<List<Double>> {
+        val p = JsonPull(StringReader(text))
+        val out = mutableListOf<List<Double>>()
+        val tuple = DoubleArray(4)
+        p.beginArray()
+        while (p.hasNext()) {
+            p.nextSample(tuple)
+            out += tuple.toList()
+        }
+        p.endArray()
+        return out
+    }
+
+    @Test fun samplesComeBackWholeAndInOrder() {
+        val got = samples("[[1,2,0.5],[-3.25,4,1,16],[0,0,0.001]]")
+        assertEquals(3, got.size)
+        assertEquals(listOf(1.0, 2.0, 0.5), got[0].take(3))
+        assertTrue(got[0][3].isNaN()) // no time channel on that one
+        assertEquals(listOf(-3.25, 4.0, 1.0, 16.0), got[1])
+        assertEquals(0.001, got[2][2], 0.0)
+    }
+
+    /** Whitespace has no fast path; the general reader has to produce the same thing. */
+    @Test fun spacedSamplesReadTheSame() {
+        assertEquals(samples("[[1,2,0.5]]"), samples("[ [ 1 , 2 , 0.5 ] ]"))
+    }
+
+    /** Loading is forgiving: a slot that is not a number is skipped, and does not shift the rest. */
+    @Test fun anUnreadableSlotDoesNotShiftTheOnesAfterIt() {
+        val got = samples("[[1,null,0.5],[\"2.5\",3,1],[4,5,6,7,8]]")
+        assertEquals(1.0, got[0][0], 0.0)
+        assertTrue(got[0][1].isNaN())
+        assertEquals(0.5, got[0][2], 0.0)
+        assertEquals(listOf(2.5, 3.0, 1.0), got[1].take(3))
+        assertEquals(listOf(4.0, 5.0, 6.0, 7.0), got[2]) // the extras are dropped, not misplaced
+    }
+
+    @Test fun anEmptySampleIsAllAbsent() {
+        val got = samples("[[]]")
+        assertTrue(got[0].all { it.isNaN() })
+    }
+
+    /** A sample straddling the read buffer must fall back rather than be read in half. */
+    @Test fun samplesAcrossTheBufferBoundary() {
+        val text = (0 until 4000).joinToString(",", "[", "]") { "[$it.25,$it.5,0.75]" }
+        val got = samples(text)
+        assertEquals(4000, got.size)
+        for (i in got.indices) {
+            assertEquals(i + 0.25, got[i][0], 0.0)
+            assertEquals(i + 0.5, got[i][1], 0.0)
+            assertEquals(0.75, got[i][2], 0.0)
+        }
     }
 
     /** A number straddling the read buffer must not be cut in half by the fast path. */
