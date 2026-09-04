@@ -1,7 +1,7 @@
 <h1 align="center">n-notes</h1>
 
 <p align="center">
-  A handwriting-first notebook for Android, built for pen and stylus
+  A handwriting-first notebook for Android, built for pen and stylus. A customized fork of xnotes.
 </p>
 
 <p align="center">
@@ -14,12 +14,12 @@
 
 ## Additions to the original xnotes
 
-n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On top of the original app it adds:
+n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On top of it:
 
-- **Stylus side-button mapping**: bind a tool (such as the eraser or pan) to the pen's side button and use it while the button is held. The button is read across every route pens use to report it: the touch stream, the hover stream, and Bluetooth/USI key events, including a vendor keycode with no standard mapping and the proprietary action codes some Samsung builds emit.
-- **Optional hover activation**: with the side button held, the mapped eraser or pan can run off the hover stream, so you can erase or pan without touching the screen.
-- **Smoother, more reliable saving**: notes save and autosave off the main thread, and the `.xnote` read/write path was reworked for speed, so large notes save without stalling the pen.
-- **Steadier canvas**: stroke handover between the live pad and the page was hardened so a settling stroke no longer flickers or gets wiped by a new one, and the undo history is bounded to keep memory in check.
+- **Stylus side-button mapping**: bind a tool (eraser, pan, etc.) to the pen's side button, read across the touch, hover, and Bluetooth/USI event routes.
+- **Optional hover activation**: run the mapped eraser or pan off the hover stream, without touching the screen.
+- **Smoother saving**: notes save and autosave off the main thread, so large notes don't stall the pen.
+- **Steadier canvas**: hardened stroke handover (no flicker or wipe on settling strokes) and a bounded undo history.
 
 ## Install
 
