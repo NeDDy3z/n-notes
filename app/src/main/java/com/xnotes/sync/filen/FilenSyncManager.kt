@@ -1,0 +1,122 @@
+package com.xnotes.sync.filen
+
+import android.content.Context
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.xnotes.platform.AppStorageDocumentsProvider
+import com.xnotes.settings.LiveSettings
+import com.xnotes.settings.SettingsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
+
+/**
+ * Entry point the UI and the background worker share. Owns the session (via
+ * [FilenSecureStore]), reads sync config from preferences, runs the engine under a
+ * lock, and (re)schedules the periodic WorkManager job.
+ */
+object FilenSyncManager {
+    private const val WORK_NAME = "filen_periodic_sync"
+    private val syncMutex = Mutex()
+
+    data class Status(val running: Boolean = false, val lastSyncMs: Long = 0, val message: String = "")
+
+    private val _status = MutableStateFlow(Status())
+    val status: StateFlow<Status> = _status.asStateFlow()
+
+    fun session(context: Context): FilenSession? = FilenSecureStore(context).load()
+
+    fun isConfigured(context: Context): Boolean {
+        val prefs = settings(context).prefs
+        return session(context) != null && prefs.filenFolderUuid.isNotEmpty()
+    }
+
+    suspend fun login(context: Context, email: String, password: String, twoFactorCode: String): Result<FilenSession> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val session = FilenClient.login(FilenApi(), email.trim(), password, twoFactorCode)
+                FilenSecureStore(context).save(session)
+                session
+            }
+        }
+
+    fun logout(context: Context) {
+        FilenSecureStore(context).clear()
+        WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        _status.value = Status()
+    }
+
+    suspend fun listFolders(context: Context, parentUuid: String): Result<List<Pair<String, FilenApi.RemoteFolder>>> =
+        withContext(Dispatchers.IO) {
+            runCatching { clientOrThrow(context).listFolders(parentUuid) }
+        }
+
+    suspend fun createFolder(context: Context, parentUuid: String, name: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching { clientOrThrow(context).createFolder(parentUuid, name) }
+        }
+
+    suspend fun syncNow(context: Context): Result<FilenSyncEngine.Summary> = withContext(Dispatchers.IO) {
+        syncMutex.withLock {
+            _status.value = _status.value.copy(running = true, message = "Syncing")
+            val result = runCatching {
+                val prefs = settings(context).prefs
+                val folderUuid = prefs.filenFolderUuid
+                require(folderUuid.isNotEmpty()) { "No Filen folder selected" }
+                val treeUri = effectiveTreeUri(context)
+                val client = clientOrThrow(context)
+                val state = FilenSyncState.load(context)
+                val summary = FilenSyncEngine(context, treeUri, client, folderUuid).sync(state)
+                state.save(context)
+                summary
+            }
+            _status.value = Status(
+                running = false,
+                lastSyncMs = System.currentTimeMillis(),
+                message = result.fold(
+                    { s -> "Up ${s.uploaded}, down ${s.downloaded}" + (if (s.conflicts > 0) ", ${s.conflicts} conflicts" else "") + (if (s.errors.isNotEmpty()) ", ${s.errors.size} errors" else "") },
+                    { e -> "Failed: ${e.message}" },
+                ),
+            )
+            result
+        }
+    }
+
+    /** (Re)schedule or cancel the periodic job to match current preferences. */
+    fun reschedule(context: Context) {
+        val prefs = settings(context).prefs
+        val wm = WorkManager.getInstance(context)
+        if (!prefs.filenSyncEnabled || !prefs.filenAutoSync || !isConfigured(context)) {
+            wm.cancelUniqueWork(WORK_NAME)
+            return
+        }
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(if (prefs.filenWifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+            .build()
+        val interval = prefs.filenSyncIntervalMinutes.toLong().coerceAtLeast(15)
+        val request = PeriodicWorkRequestBuilder<FilenSyncWorker>(interval, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
+            .build()
+        wm.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
+    }
+
+    private fun clientOrThrow(context: Context): FilenClient {
+        val session = session(context) ?: throw IllegalStateException("Not signed in to Filen")
+        return FilenClient(FilenApi(session.apiKey), session)
+    }
+
+    private fun settings(context: Context) = LiveSettings.get(SettingsRepository(context))
+
+    private fun effectiveTreeUri(context: Context): String =
+        settings(context).browseRoot ?: AppStorageDocumentsProvider.treeUri(context).toString()
+}

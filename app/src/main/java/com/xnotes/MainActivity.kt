@@ -132,6 +132,8 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val ed = remember { Editor(context).also { editor = it } }
             LaunchedEffect(ed.fullscreen) { applyFullscreen(ed.fullscreen) }
+            // Re-arm the Filen periodic sync to match the saved preferences.
+            LaunchedEffect(Unit) { com.xnotes.sync.filen.FilenSyncManager.reschedule(context) }
             var ready by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
                 val start = android.os.SystemClock.uptimeMillis()

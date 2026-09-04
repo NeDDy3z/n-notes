@@ -25,9 +25,9 @@ android {
         applicationId = "com.xnotes"
         minSdk = 26
         targetSdk = 36
-        versionCode = 53
+        versionCode = 54
         // <upstream xnotes version>-<n-notes fork version>
-        versionName = "0.8.15-0.1"
+        versionName = "0.8.15-0.2"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
@@ -123,6 +123,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.pdfbox.android)
     implementation(libs.androidsvg)
+    implementation(libs.argon2kt)
+    implementation(libs.androidx.work.runtime)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)

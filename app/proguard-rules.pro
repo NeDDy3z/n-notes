@@ -17,6 +17,12 @@
 -dontwarn org.apache.**
 -dontwarn org.bouncycastle.**
 
+# --- Filen sync ---------------------------------------------------------------------------------
+# WorkManager instantiates the worker reflectively by class name, and argon2kt binds its native
+# methods through JNI by class/method name. Renaming either breaks it at runtime.
+-keep class com.xnotes.sync.filen.FilenSyncWorker { *; }
+-keep class com.lambdapioneer.argon2kt.** { *; }
+
 # --- Persisted model enums ----------------------------------------------------------------------
 # Saved enums match on their explicit `id` string (a literal, so R8-safe), but PageSize also falls
 # back to Enum.name(). Keep the core enums whole so renaming can never change a name written to, or

@@ -83,6 +83,13 @@ data class Preferences(
     val defaultCodeLanguage: String = "cpp",
     /** Language the format bar's code toggle last applied; "" until a language is picked. */
     val lastCodeLanguage: String = "",
+    // Filen cloud sync (opt-in). Credentials live in the encrypted FilenSecureStore, not here.
+    val filenSyncEnabled: Boolean = false,
+    val filenFolderUuid: String = "",
+    val filenFolderName: String = "",
+    val filenAutoSync: Boolean = true,
+    val filenWifiOnly: Boolean = false,
+    val filenSyncIntervalMinutes: Int = 60,
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -157,6 +164,12 @@ data class Preferences(
             codeThemeName?.let { put("code_theme_name", it) }
             put("default_code_language", defaultCodeLanguage)
             lastCodeLanguage.takeIf { it.isNotEmpty() }?.let { put("last_code_language", it) }
+            put("filen_sync_enabled", filenSyncEnabled)
+            put("filen_folder_uuid", filenFolderUuid)
+            put("filen_folder_name", filenFolderName)
+            put("filen_auto_sync", filenAutoSync)
+            put("filen_wifi_only", filenWifiOnly)
+            put("filen_sync_interval_minutes", filenSyncIntervalMinutes)
         }
 
     companion object {
@@ -226,6 +239,12 @@ data class Preferences(
                 defaultCodeLanguage = o.optString("default_code_language", "cpp")
                     .lowercase().trim().ifEmpty { "cpp" },
                 lastCodeLanguage = o.optString("last_code_language").lowercase().trim(),
+                filenSyncEnabled = o.optBoolean("filen_sync_enabled", false),
+                filenFolderUuid = o.optString("filen_folder_uuid"),
+                filenFolderName = o.optString("filen_folder_name"),
+                filenAutoSync = o.optBoolean("filen_auto_sync", true),
+                filenWifiOnly = o.optBoolean("filen_wifi_only", false),
+                filenSyncIntervalMinutes = o.optInt("filen_sync_interval_minutes", 60).coerceIn(15, 1440),
             )
         }
     }

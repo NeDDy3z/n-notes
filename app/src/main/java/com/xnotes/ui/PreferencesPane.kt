@@ -535,6 +535,7 @@ fun PreferencesPane(
                     sectionDropTarget = null
                 },
             )
+            FilenSyncSection(editor)
             Spacer(Modifier.size(8.dp))
         }
     }
