@@ -198,6 +198,8 @@ object XnotesIcons {
     val newFolder = icon("M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2Z", "M12 11v6", "M9 14h6")
     val paste = icon("M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2", "M9 2h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z")
     val more = icon(circle(12.0, 5.0, 1.0), circle(12.0, 12.0, 1.0), circle(12.0, 19.0, 1.0))
+    // Filter/sort: three horizontal lines that narrow top to bottom (Lucide "list-filter").
+    val filter = icon("M3 6h18", "M7 12h10", "M10 18h4")
     val menu = icon("M4 6h16", "M4 12h16", "M4 18h16")
     val search = icon(circle(11.0, 11.0, 8.0), "M21 21l-4.35-4.35")
 

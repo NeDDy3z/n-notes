@@ -329,7 +329,7 @@ private fun BackstageSidebar(
             Modifier.fillMaxWidth().padding(start = 18.dp, end = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("xnotes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("n-notes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onCollapse) {
                 Icon(XnotesIcons.prev, "Collapse sidebar", tint = palette.text.toComposeColor(), modifier = Modifier.size(22.dp))
@@ -516,21 +516,30 @@ private fun HomePane(
         Spacer(Modifier.height(8.dp))
         Box(Modifier.weight(1f).fillMaxWidth()) {
             ExplorerSection(
-                editor, onOpenFile, onPickRoot, onImportPdf,
+                editor, onOpenFile, onPickRoot,
                 onShareFile, onSaveCopyFile, onExportFilePdf, createMode, onCreateMode,
                 searchQuery = query, onSearchChange = { query = it }, onOpenSplit = onOpenSplit,
             )
-            // A round quick-create button for a new note in the current folder. Only when a folder is
-            // granted — otherwise the explorer shows the folder-picker prompt and there's nowhere to create.
+            // A round quick-create button that drops up a create menu for the current folder. Only when
+            // a folder is granted — otherwise the explorer shows the folder-picker prompt and there's
+            // nowhere to create.
             if (editor.browseRoot != null) {
-                FloatingActionButton(
-                    onClick = { onCreateMode(CreateMode.FILE) },
-                    shape = CircleShape,
-                    containerColor = palette.accent.toComposeColor(),
-                    contentColor = palette.bg.toComposeColor(),
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-                ) {
-                    Icon(XnotesIcons.edit, "New note", modifier = Modifier.size(24.dp))
+                Box(Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
+                    var createMenuOpen by remember { mutableStateOf(false) }
+                    FloatingActionButton(
+                        onClick = { createMenuOpen = true },
+                        shape = CircleShape,
+                        containerColor = palette.accent.toComposeColor(),
+                        contentColor = palette.bg.toComposeColor(),
+                    ) {
+                        Icon(XnotesIcons.plus, "Create", modifier = Modifier.size(24.dp))
+                    }
+                    DropdownMenu(expanded = createMenuOpen, onDismissRequest = { createMenuOpen = false }) {
+                        DropdownMenuItem(text = { Text("New Note") }, onClick = { createMenuOpen = false; onCreateMode(CreateMode.FILE) })
+                        DropdownMenuItem(text = { Text("New Canvas") }, onClick = { createMenuOpen = false; onCreateMode(CreateMode.CANVAS) })
+                        DropdownMenuItem(text = { Text("New Folder") }, onClick = { createMenuOpen = false; onCreateMode(CreateMode.FOLDER) })
+                        DropdownMenuItem(text = { Text("Import File") }, onClick = { createMenuOpen = false; onImportPdf() })
+                    }
                 }
             }
         }
@@ -545,7 +554,6 @@ private fun ExplorerSection(
     editor: Editor,
     onOpenFile: (String) -> Unit,
     onPickRoot: () -> Unit,
-    onImportPdf: () -> Unit,
     onShareFile: (String) -> Unit,
     onSaveCopyFile: (String) -> Unit,
     onExportFilePdf: (String) -> Unit,
@@ -637,10 +645,7 @@ private fun ExplorerSection(
         }
     }
     var menuOpen by remember(root) { mutableStateOf(false) }
-    // The More menu drills into a "Sort by" sub-list; reset to the main list whenever it closes.
-    var sortSubmenu by remember(root) { mutableStateOf(false) }
-    LaunchedEffect(menuOpen) { if (!menuOpen) sortSubmenu = false }
-    var newMenuOpen by remember(root) { mutableStateOf(false) }
+    var sortMenuOpen by remember(root) { mutableStateOf(false) }
     val rootName by produceState(editor.cachedRootName(root), root) { value = withContext(Dispatchers.IO) { editor.browseRootName(root) } }
     val dismissInteraction = remember { MutableInteractionSource() }
     val pendingImport = editor.pendingImport
@@ -670,15 +675,6 @@ private fun ExplorerSection(
             }
             Spacer(Modifier.width(8.dp))
             if (selection.isEmpty()) {
-                Box {
-                    IconAction(XnotesIcons.plus, "New") { newMenuOpen = true }
-                    DropdownMenu(expanded = newMenuOpen, onDismissRequest = { newMenuOpen = false }) {
-                        DropdownMenuItem(text = { Text("New Note") }, onClick = { newMenuOpen = false; onCreateMode(CreateMode.FILE) })
-                        DropdownMenuItem(text = { Text("New Canvas") }, onClick = { newMenuOpen = false; onCreateMode(CreateMode.CANVAS) })
-                        DropdownMenuItem(text = { Text("Import PDF") }, onClick = { newMenuOpen = false; onImportPdf() })
-                    }
-                }
-                IconAction(XnotesIcons.newFolder, "New folder") { onCreateMode(CreateMode.FOLDER) }
                 clipboard?.let { clip ->
                     IconAction(XnotesIcons.paste, "Paste") {
                         opError = null
@@ -698,33 +694,31 @@ private fun ExplorerSection(
                     }
                     IconAction(XnotesIcons.close, "Clear clipboard") { clipboard = null }
                 }
+                // Sort field/direction, moved out of the More menu into its own filter button.
+                Box {
+                    IconAction(XnotesIcons.filter, "Sort") { sortMenuOpen = true }
+                    DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                        val sortKey = editor.explorerSortKey
+                        val sortDesc = editor.explorerSortDescending
+                        // Tapping a field flips its direction when already active, else switches to it
+                        // (dates/size newest-or-largest first, name A to Z).
+                        Text(
+                            "Sort by",
+                            color = palette.textDim.toComposeColor(),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                        HorizontalDivider(color = palette.border.toComposeColor())
+                        SortOption("Name", ExplorerSortKey.NAME, sortKey, sortDesc) { k, d -> editor.setExplorerSort(k, d); refreshKey++ }
+                        SortOption("Date modified", ExplorerSortKey.MODIFIED, sortKey, sortDesc) { k, d -> editor.setExplorerSort(k, d); refreshKey++ }
+                        SortOption("Size", ExplorerSortKey.SIZE, sortKey, sortDesc) { k, d -> editor.setExplorerSort(k, d); refreshKey++ }
+                    }
+                }
                 Box {
                     IconAction(XnotesIcons.more, "More") { menuOpen = true }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        if (sortSubmenu) {
-                            val sortKey = editor.explorerSortKey
-                            val sortDesc = editor.explorerSortDescending
-                            // Header doubles as "back"; tapping a field flips its direction when already
-                            // active, else switches to it (dates/size newest-or-largest first, name A→Z).
-                            DropdownMenuItem(
-                                text = { Text("Sort by", color = palette.textDim.toComposeColor()) },
-                                leadingIcon = { Icon(XnotesIcons.prev, "Back", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) },
-                                onClick = { sortSubmenu = false },
-                            )
-                            HorizontalDivider(color = palette.border.toComposeColor())
-                            SortOption("Name", ExplorerSortKey.NAME, sortKey, sortDesc) { k, d -> editor.setExplorerSort(k, d); refreshKey++ }
-                            SortOption("Date modified", ExplorerSortKey.MODIFIED, sortKey, sortDesc) { k, d -> editor.setExplorerSort(k, d); refreshKey++ }
-                            SortOption("Size", ExplorerSortKey.SIZE, sortKey, sortDesc) { k, d -> editor.setExplorerSort(k, d); refreshKey++ }
-                        } else {
-                            DropdownMenuItem(
-                                text = { Text("Sort by") },
-                                trailingIcon = { Icon(XnotesIcons.next, null, tint = palette.text.toComposeColor(), modifier = Modifier.size(18.dp)) },
-                                onClick = { sortSubmenu = true },
-                            )
-                            HorizontalDivider(color = palette.border.toComposeColor())
-                            DropdownMenuItem(text = { Text("Change folder") }, onClick = { menuOpen = false; onPickRoot() })
-                            DropdownMenuItem(text = { Text("Forget folder") }, onClick = { menuOpen = false; editor.clearBrowseRoot() })
-                        }
+                        DropdownMenuItem(text = { Text("Change folder") }, onClick = { menuOpen = false; onPickRoot() })
+                        DropdownMenuItem(text = { Text("Forget folder") }, onClick = { menuOpen = false; editor.clearBrowseRoot() })
                     }
                 }
             } else {
