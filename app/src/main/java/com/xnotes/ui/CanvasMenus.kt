@@ -69,6 +69,12 @@ interface SelectionMenuHost {
     /** Toggle the table edit overlay (add/remove columns and rows, drag interior lines). */
     fun toggleTableEditMode()
 
+    /** True when the selection is a single image (shows the Crop action). */
+    val selectionIsImage: Boolean
+
+    /** Enter crop mode for the selected image. */
+    fun cropSelection()
+
     /** The colour and width of every selected stroke/shape, for the restyle popup to open on. */
     fun selectionStyles(): List<DrawStyle>
 
@@ -141,6 +147,12 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     enabled = styles.isNotEmpty(),
                     onClick = { overflowOpen = false; styleOpen = true },
                 )
+                if (host.selectionIsImage) {
+                    DropdownMenuItem(
+                        text = { Text("Crop") },
+                        onClick = { overflowOpen = false; host.cropSelection() },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Lock") },
                     onClick = { overflowOpen = false; host.lockSelection() },
@@ -216,6 +228,31 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
                 fontSize = 11.sp,
             )
         }
+    }
+}
+
+/** Crop mode's floating bar, above the image being cropped: Cancel and Apply. */
+@Composable
+fun CropMenu(editor: Editor) {
+    val rect = editor.cropMenu ?: return
+    val palette = LocalPalette.current
+    val density = LocalDensity.current
+    val barHeightPx = with(density) { 44.dp.toPx() }
+    val barWidthPx = with(density) { 150.dp.toPx() }
+    val gap = with(density) { 10.dp.toPx() }
+    val centerX = ((rect.left + rect.right) / 2.0).toFloat()
+    val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
+    val yPx = if (rect.top.toFloat() - barHeightPx - gap > 0f) rect.top.toFloat() - barHeightPx - gap
+    else rect.bottom.toFloat() + gap
+    Row(
+        modifier = Modifier
+            .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
+            .clip(RoundedCornerShape(10.dp))
+            .background(palette.menuBg.toComposeColor())
+            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
+    ) {
+        ActionIcon(XnotesIcons.close, "Cancel crop") { editor.cancelCrop() }
+        ActionIcon(XnotesIcons.check, "Apply crop") { editor.applyActiveCrop() }
     }
 }
 

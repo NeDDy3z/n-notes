@@ -474,6 +474,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override val tableEditing: Boolean get() = false
     override fun toggleTableEditMode() {}
 
+    // Crop is a paged-note image action; not offered on the infinite canvas.
+    override val selectionIsImage: Boolean get() = false
+    override fun cropSelection() {}
+
     override fun unlockItem(item: CanvasItem) {
         if (!item.locked) return
         item.locked = false

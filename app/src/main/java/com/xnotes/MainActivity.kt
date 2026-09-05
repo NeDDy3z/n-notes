@@ -1086,6 +1086,7 @@ private fun EditorPane(
                     }
                     com.xnotes.ui.SelectionMenu(editor)
                     com.xnotes.ui.ScreenshotMenu(editor)
+                    com.xnotes.ui.CropMenu(editor)
                     com.xnotes.ui.TextStyleBar(editor)
                     com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
                     com.xnotes.ui.FlowEditMenu(editor)

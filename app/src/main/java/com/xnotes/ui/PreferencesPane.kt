@@ -309,6 +309,16 @@ fun PreferencesPane(
             )
 
             HorizontalDivider(color = palette.border.toComposeColor())
+            SectionTitle("Page template")
+            Text(
+                "The default page style stamped onto new notes (also preselected in the new-note dialog).",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.size(8.dp))
+            PageStyleControls(editor.newNoteStyle, inheritFrom = null) { editor.saveNewNoteStyle(it) }
+
+            HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle("Page")
             FieldLabel("Default page size")
             SizeDropdown(prefs.defaultPageSize) { update(prefs.copy(defaultPageSize = it)) }

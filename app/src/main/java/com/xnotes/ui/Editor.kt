@@ -482,8 +482,47 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val tableEditing: Boolean get() = tableEditMode
     override fun toggleTableEditMode() = controller.toggleTableEditMode()
 
+    override val selectionIsImage: Boolean get() = controller.singleSelectedImage() != null
+    override fun cropSelection() = controller.beginCrop()
+
+    /** Apply the in-progress crop: bake the trimmed bitmap and swap it into the image (undoable). */
+    fun applyActiveCrop() {
+        val (img, cropRect) = controller.cropTarget() ?: return
+        val baked = bakeCrop(img, cropRect)
+        controller.finishCrop(baked?.first, baked?.second)
+    }
+
+    fun cancelCrop() = controller.cancelCrop()
+
+    /** Decode [img]'s source, crop it to [cropRect] (page-local, within the image), and save a new
+     *  PNG. Returns the new image data + its rect (the crop region), or null on failure. */
+    private fun bakeCrop(img: com.xnotes.core.model.ImageItem, cropRect: com.xnotes.core.geometry.Rect): Pair<ImageData, Rect>? {
+        if (img.rect.w <= 0.0 || img.rect.h <= 0.0) return null
+        val src = runCatching { android.graphics.BitmapFactory.decodeFile(img.image.file.path) }.getOrNull() ?: return null
+        try {
+            val fx = ((cropRect.left - img.rect.left) / img.rect.w).coerceIn(0.0, 1.0)
+            val fy = ((cropRect.top - img.rect.top) / img.rect.h).coerceIn(0.0, 1.0)
+            val x = (fx * src.width).toInt().coerceIn(0, src.width - 1)
+            val y = (fy * src.height).toInt().coerceIn(0, src.height - 1)
+            val w = (cropRect.w / img.rect.w * src.width).toInt().coerceIn(1, src.width - x)
+            val h = (cropRect.h / img.rect.h * src.height).toInt().coerceIn(1, src.height - y)
+            val cropped = android.graphics.Bitmap.createBitmap(src, x, y, w, h)
+            val file = java.io.File.createTempFile("crop", ".png", imageDir)
+            java.io.FileOutputStream(file).use { cropped.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            if (cropped !== src) cropped.recycle()
+            val size = imageCodec.probeFile(file.path) ?: return null
+            return ImageData(file, size.width, size.height) to cropRect
+        } finally {
+            src.recycle()
+        }
+    }
+
     /** Viewport rect to anchor the screenshot tool's "copy as image" menu, or null when hidden. */
     var screenshotMenu by mutableStateOf<com.xnotes.core.geometry.Rect?>(null)
+        private set
+
+    /** Viewport rect to anchor the crop Apply/Cancel bar, or null when not cropping. */
+    var cropMenu by mutableStateOf<com.xnotes.core.geometry.Rect?>(null)
         private set
 
     /** Long-press paste context menu target, or null when hidden. */
@@ -745,6 +784,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onTextEditEnd = { editingField = null; refreshTextBar() },
         onSelectionMenu = { rect -> selectionMenu = rect },
         onScreenshotMenu = { rect -> screenshotMenu = rect },
+        onCropMenu = { rect -> cropMenu = rect },
         onContextMenu = { vp, content, locked -> contextMenu = ContextMenuTarget(vp.x, vp.y, content, locked) },
         onAddPageAtEnd = { addPageAtEnd() },
         onHaptic = { runCatching { view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } },

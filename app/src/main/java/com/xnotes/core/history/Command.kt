@@ -4,7 +4,10 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.GeoHandle
+import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.GeometrySnapshot
+import com.xnotes.core.model.ImageData
+import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.Resizable
 import com.xnotes.core.model.TextItem
@@ -158,6 +161,20 @@ class ResizeItem(
 
     override fun touched(locate: (CanvasItem) -> Page?) =
         (item as? CanvasItem)?.let { pagedItems(listOf(it), locate) }
+}
+
+/** Replace an image's bitmap + rect (used by Crop), reversibly. */
+class ReplaceImage(
+    private val item: ImageItem,
+    private val oldImage: ImageData,
+    private val oldRect: Rect,
+    private val newImage: ImageData,
+    private val newRect: Rect,
+) : Command {
+    override fun redo() { item.image = newImage; item.rect = newRect }
+    override fun undo() { item.image = oldImage; item.rect = oldRect }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(listOf(item), locate)
 }
 
 /**

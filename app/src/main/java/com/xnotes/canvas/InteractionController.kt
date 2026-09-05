@@ -31,6 +31,8 @@ import com.xnotes.core.model.Document
 import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.GeoHandle
+import com.xnotes.core.history.ReplaceImage
+import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.RectHandle
@@ -72,7 +74,7 @@ import kotlin.math.sin
 /** The pointer state machine modes (spec 06 §1). */
 enum class PointerMode {
     IDLE, DRAW, ERASE, BAND, LASSO_DRAW, SHOT, SHAPE, MOVE, RESIZE, TRANSFORM, PAN, PINCH, FLOW_TEXT,
-    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, TABLE_LINE,
+    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, TABLE_LINE, CROP,
 }
 
 /**
@@ -128,6 +130,8 @@ class InteractionController(
     private val onSelectionMenu: (Rect?) -> Unit = {},
     /** Screenshot menu: a viewport rect to anchor the "copy as image" bar to, or null to hide. */
     private val onScreenshotMenu: (Rect?) -> Unit = {},
+    /** Crop bar: a viewport rect to anchor the Apply/Cancel crop bar to, or null to hide. */
+    private val onCropMenu: (Rect?) -> Unit = {},
     /** Long-press on empty space: open a context menu at (viewport, content). */
     /** Long press on empty space, or on a locked item: the third argument is that item, if any. */
     private val onContextMenu: (Pt, Pt, CanvasItem?) -> Unit = { _, _, _ -> },
@@ -332,6 +336,14 @@ class InteractionController(
     private var resizeHandle: HandleId? = null
     private var resizeOldGeom: GeoHandle? = null
     private var resizePageIndex: Int = -1
+
+    // CROP (adjusting an image's crop rectangle before baking it)
+    private var cropItem: ImageItem? = null
+    private var cropPageIndex = -1
+    private var cropRect: Rect = Rect(0.0, 0.0, 0.0, 0.0) // page-local, within the image's rect
+    private var cropHandle: HandleId? = null
+    private var cropMoving = false
+    private var cropMoveGrab = Pt.ZERO
 
     // TABLE_LINE (dragging an interior row/column boundary of the selected table)
     private var tableLineItem: TableItem? = null
@@ -554,6 +566,9 @@ class InteractionController(
         drawingPointerId = e.getPointerId(0)
         drawingIsStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS
 
+        // Cropping an image is modal: a press adjusts the crop rect (handle drag or move), never ink.
+        if (mode == PointerMode.CROP) { beginCropDrag(content); return }
+
         // Resolve which tool this pointer drives:
         //  - the stylus eraser end, or the held side button, force the eraser/side-button tool;
         //  - a finger pans unless finger-draw is enabled;
@@ -702,6 +717,7 @@ class InteractionController(
             PointerMode.SHOT -> extendScreenshot(content)
             PointerMode.MOVE -> extendMove(content)
             PointerMode.RESIZE -> extendResize(content)
+            PointerMode.CROP -> extendCrop(content)
             PointerMode.TABLE_LINE -> extendTableLine(content)
             PointerMode.TRANSFORM -> extendTransform(content)
             PointerMode.SHAPE -> extendShape(content)
@@ -772,6 +788,7 @@ class InteractionController(
             PointerMode.SHOT -> endScreenshot()
             PointerMode.MOVE -> endMove(content)
             PointerMode.RESIZE -> endResize()
+            PointerMode.CROP -> endCrop()
             PointerMode.TABLE_LINE -> endTableLine()
             PointerMode.TRANSFORM -> endTransform()
             PointerMode.SHAPE -> endShape()
@@ -1697,6 +1714,132 @@ class InteractionController(
         return false
     }
 
+    // --- CROP (adjust an image's crop rectangle, then bake it) ---
+
+    /** Enter crop mode for the single selected image; the crop rect starts as the whole image. */
+    fun beginCrop() {
+        val sel = selection.singleOrNull() ?: return
+        val img = sel.item as? ImageItem ?: return
+        if (state.pageRects.getOrNull(sel.pageIndex) == null) return
+        cropItem = img
+        cropPageIndex = sel.pageIndex
+        cropRect = img.rect
+        cropHandle = null
+        cropMoving = false
+        mode = PointerMode.CROP
+        onSelectionMenu(null)
+        refreshCropMenu()
+        requestRender()
+    }
+
+    /** The image being cropped and its current (page-local) crop rect, for the host to bake. */
+    fun cropTarget(): Pair<ImageItem, Rect>? = cropItem?.let { it to cropRect }
+
+    /** Finish cropping: swap in the baked [newImage] at [newRect] (undoable), or just exit if null. */
+    fun finishCrop(newImage: ImageData?, newRect: Rect?) {
+        val img = cropItem
+        if (img != null && newImage != null && newRect != null) {
+            history.push(ReplaceImage(img, img.image, img.rect, newImage, newRect))
+            img.image = newImage
+            img.rect = newRect
+            state.document.dirty = true
+            onContentChanged()
+        }
+        exitCrop(reselect = img)
+    }
+
+    fun cancelCrop() = exitCrop(reselect = cropItem)
+
+    private fun exitCrop(reselect: ImageItem?) {
+        val pi = cropPageIndex
+        cropItem = null
+        cropHandle = null
+        cropMoving = false
+        mode = PointerMode.IDLE
+        onCropMenu(null)
+        if (reselect != null && pi in state.document.pages.indices) setSelection(listOf(Selected(pi, reselect)))
+        else refreshSelectionMenu()
+        requestRender()
+    }
+
+    private fun refreshCropMenu() {
+        val img = cropItem ?: return onCropMenu(null)
+        onCropMenu(screenshotRectViewport(state.fromPageSpaceRect(cropPageIndex, img.rect)))
+    }
+
+    private fun beginCropDrag(content: Pt) {
+        val img = cropItem ?: return
+        if (state.pageRects.getOrNull(cropPageIndex) == null) return
+        val local = state.toPageSpace(cropPageIndex, content)
+        val tol = HANDLE_HIT / state.zoom
+        cropHandle = ResizeMath.hitHandle(ResizeMath.boxHandles(cropRect), local, tol)
+        cropMoving = cropHandle == null && cropRect.contains(local)
+        cropMoveGrab = local
+        onCropMenu(null) // hide the bar while dragging
+    }
+
+    private fun extendCrop(content: Pt) {
+        val img = cropItem ?: return
+        if (state.pageRects.getOrNull(cropPageIndex) == null) return
+        val local = state.toPageSpace(cropPageIndex, content)
+        val bounds = img.rect
+        when {
+            cropHandle != null -> {
+                val (pos, w, h) = ResizeMath.resizeText(cropRect.topLeft, cropRect.w, cropRect.h, cropHandle!!, local)
+                cropRect = clampRectInside(Rect(pos.x, pos.y, w, h), bounds)
+            }
+            cropMoving -> {
+                val dx = local.x - cropMoveGrab.x
+                val dy = local.y - cropMoveGrab.y
+                cropMoveGrab = local
+                cropRect = clampRectInside(cropRect.translate(dx, dy), bounds)
+            }
+        }
+        requestRender()
+    }
+
+    private fun endCrop() {
+        cropHandle = null
+        cropMoving = false
+        refreshCropMenu()
+        requestRender()
+    }
+
+    /** Keep [r] within [bounds] (image rect): clamp size then position; never smaller than a min cell. */
+    private fun clampRectInside(r: Rect, bounds: Rect): Rect {
+        val minW = minOf(24.0, bounds.w)
+        val minH = minOf(24.0, bounds.h)
+        val w = r.w.coerceIn(minW, bounds.w)
+        val h = r.h.coerceIn(minH, bounds.h)
+        val x = r.x.coerceIn(bounds.left, bounds.right - w)
+        val y = r.y.coerceIn(bounds.top, bounds.bottom - h)
+        return Rect(x, y, w, h)
+    }
+
+    /** Draw the crop overlay (content space): dim the trimmed border, outline the crop rect + handles. */
+    private fun drawCrop(r: Renderer) {
+        val img = cropItem ?: return
+        val pi = cropPageIndex
+        if (state.pageRects.getOrNull(pi) == null) return
+        val outer = state.fromPageSpaceRect(pi, img.rect)
+        val inner = state.fromPageSpaceRect(pi, cropRect)
+        val dim = Rgba(0, 0, 0, 120)
+        // Four dim bands between the image edge and the crop rect.
+        if (inner.top > outer.top) r.fillRect(Rect(outer.left, outer.top, outer.w, inner.top - outer.top), dim)
+        if (inner.bottom < outer.bottom) r.fillRect(Rect(outer.left, inner.bottom, outer.w, outer.bottom - inner.bottom), dim)
+        if (inner.left > outer.left) r.fillRect(Rect(outer.left, inner.top, inner.left - outer.left, inner.h), dim)
+        if (inner.right < outer.right) r.fillRect(Rect(inner.right, inner.top, outer.right - inner.right, inner.h), dim)
+        val sel = com.xnotes.core.model.Rgba.SELECTION
+        r.strokePolygon(
+            listOf(Pt(inner.left, inner.top), Pt(inner.right, inner.top), Pt(inner.right, inner.bottom), Pt(inner.left, inner.bottom)),
+            Pen(sel, 1.6, cosmetic = true),
+        )
+        val side = HANDLE_SIZE / state.zoom
+        for (h in ResizeMath.boxHandles(inner)) {
+            r.fillRect(Rect(h.content.x - side / 2, h.content.y - side / 2, side, side), sel)
+        }
+    }
+
     /** Draw the table edit chrome (content space): per-line handle squares and the +/- buttons. */
     private fun drawTableEditChrome(r: Renderer) {
         val t = singleSelectedTable() ?: return
@@ -2206,6 +2349,9 @@ class InteractionController(
 
     /** The single selected table, or null. */
     fun singleSelectedTable(): TableItem? = selection.singleOrNull()?.item as? TableItem
+
+    /** The single selected image, or null (enables the Crop action). */
+    fun singleSelectedImage(): ImageItem? = selection.singleOrNull()?.item as? ImageItem
 
     private var tableEditing = false
 
@@ -3057,12 +3203,16 @@ class InteractionController(
                 mode == PointerMode.TEXT_DRAG -> textDragRect?.let { r.strokeRect(it, accent) }
                 mode == PointerMode.LASSO_DRAW && lassoPoints.size >= 2 ->
                     r.strokePolyline(lassoPoints, chromePen(1.3))
-                selection.isNotEmpty() ->
+                selection.isNotEmpty() && mode != PointerMode.CROP ->
                     selObb?.let { obb ->
                         r.strokePolygon(obb.corners().map { Pt(it.x + moveOffset.x, it.y + moveOffset.y) }, accent)
                     }
             }
 
+            // Crop mode: dim the trimmed border and show the crop rect + handles instead of the box.
+            if (mode == PointerMode.CROP) {
+                drawCrop(r)
+            } else
             // Table edit mode: the resize box is replaced by add/remove buttons and per-line handles.
             if (isTableEditing() && mode != PointerMode.BAND && mode != PointerMode.LASSO_DRAW) {
                 drawTableEditChrome(r)
