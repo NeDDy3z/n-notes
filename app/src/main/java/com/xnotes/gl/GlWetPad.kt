@@ -59,6 +59,16 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     var ready = false
         private set
 
+    /**
+     * Told on the main thread when every pixel on the pad has gone.
+     *
+     * The host is holding two things the pad cannot see: the stroke under the pen, which it has
+     * stopped drawing itself because the pad was drawing it, and the committed ink it is keeping
+     * out of its cache until the handover. Both are invisible the moment the surface goes, so both
+     * have to be handed back rather than waited on.
+     */
+    var onSurfaceLost: (() -> Unit)? = null
+
     // --- render thread only ---
 
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
@@ -144,6 +154,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         // Every pixel goes with the surface, so nothing left on it may be joined afterwards.
         ink.forget()
+        onSurfaceLost?.invoke()
         val t = thread ?: return
         post { destroyEgl() }
         thread = null
@@ -498,6 +509,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         if (!ready) return
         // Every pixel goes with the surface, so nothing on it may be joined or handed over.
         ink.forget()
+        mainHandler.post { onSurfaceLost?.invoke() }
         destroyEgl()
         createEgl(holder)
         setLayerVisible(false)
