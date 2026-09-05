@@ -297,16 +297,27 @@ private fun EditorScreen(
         }
     }
 
-    // "Import PDF" remembers the picked PDF and shows the name dialog at once; the (possibly large) copy
-    // into the .xnote happens at Save, under the "Importing PDF…" loader, so the dialog isn't delayed.
+    // "Import file" remembers the picked file and shows the name dialog at once; the (possibly large)
+    // copy + conversion into the .xnote happens at Save, under the "Importing…" loader, so the dialog
+    // isn't delayed. The format (pdf / image / text) is classified from the picked file here.
     val importPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
-            val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Document")
-            editor.requestImport(com.xnotes.ui.ImportKind.PDF, stem, u.toString())
+            val name = displayNameOf(resolver, u) ?: "Document"
+            val mime = runCatching { resolver.getType(u) }.getOrNull() ?: ""
+            val stem = com.xnotes.core.util.Paths.stem(name)
+            val kind = com.xnotes.ui.ImportKind.classify(name, mime)
+            editor.requestImport(kind, stem, u.toString(), name, mime)
             backstageView = com.xnotes.ui.BackstageView.HOME
             editor.goHomeAll() // land on backstage to name/place the pending import
         }
     }
+    // MIME types the "Import file" picker offers.
+    val importMimeTypes = arrayOf(
+        "application/pdf", "image/*", "text/*",
+        "application/rtf", "application/epub+zip",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
     // A PDF "Save as" destination. The note is already rendered into [pendingExportTemp]
     // (off-thread, behind the progress dialog), so the picker just chooses where to copy it —
     // shared by the open-note export, the explorer-file export, and side-panel page saves.
@@ -697,7 +708,7 @@ private fun EditorScreen(
                 onImportCodeTheme = { importCodeThemeLauncher.launch(arrayOf("*/*")) },
                 onImportFont = { importFontLauncher.launch(arrayOf("*/*")) },
                 onOpenSystem = { openLauncher.launch(arrayOf("*/*")) },
-                onImportPdf = { importPdfLauncher.launch(arrayOf("application/pdf")) },
+                onImportPdf = { importPdfLauncher.launch(importMimeTypes) },
                 onOpenFile = { uri -> guarded(editor) { openTreeFile(uri) } },
                 onPickRoot = { pickRootLauncher.launch(null) },
                 onShareFile = { uri -> pendingShareUri = uri; showShareChooser = true },
@@ -1308,7 +1319,7 @@ private fun SavingDialog() {
  */
 @Composable
 private fun PdfImportDialog(isPdf: Boolean, onCancel: () -> Unit) =
-    SpinnerDialog(if (isPdf) "Importing PDF…" else "Importing note…", onCancel)
+    SpinnerDialog(if (isPdf) "Importing…" else "Importing note…", onCancel)
 
 /**
  * Subtle, non-blocking hint shown bottom-right while a dark-mode PDF's embedded-image colours are

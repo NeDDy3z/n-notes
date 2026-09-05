@@ -126,11 +126,44 @@ data class BrowseEntry(
     val color: Rgba? = null,
 )
 
-/** Whether a pending import came from the PDF picker or the system "Open…" file picker. */
-enum class ImportKind { PDF, OPEN }
+/**
+ * How a picked file should be imported: as a PDF-backed note, an image note, a text note (extracted
+ * from txt/csv/rtf/html/docx/xlsx/epub), or an existing `.xnote`/`.xcanvas` opened as-is.
+ */
+enum class ImportKind {
+    PDF, IMAGE, TEXT, OPEN;
+
+    companion object {
+        /** The document extensions the "Import file" action understands (for the picker + UI hint). */
+        val IMPORT_EXTENSIONS = listOf("pdf", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg",
+            "txt", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+
+        private val IMAGE_EXT = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic", "heif")
+        private val TEXT_EXT = setOf("txt", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+
+        /** Classify a picked file by extension (then mime) into the importer that should handle it. */
+        fun classify(name: String, mime: String?): ImportKind {
+            val ext = name.substringAfterLast('.', "").lowercase()
+            return when {
+                ext == "xnote" || ext == "xcanvas" -> OPEN
+                ext == "pdf" || mime == "application/pdf" -> PDF
+                ext in IMAGE_EXT || mime?.startsWith("image/") == true -> IMAGE
+                ext in TEXT_EXT || mime?.startsWith("text/") == true -> TEXT
+                else -> TEXT // best effort for unknown types
+            }
+        }
+    }
+}
 
 /** A picked file awaiting a name before it's saved into the explorer's current folder. */
-data class PendingImport(val kind: ImportKind, val defaultName: String, val uri: String)
+data class PendingImport(
+    val kind: ImportKind,
+    val defaultName: String,
+    val uri: String,
+    /** Original file name (with extension) and MIME, kept so the text importer can pick a parser. */
+    val sourceName: String = "",
+    val mime: String = "",
+)
 
 /** Per-folder colour sidecar: a hidden ".xnote" dir holding "colors.json" (item name -> hex). */
 private const val SIDECAR_DIR = ".xnote"
@@ -680,9 +713,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Pages the side panel has selected, by **identity** so reorder/delete never breaks the set. */
     private val selectedPages = mutableStateListOf<Page>()
 
-    /** Deep-cloned pages held for paste (cleared when the document changes). A snapshot list so
-     *  paste affordances recompose when it gains/loses contents. */
-    private val pageClipboard = mutableStateListOf<Page>()
+    /** Deep-cloned pages held for paste. Process-wide ([PageClipboard]) so a copy survives a document
+     *  switch and can be pasted into another note; a snapshot list, so paste affordances recompose. */
+    private val pageClipboard get() = PageClipboard.pages
 
     /** The current document's storage location (a SAF content URI string), or null. */
     val currentUri: String? get() = state.document.path
@@ -2639,6 +2672,53 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return createNoteFile(treeUri, parentDocId, name) { out -> copyStream(java.io.FileInputStream(file), out) { importCancelled.get() } }
     }
 
+    /** Imports the image at [imgFile] into a new single-page `.xnote` whose page matches the image,
+     *  the image filling it edge to edge. Returns its URI, or null. IO — call off-thread. */
+    fun createImageNoteFile(treeUri: String, parentDocId: String, rawName: String, imgFile: java.io.File): String? {
+        val size = imageCodec.probeFile(imgFile.path) ?: return null
+        if (size.width <= 0 || size.height <= 0) return null
+        val (defW, _) = settings.prefs.newPagePixels()
+        val pageW = defW
+        val pageH = (defW * size.height.toDouble() / size.width).coerceIn(defW * 0.25, defW * 4.0)
+        val doc = Document(dpi = state.document.dpi)
+        val page = Page(pageW, pageH)
+        page.items.add(ImageItem(ImageData(imgFile, size.width, size.height), Rect(0.0, 0.0, pageW, pageH)))
+        doc.pages.add(page)
+        stampNewNoteDefaults(doc)
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
+    }
+
+    /** Imports [file] (txt/csv/rtf/html/docx/xlsx/epub) as a new `.xnote` whose flow text holds the
+     *  extracted content, laid out across as many pages as it needs. Returns its URI, or null. IO. */
+    fun createTextNoteFile(treeUri: String, parentDocId: String, rawName: String, file: java.io.File, sourceName: String, mime: String): String? {
+        val paras = com.xnotes.platform.DocImport.extract(file, sourceName.ifEmpty { rawName }, mime)
+        val doc = blankDocument()
+        stampNewNoteDefaults(doc)
+        if (paras.isNotEmpty()) {
+            doc.flow.paragraphs.clear()
+            for (p in paras) {
+                doc.flow.paragraphs.add(com.xnotes.core.text.Paragraph().apply { runs.add(com.xnotes.core.text.Run(p)) })
+            }
+            paginateFlow(doc)
+        }
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
+    }
+
+    /** Append pages (sized like the last) until [doc]'s flow text stops overflowing past the real pages. */
+    private fun paginateFlow(doc: Document) {
+        if (doc.flow.isEmpty) return
+        var guard = 0
+        while (guard++ < 4000) {
+            val frame = flowLayout.layout(doc.flow, doc.pages.map { com.xnotes.core.text.PageBox(it.width, it.height) }, doc.dpi)
+            val need = frame.extraPagesNeeded
+            if (need <= 0) break
+            val last = doc.pages.last()
+            repeat(need) { doc.pages.add(Page(last.width, last.height)) }
+        }
+    }
+
     /** Streams [input] to a private temp file for a pending import; returns it, or null. The caller
      *  owns the file (it's handed to [requestImport]). Copies in small buffers so a large pick never
      *  loads into RAM. IO — call off the main thread. */
@@ -2667,8 +2747,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** A picked PDF/.xnote (referenced by content [uri]) now awaits a name before being saved into the
      *  folder. The file is deliberately **not** copied yet — that happens at [commitImport], under the
      *  import loader — so the name dialog can appear instantly instead of after a big copy. */
-    fun requestImport(kind: ImportKind, defaultName: String, uri: String) {
-        pendingImport = PendingImport(kind, defaultName, uri)
+    fun requestImport(kind: ImportKind, defaultName: String, uri: String, sourceName: String = "", mime: String = "") {
+        pendingImport = PendingImport(kind, defaultName, uri, sourceName, mime)
     }
 
     /** Discards a pending import (the user cancelled the name prompt). Nothing was copied yet. */
@@ -2687,6 +2767,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val uri = if (staged == null) null else try {
             when (pending.kind) {
                 ImportKind.PDF -> createPdfNoteFile(treeUri, parentDocId, rawName, staged)
+                ImportKind.IMAGE -> createImageNoteFile(treeUri, parentDocId, rawName, staged)
+                ImportKind.TEXT -> createTextNoteFile(treeUri, parentDocId, rawName, staged, pending.sourceName, pending.mime)
                 ImportKind.OPEN -> createNoteFileFromFile(treeUri, parentDocId, rawName, staged)
             }
         } finally {
@@ -3669,7 +3751,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.clearSelection()
         controller.resetGestureState() // drop the outgoing note's fling/elastic so it can't bleed in
         clearPageSelection()
-        pageClipboard.clear() // clones reference the outgoing document; don't paste them into another
         state.document = doc
         rebuildPdfSource()
         adoptOpenPdf(doc) // outgoing note's PDF source is now closed; delete its temp file
@@ -3952,8 +4033,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun copyPages(indices: List<Int>) {
         val pages = indices.distinct().sorted().mapNotNull { pageAt(it) }
         if (pages.isEmpty()) return
-        pageClipboard.clear()
-        pages.forEach { pageClipboard.add(it.deepCopy(textMeasurer)) }
+        PageClipboard.set(pages.map { it.deepCopy(textMeasurer) }, state.document.pdfFile)
     }
 
     /** Copy [indices] to the clipboard then delete them (kept ≥ 1 page). */
@@ -3976,6 +4056,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val cmds = ArrayList<Command>()
         for (src in pageClipboard) {
             val clone = src.deepCopy(textMeasurer) // fresh clone each paste, so repeated pastes are independent
+            flattenForeignPdfPage(clone)
             pages.add(at, clone)
             cmds.add(AddPage(state.document, clone, at))
             at++
@@ -3983,6 +4064,43 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         history.push(CompositeCommand(cmds))
         afterPageEdit()
         goToPage(firstAt)
+    }
+
+    /**
+     * If [page] is backed by a source PDF that the current note does not share (a cross-note paste),
+     * bake that PDF page into a background image and drop the [Page.pdfPage] link, so the pasted page
+     * stands alone. Same-PDF pastes (duplicating within a PDF note) keep the vector link untouched.
+     * On any failure the background is simply dropped, leaving a blank page with the copied items.
+     */
+    private fun flattenForeignPdfPage(page: Page) {
+        val pi = page.pdfPage ?: return
+        val srcPdf = PageClipboard.sourcePdfFile
+        if (srcPdf != null && srcPdf === state.document.pdfFile) return // same PDF note: keep the link
+        page.pdfPage = null
+        if (srcPdf == null) return
+        val bg = runCatching {
+            val src = com.xnotes.platform.PdfSource.create(appContext, srcPdf) ?: return@runCatching null
+            try {
+                val w = page.width.toInt().coerceAtLeast(1)
+                val h = page.height.toInt().coerceAtLeast(1)
+                val surface = src.renderRegion(pi, w, h, 0, 0, w, h) ?: return@runCatching null
+                val bytes = java.io.ByteArrayOutputStream().use { out ->
+                    surface.bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                    out.toByteArray()
+                }
+                surface.recycle()
+                bytes
+            } finally {
+                src.close()
+            }
+        }.getOrNull() ?: return
+        val file = runCatching {
+            java.io.File.createTempFile("pdfpg", null, imageDir).apply { writeBytes(bg) }
+        }.getOrNull() ?: return
+        val size = imageCodec.probeFile(file.path)
+        if (size == null || size.width <= 0 || size.height <= 0) { file.delete(); return }
+        val img = ImageItem(ImageData(file, size.width, size.height), Rect(0.0, 0.0, page.width, page.height))
+        page.items.add(0, img) // behind the copied ink/items
     }
 
     /** Delete [indices] as one undoable edit, refusing to empty the note. */
@@ -4643,7 +4761,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.clearSelection()
         controller.resetGestureState() // drop the outgoing note's fling/elastic so it can't bleed in
         clearPageSelection()
-        pageClipboard.clear()
         state.invalidateAllCaches()
         state.relayout()
         installInitialView(null) // a fresh in-memory note: fit width

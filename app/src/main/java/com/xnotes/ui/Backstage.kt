@@ -572,7 +572,19 @@ private fun HomePane(
                         DropdownMenuItem(text = { Text("New Note") }, onClick = { createMenuOpen = false; onCreateMode(CreateMode.FILE) })
                         DropdownMenuItem(text = { Text("New Canvas") }, onClick = { createMenuOpen = false; onCreateMode(CreateMode.CANVAS) })
                         DropdownMenuItem(text = { Text("New Folder") }, onClick = { createMenuOpen = false; onCreateMode(CreateMode.FOLDER) })
-                        DropdownMenuItem(text = { Text("Import File") }, onClick = { createMenuOpen = false; onImportPdf() })
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Import file")
+                                    Text(
+                                        "PDF/IMG/TXT/RTF/HTML/EPUB/DOCX/XLSX/CSV",
+                                        color = palette.textDim.toComposeColor(),
+                                        fontSize = 10.sp,
+                                    )
+                                }
+                            },
+                            onClick = { createMenuOpen = false; onImportPdf() },
+                        )
                     }
                 }
             }
