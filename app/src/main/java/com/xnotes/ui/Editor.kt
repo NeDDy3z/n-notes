@@ -2687,10 +2687,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** Creates a blank `.xnote` under [parentDocId]; returns its URI, or null. IO — call off-thread. */
-    fun createBlankNoteFile(treeUri: String, parentDocId: String, rawName: String): String? {
+    /** Creates a blank `.xnote` under [parentDocId]; returns its URI, or null. IO — call off-thread.
+     *  [style] overrides the new-note default page style (template + colour) when non-null. */
+    fun createBlankNoteFile(treeUri: String, parentDocId: String, rawName: String, style: PageStyle? = null): String? {
         val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
-        val blank = blankDocument().also { stampNewNoteDefaults(it) }
+        val blank = blankDocument().also { stampNewNoteDefaults(it); if (style != null) it.style = style }
         return createNoteFile(treeUri, parentDocId, name) { codec.write(blank, it) }
     }
 

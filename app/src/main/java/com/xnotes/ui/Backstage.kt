@@ -1015,7 +1015,21 @@ private fun ExplorerSection(
 
     // Name entry for a new note, new folder, or a pending PDF/Open import. Hidden while an import is
     // actually being written, so only the "Importing…" dialog shows.
-    if ((createMode != CreateMode.NONE || pendingImport != null) && !editor.importing) {
+    // New note: a richer dialog with a template + paper-colour chooser, preset from the settings defaults.
+    if (createMode == CreateMode.FILE && pendingImport == null && !editor.importing) {
+        NewNoteDialog(
+            editor = editor,
+            initial = nextUntitled(editor, editor.cachedChildren(root, currentDocId)),
+            error = fieldError,
+            onConfirm = { n, style ->
+                scope.launch {
+                    val uri = withContext(Dispatchers.IO) { editor.createBlankNoteFile(root, currentDocId, n, style) }
+                    if (uri != null) { onCreateMode(CreateMode.NONE); refreshKey++ } else fieldError = "Couldn’t create the note."
+                }
+            },
+            onDismiss = { fieldError = null; onCreateMode(CreateMode.NONE) },
+        )
+    } else if ((createMode != CreateMode.NONE || pendingImport != null) && !editor.importing) {
         val isFolder = pendingImport == null && createMode == CreateMode.FOLDER
         val default = when {
             pendingImport != null -> pendingImport.defaultName // import names default to the source file
@@ -1533,11 +1547,125 @@ private fun FileTile(
 // --- shared bits ---
 
 /**
- * A small modal that asks for a single name, used for new notes, new folders, renames, and
- * naming a pending import. Pre-fills [initial] (fully selected so typing replaces it), confirms
- * on the keyboard's Done action or hardware Enter, and dismisses on Cancel, the scrim, or Esc.
- * When [allowEmpty] is false the confirm button stays disabled until something is typed; a
- * non-null [error] shows under the field and keeps the dialog open after a failed operation.
+ * New-note dialog: name plus a page template (blank/lines/dots/grid) and paper colour, both
+ * preselected from the new-note defaults set in Preferences. The chosen template + colour override
+ * those defaults for this note; ruling colour and spacing still come from the defaults.
+ */
+@Composable
+private fun NewNoteDialog(
+    editor: Editor,
+    initial: String,
+    error: String?,
+    onConfirm: (String, com.xnotes.core.model.PageStyle) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    var text by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length))) }
+    val def = editor.newNoteStyle
+    var pattern by remember { mutableStateOf(def.pattern ?: com.xnotes.core.model.PagePattern.NONE) }
+    var color by remember { mutableStateOf(def.pageColor) } // null = the theme's default paper
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val confirm = { onConfirm(text.text.trim(), def.copy(pattern = pattern, pageColor = color)) }
+
+    val templates = listOf(
+        com.xnotes.core.model.PagePattern.NONE to "Blank",
+        com.xnotes.core.model.PagePattern.LINES to "Lines",
+        com.xnotes.core.model.PagePattern.DOTS to "Dots",
+        com.xnotes.core.model.PagePattern.GRID to "Grid",
+    )
+    val papers: List<Pair<Rgba?, String>> = listOf(
+        null to "Default", Rgba(255, 255, 255) to "White", Rgba(251, 243, 219) to "Cream",
+        Rgba(255, 249, 196) to "Yellow", Rgba(232, 245, 233) to "Green", Rgba(227, 242, 253) to "Blue",
+        Rgba(252, 228, 236) to "Pink", Rgba(236, 239, 241) to "Grey",
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New note") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    isError = error != null,
+                    supportingText = error?.let { { Text(it, color = Color(0xFFE5534B)) } },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { confirm() }),
+                    modifier = Modifier
+                        .focusRequester(focus)
+                        .onPreviewKeyEvent { ev ->
+                            when {
+                                ev.type != KeyEventType.KeyDown -> false
+                                ev.key == Key.Enter || ev.key == Key.NumPadEnter -> { confirm(); true }
+                                ev.key == Key.Escape -> { onDismiss(); true }
+                                else -> false
+                            }
+                        },
+                )
+                Text("Template", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    templates.forEach { (p, label) -> NewNoteChip(label, pattern == p) { pattern = p } }
+                }
+                Text("Paper colour", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    papers.forEach { (c, desc) ->
+                        NewNoteSwatch((c ?: palette.paper).toComposeColor(), color == c, desc) { color = c }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { confirm() }) { Text("Create") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = palette.menuBg.toComposeColor(),
+    )
+}
+
+@Composable
+private fun NewNoteChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) palette.accent.toComposeColor().copy(alpha = 0.16f) else palette.surface.toComposeColor())
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(label, color = palette.text.toComposeColor(), fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun NewNoteSwatch(color: Color, selected: Boolean, desc: String, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(
+                if (selected) 2.dp else 1.dp,
+                if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(),
+                CircleShape,
+            )
+            .clickable(onClick = onClick),
+    )
+}
+
+/**
+ * A small modal that asks for a single name, used for new folders, renames, and naming a pending
+ * import. Pre-fills [initial] (fully selected so typing replaces it), confirms on the keyboard's
+ * Done action or hardware Enter, and dismisses on Cancel, the scrim, or Esc. When [allowEmpty] is
+ * false the confirm button stays disabled until something is typed; a non-null [error] shows under
+ * the field and keeps the dialog open after a failed operation.
  */
 @Composable
 private fun NameDialog(
