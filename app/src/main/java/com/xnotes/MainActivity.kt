@@ -311,10 +311,19 @@ private fun EditorScreen(
             editor.goHomeAll() // land on backstage to name/place the pending import
         }
     }
-    // MIME types the "Import file" picker offers.
+    // Exact MIME types the "Import file" picker offers, so it only shows files we can actually
+    // import (an explicit allowlist rather than image/* + text/* wildcards, which some pickers
+    // expand to unrelated files).
     val importMimeTypes = arrayOf(
-        "application/pdf", "image/*", "text/*",
-        "application/rtf", "application/epub+zip",
+        "application/pdf",
+        // images
+        "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp",
+        "image/svg+xml", "image/heic", "image/heif",
+        // plain text / csv / html / rtf
+        "text/plain", "text/csv", "text/comma-separated-values", "application/csv",
+        "text/html", "text/rtf", "application/rtf",
+        // ebook / office
+        "application/epub+zip",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
