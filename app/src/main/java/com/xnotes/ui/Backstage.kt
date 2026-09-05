@@ -70,7 +70,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -339,12 +341,44 @@ private fun BackstageSidebar(
         Command(XnotesIcons.home, "Home", selected = view == BackstageView.HOME) { onSelectView(BackstageView.HOME) }
         Command(XnotesIcons.plus, "New note") { onNewNote() }
         Command(XnotesIcons.canvas, "New canvas") { onNewCanvas() }
-        Command(XnotesIcons.importDoc, "Import PDF…") { onImportPdf() }
+        Command(XnotesIcons.importDoc, "Import file") { onImportPdf() }
         Command(XnotesIcons.folder, "Open…") { onOpenSystem() }
         RailDivider()
         Command(XnotesIcons.sliders, "Preferences", selected = view == BackstageView.PREFERENCES) { onSelectView(BackstageView.PREFERENCES) }
         Command(XnotesIcons.info, "About", selected = view == BackstageView.ABOUT) { onSelectView(BackstageView.ABOUT) }
+        RailDivider()
+        FilenSidebarStatus()
     }
+}
+
+/**
+ * A quiet line at the foot of the sidebar: when Filen sync is set up, how long ago the last sync
+ * ran and how many files are tracked. Nothing shows until the account is configured.
+ */
+@Composable
+private fun FilenSidebarStatus() {
+    val palette = LocalPalette.current
+    val ctx = LocalContext.current
+    if (!com.xnotes.sync.filen.FilenSyncManager.isConfigured(ctx)) return
+    LaunchedEffect(Unit) { com.xnotes.sync.filen.FilenSyncManager.primeStatus(ctx) }
+    val status by com.xnotes.sync.filen.FilenSyncManager.status.collectAsState()
+    val line = when {
+        status.running -> "Syncing…"
+        status.lastSyncMs == 0L -> "Filen: not synced yet"
+        else -> {
+            val ago = android.text.format.DateUtils.getRelativeTimeSpanString(
+                status.lastSyncMs, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS,
+            )
+            val files = if (status.fileCount == 1) "1 file" else "${status.fileCount} files"
+            "Last synced $ago · $files"
+        }
+    }
+    Text(
+        line,
+        color = palette.textDim.toComposeColor(),
+        fontSize = 11.sp,
+        modifier = Modifier.padding(start = 18.dp, end = 12.dp, top = 8.dp),
+    )
 }
 
 /** The main pane (the explorer, or Preferences); shows a hamburger when the sidebar is hidden. */

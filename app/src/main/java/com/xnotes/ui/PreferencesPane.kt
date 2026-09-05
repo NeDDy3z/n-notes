@@ -279,17 +279,6 @@ fun PreferencesPane(
             OptionDropdown(tapGestureOptions, prefs.stylusDoubleTap) { update(prefs.copy(stylusDoubleTap = it)) }
             FieldLabel("Stylus side button (tap)")
             OptionDropdown(tapGestureOptions, prefs.stylusButtonTap) { update(prefs.copy(stylusButtonTap = it)) }
-            FieldLabel("Redmi Smart Pen side buttons (tap)")
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Button 1", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                    OptionDropdown(tapGestureOptions, prefs.stylusButton1Tap) { update(prefs.copy(stylusButton1Tap = it)) }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Button 2", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                    OptionDropdown(tapGestureOptions, prefs.stylusButton2Tap) { update(prefs.copy(stylusButton2Tap = it)) }
-                }
-            }
 
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle("New notes")

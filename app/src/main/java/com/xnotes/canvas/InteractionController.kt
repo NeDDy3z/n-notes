@@ -2897,13 +2897,13 @@ class InteractionController(
                         val base = ResizeMath.obbTopMid(obb)
                         val stemTop = Pt(base.x + moveOffset.x, base.y + moveOffset.y)
                         val grip = Pt(rp.x + moveOffset.x, rp.y + moveOffset.y)
-                        r.strokePolyline(listOf(grip, stemTop), Pen(state.palette.accent, 1.3, cosmetic = true))
-                        r.fillCircle(grip, side * 0.6, state.palette.accent)
+                        r.strokePolyline(listOf(grip, stemTop), Pen(com.xnotes.core.model.Rgba.SELECTION, 1.3, cosmetic = true))
+                        r.fillCircle(grip, side * 0.6, com.xnotes.core.model.Rgba.SELECTION)
                     }
                 }
                 for (h in selectionResizeHandles()) {
                     val c = Pt(h.content.x + moveOffset.x, h.content.y + moveOffset.y)
-                    r.fillRect(Rect(c.x - side / 2, c.y - side / 2, side, side), state.palette.accent)
+                    r.fillRect(Rect(c.x - side / 2, c.y - side / 2, side, side), com.xnotes.core.model.Rgba.SELECTION)
                 }
             }
         }
@@ -2925,7 +2925,7 @@ class InteractionController(
      * in device px, which is what the conversion here produces.
      */
     private fun chromePen(width: Double): Pen = Pen(
-        state.palette.accent,
+        com.xnotes.core.model.Rgba.SELECTION,
         width,
         cosmetic = true,
         dashed = true,

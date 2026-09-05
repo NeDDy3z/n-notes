@@ -28,10 +28,33 @@ object FilenSyncManager {
     private const val WORK_NAME = "filen_periodic_sync"
     private val syncMutex = Mutex()
 
-    data class Status(val running: Boolean = false, val lastSyncMs: Long = 0, val message: String = "")
+    data class Status(val running: Boolean = false, val lastSyncMs: Long = 0, val fileCount: Int = 0, val message: String = "")
 
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
+
+    /** Seed the status flow from the last persisted sync (for the sidebar on a fresh launch). */
+    fun primeStatus(context: Context) {
+        if (_status.value.lastSyncMs != 0L || _status.value.running) return
+        runCatching {
+            val f = statusFile(context)
+            if (f.exists()) {
+                val o = org.json.JSONObject(f.readText())
+                _status.value = Status(lastSyncMs = o.optLong("lastSyncMs"), fileCount = o.optInt("fileCount"))
+            }
+        }
+    }
+
+    private fun statusFile(context: Context) =
+        java.io.File(java.io.File(context.filesDir, "config").apply { mkdirs() }, "filen_status.json")
+
+    private fun persistStatus(context: Context, s: Status) {
+        runCatching {
+            statusFile(context).writeText(
+                org.json.JSONObject().put("lastSyncMs", s.lastSyncMs).put("fileCount", s.fileCount).toString(),
+            )
+        }
+    }
 
     fun session(context: Context): FilenSession? = FilenSecureStore(context).load()
 
@@ -76,18 +99,22 @@ object FilenSyncManager {
                 val client = clientOrThrow(context)
                 val state = FilenSyncState.load(context)
                 val summary = FilenSyncEngine(context, treeUri, client, folderUuid).sync(state)
+                runCatching { FilenSettingsSync.sync(context, client, folderUuid, state) }
                 state.save(context)
-                summary
+                summary to state.paths().count { !it.startsWith(".") }
             }
-            _status.value = Status(
+            val status = Status(
                 running = false,
                 lastSyncMs = System.currentTimeMillis(),
+                fileCount = result.getOrNull()?.second ?: _status.value.fileCount,
                 message = result.fold(
-                    { s -> "Up ${s.uploaded}, down ${s.downloaded}" + (if (s.conflicts > 0) ", ${s.conflicts} conflicts" else "") + (if (s.errors.isNotEmpty()) ", ${s.errors.size} errors" else "") },
+                    { (s, _) -> "Up ${s.uploaded}, down ${s.downloaded}" + (if (s.conflicts > 0) ", ${s.conflicts} conflicts" else "") + (if (s.errors.isNotEmpty()) ", ${s.errors.size} errors" else "") },
                     { e -> "Failed: ${e.message}" },
                 ),
             )
-            result
+            _status.value = status
+            if (result.isSuccess) persistStatus(context, status)
+            result.map { it.first }
         }
     }
 

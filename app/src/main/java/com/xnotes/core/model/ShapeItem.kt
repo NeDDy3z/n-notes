@@ -82,6 +82,37 @@ class ShapeItem(
         return listOf(back + perp, tip, back - perp)
     }
 
+    /**
+     * X-Y coordinate axes as a set of disjoint polylines: the two axes crossing at the box centre,
+     * an arrowhead on the positive (right/top) end of each, and evenly spaced tick marks. Each entry
+     * is one stroked run.
+     */
+    internal fun axesSegments(): List<List<Pt>> {
+        val b = box
+        val cx = b.centerX
+        val cy = b.centerY
+        val head = max(8.0, min(strokeWidth * 3.0, min(b.w, b.h) * 0.15))
+        val tick = min(head * 0.5, min(b.w, b.h) * 0.04).coerceAtLeast(3.0)
+        val segs = ArrayList<List<Pt>>()
+        segs.add(listOf(Pt(b.left, cy), Pt(b.right, cy)))            // X axis
+        segs.add(listOf(Pt(cx, b.bottom), Pt(cx, b.top)))           // Y axis
+        segs.add(listOf(Pt(b.right - head, cy - head * 0.5), Pt(b.right, cy), Pt(b.right - head, cy + head * 0.5))) // +x head
+        segs.add(listOf(Pt(cx - head * 0.5, b.top + head), Pt(cx, b.top), Pt(cx + head * 0.5, b.top + head)))      // +y head
+        val n = 4
+        for (i in 1..n) {
+            val f = i.toDouble() / (n + 1)
+            val xr = cx + (b.right - cx) * f
+            val xl = cx - (cx - b.left) * f
+            segs.add(listOf(Pt(xr, cy - tick), Pt(xr, cy + tick)))
+            segs.add(listOf(Pt(xl, cy - tick), Pt(xl, cy + tick)))
+            val yt = cy - (cy - b.top) * f
+            val yb = cy + (b.bottom - cy) * f
+            segs.add(listOf(Pt(cx - tick, yt), Pt(cx + tick, yt)))
+            segs.add(listOf(Pt(cx - tick, yb), Pt(cx + tick, yb)))
+        }
+        return segs
+    }
+
     internal fun ellipsePolygon(segments: Int = 48): List<Pt> {
         val b = box
         val cx = b.centerX
@@ -109,7 +140,7 @@ class ShapeItem(
             ShapeKind.ELLIPSE, ShapeKind.CIRCLE -> r.fillEllipse(b.center, b.w / 2.0, b.h / 2.0, fill)
             ShapeKind.TRIANGLE -> r.fillPolygon(triangleVertices(), fill)
             ShapeKind.POLYGON -> r.fillPolygon(absPoints(), fill)
-            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.POLYLINE, ShapeKind.CURVE -> {}
+            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE -> {}
         }
     }
 
@@ -122,6 +153,7 @@ class ShapeItem(
             ShapeKind.ELLIPSE, ShapeKind.CIRCLE -> r.strokeEllipse(b.center, b.w / 2.0, b.h / 2.0, pen)
             ShapeKind.TRIANGLE -> r.strokePolygon(triangleVertices(), pen)
             ShapeKind.POLYGON -> r.strokePolygon(absPoints(), pen)
+            ShapeKind.COORD_AXES -> axesSegments().forEach { r.strokePolyline(it, pen) }
             ShapeKind.POLYLINE, ShapeKind.CURVE -> r.strokePolyline(absPoints(), pen)
         }
     }
@@ -206,8 +238,16 @@ class ShapeItem(
                 val v = absPoints()
                 if (fillRgba != null) Geometry.pointInPolygon(v, p) else nearPolyOutline(v, p, tol)
             }
+            ShapeKind.COORD_AXES -> nearAxes(p, tol)
             ShapeKind.POLYLINE, ShapeKind.CURVE -> nearPolyOutline(absPoints(), p, tol, closed = false)
         }
+    }
+
+    /** Near either main axis line (the ticks/heads are cosmetic; the axes carry the hit). */
+    private fun nearAxes(p: Pt, tol: Double): Boolean {
+        val b = box
+        return Geometry.distancePointToSegment(p, Pt(b.left, b.centerY), Pt(b.right, b.centerY)) <= tol ||
+            Geometry.distancePointToSegment(p, Pt(b.centerX, b.top), Pt(b.centerX, b.bottom)) <= tol
     }
 
     private fun nearRectOutline(p: Pt, tol: Double): Boolean {
@@ -252,6 +292,7 @@ class ShapeItem(
                 val v = absPoints()
                 if (fillRgba != null && Geometry.pointInPolygon(v, p)) true else nearPolyOutline(v, p, tol)
             }
+            ShapeKind.COORD_AXES -> nearAxes(p, tol)
             ShapeKind.POLYLINE, ShapeKind.CURVE -> nearPolyOutline(absPoints(), p, tol, closed = false)
         }
     }
@@ -268,6 +309,8 @@ class ShapeItem(
         val c = Pt(cx, cy)
         if (bounds().distanceTo(c) > radius) return null
         if (fillRgba != null) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
+        // Axes erase as a unit (disjoint segments don't cut into single-polyline fragments cleanly).
+        if (shape == ShapeKind.COORD_AXES) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
         val verts = when (shape) {
             // The arrow clips by its shaft, like its hit tests; a cut arrow loses its head.
             ShapeKind.LINE, ShapeKind.ARROW -> listOf(start, end)
@@ -389,7 +432,9 @@ class ShapeItem(
      */
     override fun applyTransform(t: Affine) {
         strokeWidth *= t.linearScale
-        if (shape.isEndpointShape || t.isAxisAligned) {
+        // Axes stay upright: transform the two box corners and re-fit, even under a rotation (a
+        // rotated coordinate grid isn't representable by the axis-aligned box, and reads oddly).
+        if (shape.isEndpointShape || shape == ShapeKind.COORD_AXES || t.isAxisAligned) {
             start = t.apply(start)
             end = t.apply(end)
             return

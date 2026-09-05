@@ -935,7 +935,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private fun publishOverlay() {
         hasSelection = !selection.isEmpty
         refreshSelectionMenu()
-        val accent = palette?.accent ?: InkPalette.DEFAULT
+        // Fixed light blue, not the theme accent, so the chrome shows on light and dark paper alike.
+        val accent = com.xnotes.core.model.Rgba.SELECTION
         val zoom = viewport.zoom
         // A lasso drag owns the buffer on its own: it clears the selection when it starts and no
         // marquee can be out at the same time, so nothing else needs a place in the same publish.

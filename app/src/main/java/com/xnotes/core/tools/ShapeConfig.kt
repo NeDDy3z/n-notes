@@ -9,6 +9,7 @@ enum class ShapeKind(val id: String) {
     ELLIPSE("ellipse"),
     CIRCLE("circle"),
     TRIANGLE("triangle"),
+    COORD_AXES("axes"),
     POLYGON("polygon"),
     POLYLINE("polyline"),
     CURVE("curve");
@@ -22,7 +23,7 @@ enum class ShapeKind(val id: String) {
 
     companion object {
         /** Kinds the shape tool offers; polygon/polyline arrive only from recognition. */
-        val DRAW_TOOL_KINDS = listOf(LINE, ARROW, RECTANGLE, ELLIPSE, CIRCLE, TRIANGLE)
+        val DRAW_TOOL_KINDS = listOf(LINE, ARROW, RECTANGLE, ELLIPSE, CIRCLE, TRIANGLE, COORD_AXES)
 
         fun fromId(id: String?): ShapeKind = entries.firstOrNull { it.id == id } ?: RECTANGLE
     }

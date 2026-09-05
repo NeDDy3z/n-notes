@@ -45,6 +45,8 @@ class FilenSyncEngine(
         path: String, loc: FilenLocalStore.LocalEntry?, rem: RemoteInfo?,
         state: FilenSyncState, summary: Summary,
     ) {
+        // Dot-prefixed paths (e.g. the .xnote-config settings baseline) are not notes; leave them.
+        if (path.startsWith(".")) return
         val st = state.get(path)
         when {
             loc != null && rem != null -> {

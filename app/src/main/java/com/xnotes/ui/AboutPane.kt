@@ -95,8 +95,8 @@ fun AboutPane() {
             Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(top = 16.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // A plain lowercase "n" as the wordmark, in place of the app icon.
-            Text("n", color = palette.accent.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 64.sp)
+            // The angular "n" mark, drawn from the launcher-icon path so it matches the app icon.
+            NLogo(Modifier.size(72.dp), color = palette.accent.toComposeColor())
             Spacer(Modifier.height(12.dp))
             Text("n-notes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 24.sp)
             Spacer(Modifier.height(5.dp))

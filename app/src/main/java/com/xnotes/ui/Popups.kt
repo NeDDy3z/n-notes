@@ -794,6 +794,7 @@ private fun shapeIcon(kind: ShapeKind): ImageVector = when (kind) {
     ShapeKind.ELLIPSE -> XnotesIcons.shapeEllipse
     ShapeKind.CIRCLE -> XnotesIcons.shapeCircle
     ShapeKind.TRIANGLE, ShapeKind.POLYGON -> XnotesIcons.shapeTriangle
+    ShapeKind.COORD_AXES -> XnotesIcons.shapeAxes
 }
 
 @Composable
