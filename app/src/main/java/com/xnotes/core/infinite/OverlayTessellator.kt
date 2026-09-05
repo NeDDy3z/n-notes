@@ -23,10 +23,10 @@ object OverlayTessellator {
     const val OUTLINE_PX = 1.6
 
     /** Handle square edge, in device pixels. */
-    const val HANDLE_PX = 11.0
+    const val HANDLE_PX = 16.5
 
     /** Rotate grip diameter, in device pixels. */
-    const val GRIP_PX = 13.0
+    const val GRIP_PX = 19.5
 
     /** How far the rotate grip sits past the box's top edge, in device pixels. */
     const val GRIP_ARM_PX = 34.0

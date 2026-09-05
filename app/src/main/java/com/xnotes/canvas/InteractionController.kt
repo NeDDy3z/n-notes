@@ -3408,12 +3408,13 @@ class InteractionController(
          *  the cache, to cover stroke anti-aliasing at the dirty-rect edge. */
         const val REPAIR_PAD = 2.0
 
-        /** Drawn side length (viewport px) of a resize-handle square. */
-        const val HANDLE_SIZE = 16.0
+        /** Drawn side length (viewport px) of a resize-handle square. Also sizes the table edit
+         *  chrome (per-line handles and add/remove buttons), which derives from it. */
+        const val HANDLE_SIZE = 24.0
 
         /** Touch radius (viewport px) around a handle centre — larger than the drawn
          *  square so a fingertip can grab it without the squares obscuring content. */
-        const val HANDLE_HIT = 24.0
+        const val HANDLE_HIT = 36.0
 
         /** Gap (viewport px) from the selection's top edge up to the rotate grip. */
         const val ROTATE_ARM = 28.0

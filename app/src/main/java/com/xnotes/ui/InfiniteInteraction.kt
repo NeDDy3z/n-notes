@@ -106,7 +106,7 @@ class InfiniteInteraction(
 
     companion object {
         /** How near a handle a press has to land to grab it, in device pixels. */
-        const val HANDLE_TOUCH_PX = 22.0
+        const val HANDLE_TOUCH_PX = 33.0
 
         /** Least on-screen distance between lasso vertices, so a slow drag stays cheap. */
         const val LASSO_MIN_STEP_PX = 3.0
