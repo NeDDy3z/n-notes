@@ -136,10 +136,10 @@ enum class ImportKind {
     companion object {
         /** The document extensions the "Import file" action understands (for the picker + UI hint). */
         val IMPORT_EXTENSIONS = listOf("pdf", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg",
-            "txt", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+            "txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
 
         private val IMAGE_EXT = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic", "heif")
-        private val TEXT_EXT = setOf("txt", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+        private val TEXT_EXT = setOf("txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
 
         /** Classify a picked file by extension (then mime) into the importer that should handle it. */
         fun classify(name: String, mime: String?): ImportKind {
@@ -2732,21 +2732,29 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
     }
 
-    /** Imports [file] (txt/csv/rtf/html/docx/xlsx/epub) as a new `.xnote` whose flow text holds the
-     *  extracted content, laid out across as many pages as it needs. Returns its URI, or null. IO. */
+    /** Imports [file] (txt/csv/rtf/html/md/docx/xlsx/epub) as a new `.xnote` whose flow text holds the
+     *  content, laid out across as many pages as it needs. Markdown is parsed into rich text (headings,
+     *  bold/italic, lists, code); the other formats are extracted as plain paragraphs. Returns its URI. IO. */
     fun createTextNoteFile(treeUri: String, parentDocId: String, rawName: String, file: java.io.File, sourceName: String, mime: String): String? {
-        val paras = com.xnotes.platform.DocImport.extract(file, sourceName.ifEmpty { rawName }, mime)
+        val name = sourceName.ifEmpty { rawName }
+        val ext = name.substringAfterLast('.', "").lowercase()
+        val isMarkdown = ext == "md" || ext == "markdown" || mime == "text/markdown" || mime == "text/x-markdown"
         val doc = blankDocument()
         stampNewNoteDefaults(doc)
-        if (paras.isNotEmpty()) {
+        val paragraphs: List<com.xnotes.core.text.Paragraph> = if (isMarkdown) {
+            val text = runCatching { file.readText() }.getOrDefault("")
+            com.xnotes.core.text.MarkdownParser.parse(text, doc.flow.defaultSizePt)
+        } else {
+            com.xnotes.platform.DocImport.extract(file, name, mime)
+                .map { com.xnotes.core.text.Paragraph().apply { runs.add(com.xnotes.core.text.Run(it)) } }
+        }
+        if (paragraphs.isNotEmpty()) {
             doc.flow.paragraphs.clear()
-            for (p in paras) {
-                doc.flow.paragraphs.add(com.xnotes.core.text.Paragraph().apply { runs.add(com.xnotes.core.text.Run(p)) })
-            }
+            doc.flow.paragraphs.addAll(paragraphs)
             paginateFlow(doc)
         }
-        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
-        return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
+        val docName = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        return createNoteFile(treeUri, parentDocId, docName) { codec.write(doc, it) { importCancelled.get() } }
     }
 
     /** Append pages (sized like the last) until [doc]'s flow text stops overflowing past the real pages. */

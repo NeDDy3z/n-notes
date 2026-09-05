@@ -319,8 +319,9 @@ private fun EditorScreen(
         // images
         "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp",
         "image/svg+xml", "image/heic", "image/heif",
-        // plain text / csv / html / rtf
-        "text/plain", "text/csv", "text/comma-separated-values", "application/csv",
+        // plain text / markdown / csv / html / rtf
+        "text/plain", "text/markdown", "text/x-markdown",
+        "text/csv", "text/comma-separated-values", "application/csv",
         "text/html", "text/rtf", "application/rtf",
         // ebook / office
         "application/epub+zip",

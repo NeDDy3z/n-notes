@@ -577,7 +577,7 @@ private fun HomePane(
                                 Column {
                                     Text("Import file")
                                     Text(
-                                        "PDF/IMG/TXT/RTF/HTML/EPUB/DOCX/XLSX/CSV",
+                                        "PDF/IMG/TXT/MD/RTF/HTML/EPUB/DOCX/XLSX/CSV",
                                         color = palette.textDim.toComposeColor(),
                                         fontSize = 10.sp,
                                     )
