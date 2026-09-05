@@ -66,10 +66,19 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     private var single = false
-    private var surfaceW = 0
-    private var surfaceH = 0
     private var contextGen = 0
     private var traced = 0
+
+    /**
+     * The buffer's own size, read back from EGL rather than taken from the callback that asked for
+     * it, because those are the pixels a present addresses. Volatile: a stroke checks the view
+     * against it on the main thread before taking the pad.
+     */
+    @Volatile
+    private var surfaceW = 0
+
+    @Volatile
+    private var surfaceH = 0
 
     /**
      * Whether the pad is holding an opaque copy of what is under it, so hiding it shows nothing.
@@ -129,7 +138,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        post { resize(width, height) }
+        post { resize(holder, width, height) }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -157,6 +166,11 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         clip: com.xnotes.core.infinite.PixelRect? = null,
     ): Boolean {
         if (!ready) return false
+        // The buffer is the size it was made at, and a single buffered surface has no swap to pick
+        // a resized window up on. Until [resize] has rebuilt it, ink drawn through the view as it
+        // stands would land wherever the compositor stretched the layer, so this stroke takes the
+        // ordinary path and the next one gets the pad back.
+        if (width != surfaceW || height != surfaceH) return false
         if (!ink.begin(scrollX, scrollY, zoom, width, height, clip)) return false
         // Read here, on the main thread, because the delay the handover needs is one of these and
         // the pad's own thread has no display.
@@ -427,7 +441,18 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         // and only the refresh is switched.
         enterSingleBuffer()
         setAutoRefresh(false)
+        measureSurface()
         ready = single
+    }
+
+    /** What the buffer actually is, which is the frame every present and its y flip are in. */
+    private fun measureSurface() {
+        val w = IntArray(1)
+        val h = IntArray(1)
+        EGL14.eglQuerySurface(eglDisplay, eglSurface, EGL14.EGL_WIDTH, w, 0)
+        EGL14.eglQuerySurface(eglDisplay, eglSurface, EGL14.EGL_HEIGHT, h, 0)
+        surfaceW = w[0]
+        surfaceH = h[0]
     }
 
     /**
@@ -457,9 +482,26 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         return null
     }
 
-    private fun resize(w: Int, h: Int) {
-        surfaceW = w
-        surfaceH = h
+    /**
+     * Follow the window to its new size, by building the surface again.
+     *
+     * A single buffered surface never swaps, and a swap is where EGL would pick a resized window
+     * up, so the buffer keeps the size it was allocated at while the compositor stretches it into
+     * the layer's new frame. Ink drawn through the view as it stands would then land somewhere
+     * else on the glass: a wet stroke that follows the pen at an offset and snaps into place the
+     * moment the canvas takes it back. Nothing here is cheap and nothing here is frequent either,
+     * since a resize is a layout the whole window has already paid for.
+     */
+    private fun resize(holder: SurfaceHolder, w: Int, h: Int) {
+        if (w == surfaceW && h == surfaceH) return
+        // A pad that never came up will not come up for being asked twice.
+        if (!ready) return
+        // Every pixel goes with the surface, so nothing on it may be joined or handed over.
+        ink.forget()
+        destroyEgl()
+        createEgl(holder)
+        setLayerVisible(false)
+        Log.i(TAG, "wet pad surface rebuilt for ${w}x$h, got ${surfaceW}x$surfaceH")
     }
 
     /**
@@ -555,6 +597,8 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         eglSurface = EGL14.EGL_NO_SURFACE
         eglContext = EGL14.EGL_NO_CONTEXT
         eglDisplay = EGL14.EGL_NO_DISPLAY
+        surfaceW = 0
+        surfaceH = 0
         cover = null
         coverTex = 0
         covered = false
@@ -572,6 +616,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         get() = buildString {
             append(if (single) "single" else "back")
             append(if (frontBuffered) " live" else " idle")
+            if (surfaceW != width || surfaceH != height) append(" !${surfaceW}x$surfaceH")
             if (ink.lastDamage.isNotEmpty()) append(" d${ink.lastDamage}")
             append(" %.0f/s".format(rate))
         }
