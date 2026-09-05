@@ -218,76 +218,7 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(12.dp))
-            StyleCaption("PAGE COLOUR")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                ModeChip("Default", style.pageColor == null) { apply(style.copy(pageColor = null)) }
-                pageColorPresets.forEach { c ->
-                    ColorDot(c.toComposeColor(), style.pageColor == c) { apply(style.copy(pageColor = c)) }
-                }
-                ColorPickerDot(
-                    style.pageColor,
-                    custom = style.pageColor != null && style.pageColor !in pageColorPresets,
-                    onPick = { apply(style.copy(pageColor = it)) },
-                    dismissOnPick = false,
-                ) { d, p -> PageColorGridPopup(style.pageColor, d, p) }
-            }
-
-            Spacer(Modifier.size(12.dp))
-            StyleCaption("PATTERN")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ModeChip("Default", style.pattern == null) { apply(style.copy(pattern = null)) }
-                ModeChip("None", style.pattern == PagePattern.NONE) { apply(style.copy(pattern = PagePattern.NONE)) }
-                ModeChip("Lines", style.pattern == PagePattern.LINES) { apply(style.copy(pattern = PagePattern.LINES)) }
-                ModeChip("Dots", style.pattern == PagePattern.DOTS) { apply(style.copy(pattern = PagePattern.DOTS)) }
-                ModeChip("Grid", style.pattern == PagePattern.GRID) { apply(style.copy(pattern = PagePattern.GRID)) }
-            }
-
-            Spacer(Modifier.size(12.dp))
-            val spacing = style.spacing ?: PageStyle.DEFAULT_SPACING
-            StyleCaption("SPACING  ${spacing.toInt()} px" + if (style.spacing == null) "  (default)" else "")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip("Default", style.spacing == null) { apply(style.copy(spacing = null)) }
-                Slider(
-                    value = spacing.toFloat().coerceIn(PageStyle.MIN_SPACING.toFloat(), PageStyle.MAX_SPACING.toFloat()),
-                    onValueChange = { apply(style.copy(spacing = it.toDouble())) },
-                    valueRange = PageStyle.MIN_SPACING.toFloat()..PageStyle.MAX_SPACING.toFloat(),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Spacer(Modifier.size(12.dp))
-            // Effective pattern colour: the page's own, else (on the Current Page tab) the document's,
-            // else the built-in grey. Its alpha is the opacity the slider below edits.
-            val effPatternColor = style.patternColor
-                ?: (if (tab == 1) docStyle.patternColor else null)
-                ?: PageStyle.DEFAULT_PATTERN_COLOR
-            StyleCaption("PATTERN COLOUR")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("Default", style.patternColor == null) { apply(style.copy(patternColor = null)) }
-                ColorPickerDot(
-                    style.patternColor?.copy(a = 255), // show the hue at full strength; OPACITY sets the alpha
-                    custom = style.patternColor != null,
-                    onPick = { apply(style.copy(patternColor = it.copy(a = effPatternColor.a))) }, // keep current opacity
-                    dismissOnPick = false,
-                ) { d, p -> PageColorGridPopup(style.patternColor?.copy(a = 255), d, p) }
-            }
-
-            Spacer(Modifier.size(12.dp))
-            val opacityPct = effPatternColor.a * 100f / 255f
-            StyleCaption("OPACITY  ${opacityPct.roundToInt()}%")
-            Slider(
-                value = opacityPct,
-                onValueChange = { pct ->
-                    apply(style.copy(patternColor = effPatternColor.copy(a = (pct / 100f * 255f).roundToInt().coerceIn(0, 255))))
-                },
-                valueRange = 0f..100f,
-            )
+            PageStyleControls(style, inheritFrom = if (tab == 1) docStyle else null) { apply(it) }
 
             if (tab == 0) {
                 Spacer(Modifier.size(8.dp))
@@ -315,6 +246,84 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * The page-style editing controls shared by [StylesPopup] and the new-note dialog: page colour,
+ * pattern, spacing, pattern colour and its opacity. Each edit produces a new [PageStyle] via
+ * [onChange]. [inheritFrom] supplies the pattern-colour fallback when this style leaves it Default
+ * (the Styles popup's Current Page tab inherits the document's); pass null when there is no fallback.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun PageStyleControls(style: PageStyle, inheritFrom: PageStyle?, onChange: (PageStyle) -> Unit) {
+    StyleCaption("PAGE COLOUR")
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ModeChip("Default", style.pageColor == null) { onChange(style.copy(pageColor = null)) }
+        pageColorPresets.forEach { c ->
+            ColorDot(c.toComposeColor(), style.pageColor == c) { onChange(style.copy(pageColor = c)) }
+        }
+        ColorPickerDot(
+            style.pageColor,
+            custom = style.pageColor != null && style.pageColor !in pageColorPresets,
+            onPick = { onChange(style.copy(pageColor = it)) },
+            dismissOnPick = false,
+        ) { d, p -> PageColorGridPopup(style.pageColor, d, p) }
+    }
+
+    Spacer(Modifier.size(12.dp))
+    StyleCaption("PATTERN")
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ModeChip("Default", style.pattern == null) { onChange(style.copy(pattern = null)) }
+        ModeChip("None", style.pattern == PagePattern.NONE) { onChange(style.copy(pattern = PagePattern.NONE)) }
+        ModeChip("Lines", style.pattern == PagePattern.LINES) { onChange(style.copy(pattern = PagePattern.LINES)) }
+        ModeChip("Dots", style.pattern == PagePattern.DOTS) { onChange(style.copy(pattern = PagePattern.DOTS)) }
+        ModeChip("Grid", style.pattern == PagePattern.GRID) { onChange(style.copy(pattern = PagePattern.GRID)) }
+    }
+
+    Spacer(Modifier.size(12.dp))
+    val spacing = style.spacing ?: PageStyle.DEFAULT_SPACING
+    StyleCaption("SPACING  ${spacing.toInt()} px" + if (style.spacing == null) "  (default)" else "")
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ModeChip("Default", style.spacing == null) { onChange(style.copy(spacing = null)) }
+        Slider(
+            value = spacing.toFloat().coerceIn(PageStyle.MIN_SPACING.toFloat(), PageStyle.MAX_SPACING.toFloat()),
+            onValueChange = { onChange(style.copy(spacing = it.toDouble())) },
+            valueRange = PageStyle.MIN_SPACING.toFloat()..PageStyle.MAX_SPACING.toFloat(),
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    Spacer(Modifier.size(12.dp))
+    // Effective pattern colour: this style's own, else the inherited fallback, else the built-in grey.
+    val effPatternColor = style.patternColor ?: inheritFrom?.patternColor ?: PageStyle.DEFAULT_PATTERN_COLOR
+    StyleCaption("PATTERN COLOUR")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ModeChip("Default", style.patternColor == null) { onChange(style.copy(patternColor = null)) }
+        ColorPickerDot(
+            style.patternColor?.copy(a = 255), // show the hue at full strength; OPACITY sets the alpha
+            custom = style.patternColor != null,
+            onPick = { onChange(style.copy(patternColor = it.copy(a = effPatternColor.a))) }, // keep current opacity
+            dismissOnPick = false,
+        ) { d, p -> PageColorGridPopup(style.patternColor?.copy(a = 255), d, p) }
+    }
+
+    Spacer(Modifier.size(12.dp))
+    val opacityPct = effPatternColor.a * 100f / 255f
+    StyleCaption("OPACITY  ${opacityPct.roundToInt()}%")
+    Slider(
+        value = opacityPct,
+        onValueChange = { pct ->
+            onChange(style.copy(patternColor = effPatternColor.copy(a = (pct / 100f * 255f).roundToInt().coerceIn(0, 255))))
+        },
+        valueRange = 0f..100f,
+    )
 }
 
 /**

@@ -1561,30 +1561,19 @@ private fun NewNoteDialog(
 ) {
     val palette = LocalPalette.current
     var text by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length))) }
-    val def = editor.newNoteStyle
-    var pattern by remember { mutableStateOf(def.pattern ?: com.xnotes.core.model.PagePattern.NONE) }
-    var color by remember { mutableStateOf(def.pageColor) } // null = the theme's default paper
+    var style by remember { mutableStateOf(editor.newNoteStyle) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    val confirm = { onConfirm(text.text.trim(), def.copy(pattern = pattern, pageColor = color)) }
-
-    val templates = listOf(
-        com.xnotes.core.model.PagePattern.NONE to "Blank",
-        com.xnotes.core.model.PagePattern.LINES to "Lines",
-        com.xnotes.core.model.PagePattern.DOTS to "Dots",
-        com.xnotes.core.model.PagePattern.GRID to "Grid",
-    )
-    val papers: List<Pair<Rgba?, String>> = listOf(
-        null to "Default", Rgba(255, 255, 255) to "White", Rgba(251, 243, 219) to "Cream",
-        Rgba(255, 249, 196) to "Yellow", Rgba(232, 245, 233) to "Green", Rgba(227, 242, 253) to "Blue",
-        Rgba(252, 228, 236) to "Pink", Rgba(236, 239, 241) to "Grey",
-    )
+    val confirm = { onConfirm(text.text.trim(), style) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New note") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -1604,59 +1593,13 @@ private fun NewNoteDialog(
                             }
                         },
                 )
-                Text("Template", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    templates.forEach { (p, label) -> NewNoteChip(label, pattern == p) { pattern = p } }
-                }
-                Text("Paper colour", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    papers.forEach { (c, desc) ->
-                        NewNoteSwatch((c ?: palette.paper).toComposeColor(), color == c, desc) { color = c }
-                    }
-                }
+                // The same page-style controls as the toolbar Styles popup, preset from the new-note default.
+                PageStyleControls(style, inheritFrom = null) { style = it }
             }
         },
         confirmButton = { TextButton(onClick = { confirm() }) { Text("Create") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         containerColor = palette.menuBg.toComposeColor(),
-    )
-}
-
-@Composable
-private fun NewNoteChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val palette = LocalPalette.current
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (selected) palette.accent.toComposeColor().copy(alpha = 0.16f) else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        Text(label, color = palette.text.toComposeColor(), fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun NewNoteSwatch(color: Color, selected: Boolean, desc: String, onClick: () -> Unit) {
-    val palette = LocalPalette.current
-    Box(
-        Modifier
-            .size(32.dp)
-            .clip(CircleShape)
-            .background(color)
-            .border(
-                if (selected) 2.dp else 1.dp,
-                if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(),
-                CircleShape,
-            )
-            .clickable(onClick = onClick),
     )
 }
 
