@@ -524,6 +524,7 @@ fun PreferencesPane(
                     sectionDropTarget = null
                 },
             )
+            HorizontalDivider(color = palette.border.toComposeColor())
             FilenSyncSection(editor)
             Spacer(Modifier.size(8.dp))
         }
