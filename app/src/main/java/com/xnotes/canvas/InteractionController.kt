@@ -135,6 +135,8 @@ class InteractionController(
     private val onAddPageAtEnd: () -> Unit = {},
     /** A short haptic tick (e.g. the overscroll pull crossed the add-page threshold). */
     private val onHaptic: () -> Unit = {},
+    /** Table edit mode turned on/off (so the host can mirror it into a Compose state for the menu). */
+    private val onTableEditingChanged: (Boolean) -> Unit = {},
 ) {
     /** Whether the system clipboard currently holds an image (provided by the host). */
     var clipboardHasImage: () -> Boolean = { false }
@@ -1364,8 +1366,11 @@ class InteractionController(
     }
 
     private fun beginSelect(content: Pt) {
+        if (isTableEditing()) {
+            if (beginTableEdit(content)) return
+            setTableEditing(false) // tapped outside the table: leave edit mode, then select normally
+        }
         if (tryGrabSelectionHandle(content)) return
-        if (tryGrabTableLine(content)) return
         // Inside the settled selection the press moves it, whatever it landed on. Hit-testing
         // first would re-pick the stroke under the finger, and you meant to drag what is
         // selected, not to select what happens to sit inside it.
@@ -1646,6 +1651,74 @@ class InteractionController(
         mode = PointerMode.IDLE
         refreshSelectionMenu()
         requestRender()
+    }
+
+    /** Page-local geometry of the table edit chrome: per-line handle squares and the four
+     *  add/remove buttons (columns above the top edge, rows past the right edge). */
+    class TableChrome(
+        val colSeps: List<Rect>,
+        val rowSeps: List<Rect>,
+        val colMinus: Rect, val colPlus: Rect,
+        val rowMinus: Rect, val rowPlus: Rect,
+    )
+
+    private fun tableChrome(t: TableItem): TableChrome {
+        val side = HANDLE_SIZE / state.zoom
+        val bs = HANDLE_SIZE * 1.2 / state.zoom
+        val arm = HANDLE_SIZE * 1.7 / state.zoom
+        val gap = bs * 0.75
+        fun sq(cx: Double, cy: Double, s: Double) = Rect(cx - s / 2, cy - s / 2, s, s)
+        val cx = t.rect.centerX
+        val cy = t.rect.centerY
+        return TableChrome(
+            colSeps = (1 until t.cols).map { sq(t.colX(it), t.rect.top, side) },
+            rowSeps = (1 until t.rows).map { sq(t.rect.right, t.rowY(it), side) },
+            colMinus = sq(cx - gap, t.rect.top - arm, bs), colPlus = sq(cx + gap, t.rect.top - arm, bs),
+            rowPlus = sq(t.rect.right + arm, cy - gap, bs), rowMinus = sq(t.rect.right + arm, cy + gap, bs),
+        )
+    }
+
+    /** Handle a press in table edit mode: an add/remove button, an interior line drag, or a move.
+     *  Returns false when the press is outside the table and its chrome (so the caller can exit). */
+    private fun beginTableEdit(content: Pt): Boolean {
+        val sel = selection.singleOrNull() ?: return false
+        val t = sel.item as? TableItem ?: return false
+        if (state.pageRects.getOrNull(sel.pageIndex) == null) return false
+        val local = state.toPageSpace(sel.pageIndex, content)
+        val chrome = tableChrome(t)
+        when {
+            chrome.colPlus.contains(local) -> { editSelectedTable { it.addColumn() }; return true }
+            chrome.colMinus.contains(local) -> { editSelectedTable { it.removeColumn() }; return true }
+            chrome.rowPlus.contains(local) -> { editSelectedTable { it.addRow() }; return true }
+            chrome.rowMinus.contains(local) -> { editSelectedTable { it.removeRow() }; return true }
+        }
+        if (tryGrabTableLine(content)) return true
+        if (t.rect.contains(local)) { beginMove(content); return true }
+        return false
+    }
+
+    /** Draw the table edit chrome (content space): per-line handle squares and the +/- buttons. */
+    private fun drawTableEditChrome(r: Renderer) {
+        val t = singleSelectedTable() ?: return
+        val pi = selection.firstOrNull()?.pageIndex ?: return
+        if (state.pageRects.getOrNull(pi) == null) return
+        val chrome = tableChrome(t)
+        val sel = com.xnotes.core.model.Rgba.SELECTION
+        val white = Rgba(255, 255, 255, 255)
+        fun square(localRect: Rect, color: Rgba) = r.fillRect(state.fromPageSpaceRect(pi, localRect), color)
+        fun glyph(localRect: Rect, plus: Boolean) {
+            val c = state.fromPageSpaceRect(pi, localRect)
+            val pad = c.w * 0.28
+            val pen = Pen(white, 1.6, cosmetic = true)
+            r.strokePolyline(listOf(Pt(c.left + pad, c.centerY), Pt(c.right - pad, c.centerY)), pen)
+            if (plus) r.strokePolyline(listOf(Pt(c.centerX, c.top + pad), Pt(c.centerX, c.bottom - pad)), pen)
+        }
+        chrome.colSeps.forEach { square(it, sel) }
+        chrome.rowSeps.forEach { square(it, sel) }
+        square(chrome.colPlus, sel); glyph(chrome.colPlus, true)
+        square(chrome.colMinus, sel); glyph(chrome.colMinus, false)
+        square(chrome.rowPlus, sel); glyph(chrome.rowPlus, true)
+        square(chrome.rowMinus, sel); glyph(chrome.rowMinus, false)
     }
 
     // --- TRANSFORM (generic resize + rotate) ---
@@ -2120,6 +2193,7 @@ class InteractionController(
         val touched = selection + items
         selection.clear()
         selection.addAll(items)
+        setTableEditing(false) // a new selection always starts out of table edit mode
         // A fresh selection starts upright: its box is the items' AABB, angle 0.
         selObb = selectionBoundsContent()?.let { Obb.fromAabb(it) }
         repairRegions(dirtyRegions(touched))
@@ -2132,6 +2206,25 @@ class InteractionController(
 
     /** The single selected table, or null. */
     fun singleSelectedTable(): TableItem? = selection.singleOrNull()?.item as? TableItem
+
+    private var tableEditing = false
+
+    /** In table edit mode: the resize box is replaced by add/remove buttons and per-line handles. */
+    fun isTableEditing(): Boolean = tableEditing && singleSelectedTable() != null
+
+    private fun setTableEditing(on: Boolean) {
+        if (tableEditing == on) return
+        tableEditing = on
+        onTableEditingChanged(on)
+    }
+
+    /** Toggle table edit mode for the selected table (no-op if the selection isn't a single table). */
+    fun toggleTableEditMode() {
+        if (singleSelectedTable() == null) return
+        setTableEditing(!tableEditing)
+        refreshSelectionMenu()
+        requestRender()
+    }
 
     /** Apply [mutate] to the single selected table as one undoable edit (add/remove line, etc.). */
     fun editSelectedTable(mutate: (TableItem) -> Unit) {
@@ -2156,6 +2249,7 @@ class InteractionController(
             onToolChanged(tool)
         }
         onSelectionMenu(null)
+        setTableEditing(false)
         selObb = null
         if (selection.isEmpty()) return
         val regions = dirtyRegions(selection) // where the now-unlifted items sit (before clearing)
@@ -2969,6 +3063,10 @@ class InteractionController(
                     }
             }
 
+            // Table edit mode: the resize box is replaced by add/remove buttons and per-line handles.
+            if (isTableEditing() && mode != PointerMode.BAND && mode != PointerMode.LASSO_DRAW) {
+                drawTableEditChrome(r)
+            } else
             // Resize + rotate handles for the settled selection (single, multi, or mixed).
             if (selection.isNotEmpty() && mode != PointerMode.BAND && mode != PointerMode.LASSO_DRAW) {
                 val side = HANDLE_SIZE / state.zoom

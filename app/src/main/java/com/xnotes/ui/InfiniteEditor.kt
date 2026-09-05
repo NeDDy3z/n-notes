@@ -469,6 +469,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         publishOverlay()
     }
 
+    // Tables are a paged-note feature; the infinite canvas has none.
+    override val selectionIsTable: Boolean get() = false
+    override val tableEditing: Boolean get() = false
+    override fun toggleTableEditMode() {}
+
     override fun unlockItem(item: CanvasItem) {
         if (!item.locked) return
         item.locked = false

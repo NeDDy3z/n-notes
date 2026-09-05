@@ -474,6 +474,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override val selectionMenuRect: com.xnotes.core.geometry.Rect? get() = selectionMenu
 
+    /** Compose mirror of the controller's table edit mode, so the selection menu's toggle updates. */
+    var tableEditMode by mutableStateOf(false)
+        private set
+
+    override val selectionIsTable: Boolean get() = controller.singleSelectedTable() != null
+    override val tableEditing: Boolean get() = tableEditMode
+    override fun toggleTableEditMode() = controller.toggleTableEditMode()
+
     /** Viewport rect to anchor the screenshot tool's "copy as image" menu, or null when hidden. */
     var screenshotMenu by mutableStateOf<com.xnotes.core.geometry.Rect?>(null)
         private set
@@ -740,6 +748,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onContextMenu = { vp, content, locked -> contextMenu = ContextMenuTarget(vp.x, vp.y, content, locked) },
         onAddPageAtEnd = { addPageAtEnd() },
         onHaptic = { runCatching { view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } },
+        onTableEditingChanged = { on -> tableEditMode = on },
     )
 
     val flowText: FlowTextController = FlowTextController(

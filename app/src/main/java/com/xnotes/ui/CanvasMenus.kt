@@ -60,6 +60,15 @@ interface SelectionMenuHost {
     /** Pin the selection where it is and put it away; a held finger over it offers to release it. */
     fun lockSelection()
 
+    /** True when the selection is a single table (shows the table edit toggle in the menu). */
+    val selectionIsTable: Boolean
+
+    /** Whether table edit mode is currently on. */
+    val tableEditing: Boolean
+
+    /** Toggle the table edit overlay (add/remove columns and rows, drag interior lines). */
+    fun toggleTableEditMode()
+
     /** The colour and width of every selected stroke/shape, for the restyle popup to open on. */
     fun selectionStyles(): List<DrawStyle>
 
@@ -114,6 +123,9 @@ fun SelectionMenu(host: SelectionMenuHost) {
         ActionIcon(XnotesIcons.copy, "Copy") { host.copySelection(); host.dismissSelectionMenu() }
         ActionIcon(XnotesIcons.front, "Bring to front") { host.bringToFront(); host.dismissSelectionMenu() }
         ActionIcon(XnotesIcons.duplicate, "Duplicate") { host.duplicateSelection() }
+        if (host.selectionIsTable) {
+            ActionIcon(XnotesIcons.table, "Edit table", active = host.tableEditing) { host.toggleTableEditMode() }
+        }
         Box {
             ActionIcon(XnotesIcons.more, "More") { overflowOpen = true }
             DropdownMenu(
@@ -253,9 +265,13 @@ fun ScreenshotMenu(editor: Editor) {
 }
 
 @Composable
-private fun ActionIcon(icon: ImageVector, desc: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun ActionIcon(icon: ImageVector, desc: String, enabled: Boolean = true, active: Boolean = false, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val tint = palette.text.toComposeColor().let { if (enabled) it else it.copy(alpha = 0.35f) }
+    val tint = when {
+        !enabled -> palette.text.toComposeColor().copy(alpha = 0.35f)
+        active -> palette.accent.toComposeColor()
+        else -> palette.text.toComposeColor()
+    }
     IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(46.dp)) {
         Icon(icon, contentDescription = desc, tint = tint, modifier = Modifier.size(22.dp))
     }
