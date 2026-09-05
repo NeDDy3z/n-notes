@@ -189,6 +189,7 @@ private fun ToolbarItemView(
             ToolbarIcon(XnotesIcons.ruler, "Ruler", active = editor.rulerVisible) { editor.toggleRuler() }
 
         ToolbarItem.IMAGE -> ImageMenu(editor, onInsertImage, onAddStickers)
+        ToolbarItem.TABLE -> TableMenu(editor)
 
         ToolbarItem.UNDO -> ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
         ToolbarItem.REDO -> ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
@@ -430,6 +431,68 @@ private fun ImageMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: 
         }
         if (stickersOpen) StickersMenu(editor, onAddStickers) { stickersOpen = false }
     }
+}
+
+/**
+ * The table button: opens a small popup with Columns/Rows steppers. With no table selected the
+ * steppers set the size of the next table and an "Insert table" action drops one on the page; with a
+ * table selected the steppers add/remove that table's columns and rows directly.
+ */
+@Composable
+private fun TableMenu(editor: Editor) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        ToolbarIcon(XnotesIcons.table, "Table") { expanded = true }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            val selected = editor.selectedTable()
+            var cols by remember(expanded, selected) { mutableStateOf(selected?.cols ?: editor.tableToolCols) }
+            var rows by remember(expanded, selected) { mutableStateOf(selected?.rows ?: editor.tableToolRows) }
+            TableStepRow("Columns", cols) {
+                cols = it
+                if (selected != null) editor.setSelectedTableColumns(it) else editor.tableToolCols = it
+            }
+            TableStepRow("Rows", rows) {
+                rows = it
+                if (selected != null) editor.setSelectedTableRows(it) else editor.tableToolRows = it
+            }
+            if (selected == null) {
+                DropdownMenuItem(text = { Text("Insert table") }, onClick = { editor.insertTable(); expanded = false })
+            }
+        }
+    }
+}
+
+private const val TABLE_MIN = 1
+private const val TABLE_MAX = 20
+
+@Composable
+private fun TableStepRow(label: String, value: Int, onChange: (Int) -> Unit) {
+    val palette = LocalPalette.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(72.dp))
+        TableStepBox("−") { onChange((value - 1).coerceAtLeast(TABLE_MIN)) }
+        Text(
+            "$value",
+            color = palette.text.toComposeColor(),
+            fontSize = 14.sp,
+            fontFamily = FontFamily.Monospace,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.width(36.dp),
+        )
+        TableStepBox("+") { onChange((value + 1).coerceAtMost(TABLE_MAX)) }
+    }
+}
+
+@Composable
+private fun TableStepBox(label: String, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier.size(32.dp).clip(RoundedCornerShape(5.dp)).background(palette.surface.toComposeColor()).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = palette.text.toComposeColor(), fontSize = 16.sp) }
 }
 
 /**

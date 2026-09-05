@@ -30,6 +30,7 @@ enum class ToolbarItem(val id: String, val label: String) {
     TEXT("text", "Text"),
     TEXT_BOX("text_box", "Text box"),
     IMAGE("image", "Image"),
+    TABLE("table", "Table"),
     UNDO("undo", "Undo"),
     REDO("redo", "Redo"),
     PAGE_NAV("page_nav", "Page nav"),
@@ -149,6 +150,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.VIEW to ToolbarItem.STYLES,
             ToolbarItem.MARGINS to ToolbarItem.STYLES,
             ToolbarItem.WAND to ToolbarItem.LASSO,
+            ToolbarItem.TABLE to ToolbarItem.IMAGE,
         )
 
         /**
@@ -182,7 +184,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ),
             listOf(ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.SCREENSHOT),
             listOf(ToolbarItem.WAND, ToolbarItem.SHAPE, ToolbarItem.RULER, ToolbarItem.TEXT, ToolbarItem.TEXT_BOX),
-            listOf(ToolbarItem.IMAGE),
+            listOf(ToolbarItem.IMAGE, ToolbarItem.TABLE),
             listOf(ToolbarItem.COLORS),
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
             listOf(ToolbarItem.PAGE_NAV, ToolbarItem.STYLES, ToolbarItem.MARGINS, ToolbarItem.VIEW),

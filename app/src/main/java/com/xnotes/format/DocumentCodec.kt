@@ -15,6 +15,7 @@ import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
+import com.xnotes.core.model.TableItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.pal.FontFace
@@ -259,6 +260,7 @@ class DocumentCodec(
                 }
                 is TextItem -> writeText(j, item)
                 is ShapeItem -> writeShape(j, item)
+                is TableItem -> writeTable(j, item)
                 else -> {} // unrecognized kind: not written
             }
         }
@@ -383,6 +385,19 @@ class DocumentCodec(
             j.name("dash_gap").value(s.dashGap)
         }
         if (s.locked) j.name("locked").value(true)
+        j.endObject()
+    }
+
+    private fun writeTable(j: JsonWrite, t: TableItem) {
+        j.beginObject()
+        j.name("kind").value(TableItem.KIND)
+        j.name("rect").beginArray().value(t.rect.x).value(t.rect.y).value(t.rect.w).value(t.rect.h).endArray()
+        j.name("cols").beginArray(); t.colFractions.forEach { j.value(it) }; j.endArray()
+        j.name("rows").beginArray(); t.rowFractions.forEach { j.value(it) }; j.endArray()
+        j.name("stroke_rgba")
+        writeRgba(j, t.strokeRgba)
+        j.name("stroke_width").value(t.strokeWidth)
+        if (t.locked) j.name("locked").value(true)
         j.endObject()
     }
 
@@ -690,6 +705,8 @@ class DocumentCodec(
         var dashed = false
         var dashLength = 10.0
         var dashGap = 8.0
+        var tableCols: List<Double>? = null
+        var tableRows: List<Double>? = null
     }
 
     /** Stroke config fields as written; null = absent, so defaults resolve exactly as before. */
@@ -749,6 +766,8 @@ class DocumentCodec(
                 "dashed" -> s.dashed = boolOr(p, false)
                 "dash_length" -> s.dashLength = doubleOr(p, 10.0)
                 "dash_gap" -> s.dashGap = doubleOr(p, 8.0)
+                "cols" -> s.tableCols = doubleListOrNull(p)
+                "rows" -> s.tableRows = doubleListOrNull(p)
                 "locked" -> s.locked = boolOr(p, false)
                 else -> p.skipValue()
             }
@@ -781,6 +800,7 @@ class DocumentCodec(
                 ),
             )
             ShapeItem.KIND -> items.add(buildShape(s))
+            TableItem.KIND -> buildTable(s)?.let { items.add(it) }
             else -> {} // unrecognized kind: skipped (forgiving)
         }
         // Absent on every note written before locking existed, which reads back as unlocked.
@@ -837,6 +857,13 @@ class DocumentCodec(
             dashLength = s.dashLength,
             dashGap = s.dashGap,
         )
+    }
+
+    private fun buildTable(s: ItemScratch): TableItem? {
+        val rect = s.rect ?: return null
+        val cols = s.tableCols?.takeIf { it.isNotEmpty() } ?: return null
+        val rows = s.tableRows?.takeIf { it.isNotEmpty() } ?: return null
+        return TableItem(rect, cols, rows, s.strokeRgba ?: Rgba(0, 0, 0, 255), s.strokeWidth)
     }
 
     private fun parseConfig(p: JsonPull): ConfigScratch? {
@@ -1069,6 +1096,18 @@ class DocumentCodec(
         while (p.hasNext()) ptOrNull(p)?.let { out.add(it) }
         p.endArray()
         return if (out.size >= 2) out else null
+    }
+
+    private fun doubleListOrNull(p: JsonPull): List<Double>? {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return null
+        }
+        val out = ArrayList<Double>()
+        p.beginArray()
+        while (p.hasNext()) doubleOrNull(p)?.let { out.add(it) }
+        p.endArray()
+        return out.ifEmpty { null }
     }
 
     companion object {

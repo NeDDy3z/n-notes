@@ -36,6 +36,7 @@ import com.xnotes.core.model.Page
 import com.xnotes.core.model.RectHandle
 import com.xnotes.core.model.Resizable
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.TableItem
 import com.xnotes.core.model.ShapeHandle
 import com.xnotes.core.model.GeometrySnapshot
 import com.xnotes.core.model.ShapeItem
@@ -71,7 +72,7 @@ import kotlin.math.sin
 /** The pointer state machine modes (spec 06 §1). */
 enum class PointerMode {
     IDLE, DRAW, ERASE, BAND, LASSO_DRAW, SHOT, SHAPE, MOVE, RESIZE, TRANSFORM, PAN, PINCH, FLOW_TEXT,
-    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE,
+    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, TABLE_LINE,
 }
 
 /**
@@ -329,6 +330,13 @@ class InteractionController(
     private var resizeHandle: HandleId? = null
     private var resizeOldGeom: GeoHandle? = null
     private var resizePageIndex: Int = -1
+
+    // TABLE_LINE (dragging an interior row/column boundary of the selected table)
+    private var tableLineItem: TableItem? = null
+    private var tableLineBefore: GeometrySnapshot? = null
+    private var tableLineIsColumn = false
+    private var tableLineIndex = -1
+    private var tableLinePageIndex = -1
 
     // GENERIC TRANSFORM (resize + rotate for any single non-line / multi / mixed selection)
     private var selObb: Obb? = null // the tilting selection box; null when nothing is selected
@@ -692,6 +700,7 @@ class InteractionController(
             PointerMode.SHOT -> extendScreenshot(content)
             PointerMode.MOVE -> extendMove(content)
             PointerMode.RESIZE -> extendResize(content)
+            PointerMode.TABLE_LINE -> extendTableLine(content)
             PointerMode.TRANSFORM -> extendTransform(content)
             PointerMode.SHAPE -> extendShape(content)
             PointerMode.FLOW_TEXT ->
@@ -761,6 +770,7 @@ class InteractionController(
             PointerMode.SHOT -> endScreenshot()
             PointerMode.MOVE -> endMove(content)
             PointerMode.RESIZE -> endResize()
+            PointerMode.TABLE_LINE -> endTableLine()
             PointerMode.TRANSFORM -> endTransform()
             PointerMode.SHAPE -> endShape()
             PointerMode.FLOW_TEXT -> {
@@ -1355,6 +1365,7 @@ class InteractionController(
 
     private fun beginSelect(content: Pt) {
         if (tryGrabSelectionHandle(content)) return
+        if (tryGrabTableLine(content)) return
         // Inside the settled selection the press moves it, whatever it landed on. Hit-testing
         // first would re-pick the stroke under the finger, and you meant to drag what is
         // selected, not to select what happens to sit inside it.
@@ -1586,6 +1597,55 @@ class InteractionController(
         refreshSelectionMenu()
         requestRender()
         if (changed) maybeSwitchBackAfterSelect()
+    }
+
+    // --- TABLE_LINE (drag an interior row/column boundary of the selected table) ---
+
+    /** If [content] grabs an interior grid line of the single selected table, start dragging it. */
+    private fun tryGrabTableLine(content: Pt): Boolean {
+        val sel = selection.singleOrNull() ?: return false
+        val t = sel.item as? TableItem ?: return false
+        if (state.pageRects.getOrNull(sel.pageIndex) == null) return false
+        val local = state.toPageSpace(sel.pageIndex, content)
+        val tol = HANDLE_HIT / state.zoom
+        val col = t.columnLineNear(local, tol)
+        val row = t.rowLineNear(local, tol)
+        if (col < 0 && row < 0) return false
+        tableLineItem = t
+        tableLinePageIndex = sel.pageIndex
+        tableLineBefore = t.snapshotGeometry()
+        // When a press is near both a column and a row line, take the nearer one.
+        if (col >= 0 && (row < 0 || abs(local.x - t.colX(col)) <= abs(local.y - t.rowY(row)))) {
+            tableLineIsColumn = true; tableLineIndex = col
+        } else {
+            tableLineIsColumn = false; tableLineIndex = row
+        }
+        mode = PointerMode.TABLE_LINE
+        onSelectionMenu(null)
+        return true
+    }
+
+    private fun extendTableLine(content: Pt) {
+        val t = tableLineItem ?: return
+        if (state.pageRects.getOrNull(tableLinePageIndex) == null) return
+        val local = state.toPageSpace(tableLinePageIndex, content)
+        if (tableLineIsColumn) t.moveColumnLine(tableLineIndex, local.x) else t.moveRowLine(tableLineIndex, local.y)
+        requestRender()
+    }
+
+    private fun endTableLine() {
+        val t = tableLineItem
+        val before = tableLineBefore
+        if (t != null && before != null && t.snapshotGeometry() != before) {
+            history.push(TransformItems(listOf(t), listOf(before), listOf(t.snapshotGeometry())))
+            state.document.dirty = true
+            onContentChanged()
+        }
+        tableLineItem = null
+        tableLineBefore = null
+        mode = PointerMode.IDLE
+        refreshSelectionMenu()
+        requestRender()
     }
 
     // --- TRANSFORM (generic resize + rotate) ---
@@ -2064,6 +2124,27 @@ class InteractionController(
         selObb = selectionBoundsContent()?.let { Obb.fromAabb(it) }
         repairRegions(dirtyRegions(touched))
         onSelectionChanged(selection.isNotEmpty())
+        requestRender()
+    }
+
+    /** Select just [item] on [pageIndex] (used right after inserting a table). */
+    fun selectSingle(pageIndex: Int, item: CanvasItem) = setSelection(listOf(Selected(pageIndex, item)))
+
+    /** The single selected table, or null. */
+    fun singleSelectedTable(): TableItem? = selection.singleOrNull()?.item as? TableItem
+
+    /** Apply [mutate] to the single selected table as one undoable edit (add/remove line, etc.). */
+    fun editSelectedTable(mutate: (TableItem) -> Unit) {
+        val t = singleSelectedTable() ?: return
+        val before = t.snapshotGeometry()
+        mutate(t)
+        val after = t.snapshotGeometry()
+        if (after == before) return
+        history.push(TransformItems(listOf(t), listOf(before), listOf(after)))
+        state.document.dirty = true
+        selObb = selectionBoundsContent()?.let { Obb.fromAabb(it) }
+        onContentChanged()
+        refreshSelectionMenu()
         requestRender()
     }
 

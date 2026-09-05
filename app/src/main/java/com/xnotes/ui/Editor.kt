@@ -1417,6 +1417,39 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         view.requestRender()
     }
 
+    // --- table tool ---
+
+    /** Default column/row counts for a newly inserted table (also the stepper values when none is
+     *  selected). Not persisted across launches. */
+    var tableToolCols by mutableStateOf(3)
+    var tableToolRows by mutableStateOf(3)
+
+    /** Insert a table centred on the current page (60% × 40% of the page) and select it. */
+    fun insertTable() {
+        val pages = state.document.pages
+        if (pages.isEmpty()) return
+        val pi = state.currentPageIndex().coerceIn(0, pages.lastIndex)
+        val page = pages[pi]
+        val w = page.width * 0.6
+        val h = page.height * 0.4
+        val rect = Rect((page.width - w) / 2.0, (page.height - h) / 2.0, w, h)
+        val color = toolbarColors.getOrElse(activeColorIndex) { toolbarColors.first() }
+        val table = com.xnotes.core.model.TableItem.create(rect, tableToolCols, tableToolRows, color, 2.0)
+        page.items.add(table)
+        state.appendToCache(page, table)
+        history.push(AddItem(page, table))
+        state.document.dirty = true
+        refreshContent()
+        controller.selectSingle(pi, table)
+        view.requestRender()
+    }
+
+    /** The single selected table, or null (drives the table menu's edit-vs-insert mode). */
+    fun selectedTable(): com.xnotes.core.model.TableItem? = controller.singleSelectedTable()
+
+    fun setSelectedTableColumns(n: Int) = controller.editSelectedTable { it.setColumns(n) }
+    fun setSelectedTableRows(n: Int) = controller.editSelectedTable { it.setRows(n) }
+
     /** Save an encoded image into the on-disk sticker library (validated by a probe decode). */
     fun addSticker(bytes: ByteArray) {
         val file = runCatching {
