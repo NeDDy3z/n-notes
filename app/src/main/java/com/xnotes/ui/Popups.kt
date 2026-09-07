@@ -86,6 +86,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
     var intensity by remember { mutableStateOf(ToolConversions.highlighterAlphaToIntensity(base.highlighterAlpha).toFloat()) }
     var inverse by remember { mutableStateOf(base.highlighterInverse) }
     var colorOverride by remember { mutableStateOf(base.colorOverride) }
+    var snapShapes by remember { mutableStateOf(editor.snapHeldToShapes) }
 
     fun emit() {
         val m = ToolConversions.sensitivityToMinFactor(sensitivity.toDouble())
@@ -156,6 +157,10 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
             SliderRow("WIDTH", width, range.start.toFloat()..range.endInclusive.toFloat()) { width = it; emit() }
             // SCALE off: ink keeps a constant on-screen thickness whatever zoom you draw at.
             ToggleRow("SCALE", scale) { scale = it; emit() }
+            // Global dwell shape detection (holding the pen still). Off for the highlighter, which never dwells.
+            if (tool.isStroke && tool != Tool.HIGHLIGHTER) {
+                ToggleRow("SNAP TO SHAPES", snapShapes) { snapShapes = it; editor.snapHeldToShapes = it }
+            }
             if (tool == Tool.DASHED) {
                 SliderRow("DASH", dashLen, 2f..40f) { dashLen = it; emit() }
                 SliderRow("GAP", gapLen, 2f..40f) { gapLen = it; emit() }

@@ -102,6 +102,7 @@ data class TextBar(
     val rect: Rect,
     val face: FontFace,
     val pointSize: Double,
+    val rgba: Rgba,
     /** True while the keyboard field is up (vs the box merely being selected). */
     val editing: Boolean,
 )
@@ -1671,7 +1672,7 @@ class InteractionController(
     }
 
     /** Page-local geometry of the table edit chrome: per-line handle squares and the four
-     *  add/remove buttons (columns above the top edge, rows past the right edge). */
+     *  add/remove buttons (columns below the bottom edge, rows past the right edge). */
     class TableChrome(
         val colSeps: List<Rect>,
         val rowSeps: List<Rect>,
@@ -1690,7 +1691,7 @@ class InteractionController(
         return TableChrome(
             colSeps = (1 until t.cols).map { sq(t.colX(it), t.rect.top, side) },
             rowSeps = (1 until t.rows).map { sq(t.rect.right, t.rowY(it), side) },
-            colMinus = sq(cx - gap, t.rect.top - arm, bs), colPlus = sq(cx + gap, t.rect.top - arm, bs),
+            colMinus = sq(cx - gap, t.rect.bottom + arm, bs), colPlus = sq(cx + gap, t.rect.bottom + arm, bs),
             rowPlus = sq(t.rect.right + arm, cy - gap, bs), rowMinus = sq(t.rect.right + arm, cy + gap, bs),
         )
     }
@@ -2207,12 +2208,12 @@ class InteractionController(
         val editing = editingText
         if (editing != null) {
             val f = editingField() ?: return null
-            return TextBar(Rect(f.x, f.y, f.width * f.zoom, f.height * f.zoom), editing.face, editing.pointSize, editing = true)
+            return TextBar(Rect(f.x, f.y, f.width * f.zoom, f.height * f.zoom), editing.face, editing.pointSize, editing.rgba, editing = true)
         }
         if (mode != PointerMode.IDLE) return null
         val sel = selection.singleOrNull()?.item as? TextItem ?: return null
         val rect = selectionBoundsViewport() ?: return null
-        return TextBar(rect, sel.face, sel.pointSize, editing = false)
+        return TextBar(rect, sel.face, sel.pointSize, sel.rgba, editing = false)
     }
 
     fun setTextFace(face: FontFace) {
@@ -2352,6 +2353,17 @@ class InteractionController(
 
     /** The single selected image, or null (enables the Crop action). */
     fun singleSelectedImage(): ImageItem? = selection.singleOrNull()?.item as? ImageItem
+
+    /** The single selected text box, or null (enables the Edit action). */
+    fun singleSelectedText(): TextItem? = selection.singleOrNull()?.item as? TextItem
+
+    /** Reopen the editor on the single selected text box (from the selection menu Edit action). */
+    fun editSelectedText() {
+        val sel = selection.singleOrNull() ?: return
+        val item = sel.item as? TextItem ?: return
+        if (state.pageRects.getOrNull(sel.pageIndex) == null) return
+        startEditing(item, sel.pageIndex, isNew = false)
+    }
 
     /** The selected handwriting on one page, captured for an async convert-to-text. */
     class InkSelection(val pageIndex: Int, val strokes: List<Stroke>, val bounds: Rect)

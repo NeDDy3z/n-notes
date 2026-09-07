@@ -70,6 +70,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
@@ -345,9 +347,22 @@ private fun BackstageSidebar(
         Command(XnotesIcons.folder, "Open…") { onOpenSystem() }
         RailDivider()
         Command(XnotesIcons.sliders, "Preferences", selected = view == BackstageView.PREFERENCES) { onSelectView(BackstageView.PREFERENCES) }
+        FilenSyncNowCommand()
         Command(XnotesIcons.info, "About", selected = view == BackstageView.ABOUT) { onSelectView(BackstageView.ABOUT) }
         RailDivider()
         FilenSidebarStatus()
+    }
+}
+
+/** A "Sync now" sidebar action, shown only when a Filen account is signed in; runs an immediate sync. */
+@Composable
+private fun FilenSyncNowCommand() {
+    val ctx = LocalContext.current
+    if (!com.xnotes.sync.filen.FilenSyncManager.isConfigured(ctx)) return
+    val status by com.xnotes.sync.filen.FilenSyncManager.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    Command(Icons.Filled.Sync, if (status.running) "Syncing..." else "Sync now") {
+        if (!status.running) scope.launch { com.xnotes.sync.filen.FilenSyncManager.syncNow(ctx) }
     }
 }
 

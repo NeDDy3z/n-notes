@@ -17,14 +17,15 @@
 n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On top of it:
 
 - **File import**: import images, txt, md, rtf, html, epub, docx, xlsx, and csv as notes.
-- **Filen cloud sync**: back up and sync notes and settings to Filen.
+- **Filen cloud sync**: back up and sync notes and settings to Filen, with an on-demand Sync now action in the sidebar.
 - **Create menu**: the new-note button is now a list to create a note, canvas, folder, or import a file.
 - **Sort button**: moved sorting out into its own dedicated button.
 - **Default page style**: set a default page style in settings, preselected when creating a note.
 - **Tables**: add a table shape and edit it (columns, rows, and per-line sizing).
 - **Image cropping**: crop a selected image with an interactive overlay.
 - **X-Y graph shape**: an x-y coordinate axes shape.
-- **Handwriting to text**: convert selected handwriting into a text box (Czech and English), from the selection three-dots menu.
+- **Handwriting to text**: convert selected handwriting into an editable text box (Czech and English) from the selection three-dots menu; reopen it later with Edit in the same menu, with font, size, and colour controls docked at the bottom.
+- **Pen shape snapping toggle**: turn "snap held strokes to shapes" on or off directly from the pen settings popup.
 
 ## Versioning
 

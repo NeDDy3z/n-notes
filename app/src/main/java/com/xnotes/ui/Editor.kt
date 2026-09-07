@@ -485,6 +485,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val selectionIsImage: Boolean get() = controller.singleSelectedImage() != null
     override fun cropSelection() = controller.beginCrop()
 
+    override val selectionIsText: Boolean get() = controller.singleSelectedText() != null
+    override fun editSelectionText() = controller.editSelectedText()
+
     override val selectionHasInk: Boolean get() = controller.inkSelection() != null
 
     /** Recognize the selected handwriting off-thread, then swap it for a text box (undoable). */
@@ -578,6 +581,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.imageDir = imageDir
             for (t in ToolDefaults.persistedTools) it.setToolConfig(t, settings.configFor(t))
             it.armShapeConfig(settings.shapeConfig)
+            it.armDetectShapes(settings.prefs.detectShapes)
+            it.onDetectShapesChanged = { v -> snapHeldToShapes = v }
             it.toolbarColors = toolbarColors
             it.recentColors = recentColors
             it.toolbarColorCount = toolbarColorCount
@@ -1963,6 +1968,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Set the active text box's point size (and the size new boxes are created with). */
     fun setTextPointSize(size: Double) {
         controller.setTextPointSize(size)
+        refreshTextBar()
+    }
+
+    /** Set the active text box's colour (and the ink new boxes are created with). */
+    fun setTextColor(color: Rgba) {
+        controller.pickInk(color)
         refreshTextBar()
     }
 
@@ -3936,6 +3947,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** The live config for a stroke tool (read by its config popup). */
     override fun toolConfig(tool: Tool): com.xnotes.core.tools.ToolConfig = controller.configFor(tool)
+
+    override var snapHeldToShapes: Boolean
+        get() = settings.prefs.detectShapes
+        set(v) {
+            settings = settings.copy(prefs = settings.prefs.copy(detectShapes = v))
+            controller.detectShapes = v
+            infiniteOrNull?.armDetectShapes(v)
+            settingsRepo.save(settings)
+        }
 
     override val hostShapeConfig: ShapeConfig get() = shapeConfig
     override val hostToolbarColors: List<Rgba> get() = toolbarColors

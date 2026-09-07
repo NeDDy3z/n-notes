@@ -75,6 +75,12 @@ interface SelectionMenuHost {
     /** Enter crop mode for the selected image. */
     fun cropSelection()
 
+    /** True when the selection is a single text box (shows the Edit action). */
+    val selectionIsText: Boolean
+
+    /** Reopen the text editor on the selected text box. */
+    fun editSelectionText()
+
     /** True when the selection contains handwriting (shows the Convert to text action). */
     val selectionHasInk: Boolean
 
@@ -153,6 +159,12 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     enabled = styles.isNotEmpty(),
                     onClick = { overflowOpen = false; styleOpen = true },
                 )
+                if (host.selectionIsText) {
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        onClick = { overflowOpen = false; host.editSelectionText() },
+                    )
+                }
                 if (host.selectionIsImage) {
                     DropdownMenuItem(
                         text = { Text("Crop") },

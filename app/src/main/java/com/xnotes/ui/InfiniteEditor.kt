@@ -479,7 +479,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override val selectionIsImage: Boolean get() = false
     override fun cropSelection() {}
 
-    // Convert-to-text is a paged-note action for now; not offered on the infinite canvas.
+    // Text boxes and convert-to-text are paged-note actions for now; not offered on the infinite canvas.
+    override val selectionIsText: Boolean get() = false
+    override fun editSelectionText() {}
+
     override val selectionHasInk: Boolean get() = false
     override fun convertSelectionToText() {}
 
@@ -636,6 +639,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         toolConfigs[tool] = config
         onToolStyleChanged?.invoke()
     }
+
+    override var snapHeldToShapes: Boolean
+        get() = detectShapes
+        set(v) { detectShapes = v; onDetectShapesChanged?.invoke(v) }
+
+    /** Fired when the snap-to-shapes toggle changed here, so the host can persist it. */
+    var onDetectShapesChanged: ((Boolean) -> Unit)? = null
 
     override val hostShapeConfig: ShapeConfig get() = shapeConfig
 

@@ -3,15 +3,19 @@ package com.xnotes.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -27,9 +31,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.platform.FontCatalog
 import com.xnotes.ui.icons.XnotesIcons
@@ -38,28 +44,29 @@ import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 
 /**
- * Floating font/size bar for the active text box (the one being edited, or a lone
- * selected one). Anchored above the box; colour is driven by the toolbar swatches,
- * so this carries only the family picker and a point-size stepper. When the box is
- * merely selected (not editing) the generic selection menu also sits above it, so
- * this bar stacks one row higher.
+ * Floating font/size bar for a lone selected (not editing) text box. Anchored above
+ * the box; colour is driven by the toolbar swatches, so this carries only the family
+ * picker and a point-size stepper. While a box is being edited the styling moves to the
+ * bottom [TextBoxFormatBar] instead. The generic selection menu also sits above the box,
+ * so this bar stacks one row higher.
  */
 @Composable
 fun TextStyleBar(editor: Editor) {
     val bar = editor.textBar ?: return
+    // While a box is being edited its styling lives in the bottom bar (TextBoxFormatBar).
+    if (bar.editing) return
     val palette = LocalPalette.current
     val density = LocalDensity.current
 
     // The bar wraps its content so a long font name never clips the trailing controls;
     // its width is known only after layout, so centre by an estimate then the measured value.
     var measuredWidthPx by remember { mutableStateOf<Float?>(null) }
-    val estWidth = if (bar.editing) 240.dp else 196.dp
     val barHeightPx = with(density) { 44.dp.toPx() }
-    val barWidthPx = measuredWidthPx ?: with(density) { estWidth.toPx() }
+    val barWidthPx = measuredWidthPx ?: with(density) { 196.dp.toPx() }
     val gapPx = with(density) { 8.dp.toPx() }
-    // When the box is only selected (not editing), the generic selection menu also sits above it,
-    // so raise this bar by that menu's height + a gap to stack cleanly above it.
-    val stackPx = if (!bar.editing) with(density) { 56.dp.toPx() } else 0f
+    // The generic selection menu also sits above the box, so raise this bar by that menu's
+    // height + a gap to stack cleanly above it.
+    val stackPx = with(density) { 56.dp.toPx() }
     val minX = with(density) { 8.dp.toPx() }
 
     val rect = bar.rect
@@ -90,23 +97,81 @@ fun TextStyleBar(editor: Editor) {
             size = bar.pointSize,
             onDelta = { editor.setTextPointSize(bar.pointSize + it) },
         )
-        // A commit (✓) button so an edit can be finished without tapping off the box.
-        if (bar.editing) {
-            Box(
-                Modifier.width(1.dp).fillMaxHeight().padding(vertical = 8.dp)
-                    .background(palette.border.toComposeColor()),
+    }
+}
+
+/**
+ * The bottom styling strip for a text box being edited, docked as the last child of the
+ * editor column so the adjustResize window floats it directly above the soft keyboard, the
+ * same slot the inline text tool's [TextFormatBar] uses. Carries font colour, family, size,
+ * and a commit (✓) button.
+ */
+@Composable
+fun TextBoxFormatBar(editor: Editor) {
+    val bar = editor.textBar ?: return
+    if (!bar.editing) return
+    val palette = LocalPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .background(palette.panel.toComposeColor()),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextColorButton(editor, bar.rgba)
+        BarSeparator()
+        FacePicker(current = bar.face) { editor.setTextFace(it) }
+        BarSeparator()
+        SizeStepper(size = bar.pointSize, onDelta = { editor.setTextPointSize(bar.pointSize + it) })
+        BarSeparator()
+        Box(
+            modifier = Modifier.size(44.dp).clickable { editor.commitText() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                XnotesIcons.check,
+                contentDescription = "Done",
+                tint = palette.text.toComposeColor(),
+                modifier = Modifier.size(22.dp),
             )
-            Box(
-                modifier = Modifier.size(44.dp).clickable { editor.commitText() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    XnotesIcons.check,
-                    contentDescription = "Done",
-                    tint = palette.text.toComposeColor(),
-                    modifier = Modifier.size(22.dp),
+        }
+    }
+}
+
+@Composable
+private fun BarSeparator() {
+    Box(
+        Modifier.width(1.dp).height(28.dp)
+            .background(LocalPalette.current.border.toComposeColor()),
+    )
+}
+
+@Composable
+private fun TextColorButton(editor: Editor, current: Rgba) {
+    val palette = LocalPalette.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).clickable { open = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("A", color = palette.text.toComposeColor(), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Box(
+                    Modifier.width(16.dp).height(3.dp)
+                        .clip(RoundedCornerShape(1.5.dp))
+                        .background(current.toComposeColor()),
                 )
             }
+        }
+        if (open) {
+            ColorPickerPopup(
+                initial = current,
+                recents = editor.recentColors,
+                onDismiss = { open = false },
+                onPick = { editor.setTextColor(it); open = false },
+            )
         }
     }
 }
