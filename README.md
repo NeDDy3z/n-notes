@@ -16,10 +16,14 @@
 
 n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On top of it:
 
-- **Stylus side-button mapping**: bind a tool (eraser, pan, etc.) to the pen's side button, read across the touch, hover, and Bluetooth/USI event routes.
-- **Optional hover activation**: run the mapped eraser or pan off the hover stream, without touching the screen.
-- **Smoother saving**: notes save and autosave off the main thread, so large notes don't stall the pen.
-- **Steadier canvas**: hardened stroke handover (no flicker or wipe on settling strokes) and a bounded undo history.
+- **File import**: import images, txt, md, rtf, html, epub, docx, xlsx, and csv as notes.
+- **Filen cloud sync**: back up and sync notes and settings to Filen.
+- **Create menu**: the new-note button is now a list to create a note, canvas, folder, or import a file.
+- **Sort button**: moved sorting out into its own dedicated button.
+- **Default page style**: set a default page style in settings, preselected when creating a note.
+- **Tables**: add a table shape and edit it (columns, rows, and per-line sizing).
+- **Image cropping**: crop a selected image with an interactive overlay.
+- **X-Y graph shape**: an x-y coordinate axes shape.
 
 ## Install
 
