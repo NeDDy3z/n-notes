@@ -253,6 +253,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         view.genericMotion = { interaction.onGenericMotion(it) }
         view.afterLayout = { applyInitialView() }
         view.onContextReady = { renderFailure = view.failure }
+        pad.onSurfaceLost = { endFrontInk(); settleHeld() }
         view.onFourFingerTap = { toggleDebug() }
         view.minimapVisible = minimapVisible
         view.scene = scene

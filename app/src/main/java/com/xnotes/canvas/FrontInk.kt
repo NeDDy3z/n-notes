@@ -161,6 +161,17 @@ class FrontInk(
         pad.setTail(if (tail == null) emptyList() else listOf(tail))
     }
 
+    /**
+     * The pad's pixels have gone, under the stroke being drawn or under ink it was still holding.
+     *
+     * There is nothing left to hand over and nothing left to wait for, so the stroke goes back on
+     * the ordinary path and the canvas takes everything the pad was showing at once.
+     */
+    fun surfaceLost() {
+        abandon()
+        settle()
+    }
+
     /** Give the pad back with nothing to hand over: a stroke abandoned, snapped to a shape, or gone. */
     fun abandon() {
         owner = null

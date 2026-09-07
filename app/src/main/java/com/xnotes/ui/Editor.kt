@@ -995,6 +995,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         view.genericMotion = { controller.onGenericMotion(it) }
         view.drawOverlay = { renderer, _ -> controller.drawOverlay(renderer) }
         controller.frontInk = com.xnotes.canvas.FrontInk(state, view, pad)
+        pad.onSurfaceLost = { controller.frontInk?.surfaceLost() }
         view.debugOverlay.frontHud = { controller.frontInk?.hud }
         view.afterLayout = { refreshView() }
         view.onScrollbarScrolled = { refreshView() }
