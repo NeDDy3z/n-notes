@@ -75,6 +75,12 @@ interface SelectionMenuHost {
     /** Enter crop mode for the selected image. */
     fun cropSelection()
 
+    /** True when the selection contains handwriting (shows the Convert to text action). */
+    val selectionHasInk: Boolean
+
+    /** Recognize the selected handwriting and replace it with a text box (async). */
+    fun convertSelectionToText()
+
     /** The colour and width of every selected stroke/shape, for the restyle popup to open on. */
     fun selectionStyles(): List<DrawStyle>
 
@@ -151,6 +157,12 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     DropdownMenuItem(
                         text = { Text("Crop") },
                         onClick = { overflowOpen = false; host.cropSelection() },
+                    )
+                }
+                if (host.selectionHasInk) {
+                    DropdownMenuItem(
+                        text = { Text("Convert to text") },
+                        onClick = { overflowOpen = false; host.convertSelectionToText() },
                     )
                 }
                 DropdownMenuItem(

@@ -485,6 +485,28 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val selectionIsImage: Boolean get() = controller.singleSelectedImage() != null
     override fun cropSelection() = controller.beginCrop()
 
+    override val selectionHasInk: Boolean get() = controller.inkSelection() != null
+
+    /** Recognize the selected handwriting off-thread, then swap it for a text box (undoable). */
+    override fun convertSelectionToText() {
+        val sel = controller.inkSelection() ?: return
+        val lang = settings.prefs.ocrLanguage
+        android.widget.Toast.makeText(appContext, "Recognizing handwriting...", android.widget.Toast.LENGTH_SHORT).show()
+        autosaveScope.launch {
+            val text = try {
+                withContext(Dispatchers.IO) { com.xnotes.platform.HandwritingOcr.recognize(sel.strokes, lang) }
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(appContext, "Handwriting recognition failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (text.isBlank()) {
+                android.widget.Toast.makeText(appContext, "No text recognized", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            controller.replaceInkWithText(sel, text)
+        }
+    }
+
     /** Apply the in-progress crop: bake the trimmed bitmap and swap it into the image (undoable). */
     fun applyActiveCrop() {
         val (img, cropRect) = controller.cropTarget() ?: return

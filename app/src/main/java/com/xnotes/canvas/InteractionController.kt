@@ -2353,6 +2353,45 @@ class InteractionController(
     /** The single selected image, or null (enables the Crop action). */
     fun singleSelectedImage(): ImageItem? = selection.singleOrNull()?.item as? ImageItem
 
+    /** The selected handwriting on one page, captured for an async convert-to-text. */
+    class InkSelection(val pageIndex: Int, val strokes: List<Stroke>, val bounds: Rect)
+
+    /**
+     * The selected ink strokes on the primary selected page, or null when nothing selected is a
+     * stroke. Snapshotted so the caller can run recognition off-thread while the selection stands.
+     */
+    fun inkSelection(): InkSelection? {
+        if (selection.isEmpty()) return null
+        val pi = selection.first().pageIndex
+        val strokes = selection.filter { it.pageIndex == pi }.mapNotNull { it.item as? Stroke }
+        if (strokes.isEmpty()) return null
+        val bounds = strokes.map { it.bounds() }.reduce { a, b -> a.union(b) }
+        return InkSelection(pi, strokes, bounds)
+    }
+
+    /**
+     * Replace [sel]'s strokes with a text box holding [text], as one undoable step. The box sits at
+     * the ink's top-left and wraps to its width. Strokes gone since the snapshot are simply skipped.
+     */
+    fun replaceInkWithText(sel: InkSelection, text: String) {
+        val page = state.document.pages.getOrNull(sel.pageIndex) ?: return
+        val strokes = sel.strokes.filter { s -> page.items.any { it === s } }
+        if (strokes.isEmpty()) return
+        val pageRight = state.footprint(page).right
+        val maxW = (pageRight - sel.bounds.left - 8.0).coerceAtLeast(40.0)
+        val width = sel.bounds.w.coerceIn(40.0, maxW)
+        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), width, 0.0, text, inkColor, textPointSize, textFace, textMeasurer)
+        val removals = strokes.map { page to (it as CanvasItem) }
+        for (s in strokes) page.items.remove(s)
+        page.items.add(box)
+        history.push(CompositeCommand(listOf(EraseItems(removals), AddItem(page, box))))
+        state.document.dirty = true
+        clearSelection()
+        state.invalidatePage(page)
+        onContentChanged()
+        requestRender()
+    }
+
     private var tableEditing = false
 
     /** In table edit mode: the resize box is replaced by add/remove buttons and per-line handles. */

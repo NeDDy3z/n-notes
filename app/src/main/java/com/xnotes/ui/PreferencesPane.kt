@@ -281,6 +281,17 @@ fun PreferencesPane(
             OptionDropdown(tapGestureOptions, prefs.stylusButtonTap) { update(prefs.copy(stylusButtonTap = it)) }
 
             HorizontalDivider(color = palette.border.toComposeColor())
+            SectionTitle("OCR")
+            FieldLabel("Handwriting recognition language (Convert to text)")
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Chip("Czech", prefs.ocrLanguage == "cs") { update(prefs.copy(ocrLanguage = "cs")) }
+                Chip("English", prefs.ocrLanguage == "en") { update(prefs.copy(ocrLanguage = "en")) }
+            }
+
+            HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle("New notes")
             FieldLabel("Filename template")
             Text(

@@ -479,6 +479,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override val selectionIsImage: Boolean get() = false
     override fun cropSelection() {}
 
+    // Convert-to-text is a paged-note action for now; not offered on the infinite canvas.
+    override val selectionHasInk: Boolean get() = false
+    override fun convertSelectionToText() {}
+
     override fun unlockItem(item: CanvasItem) {
         if (!item.locked) return
         item.locked = false
