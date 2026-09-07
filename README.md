@@ -24,6 +24,16 @@ n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On t
 - **Tables**: add a table shape and edit it (columns, rows, and per-line sizing).
 - **Image cropping**: crop a selected image with an interactive overlay.
 - **X-Y graph shape**: an x-y coordinate axes shape.
+- **Handwriting to text**: convert selected handwriting into a text box (Czech and English), from the selection three-dots menu.
+
+## Versioning
+
+Releases use the scheme `{xnotes version}-{nnotes version}`, for example `0.8.16-0.14`:
+
+- `{xnotes version}` is the upstream [xnotes](https://github.com/shardulvs/xnotes-android) release this build is based on (`0.8.16`).
+- `{nnotes version}` is the n-notes fork revision on top of that upstream base (`0.14`), bumped on every published fork build.
+
+So a bump of the second number is a fork-only change; a bump of the first number means the fork was synced onto a newer upstream xnotes.
 
 ## Install
 
