@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,6 +84,15 @@ interface SelectionMenuHost {
     /** Reopen the text editor on the selected text box. */
     fun editSelectionText()
 
+    /** True when exactly one item is selected (it can carry a hyperlink). */
+    val selectionCanLink: Boolean
+
+    /** The selected item's hyperlink, or null when none / not a single item. */
+    val selectionLink: String?
+
+    /** Set (or clear, when null) the selected item's hyperlink. */
+    fun setSelectionLink(url: String?)
+
     /** True when the selection contains handwriting (shows the Convert to text action). */
     val selectionHasInk: Boolean
 
@@ -115,6 +127,7 @@ fun SelectionMenu(host: SelectionMenuHost) {
     val density = LocalDensity.current
     var overflowOpen by remember { mutableStateOf(false) }
     var styleOpen by remember { mutableStateOf(false) }
+    var linkDialogOpen by remember { mutableStateOf(false) }
 
     val barHeightPx = with(density) { 48.dp.toPx() }
     val barWidthPx = with(density) { (6 * 46).dp.toPx() }
@@ -177,6 +190,12 @@ fun SelectionMenu(host: SelectionMenuHost) {
                         onClick = { overflowOpen = false; host.convertSelectionToText() },
                     )
                 }
+                if (host.selectionCanLink) {
+                    DropdownMenuItem(
+                        text = { Text(if (host.selectionLink != null) "Edit link" else "Add link") },
+                        onClick = { overflowOpen = false; linkDialogOpen = true },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Lock") },
                     onClick = { overflowOpen = false; host.lockSelection() },
@@ -186,8 +205,48 @@ fun SelectionMenu(host: SelectionMenuHost) {
                 // Closing settles any preview the slider left open.
                 SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
             }
+            if (linkDialogOpen) {
+                LinkDialog(
+                    initial = host.selectionLink ?: "",
+                    onConfirm = { host.setSelectionLink(it); linkDialogOpen = false },
+                    onRemove = { host.setSelectionLink(null); linkDialogOpen = false },
+                    onDismiss = { linkDialogOpen = false },
+                )
+            }
         }
     }
+}
+
+/**
+ * Add/edit a hyperlink on the selected item. A blank field with Save clears the link; the Remove
+ * button (shown only when one exists) does the same. Only http/https/mailto actually open on tap
+ * (the opener rejects the rest), so no scheme validation is forced here.
+ */
+@Composable
+private fun LinkDialog(initial: String, onConfirm: (String) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Link") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                placeholder = { Text("https://example.com") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(text.trim()) }) { Text("Save") }
+        },
+        dismissButton = {
+            if (initial.isNotEmpty()) {
+                TextButton(onClick = onRemove) { Text("Remove") }
+            } else {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 /**

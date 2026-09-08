@@ -19,7 +19,7 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
     else -> this
     // Carried, not reset: autosave snapshots the document through this, so dropping the lock here
     // would quietly unlock everything on the next save.
-}.also { it.locked = locked }
+}.also { it.locked = locked; it.link = link }
 
 /** A deep copy of a page — its items cloned ([deepCopy]) — keeping the size, PDF link, style and margins. */
 fun Page.deepCopy(measurer: TextMeasurer): Page =

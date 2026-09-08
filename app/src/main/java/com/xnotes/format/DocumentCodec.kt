@@ -322,6 +322,7 @@ class DocumentCodec(
         // Straight-line strokes must reload un-smoothed, else the EMA pulls their far end inward.
         if (s.straight) j.name("straight").value(true)
         if (s.locked) j.name("locked").value(true)
+        s.link?.let { j.name("link").value(it) }
         j.endObject()
     }
 
@@ -336,6 +337,7 @@ class DocumentCodec(
         if (item.orientation != 0) j.name("orientation").value(item.orientation)
         if (item.angle != 0.0) j.name("angle").value(item.angle)
         if (item.locked) j.name("locked").value(true)
+        item.link?.let { j.name("link").value(it) }
         j.endObject()
     }
 
@@ -358,6 +360,7 @@ class DocumentCodec(
         if (t.strike) j.name("strike").value(true)
         if (t.align != com.xnotes.core.pal.HAlign.LEFT) j.name("align").value(t.align.name.lowercase())
         if (t.locked) j.name("locked").value(true)
+        t.link?.let { j.name("link").value(it) }
         j.endObject()
     }
 
@@ -390,6 +393,7 @@ class DocumentCodec(
             j.name("dash_gap").value(s.dashGap)
         }
         if (s.locked) j.name("locked").value(true)
+        s.link?.let { j.name("link").value(it) }
         j.endObject()
     }
 
@@ -403,6 +407,7 @@ class DocumentCodec(
         writeRgba(j, t.strokeRgba)
         j.name("stroke_width").value(t.strokeWidth)
         if (t.locked) j.name("locked").value(true)
+        t.link?.let { j.name("link").value(it) }
         j.endObject()
     }
 
@@ -583,6 +588,7 @@ class DocumentCodec(
         val orientation: Int,
         val angle: Double,
         val locked: Boolean,
+        val link: String?,
     )
 
     private fun parseManifest(p: JsonPull): ParsedManifest {
@@ -678,6 +684,7 @@ class DocumentCodec(
     /** Union of every kind's fields, so an item parses in one pass whatever its key order. */
     private class ItemScratch {
         var locked = false
+        var link: String? = null
         var kind: String? = null
         var tool: String? = null
         var config: ConfigScratch? = null
@@ -784,6 +791,7 @@ class DocumentCodec(
                 "cols" -> s.tableCols = doubleListOrNull(p)
                 "rows" -> s.tableRows = doubleListOrNull(p)
                 "locked" -> s.locked = boolOr(p, false)
+                "link" -> s.link = stringOr(p, "").ifEmpty { null }
                 else -> p.skipValue()
             }
         }
@@ -797,7 +805,7 @@ class DocumentCodec(
                     pending.add(
                         PendingImage(
                             items.size + pending.size, asset, s.rect, s.srcW, s.srcH,
-                            s.orientation, s.angle, s.locked,
+                            s.orientation, s.angle, s.locked, s.link,
                         ),
                     )
                 }
@@ -829,6 +837,8 @@ class DocumentCodec(
         }
         // Absent on every note written before locking existed, which reads back as unlocked.
         if (s.locked && items.size > before) items[before].locked = true
+        // Links are additive too; images carry theirs on the PendingImage since they materialize later.
+        if (s.link != null && items.size > before) items[before].link = s.link
     }
 
     private fun buildStroke(s: ItemScratch): Stroke {
@@ -1009,7 +1019,7 @@ class DocumentCodec(
         }
         val rect = spec.rect ?: Rect(0.0, 0.0, w.toDouble(), h.toDouble())
         return ImageItem(ImageData(file, w, h), rect, spec.orientation, spec.angle)
-            .also { it.locked = spec.locked }
+            .also { it.locked = spec.locked; it.link = spec.link }
     }
 
     // --- streaming value helpers (mirroring org.json's forgiving opt* coercions) ---

@@ -74,8 +74,11 @@ import kotlin.math.sin
 /** The pointer state machine modes (spec 06 §1). */
 enum class PointerMode {
     IDLE, DRAW, ERASE, BAND, LASSO_DRAW, SHOT, SHAPE, MOVE, RESIZE, TRANSFORM, PAN, PINCH, FLOW_TEXT,
-    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, TABLE_LINE, CROP,
+    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, TABLE_LINE, TABLE_DRAW, CROP,
 }
+
+/** Column/row counts and line width for the next table drawn with the table tool. */
+data class TableToolDefaults(val cols: Int, val rows: Int, val width: Double)
 
 /**
  * Geometry of the live text editor field: [x]/[y] place its top-left in viewport pixels, while
@@ -344,6 +347,12 @@ class InteractionController(
     var shapeConfig: ShapeConfig = ShapeConfig()
     private var pendingShape: ShapeItem? = null
     private var shapePageIndex: Int? = null
+
+    // TABLE (drawn like a shape). The defaults come from the editor's table-tool settings, read live.
+    var tableToolDefaults: () -> TableToolDefaults = { TableToolDefaults(3, 3, 2.0) }
+    private var pendingTable: TableItem? = null
+    private var tableDrawPageIndex: Int? = null
+    private var tableDrawStart = Pt.ZERO
 
     // RESIZE
     private var resizeItem: CanvasItem? = null
@@ -682,6 +691,7 @@ class InteractionController(
             effectiveTool == Tool.LASSO -> beginLasso(content)
             effectiveTool == Tool.SCREENSHOT -> beginScreenshot(content)
             effectiveTool == Tool.SHAPE -> beginShape(content)
+            effectiveTool == Tool.TABLE -> beginTable(content)
             effectiveTool == Tool.TEXT -> beginTextGesture(content, Pt(vx, vy))
             effectiveTool == Tool.TEXT_BOX -> beginTextBoxGesture(content)
             else -> Unit
@@ -733,6 +743,7 @@ class InteractionController(
             PointerMode.RESIZE -> extendResize(content)
             PointerMode.CROP -> extendCrop(content)
             PointerMode.TABLE_LINE -> extendTableLine(content)
+            PointerMode.TABLE_DRAW -> extendTable(content)
             PointerMode.TRANSFORM -> extendTransform(content)
             PointerMode.SHAPE -> extendShape(content)
             PointerMode.FLOW_TEXT ->
@@ -804,6 +815,7 @@ class InteractionController(
             PointerMode.RESIZE -> endResize()
             PointerMode.CROP -> endCrop()
             PointerMode.TABLE_LINE -> endTableLine()
+            PointerMode.TABLE_DRAW -> endTable()
             PointerMode.TRANSFORM -> endTransform()
             PointerMode.SHAPE -> endShape()
             PointerMode.FLOW_TEXT -> {
@@ -1628,7 +1640,7 @@ class InteractionController(
         resizeHandle = null
         resizeOldGeom = null
         // The endpoint resize (a single line/arrow) reshapes the box; refit it upright.
-        selObb = selectionBoundsContent()?.let { Obb.fromAabb(it) }
+        selObb = selectionObb()
         mode = PointerMode.IDLE
         refreshSelectionMenu()
         requestRender()
@@ -1917,10 +1929,13 @@ class InteractionController(
             world = res.transform
         } else {
             val raw = atan2(content.y - txCenter.y, content.x - txCenter.x) - txGrabAngle
-            // Snap the absolute selection angle to the nearest 90 degrees when the setting is on.
+            // A sticky zone around each 90-degree step, not a hard quantiser: the box clings to the
+            // nearest quarter turn only while within ROTATE_SNAP_STICK of it, and turns freely otherwise.
             val theta = if (snapRotation90) {
                 val quarter = Math.PI / 2.0
-                Math.round((txStartAngle + raw) / quarter) * quarter - txStartAngle
+                val target = txStartAngle + raw
+                val nearest = Math.round(target / quarter) * quarter
+                if (Math.abs(target - nearest) <= ROTATE_SNAP_STICK_RAD) nearest - txStartAngle else raw
             } else {
                 raw
             }
@@ -2033,6 +2048,47 @@ class InteractionController(
         }
         pendingShape = null
         shapePageIndex = null
+        mode = PointerMode.IDLE
+        requestRender()
+    }
+
+    // --- TABLE (drawn) ---
+
+    private fun beginTable(content: Pt) {
+        val pageIndex = state.pageIndexAtContent(content) ?: return
+        // Off-selection press with the table tool: like the shape tool, drop the current selection so
+        // dragging out a new table also clears the old one (a tap makes nothing; endTable gates it).
+        clearSelection()
+        val d = tableToolDefaults()
+        tableDrawStart = state.toPageSpace(pageIndex, content)
+        pendingTable = TableItem.create(Rect(tableDrawStart.x, tableDrawStart.y, 0.0, 0.0), d.cols, d.rows, inkColor, d.width)
+        tableDrawPageIndex = pageIndex
+        mode = PointerMode.TABLE_DRAW
+        requestRender()
+    }
+
+    private fun extendTable(content: Pt) {
+        val table = pendingTable ?: return
+        val pi = tableDrawPageIndex ?: return
+        if (state.pageRects.getOrNull(pi) == null) return
+        table.rect = Rect.fromPoints(tableDrawStart, state.toPageSpace(pi, content))
+        requestRender()
+    }
+
+    private fun endTable() {
+        val table = pendingTable
+        val pi = tableDrawPageIndex
+        if (table != null && pi != null && table.rect.w > SHAPE_MIN_DRAG && table.rect.h > SHAPE_MIN_DRAG) {
+            val page = state.document.pages[pi]
+            page.items.add(table)
+            state.appendToCache(page, table)
+            history.push(AddItem(page, table))
+            state.document.dirty = true
+            onContentChanged()
+            selectSingle(pi, table)
+        }
+        pendingTable = null
+        tableDrawPageIndex = null
         mode = PointerMode.IDLE
         requestRender()
     }
@@ -2392,7 +2448,7 @@ class InteractionController(
         selection.addAll(items)
         setTableEditing(false) // a new selection always starts out of table edit mode
         // A fresh selection starts upright: its box is the items' AABB, angle 0.
-        selObb = selectionBoundsContent()?.let { Obb.fromAabb(it) }
+        selObb = selectionObb()
         repairRegions(dirtyRegions(touched))
         onSelectionChanged(selection.isNotEmpty())
         requestRender()
@@ -2409,6 +2465,16 @@ class InteractionController(
 
     /** The single selected text box, or null (enables the Edit action). */
     fun singleSelectedText(): TextItem? = selection.singleOrNull()?.item as? TextItem
+
+    /** The single selected item of any kind, or null (backs the Add/Edit link action). */
+    fun singleSelectedItem(): CanvasItem? = selection.singleOrNull()?.item
+
+    /** Set or clear the single selected item's hyperlink. Not undoable (metadata, not geometry). */
+    fun setSelectedLink(url: String?) {
+        val item = selection.singleOrNull()?.item ?: return
+        item.link = url
+        state.document.dirty = true
+    }
 
     /** Reopen the editor on the single selected text box (from the selection menu Edit action). */
     fun editSelectedText() {
@@ -2485,7 +2551,7 @@ class InteractionController(
         if (after == before) return
         history.push(TransformItems(listOf(t), listOf(before), listOf(after)))
         state.document.dirty = true
-        selObb = selectionBoundsContent()?.let { Obb.fromAabb(it) }
+        selObb = selectionObb()
         onContentChanged()
         refreshSelectionMenu()
         requestRender()
@@ -2605,6 +2671,25 @@ class InteractionController(
             acc = acc?.union(b) ?: b
         }
         return acc
+    }
+
+    /**
+     * The selection's transform box. A single rotated image gets an oriented box hugging its turned
+     * rect, so the box tracks the tilt instead of the larger upright AABB that circumscribes it.
+     * Everything else keeps the axis-aligned box built from the content bounds.
+     */
+    private fun selectionObb(): Obb? {
+        val single = selection.singleOrNull()
+        val img = single?.item as? ImageItem
+        if (img != null && img.angle != 0.0 && state.pageRects.getOrNull(single.pageIndex) != null) {
+            val cs = img.corners().map { state.fromPageSpace(single.pageIndex, it) }
+            val center = Pt((cs[0].x + cs[2].x) / 2.0, (cs[0].y + cs[2].y) / 2.0)
+            val halfW = cs[0].distanceTo(cs[1]) / 2.0
+            val halfH = cs[0].distanceTo(cs[3]) / 2.0
+            val angle = atan2(cs[1].y - cs[0].y, cs[1].x - cs[0].x)
+            return Obb(center, halfW, halfH, angle)
+        }
+        return selectionBoundsContent()?.let { Obb.fromAabb(it) }
     }
 
     // --- public edit operations (toolbar / context menu) ---
@@ -3283,6 +3368,7 @@ class InteractionController(
                 liveStroke?.let { stroke -> paintClippedToPage(r, strokePageIndex) { state.paintLiveStroke(r, stroke) } }
             }
             pendingShape?.let { shape -> paintClippedToPage(r, shapePageIndex) { shape.paint(r) } }
+            pendingTable?.let { table -> paintClippedToPage(r, tableDrawPageIndex) { table.paint(r) } }
 
             // Disappearing ink (magic wand): ephemeral strokes drawn live at the shared fade alpha,
             // without mutating their stored colour. Highlighters keep their MULTIPLY look while fading.
@@ -3671,7 +3757,7 @@ class InteractionController(
         const val HANDLE_HIT = 36.0
 
         /** Gap (viewport px) from the selection's top edge up to the rotate grip. */
-        const val ROTATE_ARM = 28.0
+        const val ROTATE_ARM = 44.0
         const val SHAPE_MIN_DRAG = 3.0
 
         /** Min capture size (content px, both axes) for the screenshot tool; below it a drag is a tap. */
@@ -3702,6 +3788,9 @@ class InteractionController(
         /** A line/arrow drawn with the shape tool snaps flat when within this angle (deg) of an axis.
          *  Half the recognizer's hold-to-snap angle: a live drag is steadier, so it needs less help. */
         const val SHAPE_AXIS_SNAP_DEG = 4.0
+
+        /** Half-width (rad) of the sticky zone around each 90-degree step for snap-rotation. */
+        val ROTATE_SNAP_STICK_RAD = Math.toRadians(6.0)
 
         // Inertial fling tuning (viewport px/s).
         const val VEL_SMOOTH = 0.4 // EMA weight on the previous velocity estimate

@@ -36,6 +36,7 @@ class TextItem(
     override val kind = KIND
     override val resizable = true
     override var locked = false
+    override var link: String? = null
 
     val font get() = FontSpec(pointSize, face, bold, italic)
 

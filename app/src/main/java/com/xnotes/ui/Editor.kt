@@ -169,6 +169,9 @@ data class PendingImport(
 private const val SIDECAR_DIR = ".xnote"
 private const val SIDECAR_FILE = "colors.json"
 
+/** Longer side a baked crop is capped to, so a large photo's crop stays fast and never OOMs. */
+private const val CROP_MAX_PX = 2048
+
 /**
  * Which pane of a split view an editor drives. [PRIMARY] is the app's one editor in the ordinary
  * single-note case and the first pane of a split; [SECONDARY] is the second pane, built only when a
@@ -503,6 +506,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val selectionIsText: Boolean get() = controller.singleSelectedText() != null
     override fun editSelectionText() = controller.editSelectedText()
 
+    override val selectionCanLink: Boolean get() = controller.singleSelectedItem() != null
+    override val selectionLink: String? get() = controller.singleSelectedItem()?.link
+    override fun setSelectionLink(url: String?) = controller.setSelectedLink(url?.trim()?.ifEmpty { null })
+
     override val selectionHasInk: Boolean get() = controller.inkSelection() != null
 
     /** Recognize the selected handwriting off-thread, then swap it for a text box (undoable). */
@@ -538,34 +545,69 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  PNG. Returns the new image data + its rect (the crop region), or null on failure. */
     private fun bakeCrop(img: com.xnotes.core.model.ImageItem, cropRect: com.xnotes.core.geometry.Rect): Pair<ImageData, Rect>? {
         if (img.rect.w <= 0.0 || img.rect.h <= 0.0) return null
-        val src = runCatching { android.graphics.BitmapFactory.decodeFile(img.image.file.path) }.getOrNull() ?: return null
-        if (src.width <= 0 || src.height <= 0) {
-            src.recycle()
-            return null
-        }
-        // A big photo can blow the heap when createBitmap/compress allocate; swallow it and
-        // just leave the image uncropped rather than crashing the app.
+        val path = img.image.file.path
+        val size = imageCodec.probeFile(path) ?: return null
+        val sw = size.width
+        val sh = size.height
+        if (sw <= 0 || sh <= 0) return null
+        // The crop region in source pixels.
+        val fx = ((cropRect.left - img.rect.left) / img.rect.w).coerceIn(0.0, 1.0)
+        val fy = ((cropRect.top - img.rect.top) / img.rect.h).coerceIn(0.0, 1.0)
+        val x = (fx * sw).toInt().coerceIn(0, sw - 1)
+        val y = (fy * sh).toInt().coerceIn(0, sh - 1)
+        val w = (cropRect.w / img.rect.w * sw).toInt().coerceIn(1, sw - x)
+        val h = (cropRect.h / img.rect.h * sh).toInt().coerceIn(1, sh - y)
+        // Decode only the crop region, downsampled, so a big photo never allocates its full pixels
+        // (the old whole-image decode both lagged and OOM-crashed on large photos). Any failure or
+        // OOM is swallowed and leaves the image uncropped rather than crashing the app.
+        val cropped = decodeCropRegion(path, x, y, w, h) ?: return null
         return try {
-            val fx = ((cropRect.left - img.rect.left) / img.rect.w).coerceIn(0.0, 1.0)
-            val fy = ((cropRect.top - img.rect.top) / img.rect.h).coerceIn(0.0, 1.0)
-            val x = (fx * src.width).toInt().coerceIn(0, src.width - 1)
-            val y = (fy * src.height).toInt().coerceIn(0, src.height - 1)
-            val w = (cropRect.w / img.rect.w * src.width).toInt().coerceIn(1, src.width - x)
-            val h = (cropRect.h / img.rect.h * src.height).toInt().coerceIn(1, src.height - y)
-            val cropped = android.graphics.Bitmap.createBitmap(src, x, y, w, h)
             val file = java.io.File.createTempFile("crop", ".png", imageDir)
             java.io.FileOutputStream(file).use { cropped.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-            if (cropped !== src) cropped.recycle()
-            val size = imageCodec.probeFile(file.path) ?: return null
+            val out = imageCodec.probeFile(file.path) ?: return null
             // Keep a rotated crop where it visually sits: the piece now turns about its own centre,
             // not the original's, so shift the new box by the difference the turn introduces.
-            ImageData(file, size.width, size.height) to placedCropRect(img, cropRect)
+            ImageData(file, out.width, out.height) to placedCropRect(img, cropRect)
         } catch (t: Throwable) {
             message = "Couldn't crop this image (it may be too large)."
             null
         } finally {
-            src.recycle()
+            cropped.recycle()
         }
+    }
+
+    /** Decode the [x,y,w,h] pixel region of the image at [path], downsampled so its longer side stays
+     *  within [CROP_MAX_PX]. Region-decodes when the format allows it (no full-image alloc); falls
+     *  back to a downsampled whole-image decode otherwise. Null on any failure or out-of-memory. */
+    @Suppress("DEPRECATION")
+    private fun decodeCropRegion(path: String, x: Int, y: Int, w: Int, h: Int): android.graphics.Bitmap? {
+        var ss = 1
+        while (w / (ss * 2) >= CROP_MAX_PX || h / (ss * 2) >= CROP_MAX_PX) ss *= 2
+        val opts = android.graphics.BitmapFactory.Options().apply {
+            inSampleSize = ss
+            inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+        }
+        runCatching {
+            val dec = android.graphics.BitmapRegionDecoder.newInstance(path, false) ?: return@runCatching null
+            try {
+                dec.decodeRegion(android.graphics.Rect(x, y, x + w, y + h), opts)
+            } finally {
+                dec.recycle()
+            }
+        }.getOrNull()?.let { return it }
+        // Fallback: some formats can't be region-decoded, so decode the whole image downsampled and
+        // cut the region out of that. Still bounded by inSampleSize, so no full-resolution alloc.
+        return runCatching {
+            val whole = android.graphics.BitmapFactory.decodeFile(path, opts) ?: return null
+            val rx = (x / ss).coerceIn(0, whole.width - 1)
+            val ry = (y / ss).coerceIn(0, whole.height - 1)
+            val rw = (w / ss).coerceIn(1, whole.width - rx)
+            val rh = (h / ss).coerceIn(1, whole.height - ry)
+            val cut = android.graphics.Bitmap.createBitmap(whole, rx, ry, rw, rh)
+            // createBitmap may hand back the source when the region is the whole image.
+            if (cut !== whole) whole.recycle()
+            cut
+        }.getOrNull()
     }
 
     /** Reposition the crop rect so a rotated image's cropped piece stays visually in place. */
@@ -1076,6 +1118,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         view.onKey = { e -> e.action == android.view.KeyEvent.ACTION_DOWN && handleKeyDown(e) }
         controller.clipboardHasImage = { clipboardImageUri() != null }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
+            // A canvas item with a hyperlink wins over a PDF link under the same point (it sits on top).
+            state.document.pages.getOrNull(pageIndex)?.items
+                ?.lastOrNull { it.link != null && it.contains(pageLocal) }
+                ?.link?.let { openUrl(it); return@onLinkTap true }
             val src = pdfSource ?: return@onLinkTap false
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
             val pdfIdx = page.pdfPage ?: return@onLinkTap false
@@ -1547,40 +1593,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     // --- table tool ---
 
-    /** Default column/row counts for a newly inserted table (also the stepper values when none is
-     *  selected). Not persisted across launches. */
+    /** Column/row counts and line width for the next table drawn with the table tool (set in the
+     *  tool's config popup). The table is then dragged onto the page like a shape. Not persisted. */
     var tableToolCols by mutableStateOf(3)
     var tableToolRows by mutableStateOf(3)
-
-    /** Default line width for a newly inserted table (also the width stepper's value when none is selected). */
     var tableToolWidth by mutableStateOf(2.0)
-
-    /** Insert a table centred on the current page (60% × 40% of the page) and select it. */
-    fun insertTable() {
-        val pages = state.document.pages
-        if (pages.isEmpty()) return
-        val pi = state.currentPageIndex().coerceIn(0, pages.lastIndex)
-        val page = pages[pi]
-        val w = page.width * 0.6
-        val h = page.height * 0.4
-        val rect = Rect((page.width - w) / 2.0, (page.height - h) / 2.0, w, h)
-        val color = toolbarColors.getOrElse(activeColorIndex) { toolbarColors.first() }
-        val table = com.xnotes.core.model.TableItem.create(rect, tableToolCols, tableToolRows, color, tableToolWidth)
-        page.items.add(table)
-        state.appendToCache(page, table)
-        history.push(AddItem(page, table))
-        state.document.dirty = true
-        refreshContent()
-        controller.selectSingle(pi, table)
-        view.requestRender()
-    }
-
-    /** The single selected table, or null (drives the table menu's edit-vs-insert mode). */
-    fun selectedTable(): com.xnotes.core.model.TableItem? = controller.singleSelectedTable()
-
-    fun setSelectedTableColumns(n: Int) = controller.editSelectedTable { it.setColumns(n) }
-    fun setSelectedTableRows(n: Int) = controller.editSelectedTable { it.setRows(n) }
-    fun setSelectedTableWidth(w: Double) = controller.editSelectedTable { it.strokeWidth = w }
 
     /** Save an encoded image into the on-disk sticker library (validated by a probe decode). */
     fun addSticker(bytes: ByteArray) {
@@ -1745,6 +1762,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         sidebarVisible = settings.sidebarVisible
         shapeConfig = settings.shapeConfig
         controller.shapeConfig = settings.shapeConfig
+        controller.tableToolDefaults = { com.xnotes.canvas.TableToolDefaults(tableToolCols, tableToolRows, tableToolWidth) }
         for (t in ToolDefaults.persistedTools) controller.setToolConfig(t, settings.configFor(t))
         controller.inkColor = toolbarColors[activeColorIndex]
         selectTool(settings.lastTool)

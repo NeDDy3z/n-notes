@@ -502,6 +502,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override val selectionIsText: Boolean get() = false
     override fun editSelectionText() {}
 
+    // Hyperlinks on items are a paged-note action for now; not offered on the infinite canvas.
+    override val selectionCanLink: Boolean get() = false
+    override val selectionLink: String? get() = null
+    override fun setSelectionLink(url: String?) {}
+
     override val selectionHasInk: Boolean get() = false
     override fun convertSelectionToText() {}
 

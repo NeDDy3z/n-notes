@@ -46,6 +46,7 @@ class ShapeItem(
     override val kind = KIND
     override val resizable = true
     override var locked = false
+    override var link: String? = null
 
     /** Normalized AABB of the two drag points. */
     val box: Rect get() = Rect.fromPoints(start, end)

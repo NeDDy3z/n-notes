@@ -16,6 +16,7 @@ enum class Tool(val id: String) {
     SHAPE("shape"),
     TEXT("text"),
     TEXT_BOX("text_box"),
+    TABLE("table"),
     IMAGE("image");
 
     /** Tools that produce ink via the stroke engine. */
@@ -29,7 +30,8 @@ enum class Tool(val id: String) {
      * usable by finger either way.
      */
     val fingerPansWhenOff: Boolean get() = isStroke ||
-        this == SELECT || this == LASSO || this == SCREENSHOT || this == SHAPE || this == ERASER
+        this == SELECT || this == LASSO || this == SCREENSHOT || this == SHAPE || this == ERASER ||
+        this == TABLE
 
     /** Render-time ink alpha scale: the highlighter is translucent (spec 03 §3). */
     val alphaScale: Double get() = if (this == HIGHLIGHTER) 0.35 else 1.0

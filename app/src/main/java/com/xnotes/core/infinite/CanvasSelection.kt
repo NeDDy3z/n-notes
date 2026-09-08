@@ -13,6 +13,9 @@ import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.GeometrySnapshot
 
+/** Half-width of the sticky zone around each 90-degree step when snap-rotation is on. */
+private val SNAP_STICK_RAD = Math.toRadians(6.0)
+
 /**
  * What is selected on the canvas, and the arithmetic of moving, scaling and rotating it.
  *
@@ -174,12 +177,17 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         return swept
     }
 
-    /** Adjust the swept angle so the resulting absolute box angle lands on a 90-degree step, if enabled. */
+    /**
+     * Give each 90-degree step a small sticky zone, if enabled: the box clings to the nearest
+     * quarter turn only while it is within [SNAP_STICK_RAD] of it, and rotates freely otherwise.
+     * Not a hard quantiser, so angles between the steps stay reachable.
+     */
     private fun snapSwept(from: Obb, swept: Double): Double {
         if (!snapRotation90) return swept
         val quarter = Math.PI / 2.0
-        val snapped = Math.round((from.angle + swept) / quarter) * quarter
-        return snapped - from.angle
+        val target = from.angle + swept
+        val nearest = Math.round(target / quarter) * quarter
+        return if (Math.abs(target - nearest) <= SNAP_STICK_RAD) nearest - from.angle else swept
     }
 
     /** Put the box back where the drag started, for a gesture that was cancelled rather than ended. */

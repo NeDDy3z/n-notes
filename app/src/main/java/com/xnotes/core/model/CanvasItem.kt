@@ -29,6 +29,9 @@ interface CanvasItem {
      */
     var locked: Boolean
 
+    /** An optional hyperlink (http/https/mailto); tapping the item with the pan tool opens it. */
+    var link: String?
+
     /** Draw the item; [r] is already translated to the page origin and scaled. */
     fun paint(r: Renderer)
 

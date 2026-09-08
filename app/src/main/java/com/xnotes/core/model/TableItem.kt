@@ -25,6 +25,7 @@ class TableItem(
     override val kind = KIND
     override val resizable = true
     override var locked = false
+    override var link: String? = null
 
     val colFractions: MutableList<Double> = colFractions.toMutableList()
     val rowFractions: MutableList<Double> = rowFractions.toMutableList()

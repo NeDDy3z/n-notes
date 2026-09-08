@@ -29,7 +29,7 @@ object OverlayTessellator {
     const val GRIP_PX = 19.5
 
     /** How far the rotate grip sits past the box's top edge, in device pixels. */
-    const val GRIP_ARM_PX = 34.0
+    const val GRIP_ARM_PX = 50.0
 
     /** Band and lasso outline thickness, in device pixels. */
     const val MARQUEE_PX = 1.4

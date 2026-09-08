@@ -744,6 +744,54 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     }
 }
 
+/**
+ * Table-tool configuration popup: the column/row counts and line thickness for the next table.
+ * The table itself is drawn on the page by dragging, like the shape tool; these are just its
+ * defaults. An existing table's columns/rows are edited in table edit mode, its width via the
+ * selection's Change-style slider.
+ */
+@Composable
+fun TableConfigPopup(editor: Editor, onDismiss: () -> Unit) {
+    var cols by remember { mutableStateOf(editor.tableToolCols) }
+    var rows by remember { mutableStateOf(editor.tableToolRows) }
+    var width by remember { mutableStateOf(editor.tableToolWidth.toFloat()) }
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle("TABLE")
+            TableStepperRow("COLUMNS", cols, 1, 20) { cols = it; editor.tableToolCols = it }
+            TableStepperRow("ROWS", rows, 1, 20) { rows = it; editor.tableToolRows = it }
+            SliderRow("THICKNESS", width, 1f..12f) { width = it; editor.tableToolWidth = it.toDouble() }
+        }
+    }
+}
+
+/** A −/value/+ integer stepper row, used by [TableConfigPopup]. */
+@Composable
+private fun TableStepperRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
+    val palette = LocalPalette.current
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(
+            "$label  $value",
+            color = palette.text.toComposeColor(),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            modifier = Modifier.weight(1f),
+        )
+        TableStepButton("−") { onChange((value - 1).coerceAtLeast(min)) }
+        Spacer(Modifier.size(8.dp))
+        TableStepButton("+") { onChange((value + 1).coerceAtMost(max)) }
+    }
+}
+
+@Composable
+private fun TableStepButton(label: String, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier.size(32.dp).clip(RoundedCornerShape(5.dp)).background(palette.surface.toComposeColor()).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = palette.text.toComposeColor(), fontSize = 16.sp) }
+}
+
 /** Colour switcher (spec 10 §4): the toolbar swatch picker — opens the shared [ColorPickerPopup]
  *  and writes the chosen colour back to swatch [index]. Picks apply live; the final colour is
  *  remembered into recents when the popup closes. */
