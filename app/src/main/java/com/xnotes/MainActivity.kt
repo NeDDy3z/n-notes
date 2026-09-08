@@ -78,6 +78,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.IntentCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.xnotes.ui.CanvasToastPill
 import com.xnotes.ui.Editor
 import com.xnotes.ui.Toolbar
 import com.xnotes.ui.icons.XnotesIcons
@@ -1056,6 +1057,7 @@ private fun EditorPane(
                 com.xnotes.ui.SelectionMenu(canvas)
                 com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
                 com.xnotes.ui.CanvasDebugOverlay(canvas)
+                CanvasToastPill(canvas)
             }
         } else {
             Toolbar(
@@ -1092,6 +1094,7 @@ private fun EditorPane(
                     com.xnotes.ui.FlowEditMenu(editor)
                     ZoomLockHint(editor)
                     RefiningPdfHint(editor)
+                    CanvasToastPill(editor)
                 }
             }
             // Last children of the resized column: ride directly above the soft keyboard.

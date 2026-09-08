@@ -48,7 +48,7 @@ class ImageItem(
     }
 
     /** [p] brought back into the upright rect's frame, so hit tests stay plain rectangle maths. */
-    private fun unturn(p: Pt): Pt {
+    fun unturn(p: Pt): Pt {
         if (angle == 0.0) return p
         val cs = cos(angle)
         val sn = sin(angle)
@@ -56,6 +56,17 @@ class ImageItem(
         val dx = p.x - c.x
         val dy = p.y - c.y
         return Pt(c.x + dx * cs + dy * sn, c.y - dx * sn + dy * cs)
+    }
+
+    /** The inverse of [unturn]: an upright-frame point turned back to where it is drawn. */
+    fun turn(p: Pt): Pt {
+        if (angle == 0.0) return p
+        val cs = cos(angle)
+        val sn = sin(angle)
+        val c = rect.center
+        val dx = p.x - c.x
+        val dy = p.y - c.y
+        return Pt(c.x + dx * cs - dy * sn, c.y + dx * sn + dy * cs)
     }
 
     override fun translate(dx: Double, dy: Double) {

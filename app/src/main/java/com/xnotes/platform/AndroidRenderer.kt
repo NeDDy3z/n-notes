@@ -365,7 +365,14 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {
         if (text.isEmpty()) return
         val paint = AndroidText.textPaint(font, color.toArgb())
-        val layout = AndroidText.layout(text, rect.w.toInt(), paint)
+        paint.isUnderlineText = flags.underline
+        paint.isStrikeThruText = flags.strike
+        val align = when (flags.hAlign) {
+            com.xnotes.core.pal.HAlign.CENTER -> android.text.Layout.Alignment.ALIGN_CENTER
+            com.xnotes.core.pal.HAlign.RIGHT -> android.text.Layout.Alignment.ALIGN_OPPOSITE
+            com.xnotes.core.pal.HAlign.LEFT -> android.text.Layout.Alignment.ALIGN_NORMAL
+        }
+        val layout = AndroidText.layout(text, rect.w.toInt(), paint, align)
         canvas.save()
         canvas.translate(rect.left.toFloat(), rect.top.toFloat())
         layout.draw(canvas)

@@ -32,6 +32,10 @@ import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -44,6 +48,14 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val composeFamilies = java.util.concurrent.ConcurrentHashMap<String, FontFamily>()
+
+/** Combine underline + strikethrough into one Compose decoration, or null for neither. */
+private fun textDecorationOf(underline: Boolean, strike: Boolean): TextDecoration? = when {
+    underline && strike -> TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
+    underline -> TextDecoration.Underline
+    strike -> TextDecoration.LineThrough
+    else -> null
+}
 
 /** Drop memoized Compose families after a font import/removal changed resolution. */
 internal fun invalidateComposeFamilies() = composeFamilies.clear()
@@ -186,6 +198,14 @@ fun TextEditorOverlay(editor: Editor, field: EditingField) {
                 color = field.rgba.toComposeColor(),
                 fontFamily = field.face.toComposeFamily(),
                 fontSize = fontSp,
+                fontWeight = if (field.bold) FontWeight.Bold else null,
+                fontStyle = if (field.italic) FontStyle.Italic else null,
+                textDecoration = textDecorationOf(field.underline, field.strike),
+                textAlign = when (field.align) {
+                    com.xnotes.core.pal.HAlign.CENTER -> TextAlign.Center
+                    com.xnotes.core.pal.HAlign.RIGHT -> TextAlign.End
+                    com.xnotes.core.pal.HAlign.LEFT -> TextAlign.Start
+                },
             ),
             cursorBrush = SolidColor(palette.accent.toComposeColor()),
         )

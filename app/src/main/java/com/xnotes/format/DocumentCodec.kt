@@ -352,6 +352,11 @@ class DocumentCodec(
         // and notes that use neither serialize exactly as before.
         if (t.height > 0.0) j.name("height").value(t.height)
         if (t.face != TextItem.DEFAULT_FACE) j.name("font_face").value(t.face.id)
+        if (t.bold) j.name("bold").value(true)
+        if (t.italic) j.name("italic").value(true)
+        if (t.underline) j.name("underline").value(true)
+        if (t.strike) j.name("strike").value(true)
+        if (t.align != com.xnotes.core.pal.HAlign.LEFT) j.name("align").value(t.align.name.lowercase())
         if (t.locked) j.name("locked").value(true)
         j.endObject()
     }
@@ -693,6 +698,11 @@ class DocumentCodec(
         var rgba: Rgba? = null
         var pointSize = TextItem.DEFAULT_POINT_SIZE
         var fontFace = ""
+        var textBold = false
+        var textItalic = false
+        var textUnderline = false
+        var textStrike = false
+        var textAlign = "left"
         var shape: String? = null
         var start: Pt? = null
         var end: Pt? = null
@@ -754,6 +764,11 @@ class DocumentCodec(
                 "rgba" -> s.rgba = rgbaOrNull(p)
                 "point_size" -> s.pointSize = doubleOr(p, TextItem.DEFAULT_POINT_SIZE)
                 "font_face" -> s.fontFace = stringOr(p, "")
+                "bold" -> s.textBold = boolOr(p, false)
+                "italic" -> s.textItalic = boolOr(p, false)
+                "underline" -> s.textUnderline = boolOr(p, false)
+                "strike" -> s.textStrike = boolOr(p, false)
+                "align" -> s.textAlign = stringOr(p, "left")
                 "shape" -> s.shape = stringOr(p, "")
                 "start" -> s.start = ptOrNull(p)
                 "end" -> s.end = ptOrNull(p)
@@ -796,6 +811,15 @@ class DocumentCodec(
                     rgba = s.rgba ?: TextItem.DEFAULT_COLOR,
                     pointSize = s.pointSize,
                     face = FontFace.fromId(s.fontFace),
+                    bold = s.textBold,
+                    italic = s.textItalic,
+                    underline = s.textUnderline,
+                    strike = s.textStrike,
+                    align = when (s.textAlign) {
+                        "center" -> com.xnotes.core.pal.HAlign.CENTER
+                        "right" -> com.xnotes.core.pal.HAlign.RIGHT
+                        else -> com.xnotes.core.pal.HAlign.LEFT
+                    },
                     measurer = textMeasurer,
                 ),
             )

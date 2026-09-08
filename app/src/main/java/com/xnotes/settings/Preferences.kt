@@ -38,6 +38,8 @@ data class Preferences(
     val zoomLockPan: String = "single",
     /** Whether holding a freehand ink stroke still snaps it to a recognized shape. */
     val detectShapes: Boolean = false,
+    /** Whether rotating a selection snaps to the nearest 90 degrees. */
+    val snapRotation90: Boolean = false,
     /** Language for handwriting-to-text (Convert to text): BCP-47 tag, "cs" (Czech) | "en" (English). */
     val ocrLanguage: String = "cs",
     /** Tool the stylus side button activates while held; "none" disables it. */
@@ -139,6 +141,7 @@ data class Preferences(
         .put("finger_draws", fingerDraws)
         .put("zoom_lock_pan", zoomLockPan)
         .put("detect_shapes", detectShapes)
+        .put("snap_rotation_90", snapRotation90)
         .put("ocr_language", ocrLanguage)
         .put("pen_button_tool", penButtonTool)
         .put("pen_button_hover", penButtonHover)
@@ -215,6 +218,7 @@ data class Preferences(
                 fingerDraws = o.optBoolean("finger_draws", false),
                 zoomLockPan = zoomLockPan,
                 detectShapes = o.optBoolean("detect_shapes", false),
+                snapRotation90 = o.optBoolean("snap_rotation_90", false),
                 ocrLanguage = o.optString("ocr_language", "cs").ifEmpty { "cs" },
                 penButtonTool = o.optString("pen_button_tool", "eraser").ifEmpty { "eraser" },
                 penButtonHover = o.optBoolean("pen_button_hover", false),

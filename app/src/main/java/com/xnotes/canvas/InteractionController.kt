@@ -95,6 +95,11 @@ data class EditingField(
     val text: String,
     /** The view's page rotation (deg cw); the overlay spins by this around (x, y). */
     val rotation: Int = 0,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val strike: Boolean = false,
+    val align: com.xnotes.core.pal.HAlign = com.xnotes.core.pal.HAlign.LEFT,
 )
 
 /** The floating text style bar's target: the active box's viewport rect + its style. */
@@ -105,6 +110,11 @@ data class TextBar(
     val rgba: Rgba,
     /** True while the keyboard field is up (vs the box merely being selected). */
     val editing: Boolean,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val strike: Boolean = false,
+    val align: com.xnotes.core.pal.HAlign = com.xnotes.core.pal.HAlign.LEFT,
 )
 
 /**
@@ -174,6 +184,9 @@ class InteractionController(
 
     /** Whether holding a freehand ink stroke still snaps it to a recognized shape (spec: "hold to snap"). */
     var detectShapes: Boolean = false
+
+    /** Whether rotating a selection snaps to the nearest 90 degrees. */
+    var snapRotation90: Boolean = false
 
     /** Tool the stylus side button activates while held, or null to ignore the button. */
     var penButtonTool: Tool? = Tool.ERASER
@@ -1765,13 +1778,14 @@ class InteractionController(
 
     private fun refreshCropMenu() {
         val img = cropItem ?: return onCropMenu(null)
-        onCropMenu(screenshotRectViewport(state.fromPageSpaceRect(cropPageIndex, img.rect)))
+        onCropMenu(screenshotRectViewport(state.fromPageSpaceRect(cropPageIndex, img.bounds())))
     }
 
     private fun beginCropDrag(content: Pt) {
         val img = cropItem ?: return
         if (state.pageRects.getOrNull(cropPageIndex) == null) return
-        val local = state.toPageSpace(cropPageIndex, content)
+        // Work in the image's upright frame so a rotated image crops correctly.
+        val local = img.unturn(state.toPageSpace(cropPageIndex, content))
         val tol = HANDLE_HIT / state.zoom
         cropHandle = ResizeMath.hitHandle(ResizeMath.boxHandles(cropRect), local, tol)
         cropMoving = cropHandle == null && cropRect.contains(local)
@@ -1782,7 +1796,7 @@ class InteractionController(
     private fun extendCrop(content: Pt) {
         val img = cropItem ?: return
         if (state.pageRects.getOrNull(cropPageIndex) == null) return
-        val local = state.toPageSpace(cropPageIndex, content)
+        val local = img.unturn(state.toPageSpace(cropPageIndex, content))
         val bounds = img.rect
         when {
             cropHandle != null -> {
@@ -1817,27 +1831,33 @@ class InteractionController(
         return Rect(x, y, w, h)
     }
 
-    /** Draw the crop overlay (content space): dim the trimmed border, outline the crop rect + handles. */
+    /** Draw the crop overlay (content space): dim the trimmed border, outline the crop rect + handles.
+     *  Everything is built in the image's upright frame then turned by its angle, so the overlay
+     *  tracks a rotated image. */
     private fun drawCrop(r: Renderer) {
         val img = cropItem ?: return
         val pi = cropPageIndex
         if (state.pageRects.getOrNull(pi) == null) return
-        val outer = state.fromPageSpaceRect(pi, img.rect)
-        val inner = state.fromPageSpaceRect(pi, cropRect)
-        val dim = Rgba(0, 0, 0, 120)
-        // Four dim bands between the image edge and the crop rect.
-        if (inner.top > outer.top) r.fillRect(Rect(outer.left, outer.top, outer.w, inner.top - outer.top), dim)
-        if (inner.bottom < outer.bottom) r.fillRect(Rect(outer.left, inner.bottom, outer.w, outer.bottom - inner.bottom), dim)
-        if (inner.left > outer.left) r.fillRect(Rect(outer.left, inner.top, inner.left - outer.left, inner.h), dim)
-        if (inner.right < outer.right) r.fillRect(Rect(inner.right, inner.top, outer.right - inner.right, inner.h), dim)
-        val sel = com.xnotes.core.model.Rgba.SELECTION
-        r.strokePolygon(
-            listOf(Pt(inner.left, inner.top), Pt(inner.right, inner.top), Pt(inner.right, inner.bottom), Pt(inner.left, inner.bottom)),
-            Pen(sel, 1.6, cosmetic = true),
+        // Map an upright-frame (page-space) point through the image's turn into content space.
+        fun toContent(p: Pt): Pt = state.fromPageSpace(pi, img.turn(p))
+        fun quad(rect: Rect): List<Pt> = listOf(
+            toContent(Pt(rect.left, rect.top)), toContent(Pt(rect.right, rect.top)),
+            toContent(Pt(rect.right, rect.bottom)), toContent(Pt(rect.left, rect.bottom)),
         )
+        val outer = img.rect
+        val c = cropRect
+        val dim = Rgba(0, 0, 0, 120)
+        // Four dim bands between the image edge and the crop rect, as turned quads.
+        if (c.top > outer.top) r.fillPolygon(quad(Rect(outer.left, outer.top, outer.w, c.top - outer.top)), dim)
+        if (c.bottom < outer.bottom) r.fillPolygon(quad(Rect(outer.left, c.bottom, outer.w, outer.bottom - c.bottom)), dim)
+        if (c.left > outer.left) r.fillPolygon(quad(Rect(outer.left, c.top, c.left - outer.left, c.h)), dim)
+        if (c.right < outer.right) r.fillPolygon(quad(Rect(c.right, c.top, outer.right - c.right, c.h)), dim)
+        val sel = com.xnotes.core.model.Rgba.SELECTION
+        r.strokePolygon(quad(c), Pen(sel, 1.6, cosmetic = true))
         val side = HANDLE_SIZE / state.zoom
-        for (h in ResizeMath.boxHandles(inner)) {
-            r.fillRect(Rect(h.content.x - side / 2, h.content.y - side / 2, side, side), sel)
+        for (h in ResizeMath.boxHandles(c)) {
+            val hc = toContent(h.content)
+            r.fillRect(Rect(hc.x - side / 2, hc.y - side / 2, side, side), sel)
         }
     }
 
@@ -1896,7 +1916,14 @@ class InteractionController(
             selObb = res.obb
             world = res.transform
         } else {
-            val theta = atan2(content.y - txCenter.y, content.x - txCenter.x) - txGrabAngle
+            val raw = atan2(content.y - txCenter.y, content.x - txCenter.x) - txGrabAngle
+            // Snap the absolute selection angle to the nearest 90 degrees when the setting is on.
+            val theta = if (snapRotation90) {
+                val quarter = Math.PI / 2.0
+                Math.round((txStartAngle + raw) / quarter) * quarter - txStartAngle
+            } else {
+                raw
+            }
             selObb = obb0.copy(angle = txStartAngle + theta)
             world = Affine.rotateAbout(txCenter, theta)
         }
@@ -2081,7 +2108,7 @@ class InteractionController(
         (pageRight - left - 14.0).coerceIn(80.0, 300.0)
 
     private fun newTextItem(pos: Pt, width: Double, height: Double): TextItem =
-        TextItem(pos, width, height, "", inkColor, textPointSize, textFace, textMeasurer)
+        TextItem(pos, width, height, "", inkColor, textPointSize, textFace, measurer = textMeasurer)
 
     /** Open the in-place editor on [item] (a new draft, or an existing box being re-edited). */
     private fun startEditing(item: TextItem, pi: Int, isNew: Boolean) {
@@ -2135,6 +2162,11 @@ class InteractionController(
             rgba = item.rgba,
             text = item.text,
             rotation = state.rotationDeg,
+            bold = item.bold,
+            italic = item.italic,
+            underline = item.underline,
+            strike = item.strike,
+            align = item.align,
         )
     }
 
@@ -2208,12 +2240,33 @@ class InteractionController(
         val editing = editingText
         if (editing != null) {
             val f = editingField() ?: return null
-            return TextBar(Rect(f.x, f.y, f.width * f.zoom, f.height * f.zoom), editing.face, editing.pointSize, editing.rgba, editing = true)
+            return TextBar(
+                Rect(f.x, f.y, f.width * f.zoom, f.height * f.zoom), editing.face, editing.pointSize, editing.rgba,
+                editing = true, bold = editing.bold, italic = editing.italic,
+                underline = editing.underline, strike = editing.strike, align = editing.align,
+            )
         }
         if (mode != PointerMode.IDLE) return null
         val sel = selection.singleOrNull()?.item as? TextItem ?: return null
         val rect = selectionBoundsViewport() ?: return null
-        return TextBar(rect, sel.face, sel.pointSize, sel.rgba, editing = false)
+        return TextBar(
+            rect, sel.face, sel.pointSize, sel.rgba, editing = false,
+            bold = sel.bold, italic = sel.italic, underline = sel.underline, strike = sel.strike, align = sel.align,
+        )
+    }
+
+    fun toggleTextBold() = restyleActive { it.bold = !it.bold }
+    fun toggleTextItalic() = restyleActive { it.italic = !it.italic }
+    fun toggleTextUnderline() = restyleActive { it.underline = !it.underline }
+    fun toggleTextStrike() = restyleActive { it.strike = !it.strike }
+
+    /** Cycle a box's alignment left -> center -> right -> left. */
+    fun cycleTextAlign() = restyleActive {
+        it.align = when (it.align) {
+            com.xnotes.core.pal.HAlign.LEFT -> com.xnotes.core.pal.HAlign.CENTER
+            com.xnotes.core.pal.HAlign.CENTER -> com.xnotes.core.pal.HAlign.RIGHT
+            com.xnotes.core.pal.HAlign.RIGHT -> com.xnotes.core.pal.HAlign.LEFT
+        }
     }
 
     fun setTextFace(face: FontFace) {
@@ -2392,7 +2445,7 @@ class InteractionController(
         val pageRight = state.footprint(page).right
         val maxW = (pageRight - sel.bounds.left - 8.0).coerceAtLeast(40.0)
         val width = sel.bounds.w.coerceIn(40.0, maxW)
-        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), width, 0.0, text, inkColor, textPointSize, textFace, textMeasurer)
+        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), width, 0.0, text, inkColor, textPointSize, textFace, measurer = textMeasurer)
         val removals = strokes.map { page to (it as CanvasItem) }
         for (s in strokes) page.items.remove(s)
         page.items.add(box)

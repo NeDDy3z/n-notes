@@ -37,6 +37,9 @@ class CanvasSelection(private val doc: InfiniteDocument) {
 
     val isEmpty: Boolean get() = items.isEmpty()
 
+    /** When set, a rotate drag snaps the box angle to the nearest 90 degrees. */
+    var snapRotation90: Boolean = false
+
     /** Gesture-start geometry, captured by [beginTransform] and restored every frame of a drag. */
     private var startSnapshots: List<GeometrySnapshot> = emptyList()
     private var startBox: Obb? = null
@@ -154,7 +157,7 @@ class CanvasSelection(private val doc: InfiniteDocument) {
      */
     fun rotateLive(pointer: Pt) {
         val from = startBox ?: return
-        val swept = sweptAngle(from, pointer)
+        val swept = snapSwept(from, sweptAngle(from, pointer))
         box = from.copy(angle = from.angle + swept)
         applyLive(Affine.rotateAbout(from.center, swept))
     }
@@ -166,9 +169,17 @@ class CanvasSelection(private val doc: InfiniteDocument) {
      */
     fun previewRotate(pointer: Pt): Double {
         val from = startBox ?: return 0.0
-        val swept = sweptAngle(from, pointer)
+        val swept = snapSwept(from, sweptAngle(from, pointer))
         box = from.copy(angle = from.angle + swept)
         return swept
+    }
+
+    /** Adjust the swept angle so the resulting absolute box angle lands on a 90-degree step, if enabled. */
+    private fun snapSwept(from: Obb, swept: Double): Double {
+        if (!snapRotation90) return swept
+        val quarter = Math.PI / 2.0
+        val snapped = Math.round((from.angle + swept) / quarter) * quarter
+        return snapped - from.angle
     }
 
     /** Put the box back where the drag started, for a gesture that was cancelled rather than ended. */

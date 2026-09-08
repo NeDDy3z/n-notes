@@ -179,7 +179,7 @@ private const val SIDECAR_FILE = "colors.json"
 enum class Pane { PRIMARY, SECONDARY }
 
 @Stable
-class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost {
+class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, ToastHost {
 
     private val appContext = context.applicationContext
 
@@ -458,6 +458,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         private set
     var message by mutableStateOf<String?>(null)
 
+    override var toastText by mutableStateOf<String?>(null)
+        private set
+    override var toastToken by mutableStateOf(0)
+        private set
+
+    /** Flash a brief themed pill at the bottom of the canvas (delete/copy/cut/paste feedback). */
+    fun showToast(text: String) {
+        toastText = text
+        toastToken++
+    }
+
     /** Bumped on every preferences change so open panes refresh (e.g. after an .scm import). */
     var prefsVersion by mutableStateOf(0)
         private set
@@ -528,7 +539,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun bakeCrop(img: com.xnotes.core.model.ImageItem, cropRect: com.xnotes.core.geometry.Rect): Pair<ImageData, Rect>? {
         if (img.rect.w <= 0.0 || img.rect.h <= 0.0) return null
         val src = runCatching { android.graphics.BitmapFactory.decodeFile(img.image.file.path) }.getOrNull() ?: return null
-        try {
+        if (src.width <= 0 || src.height <= 0) {
+            src.recycle()
+            return null
+        }
+        // A big photo can blow the heap when createBitmap/compress allocate; swallow it and
+        // just leave the image uncropped rather than crashing the app.
+        return try {
             val fx = ((cropRect.left - img.rect.left) / img.rect.w).coerceIn(0.0, 1.0)
             val fy = ((cropRect.top - img.rect.top) / img.rect.h).coerceIn(0.0, 1.0)
             val x = (fx * src.width).toInt().coerceIn(0, src.width - 1)
@@ -540,10 +557,33 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             java.io.FileOutputStream(file).use { cropped.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             if (cropped !== src) cropped.recycle()
             val size = imageCodec.probeFile(file.path) ?: return null
-            return ImageData(file, size.width, size.height) to cropRect
+            // Keep a rotated crop where it visually sits: the piece now turns about its own centre,
+            // not the original's, so shift the new box by the difference the turn introduces.
+            ImageData(file, size.width, size.height) to placedCropRect(img, cropRect)
+        } catch (t: Throwable) {
+            message = "Couldn't crop this image (it may be too large)."
+            null
         } finally {
             src.recycle()
         }
+    }
+
+    /** Reposition the crop rect so a rotated image's cropped piece stays visually in place. */
+    private fun placedCropRect(
+        img: com.xnotes.core.model.ImageItem,
+        cropRect: com.xnotes.core.geometry.Rect,
+    ): Rect {
+        if (img.angle == 0.0) return cropRect
+        val oldC = img.rect.center
+        val newC = cropRect.center
+        val dx = newC.x - oldC.x
+        val dy = newC.y - oldC.y
+        val cs = kotlin.math.cos(img.angle)
+        val sn = kotlin.math.sin(img.angle)
+        // T = (R - I) * (newC - oldC): the shift a turn about newC adds versus a turn about oldC.
+        val tx = (dx * cs - dy * sn) - dx
+        val ty = (dx * sn + dy * cs) - dy
+        return cropRect.translate(tx, ty)
     }
 
     /** Viewport rect to anchor the screenshot tool's "copy as image" menu, or null when hidden. */
@@ -1065,8 +1105,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val hasClipboardItems: Boolean get() = controller.hasClipboardItems()
     override val clipboardHasImage: Boolean get() = clipboardImageUri() != null
 
-    override fun copySelection() = controller.copySelection()
-    override fun cutSelection() = controller.cutSelection()
+    override fun copySelection() {
+        if (hasSelection) showToast("Copied")
+        controller.copySelection()
+    }
+    override fun cutSelection() {
+        if (hasSelection) showToast("Cut")
+        controller.cutSelection()
+    }
     override fun duplicateSelection() = controller.duplicateSelection()
     override fun lockSelection() = controller.lockSelection()
     override fun unlockItem(item: com.xnotes.core.model.CanvasItem) = controller.unlockItem(item)
@@ -1136,18 +1182,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }.getOrDefault(false)
 
     override fun pasteItemsAt(content: com.xnotes.core.geometry.Pt) {
+        if (hasClipboardItems) showToast("Inserted")
         controller.pasteItemsAt(content)
     }
 
     override fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt) {
         val uri = clipboardImageUri() ?: run {
-            clipboardSvgBytes()?.let { insertImageAt(it, content) }
+            clipboardSvgBytes()?.let { insertImageAt(it, content); showToast("Inserted") }
                 ?: run { message = "The clipboard has no image to paste." }
             return
         }
         runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
             .getOrNull()
-            ?.let { insertImageAt(it, content) }
+            ?.let { insertImageAt(it, content); showToast("Inserted") }
             ?: run { message = "The clipboard has no image to paste." }
     }
 
@@ -1505,6 +1552,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var tableToolCols by mutableStateOf(3)
     var tableToolRows by mutableStateOf(3)
 
+    /** Default line width for a newly inserted table (also the width stepper's value when none is selected). */
+    var tableToolWidth by mutableStateOf(2.0)
+
     /** Insert a table centred on the current page (60% × 40% of the page) and select it. */
     fun insertTable() {
         val pages = state.document.pages
@@ -1515,7 +1565,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val h = page.height * 0.4
         val rect = Rect((page.width - w) / 2.0, (page.height - h) / 2.0, w, h)
         val color = toolbarColors.getOrElse(activeColorIndex) { toolbarColors.first() }
-        val table = com.xnotes.core.model.TableItem.create(rect, tableToolCols, tableToolRows, color, 2.0)
+        val table = com.xnotes.core.model.TableItem.create(rect, tableToolCols, tableToolRows, color, tableToolWidth)
         page.items.add(table)
         state.appendToCache(page, table)
         history.push(AddItem(page, table))
@@ -1530,6 +1580,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun setSelectedTableColumns(n: Int) = controller.editSelectedTable { it.setColumns(n) }
     fun setSelectedTableRows(n: Int) = controller.editSelectedTable { it.setRows(n) }
+    fun setSelectedTableWidth(w: Double) = controller.editSelectedTable { it.strokeWidth = w }
 
     /** Save an encoded image into the on-disk sticker library (validated by a probe decode). */
     fun addSticker(bytes: ByteArray) {
@@ -1742,12 +1793,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             p.fingerDraws,
             if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER),
             p.zoomLockPan,
+            p.snapRotation90,
         )
         infiniteOrNull?.applyZoomRange(p.canvasMinZoomPercent, p.canvasMaxZoomPercent)
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
         controller.detectShapes = p.detectShapes
+        controller.snapRotation90 = p.snapRotation90
         controller.penButtonTool = if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER)
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
@@ -1980,6 +2033,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.pickInk(color)
         refreshTextBar()
     }
+
+    fun toggleTextBold() { controller.toggleTextBold(); refreshTextBar() }
+    fun toggleTextItalic() { controller.toggleTextItalic(); refreshTextBar() }
+    fun toggleTextUnderline() { controller.toggleTextUnderline(); refreshTextBar() }
+    fun toggleTextStrike() { controller.toggleTextStrike(); refreshTextBar() }
+    fun cycleTextAlign() { controller.cycleTextAlign(); refreshTextBar() }
 
     fun updateEditingText(text: String) {
         controller.updateEditingText(text)
@@ -4337,7 +4396,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     // --- selection edits ---
 
-    override fun deleteSelection() = controller.deleteSelection()
+    override fun deleteSelection() {
+        if (hasSelection) showToast("Deleted")
+        controller.deleteSelection()
+    }
     fun selectAll() = controller.selectAll()
     override fun bringToFront() = controller.bringToFront()
     override fun selectionStyles() = controller.selectionStyles()

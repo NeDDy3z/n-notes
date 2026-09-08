@@ -23,10 +23,15 @@ object AndroidText {
             color = argb
         }
 
-    fun layout(text: CharSequence, widthPx: Int, paint: TextPaint): StaticLayout =
+    fun layout(
+        text: CharSequence,
+        widthPx: Int,
+        paint: TextPaint,
+        align: android.text.Layout.Alignment = android.text.Layout.Alignment.ALIGN_NORMAL,
+    ): StaticLayout =
         StaticLayout.Builder
             .obtain(text, 0, text.length, paint, widthPx.coerceAtLeast(1))
-            .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
+            .setAlignment(align)
             .setIncludePad(false)
             .build()
 

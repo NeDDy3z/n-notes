@@ -257,6 +257,14 @@ fun PreferencesPane(
                 Chip("No pan", prefs.zoomLockPan == "none") { update(prefs.copy(zoomLockPan = "none")) }
             }
             CheckRow("Snap held strokes to shapes (hold the pen still)", prefs.detectShapes) { update(prefs.copy(detectShapes = it)) }
+            FieldLabel("Snap rotation to 90 degrees")
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Chip("On", prefs.snapRotation90) { update(prefs.copy(snapRotation90 = true)) }
+                Chip("Off", !prefs.snapRotation90) { update(prefs.copy(snapRotation90 = false)) }
+            }
             FieldLabel("Stylus/Pen side button (hold)")
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

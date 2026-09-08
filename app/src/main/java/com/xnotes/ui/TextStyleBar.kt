@@ -3,6 +3,19 @@ package com.xnotes.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FormatAlignCenter
+import androidx.compose.material.icons.filled.FormatAlignLeft
+import androidx.compose.material.icons.filled.FormatAlignRight
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.xnotes.core.pal.HAlign
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -115,8 +128,8 @@ fun TextBoxFormatBar(editor: Editor) {
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .background(palette.panel.toComposeColor()),
-        horizontalArrangement = Arrangement.Center,
+            .background(palette.panel.toComposeColor())
+            .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TextColorButton(editor, bar.rgba)
@@ -124,6 +137,12 @@ fun TextBoxFormatBar(editor: Editor) {
         FacePicker(current = bar.face) { editor.setTextFace(it) }
         BarSeparator()
         SizeStepper(size = bar.pointSize, onDelta = { editor.setTextPointSize(bar.pointSize + it) })
+        BarSeparator()
+        StyleToggle(Icons.Filled.FormatBold, "Bold", bar.bold) { editor.toggleTextBold() }
+        StyleToggle(Icons.Filled.FormatItalic, "Italic", bar.italic) { editor.toggleTextItalic() }
+        StyleToggle(Icons.Filled.FormatUnderlined, "Underline", bar.underline) { editor.toggleTextUnderline() }
+        StyleToggle(Icons.Filled.FormatStrikethrough, "Strikethrough", bar.strike) { editor.toggleTextStrike() }
+        StyleToggle(alignIcon(bar.align), "Alignment", bar.align != HAlign.LEFT) { editor.cycleTextAlign() }
         BarSeparator()
         Box(
             modifier = Modifier.size(44.dp).clickable { editor.commitText() },
@@ -136,6 +155,25 @@ fun TextBoxFormatBar(editor: Editor) {
                 modifier = Modifier.size(22.dp),
             )
         }
+    }
+}
+
+private fun alignIcon(align: HAlign): ImageVector = when (align) {
+    HAlign.LEFT -> Icons.Filled.FormatAlignLeft
+    HAlign.CENTER -> Icons.Filled.FormatAlignCenter
+    HAlign.RIGHT -> Icons.Filled.FormatAlignRight
+}
+
+@Composable
+private fun StyleToggle(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = (if (active) palette.accent else palette.textDim).toComposeColor(),
+            modifier = Modifier.size(22.dp),
+        )
     }
 }
 

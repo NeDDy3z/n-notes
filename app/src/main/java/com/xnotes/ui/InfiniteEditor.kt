@@ -59,7 +59,7 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
-class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost {
+class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, ToastHost {
 
     private val appContext = context.applicationContext
 
@@ -199,6 +199,20 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** True while anything is selected, so the chrome can offer the actions that need one. */
     var hasSelection by mutableStateOf(false)
         private set
+
+    override var toastText by mutableStateOf<String?>(null)
+        private set
+    override var toastToken by mutableStateOf(0)
+        private set
+
+    /** Flash a brief themed pill at the bottom of the canvas (delete/copy/cut/paste feedback). */
+    fun showToast(text: String) {
+        toastText = text
+        toastToken++
+    }
+
+    /** Set while cut composes copy+delete internally, so only the "Cut" pill shows. */
+    private var suppressToast = false
 
     /** The GL-side mirror of the document. Fed by [modelListener]; never reads the model itself. */
     private val scene = CanvasScene()
@@ -420,6 +434,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun deleteSelection() {
         val items = selection.items
         if (items.isEmpty()) return
+        if (!suppressToast) showToast("Deleted")
         val command = EraseCanvasItems.capture(document, items)
         document.removeAll(items)
         history.push(command)
@@ -430,6 +445,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     override fun copySelection() {
         if (selection.isEmpty) return
+        if (!suppressToast) showToast("Copied")
         clipboard.clear()
         clipboardFromCut = false
         selection.items.mapTo(clipboard) { it.deepCopy(textMeasurer) }
@@ -437,9 +453,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     override fun cutSelection() {
         if (selection.isEmpty) return
+        suppressToast = true
         copySelection()
         clipboardFromCut = true
         deleteSelection()
+        suppressToast = false
+        showToast("Cut")
     }
 
     /** Clone the selection a nudge down and right, and leave the copies selected. */
@@ -513,6 +532,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         for (clone in clones) clone.translate(dx, dy)
         document.addAll(clones)
         history.push(AddCanvasItems(document, clones))
+        showToast("Inserted")
         if (clipboardFromCut) {
             clipboard.clear()
             clipboardFromCut = false
@@ -545,6 +565,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun pasteClipboardImageAt(content: Pt) {
         val bytes = com.xnotes.platform.SystemClipboard.imageBytes(appContext) ?: return
         insertImage(bytes, content)
+        showToast("Inserted")
     }
 
     /** Put the selection on top. On a flat canvas that is purely a reorder of the item list. */
@@ -1334,11 +1355,21 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     /** Adopt the app's pen preferences, so the canvas and the paged note behave the same. */
-    fun applyInputPrefs(fingerDraws: Boolean, penButtonTool: Tool?, zoomLockPan: String = "single") {
+    fun applyInputPrefs(
+        fingerDraws: Boolean,
+        penButtonTool: Tool?,
+        zoomLockPan: String = "single",
+        snapRotation90: Boolean = false,
+    ) {
         interaction.fingerDraws = fingerDraws
         interaction.penButtonTool = penButtonTool
         interaction.zoomLockPan = zoomLockPan
+        selection.snapRotation90 = snapRotation90
+        this.snapRotation90 = snapRotation90
     }
+
+    /** Mirrors prefs.snapRotation90; re-applied to each freshly built selection. */
+    private var snapRotation90 = false
 
     fun toggleZoomLock() {
         zoomLocked = !zoomLocked
@@ -1412,7 +1443,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         document.listener = null
         document = next
         next.listener = modelListener
-        selection = CanvasSelection(next)
+        selection = CanvasSelection(next).also { it.snapRotation90 = snapRotation90 }
         hasSelection = false
         history.clear()
         interaction.resetGestureState()

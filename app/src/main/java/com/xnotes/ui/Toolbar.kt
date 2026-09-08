@@ -455,6 +455,13 @@ private fun TableMenu(editor: Editor) {
                 rows = it
                 if (selected != null) editor.setSelectedTableRows(it) else editor.tableToolRows = it
             }
+            var width by remember(expanded, selected) {
+                mutableStateOf((selected?.strokeWidth ?: editor.tableToolWidth).toInt().coerceIn(TABLE_WIDTH_MIN, TABLE_WIDTH_MAX))
+            }
+            TableStepRow("Width", width, TABLE_WIDTH_MIN, TABLE_WIDTH_MAX) {
+                width = it
+                if (selected != null) editor.setSelectedTableWidth(it.toDouble()) else editor.tableToolWidth = it.toDouble()
+            }
             if (selected == null) {
                 DropdownMenuItem(text = { Text("Insert table") }, onClick = { editor.insertTable(); expanded = false })
             }
@@ -464,16 +471,18 @@ private fun TableMenu(editor: Editor) {
 
 private const val TABLE_MIN = 1
 private const val TABLE_MAX = 20
+private const val TABLE_WIDTH_MIN = 1
+private const val TABLE_WIDTH_MAX = 12
 
 @Composable
-private fun TableStepRow(label: String, value: Int, onChange: (Int) -> Unit) {
+private fun TableStepRow(label: String, value: Int, min: Int = TABLE_MIN, max: Int = TABLE_MAX, onChange: (Int) -> Unit) {
     val palette = LocalPalette.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
         Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(72.dp))
-        TableStepBox("−") { onChange((value - 1).coerceAtLeast(TABLE_MIN)) }
+        TableStepBox("−") { onChange((value - 1).coerceAtLeast(min)) }
         Text(
             "$value",
             color = palette.text.toComposeColor(),
@@ -482,7 +491,7 @@ private fun TableStepRow(label: String, value: Int, onChange: (Int) -> Unit) {
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             modifier = Modifier.width(36.dp),
         )
-        TableStepBox("+") { onChange((value + 1).coerceAtMost(TABLE_MAX)) }
+        TableStepBox("+") { onChange((value + 1).coerceAtMost(max)) }
     }
 }
 

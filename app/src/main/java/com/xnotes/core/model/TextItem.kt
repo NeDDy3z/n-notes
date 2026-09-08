@@ -5,6 +5,7 @@ import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.FontSpec
+import com.xnotes.core.pal.HAlign
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.TextFlags
 import com.xnotes.core.pal.TextMeasurer
@@ -24,6 +25,11 @@ class TextItem(
     var rgba: Rgba = DEFAULT_COLOR,
     var pointSize: Double = DEFAULT_POINT_SIZE,
     var face: FontFace = DEFAULT_FACE,
+    var bold: Boolean = false,
+    var italic: Boolean = false,
+    var underline: Boolean = false,
+    var strike: Boolean = false,
+    var align: HAlign = HAlign.LEFT,
     private val measurer: TextMeasurer,
 ) : CanvasItem, Resizable {
 
@@ -31,16 +37,20 @@ class TextItem(
     override val resizable = true
     override var locked = false
 
-    val font get() = FontSpec(pointSize, face)
+    val font get() = FontSpec(pointSize, face, bold, italic)
+
+    /** Layout flags carrying this box's decorations and alignment. */
+    private fun flags(): TextFlags =
+        TextFlags(wordWrap = true, alignLeft = true, alignTop = true, underline = underline, strike = strike, hAlign = align)
 
     /** Height the current text needs at the current width (empty ⇒ one line). */
-    fun contentHeight(): Double = measurer.measure(text.ifEmpty { " " }, font, width, FLAGS).h
+    fun contentHeight(): Double = measurer.measure(text.ifEmpty { " " }, font, width, flags()).h
 
     override fun bounds(): Rect = Rect(pos.x, pos.y, width, maxOf(height, contentHeight()))
 
     override fun paint(r: Renderer) {
         if (text.isEmpty()) return
-        r.drawText(text, bounds(), font, rgba, FLAGS)
+        r.drawText(text, bounds(), font, rgba, flags())
     }
 
     override fun translate(dx: Double, dy: Double) {
@@ -91,20 +101,33 @@ class TextItem(
         const val DEFAULT_POINT_SIZE = 13.0
         val DEFAULT_FACE = FontFace.MONO
         val DEFAULT_COLOR = Rgba(236, 236, 236, 255)
-        val FLAGS = TextFlags(wordWrap = true, alignLeft = true, alignTop = true)
     }
 }
 
-/** A snapshot of a text box's restylable properties (colour, size, face) for undo. */
-data class TextStyle(val rgba: Rgba, val pointSize: Double, val face: FontFace) {
+/** A snapshot of a text box's restylable properties (colour, size, face, decorations) for undo. */
+data class TextStyle(
+    val rgba: Rgba,
+    val pointSize: Double,
+    val face: FontFace,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val strike: Boolean = false,
+    val align: HAlign = HAlign.LEFT,
+) {
     fun applyTo(t: TextItem) {
         t.rgba = rgba
         t.pointSize = pointSize
         t.face = face
+        t.bold = bold
+        t.italic = italic
+        t.underline = underline
+        t.strike = strike
+        t.align = align
     }
 
     companion object {
-        fun of(t: TextItem) = TextStyle(t.rgba, t.pointSize, t.face)
+        fun of(t: TextItem) = TextStyle(t.rgba, t.pointSize, t.face, t.bold, t.italic, t.underline, t.strike, t.align)
     }
 }
 
