@@ -31,6 +31,8 @@ object HandwritingOcr {
         return DigitalInkRecognitionModel.builder(id).build()
     }
 
+    // Synchronized: recognize() runs on Dispatchers.IO, so concurrent converts can race on the map.
+    @Synchronized
     private fun recognizerFor(tag: String): DigitalInkRecognizer = recognizers.getOrPut(tag) {
         DigitalInkRecognition.getClient(DigitalInkRecognizerOptions.builder(modelFor(tag)).build())
     }

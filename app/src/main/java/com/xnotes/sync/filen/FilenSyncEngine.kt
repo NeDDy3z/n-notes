@@ -52,7 +52,11 @@ class FilenSyncEngine(
             loc != null && rem != null -> {
                 if (st == null) {
                     val bytes = FilenLocalStore.readBytes(context, loc.documentUri) ?: return
-                    if (rem.meta.hash != null && rem.meta.hash == FilenCrypto.sha512Hex(bytes)) {
+                    // Prefer the remote hash; when it's absent (older uploads / other clients), compare
+                    // the actual bytes so byte-identical files don't spawn a spurious conflict copy.
+                    val identical = if (rem.meta.hash != null) rem.meta.hash == FilenCrypto.sha512Hex(bytes)
+                        else client.downloadFile(rem.file, rem.meta).contentEquals(bytes)
+                    if (identical) {
                         state.put(path, FilenSyncState.Entry(rem.file.uuid, rem.meta.lastModified, loc.modified, loc.size))
                         summary.skipped++
                     } else {

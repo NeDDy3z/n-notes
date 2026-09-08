@@ -482,7 +482,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val tableEditing: Boolean get() = tableEditMode
     override fun toggleTableEditMode() = controller.toggleTableEditMode()
 
-    override val selectionIsImage: Boolean get() = controller.singleSelectedImage() != null
+    // Gates the Crop action; vector (SVG) sources have no bitmap to bake, so crop is not offered.
+    override val selectionIsImage: Boolean get() {
+        val img = controller.singleSelectedImage() ?: return false
+        return !com.xnotes.platform.ImageDecoder.isVector(img.image.file.path)
+    }
     override fun cropSelection() = controller.beginCrop()
 
     override val selectionIsText: Boolean get() = controller.singleSelectedText() != null

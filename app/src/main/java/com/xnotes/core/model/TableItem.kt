@@ -102,6 +102,7 @@ class TableItem(
 
     /** Add a column of average width on the right, keeping the others' proportions. */
     fun addColumn() {
+        if (cols >= MAX_LINES) return
         val avg = 1.0 / (cols + 1)
         val k = cols.toDouble() / (cols + 1)
         for (i in colFractions.indices) colFractions[i] = colFractions[i] * k
@@ -110,6 +111,7 @@ class TableItem(
 
     /** Add a row of average height at the bottom, keeping the others' proportions. */
     fun addRow() {
+        if (rows >= MAX_LINES) return
         val avg = 1.0 / (rows + 1)
         val k = rows.toDouble() / (rows + 1)
         for (i in rowFractions.indices) rowFractions[i] = rowFractions[i] * k
@@ -141,7 +143,10 @@ class TableItem(
         val span = rightEdge - leftEdge
         if (span <= 0) return
         val minFrac = MIN_CELL / rect.w
-        val newLeft = ((x - leftEdge) / rect.w).coerceIn(minFrac, (rightEdge - leftEdge) / rect.w - minFrac)
+        val spanFrac = span / rect.w
+        // When the pair is too narrow for two min cells, split it evenly instead of clamping to an inverted range.
+        val newLeft = if (spanFrac <= 2 * minFrac) spanFrac / 2
+            else ((x - leftEdge) / rect.w).coerceIn(minFrac, spanFrac - minFrac)
         val pairTotal = colFractions[i - 1] + colFractions[i]
         colFractions[i - 1] = newLeft
         colFractions[i] = pairTotal - newLeft
@@ -152,9 +157,13 @@ class TableItem(
         if (j < 1 || j >= rows) return
         val topEdge = rowY(j - 1)
         val bottomEdge = rowY(j + 1)
-        if (bottomEdge - topEdge <= 0) return
+        val span = bottomEdge - topEdge
+        if (span <= 0) return
         val minFrac = MIN_CELL / rect.h
-        val newTop = ((y - topEdge) / rect.h).coerceIn(minFrac, (bottomEdge - topEdge) / rect.h - minFrac)
+        val spanFrac = span / rect.h
+        // When the pair is too short for two min cells, split it evenly instead of clamping to an inverted range.
+        val newTop = if (spanFrac <= 2 * minFrac) spanFrac / 2
+            else ((y - topEdge) / rect.h).coerceIn(minFrac, spanFrac - minFrac)
         val pairTotal = rowFractions[j - 1] + rowFractions[j]
         rowFractions[j - 1] = newTop
         rowFractions[j] = pairTotal - newTop
