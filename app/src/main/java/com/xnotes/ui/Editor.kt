@@ -5001,6 +5001,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 canvasAutosaveUri = null
                 canvasOpen = false
                 noteOpen = false
+                com.xnotes.sync.filen.FilenSyncManager.syncOnNoteExit(appContext)
             }
             return
         }
@@ -5013,6 +5014,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             autosaveUri?.let { uri -> autosaveScope.launch { regenerateClosedNoteThumb(uri) } }
             autosaveUri = null
             noteOpen = false
+            com.xnotes.sync.filen.FilenSyncManager.syncOnNoteExit(appContext)
         }
     }
 }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -27,6 +28,7 @@ import java.util.concurrent.TimeUnit
 object FilenSyncManager {
     private const val WORK_NAME = "filen_periodic_sync"
     private val syncMutex = Mutex()
+    private val exitSyncScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
     data class Status(val running: Boolean = false, val lastSyncMs: Long = 0, val fileCount: Int = 0, val message: String = "")
 
@@ -116,6 +118,22 @@ object FilenSyncManager {
             if (result.isSuccess) persistStatus(context, status)
             result.map { it.first }
         }
+    }
+
+    /** Fire-and-forget sync when a note is closed, if sync-on-exit is on and config/network allow it. */
+    fun syncOnNoteExit(context: Context) {
+        val appCtx = context.applicationContext
+        val prefs = settings(appCtx).prefs
+        if (!prefs.filenSyncEnabled || !prefs.filenSyncOnNoteExit || !isConfigured(appCtx)) return
+        if (_status.value.running) return // a periodic/manual sync is already covering these changes
+        if (prefs.filenWifiOnly && !isUnmetered(appCtx)) return
+        exitSyncScope.launch { runCatching { syncNow(appCtx) } }
+    }
+
+    private fun isUnmetered(context: Context): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 
     /** (Re)schedule or cancel the periodic job to match current preferences. */
