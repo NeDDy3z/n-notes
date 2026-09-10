@@ -191,6 +191,7 @@ class InfiniteInteraction(
     private var lastPan = Pt.ZERO
     private var lastMoveMs = 0L
     private var panVel = Pt.ZERO
+    private var panFromPenButton = false // a side-button pan parks where the pen lifted: no glide
     private var flinging = false
     private var flingVel = Pt.ZERO
     private var lastFlingMs = 0L
@@ -286,7 +287,7 @@ class InfiniteInteraction(
             effective == Tool.SHAPE -> beginShape(vx, vy)
             effective == Tool.SELECT -> beginSelect(vx, vy)
             effective == Tool.LASSO -> beginLasso(vx, vy)
-            else -> beginPan(vx, vy)
+            else -> beginPan(vx, vy, fromPenButton = buttonHeld && penButtonTool == Tool.PAN)
         }
     }
 
@@ -415,7 +416,7 @@ class InfiniteInteraction(
 
     private fun handleUp(e: MotionEvent) {
         cancelLongPress()
-        val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed()) ||
+        val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed() && !panFromPenButton) ||
             (mode == CanvasPointerMode.PINCH && pinchPanAllowed())
         // A finger tap off the selection puts it away; a tap is the only way to say so with a
         // finger, since a drag there is a pan.
@@ -1034,9 +1035,10 @@ class InfiniteInteraction(
 
     // --- pan ---
 
-    private fun beginPan(vx: Double, vy: Double) {
+    private fun beginPan(vx: Double, vy: Double, fromPenButton: Boolean = false) {
         mode = CanvasPointerMode.PAN
         panDownAt = Pt(vx, vy)
+        panFromPenButton = fromPenButton
         // Moving the view is paced by the display, so the render thread stays up for it.
         setInteractive(true, true)
         startTrackingVelocity(vx, vy)
