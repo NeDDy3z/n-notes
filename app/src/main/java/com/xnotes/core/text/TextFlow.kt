@@ -43,6 +43,8 @@ data class CharStyle(
     val highlight: Rgba? = null,
     val sizePt: Double? = null,
     val face: FontFace? = null,
+    /** Non-null makes the run a tappable hyperlink (rendered link-coloured + underlined). */
+    val link: String? = null,
 ) {
     companion object {
         val DEFAULT = CharStyle()

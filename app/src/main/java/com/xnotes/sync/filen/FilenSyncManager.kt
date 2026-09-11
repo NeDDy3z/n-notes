@@ -30,7 +30,14 @@ object FilenSyncManager {
     private val syncMutex = Mutex()
     private val exitSyncScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
-    data class Status(val running: Boolean = false, val lastSyncMs: Long = 0, val fileCount: Int = 0, val message: String = "")
+    data class Status(
+        val running: Boolean = false,
+        val lastSyncMs: Long = 0,
+        val fileCount: Int = 0,
+        val message: String = "",
+        /** Notes whose two devices diverged on the last sync, for the explorer's heads-up banner. */
+        val conflicts: List<String> = emptyList(),
+    )
 
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
@@ -42,9 +49,17 @@ object FilenSyncManager {
             val f = statusFile(context)
             if (f.exists()) {
                 val o = org.json.JSONObject(f.readText())
-                _status.value = Status(lastSyncMs = o.optLong("lastSyncMs"), fileCount = o.optInt("fileCount"))
+                val arr = o.optJSONArray("conflicts")
+                val conflicts = if (arr != null) (0 until arr.length()).map { arr.getString(it) } else emptyList()
+                _status.value = Status(lastSyncMs = o.optLong("lastSyncMs"), fileCount = o.optInt("fileCount"), conflicts = conflicts)
             }
         }
+    }
+
+    /** Dismiss the conflict banner (the notes were reviewed). */
+    fun clearConflicts(context: Context) {
+        _status.value = _status.value.copy(conflicts = emptyList())
+        persistStatus(context, _status.value)
     }
 
     private fun statusFile(context: Context) =
@@ -53,7 +68,11 @@ object FilenSyncManager {
     private fun persistStatus(context: Context, s: Status) {
         runCatching {
             statusFile(context).writeText(
-                org.json.JSONObject().put("lastSyncMs", s.lastSyncMs).put("fileCount", s.fileCount).toString(),
+                org.json.JSONObject()
+                    .put("lastSyncMs", s.lastSyncMs)
+                    .put("fileCount", s.fileCount)
+                    .put("conflicts", org.json.JSONArray(s.conflicts))
+                    .toString(),
             )
         }
     }
@@ -105,14 +124,24 @@ object FilenSyncManager {
                 state.save(context)
                 summary to state.paths().count { !it.startsWith(".") }
             }
+            val newConflicts = result.getOrNull()?.first?.conflictNotes
+                ?.map { "${it.path.substringAfterLast('/')}: ${it.message}" } ?: emptyList()
             val status = Status(
                 running = false,
                 lastSyncMs = System.currentTimeMillis(),
                 fileCount = result.getOrNull()?.second ?: _status.value.fileCount,
                 message = result.fold(
-                    { (s, _) -> "Up ${s.uploaded}, down ${s.downloaded}" + (if (s.conflicts > 0) ", ${s.conflicts} conflicts" else "") + (if (s.errors.isNotEmpty()) ", ${s.errors.size} errors" else "") },
+                    { (s, _) ->
+                        "Up ${s.uploaded}, down ${s.downloaded}" +
+                            (if (s.deleted > 0) ", ${s.deleted} deleted" else "") +
+                            (if (s.conflicts > 0) ", ${s.conflicts} conflicts" else "") +
+                            (if (s.errors.isNotEmpty()) ", ${s.errors.size} errors" else "")
+                    },
                     { e -> "Failed: ${e.message}" },
                 ),
+                // Accumulate conflicts until the user dismisses the banner, so a background sync's
+                // heads-up is not lost before it is seen.
+                conflicts = (_status.value.conflicts + newConflicts).distinct().takeLast(50),
             )
             _status.value = status
             if (result.isSuccess) persistStatus(context, status)

@@ -34,11 +34,15 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.CheckBox
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -108,6 +112,7 @@ fun TextFormatBar(editor: Editor) {
         BarIcon(Icons.Filled.FormatItalic, "Italic", active = style.italic) { editor.flowToggleItalic() }
         BarIcon(Icons.Filled.FormatUnderlined, "Underline", active = style.underline) { editor.flowToggleUnderline() }
         BarIcon(Icons.Filled.FormatStrikethrough, "Strikethrough", active = style.strike) { editor.flowToggleStrike() }
+        LinkButton(editor, style.link)
         BarDivider()
         BarIcon(Icons.Filled.FormatListNumbered, "Ordered list", active = para?.list == ListKind.ORDERED) {
             editor.flowToggleList(ListKind.ORDERED)
@@ -201,6 +206,39 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
                 )
             }
         }
+    }
+}
+
+/** Hyperlink: applies a URL to the selection, or edits/removes the link the caret sits on.
+ *  With no selection and no existing link it inserts the URL itself as linked text. */
+@Composable
+private fun LinkButton(editor: Editor, current: String?) {
+    var open by remember { mutableStateOf(false) }
+    BarIcon(Icons.Filled.Link, "Link", active = current != null) { open = true }
+    if (open) {
+        var text by remember { mutableStateOf(current ?: "") }
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text("Link") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    placeholder = { Text("https://example.com") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { editor.flowSetCharLink(text.trim()); open = false }) { Text("Save") }
+            },
+            dismissButton = {
+                if (current != null) {
+                    TextButton(onClick = { editor.flowSetCharLink(null); open = false }) { Text("Remove") }
+                } else {
+                    TextButton(onClick = { open = false }) { Text("Cancel") }
+                }
+            },
+        )
     }
 }
 

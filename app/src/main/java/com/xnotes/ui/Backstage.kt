@@ -145,7 +145,7 @@ import kotlinx.coroutines.withTimeout
 import kotlin.math.roundToInt
 
 /** Which pane the backstage shows on the right. */
-enum class BackstageView { HOME, PREFERENCES, ABOUT }
+enum class BackstageView { HOME, PREFERENCES, ABOUT, TRASH }
 
 /** Whether the Home explorer is awaiting a new file/folder name. */
 private enum class CreateMode { NONE, FILE, CANVAS, FOLDER }
@@ -264,8 +264,8 @@ private fun BackstageContent(
     BackHandler {
         when {
             compact && sidebarOpen -> dismissSidebar()
-            // Preferences and About are sub-pages of Home: back lands on Home rather than leaving the app.
-            view == BackstageView.PREFERENCES || view == BackstageView.ABOUT -> selectView(BackstageView.HOME)
+            // Preferences/About/Trash are sub-pages of Home: back lands on Home rather than leaving the app.
+            view != BackstageView.HOME -> selectView(BackstageView.HOME)
             createMode != CreateMode.NONE -> createMode = CreateMode.NONE
             else -> onExitApp()
         }
@@ -347,6 +347,7 @@ private fun BackstageSidebar(
         Command(XnotesIcons.folder, "Open…") { onOpenSystem() }
         RailDivider()
         Command(XnotesIcons.sliders, "Preferences", selected = view == BackstageView.PREFERENCES) { onSelectView(BackstageView.PREFERENCES) }
+        Command(XnotesIcons.trash, "Trash", selected = view == BackstageView.TRASH) { onSelectView(BackstageView.TRASH) }
         FilenSyncNowCommand()
         Command(XnotesIcons.info, "About", selected = view == BackstageView.ABOUT) { onSelectView(BackstageView.ABOUT) }
         RailDivider()
@@ -420,9 +421,9 @@ private fun BackstageMain(
 ) {
     val palette = LocalPalette.current
     Column(modifier) {
-        // About's slim top bar (constant height so toggling the sidebar never shifts it) holds the
-        // same leading control as Home/Preferences: a Back arrow to Home on compact, else a hamburger.
-        if (view == BackstageView.ABOUT) {
+        // About/Trash's slim top bar (constant height so toggling the sidebar never shifts it) holds
+        // the same leading control as Home/Preferences: a Back arrow to Home on compact, else a hamburger.
+        if (view == BackstageView.ABOUT || view == BackstageView.TRASH) {
             Box(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 6.dp, end = 12.dp),
                 contentAlignment = Alignment.CenterStart,
@@ -447,7 +448,126 @@ private fun BackstageMain(
                 )
                 BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont)
                 BackstageView.ABOUT -> AboutPane()
+                BackstageView.TRASH -> TrashPane(editor)
             }
+        }
+    }
+}
+
+/**
+ * A dismissible heads-up shown above the explorer when the last sync found a note that was changed
+ * on two devices (no merge is done — the other device's version is kept beside yours). Lists the
+ * affected notes so they can be reviewed; Dismiss clears it.
+ */
+@Composable
+private fun SyncConflictBanner() {
+    val palette = LocalPalette.current
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) { com.xnotes.sync.filen.FilenSyncManager.primeStatus(ctx) }
+    val status by com.xnotes.sync.filen.FilenSyncManager.status.collectAsState()
+    val conflicts = status.conflicts
+    if (conflicts.isEmpty()) return
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(palette.accentAlpha(28).toComposeColor())
+            .border(1.dp, palette.accentAlpha(90).toComposeColor(), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(XnotesIcons.info, null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (conflicts.size == 1) "A note was changed on another device too" else "${conflicts.size} notes were changed on another device too",
+                color = palette.text.toComposeColor(), fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { com.xnotes.sync.filen.FilenSyncManager.clearConflicts(ctx) }) { Text("Dismiss") }
+        }
+        Spacer(Modifier.height(4.dp))
+        conflicts.take(6).forEach { line ->
+            Text("- $line", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 26.dp, top = 2.dp))
+        }
+        if (conflicts.size > 6) {
+            Text("and ${conflicts.size - 6} more", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 26.dp, top = 2.dp))
+        }
+    }
+}
+
+// --- trash (recycle bin) ---
+
+/** The recycle bin: soft-deleted notes, restorable or permanently removable. Its contents sync,
+ *  so a restore or a permanent delete reaches the user's other devices too. */
+@Composable
+private fun TrashPane(editor: Editor) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var refresh by remember { mutableStateOf(0) }
+    var confirmPurge by remember { mutableStateOf<TrashEntry?>(null) }
+    val entries by produceState(emptyList<TrashEntry>(), refresh) {
+        value = withContext(Dispatchers.IO) { editor.listTrash() }
+    }
+    Column(Modifier.fillMaxSize()) {
+        Text("Trash", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Deleted notes are kept here and on your other devices. Restore one, or delete it forever.",
+            color = palette.textDim.toComposeColor(), fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(12.dp))
+        if (entries.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text("Trash is empty", color = palette.textDim.toComposeColor(), fontSize = 15.sp)
+            }
+        } else {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                entries.forEach { e ->
+                    TrashRow(
+                        e,
+                        onRestore = { scope.launch { withContext(Dispatchers.IO) { editor.restoreTrash(e) }; refresh++ } },
+                        onDelete = { confirmPurge = e },
+                    )
+                }
+            }
+        }
+    }
+    confirmPurge?.let { e ->
+        AlertDialog(
+            onDismissRequest = { confirmPurge = null },
+            title = { Text("Delete forever?") },
+            text = { Text("Permanently delete \"${e.displayName}\" from every device? This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmPurge = null
+                    scope.launch { withContext(Dispatchers.IO) { editor.deleteTrashPermanently(e) }; refresh++ }
+                }) { Text("Delete forever") }
+            },
+            dismissButton = { TextButton(onClick = { confirmPurge = null }) { Text("Cancel") } },
+            containerColor = palette.menuBg.toComposeColor(),
+        )
+    }
+}
+
+@Composable
+private fun TrashRow(entry: TrashEntry, onRestore: () -> Unit, onDelete: () -> Unit) {
+    val palette = LocalPalette.current
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(entry.displayName, color = palette.text.toComposeColor(), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val ago = android.text.format.DateUtils.getRelativeTimeSpanString(
+                entry.deletedAt, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS,
+            )
+            Text("Deleted $ago", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+        }
+        IconButton(onClick = onRestore) {
+            Icon(XnotesIcons.undo, "Restore", tint = palette.accent.toComposeColor(), modifier = Modifier.size(20.dp))
+        }
+        IconButton(onClick = onDelete) {
+            Icon(XnotesIcons.trash, "Delete forever", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -563,6 +683,7 @@ private fun HomePane(
             }
         }
         Spacer(Modifier.height(8.dp))
+        SyncConflictBanner()
         Box(Modifier.weight(1f).fillMaxWidth()) {
             ExplorerSection(
                 editor, onOpenFile, onPickRoot,
@@ -1127,13 +1248,19 @@ private fun ExplorerSection(
     }
 
     pendingDelete?.let { targets ->
+        val allDirs = targets.all { it.isDir }
+        val hasDir = targets.any { it.isDir }
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("Delete?") },
+            title = { Text(if (allDirs) "Delete?" else "Move to Trash?") },
             text = {
                 Text(
-                    if (targets.size == 1) "Delete “${entryLabel(targets.first())}”? This can’t be undone."
-                    else "Delete ${targets.size} items? This can’t be undone.",
+                    when {
+                        allDirs && targets.size == 1 -> "Delete this folder? This can't be undone."
+                        allDirs -> "Delete ${targets.size} folders? This can't be undone."
+                        targets.size == 1 -> "Move \"${entryLabel(targets.first())}\" to Trash? You can restore it later."
+                        else -> "Move ${targets.size} items to Trash? You can restore them later."
+                    } + (if (!allDirs && hasDir) " Folders are deleted permanently." else ""),
                 )
             },
             confirmButton = {
@@ -1144,7 +1271,9 @@ private fun ExplorerSection(
                         val allOk = withContext(Dispatchers.IO) {
                             var ok = true
                             items.forEach { e ->
-                                if (editor.deleteDocument(e.documentUri)) {
+                                // Note files go to the recycle bin; folders are still deleted outright.
+                                val done = if (e.isDir) editor.deleteDocument(e.documentUri) else editor.trashEntry(e)
+                                if (done) {
                                     // Drop its colour entry from the parent sidecar (a deleted folder's
                                     // own sidecar goes with it).
                                     if (e.color != null) editor.setItemColor(root, e.parentDocId, e.name, null)
@@ -1157,7 +1286,7 @@ private fun ExplorerSection(
                         refreshKey++
                         if (!allOk) opError = "Couldn’t delete some items."
                     }
-                }) { Text("Delete") }
+                }) { Text(if (allDirs) "Delete" else "Move to Trash") }
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
             containerColor = palette.menuBg.toComposeColor(),

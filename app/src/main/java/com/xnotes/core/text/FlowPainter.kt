@@ -71,14 +71,15 @@ object FlowPainter {
         }
         line.marker?.let { paintMarker(r, frame, line, it) }
         for (seg in line.segs) {
-            r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, seg.style.color ?: frame.defaultColor)
+            r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, inkColor(seg.style, frame))
         }
         val ascent = line.baseline - line.top
         val descent = line.bottom - line.baseline
         val thickness = (line.height / 14.0).coerceAtLeast(1.0)
         for (deco in line.decos) {
-            val color = deco.style.color ?: frame.defaultColor
-            if (deco.style.underline) {
+            val color = inkColor(deco.style, frame)
+            // A hyperlink is underlined even without the explicit underline style.
+            if (deco.style.underline || deco.style.link != null) {
                 r.fillRect(Rect(deco.x0, line.baseline + descent * 0.35, deco.x1 - deco.x0, thickness), color)
             }
             if (deco.style.strike) {
@@ -86,6 +87,10 @@ object FlowPainter {
             }
         }
     }
+
+    /** A run's ink colour: its own colour, else the link colour for a hyperlink, else the flow default. */
+    private fun inkColor(style: CharStyle, frame: FlowFrame): Rgba =
+        style.color ?: if (style.link != null) LINK_COLOR else frame.defaultColor
 
     private fun paintMarker(r: Renderer, frame: FlowFrame, line: PlacedLine, m: Marker) {
         val color = frame.defaultColor
@@ -114,6 +119,9 @@ object FlowPainter {
     /** Code line/chip backgrounds: neutral translucent grey, legible on light and dark paper. */
     val CODE_BG = Rgba(128, 128, 128, 42)
     val CHIP_BG = Rgba(128, 128, 128, 56)
+
+    /** Hyperlink ink: an azure that reads on both light and dark paper. */
+    val LINK_COLOR = Rgba(90, 156, 255, 255)
 
     const val CODE_PAD = 6.0
     const val CHIP_PAD = 3.0

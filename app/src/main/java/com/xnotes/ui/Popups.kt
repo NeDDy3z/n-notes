@@ -760,7 +760,7 @@ fun TableConfigPopup(editor: Editor, onDismiss: () -> Unit) {
             PopupTitle("TABLE")
             TableStepperRow("COLUMNS", cols, 1, 20) { cols = it; editor.tableToolCols = it }
             TableStepperRow("ROWS", rows, 1, 20) { rows = it; editor.tableToolRows = it }
-            SliderRow("THICKNESS", width, 1f..12f) { width = it; editor.tableToolWidth = it.toDouble() }
+            SliderRow("WIDTH", width, 1f..12f) { width = it; editor.tableToolWidth = it.toDouble() }
         }
     }
 }

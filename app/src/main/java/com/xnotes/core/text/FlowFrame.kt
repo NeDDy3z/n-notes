@@ -190,6 +190,21 @@ class FlowFrame(
         return FlowHit.Caret(FlowPos(line.paraIndex, line.offsetAt(local.x)))
     }
 
+    /** The hyperlink under a finger tap at page-local [local], or null. Bounded to the line's
+     *  actual text extent so a tap in the empty margin past a link never opens it. */
+    fun linkAt(pageIndex: Int, local: Pt): String? {
+        val page = pages.getOrNull(pageIndex) ?: return null
+        val line = page.lines.firstOrNull { local.y >= it.top && local.y < it.bottom } ?: return null
+        val leftX = line.xs.firstOrNull() ?: return null
+        val rightX = line.xs.lastOrNull() ?: return null
+        if (local.x < leftX || local.x > rightX) return null
+        for ((i, seg) in line.segs.withIndex()) {
+            val segRight = line.segs.getOrNull(i + 1)?.x ?: rightX
+            if (local.x >= seg.x && local.x <= segRight) return seg.style.link
+        }
+        return null
+    }
+
     /** Page-local highlight rects (page index keyed) covering [range]. */
     fun selectionRects(range: FlowRange): List<Pair<Int, Rect>> {
         val r = range.normalized()

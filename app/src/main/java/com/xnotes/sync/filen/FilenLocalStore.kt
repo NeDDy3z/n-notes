@@ -13,6 +13,12 @@ object FilenLocalStore {
     private val NOTE_EXTENSIONS = listOf(".xnote", ".xcanvas")
     private const val SIDECAR_DIR = ".xnote"
 
+    /** The hidden recycle-bin folder under the browse root. Synced like a normal folder (so a
+     *  deletion reaches every device), but hidden from the note listing and presented as Trash. */
+    const val TRASH_DIR = ".trash"
+
+    fun isTrashPath(relativePath: String): Boolean = relativePath == TRASH_DIR || relativePath.startsWith("$TRASH_DIR/")
+
     data class LocalEntry(val relativePath: String, val documentUri: String, val size: Long, val modified: Long)
 
     fun isNote(name: String) = NOTE_EXTENSIONS.any { name.endsWith(it, ignoreCase = true) }
@@ -28,7 +34,9 @@ object FilenLocalStore {
             if (!seen.add(docId)) continue
             for (child in children(context, tree, docId)) {
                 if (child.isDir) {
-                    if (child.name == SIDECAR_DIR || child.name.startsWith(".")) continue
+                    // Skip hidden folders (colour sidecar, config) but descend into .trash so the
+                    // recycle bin replicates across devices like any other synced folder.
+                    if (child.name.startsWith(".") && child.name != TRASH_DIR) continue
                     stack.addLast(child.docId to (if (prefix.isEmpty()) child.name else "$prefix/${child.name}"))
                 } else if (isNote(child.name)) {
                     val rel = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
@@ -71,6 +79,20 @@ object FilenLocalStore {
             context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
             uri.toString()
         }.getOrNull()
+    }
+
+    /** Permanently delete the note at [relativePath] (applying a deletion that came from sync). True
+     *  when the file is gone afterwards (already-absent counts as success). */
+    fun deleteLocal(context: Context, treeUri: String, relativePath: String): Boolean {
+        val tree = Uri.parse(treeUri)
+        var parentId = DocumentsContract.getTreeDocumentId(tree)
+        val segments = relativePath.split("/")
+        for (i in 0 until segments.size - 1) {
+            parentId = findChild(context, tree, parentId, segments[i], dir = true) ?: return true
+        }
+        val fileId = findChild(context, tree, parentId, segments.last(), dir = false) ?: return true
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, fileId)
+        return runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
     }
 
     private data class Child(val name: String, val docId: String, val uri: String, val isDir: Boolean, val size: Long, val modified: Long)

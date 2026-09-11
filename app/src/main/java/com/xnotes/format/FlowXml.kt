@@ -97,6 +97,7 @@ object FlowXml {
         if (s.underline) append(" style:text-underline-style=\"solid\"")
         if (s.strike) append(" style:text-line-through-style=\"solid\"")
         if (s.code) append(" xnotes:code=\"true\"")
+        s.link?.let { append(" xnotes:link=\"${escapeAttr(it)}\"") }
         s.face?.let { append(" style:font-name=\"${escapeAttr(it.id)}\"") }
         s.color?.let { append(" fo:color=\"${hex(it)}\"") }
         s.highlight?.let { append(" fo:background-color=\"${hex(it)}\"") }
@@ -222,6 +223,7 @@ object FlowXml {
         highlight = parseHex(attr(props, "background-color")),
         sizePt = attr(props, "font-size")?.removeSuffix("pt")?.toDoubleOrNull(),
         face = attr(props, "font-name")?.takeIf { it.isNotEmpty() }?.let { FontFace(it) },
+        link = attr(props, "link")?.takeIf { it.isNotEmpty() },
     )
 
     private fun parseParaProps(props: Element): Pair<ParaAlign, Int> {

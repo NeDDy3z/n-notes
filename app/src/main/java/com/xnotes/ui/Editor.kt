@@ -75,6 +75,7 @@ import com.xnotes.platform.AndroidImageCodec
 import com.xnotes.platform.AndroidSurfaceFactory
 import com.xnotes.platform.AndroidTextMeasurer
 import com.xnotes.settings.ExplorerSortKey
+import com.xnotes.sync.filen.FilenLocalStore
 import com.xnotes.settings.LiveSettings
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.Settings
@@ -124,6 +125,18 @@ data class BrowseEntry(
     val created: Long = 0,
     val parentDocId: String = "",
     val color: Rgba? = null,
+)
+
+/**
+ * One soft-deleted note in the recycle bin. [displayName] is the original file name, [relativePath]
+ * its path under the browse root (`.trash/…`, used to restore or purge it), and [deletedAt] the
+ * delete time parsed from the trashed file name.
+ */
+data class TrashEntry(
+    val displayName: String,
+    val relativePath: String,
+    val documentUri: String,
+    val deletedAt: Long,
 )
 
 /**
@@ -532,11 +545,22 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** Apply the in-progress crop: bake the trimmed bitmap and swap it into the image (undoable). */
+    private var cropBaking = false
+
+    /** Apply the in-progress crop: bake the trimmed bitmap off-thread and swap it in (undoable).
+     *  The region decode + PNG re-encode used to run on the main thread and jank/ANR on big photos. */
     fun applyActiveCrop() {
+        if (cropBaking) return
         val (img, cropRect) = controller.cropTarget() ?: return
-        val baked = bakeCrop(img, cropRect)
-        controller.finishCrop(baked?.first, baked?.second)
+        cropBaking = true
+        autosaveScope.launch {
+            val baked = try {
+                withContext(Dispatchers.IO) { bakeCrop(img, cropRect) }
+            } finally {
+                cropBaking = false
+            }
+            controller.finishCrop(baked?.first, baked?.second)
+        }
     }
 
     fun cancelCrop() = controller.cancelCrop()
@@ -1122,6 +1146,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             state.document.pages.getOrNull(pageIndex)?.items
                 ?.lastOrNull { it.link != null && it.contains(pageLocal) }
                 ?.link?.let { openUrl(it); return@onLinkTap true }
+            // A hyperlink in the flow text body (under any items, over a PDF's own links).
+            publishedFlow?.let { pf ->
+                state.document.pages.getOrNull(pageIndex)?.let { page ->
+                    pf.indexOf[page]?.let { fi ->
+                        pf.frame.linkAt(fi, pageLocal)?.let { openUrl(it); return@onLinkTap true }
+                    }
+                }
+            }
             val src = pdfSource ?: return@onLinkTap false
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
             val pdfIdx = page.pdfPage ?: return@onLinkTap false
@@ -3101,6 +3133,78 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         invalidateThumb(docUri)
     }
 
+    // --- recycle bin (soft delete) ---
+
+    /** The browse root as a SAF tree uri (the granted folder, else internal storage). */
+    private fun effectiveTree(): String =
+        browseRoot ?: com.xnotes.platform.AppStorageDocumentsProvider.treeUri(appContext).toString()
+
+    private val trashStampFmt get() = java.text.SimpleDateFormat("yyyy-MM-dd HHmmss", java.util.Locale.US)
+    private val trashNameRegex = Regex("""^(.*) \(deleted (\d{4}-\d{2}-\d{2} \d{6})\)(\.[^.]+)$""")
+
+    /**
+     * Move a note file into the synced `.trash` recycle bin instead of deleting it. The delete time
+     * is stamped into the file name, so the bin needs no separate metadata and replicates cleanly to
+     * every device. Folders are not trashed (the caller deletes those outright). IO, call off-thread.
+     */
+    fun trashEntry(entry: BrowseEntry): Boolean {
+        if (entry.isDir) return false
+        val tree = effectiveTree()
+        val bytes = FilenLocalStore.readBytes(appContext, entry.documentUri) ?: return false
+        val dot = entry.name.lastIndexOf('.')
+        val base = if (dot > 0) entry.name.substring(0, dot) else entry.name
+        val ext = if (dot > 0) entry.name.substring(dot) else ""
+        val stamped = "$base (deleted ${trashStampFmt.format(java.util.Date())})$ext"
+        val ok = FilenLocalStore.writeNote(appContext, tree, "${FilenLocalStore.TRASH_DIR}/$stamped", bytes) != null
+        if (ok) deleteDocument(entry.documentUri)
+        return ok
+    }
+
+    /** The recycle bin's contents, newest deletion first. IO, call off-thread. */
+    fun listTrash(): List<TrashEntry> {
+        val tree = effectiveTree()
+        return FilenLocalStore.listNotes(appContext, tree)
+            .filter { FilenLocalStore.isTrashPath(it.relativePath) }
+            .map { e ->
+                val file = e.relativePath.substringAfterLast('/')
+                val m = trashNameRegex.matchEntire(file)
+                val display = if (m != null) m.groupValues[1] + m.groupValues[3] else file
+                val at = m?.let { runCatching { trashStampFmt.parse(it.groupValues[2])?.time }.getOrNull() } ?: e.modified
+                TrashEntry(display, e.relativePath, e.documentUri, at)
+            }
+            .sortedByDescending { it.deletedAt }
+    }
+
+    /** Restore a trashed note to the browse root (top level), uniquifying a name clash. IO. */
+    fun restoreTrash(entry: TrashEntry): Boolean {
+        val tree = effectiveTree()
+        val bytes = FilenLocalStore.readBytes(appContext, entry.documentUri) ?: return false
+        val target = uniqueRootName(tree, entry.displayName)
+        val ok = FilenLocalStore.writeNote(appContext, tree, target, bytes) != null
+        if (ok) FilenLocalStore.deleteLocal(appContext, tree, entry.relativePath)
+        return ok
+    }
+
+    /** Permanently remove a trashed note. This is the only path that truly deletes note bytes. IO. */
+    fun deleteTrashPermanently(entry: TrashEntry): Boolean {
+        val ok = FilenLocalStore.deleteLocal(appContext, effectiveTree(), entry.relativePath)
+        if (ok) invalidateThumb(entry.documentUri)
+        return ok
+    }
+
+    /** A root-level file name not already taken, appending " (n)" before the extension if needed. */
+    private fun uniqueRootName(tree: String, name: String): String {
+        val existing = FilenLocalStore.listNotes(appContext, tree)
+            .filter { '/' !in it.relativePath }.map { it.relativePath.lowercase() }.toSet()
+        if (name.lowercase() !in existing) return name
+        val dot = name.lastIndexOf('.')
+        val base = if (dot > 0) name.substring(0, dot) else name
+        val ext = if (dot > 0) name.substring(dot) else ""
+        var n = 2
+        while ("$base ($n)$ext".lowercase() in existing) n++
+        return "$base ($n)$ext"
+    }
+
     /**
      * Copies [sourceUri] into the folder [targetParentDocId] within [treeUri]. On a name clash — most
      * often pasting a copy into the same folder — a file is duplicated under a free "… copy" name
@@ -4598,6 +4702,33 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun flowSetCharColor(c: Rgba?) = flowSetChar { it.copy(color = c) }
     fun flowSetCharHighlight(c: Rgba?) = flowSetChar { it.copy(highlight = c) }
     fun flowSetCharFace(f: FontFace?) = flowSetChar { it.copy(face = f) }
+
+    /** The hyperlink covering the caret / selection start, or null (drives the bar's link state). */
+    fun flowCaretLink(): String? = flowCaretStyle().link
+
+    /**
+     * Set, edit or remove ([url] == null) the hyperlink on the flow text. With a selection it links
+     * that span. From a bare caret it edits the whole link the caret sits on, or, with no link and a
+     * given [url], inserts the url itself as new linked text.
+     */
+    fun flowSetCharLink(url: String?) {
+        if (!flowText.active) return
+        val link = url?.trim()?.ifEmpty { null }
+        val sel = flowText.selection.normalized()
+        if (!sel.collapsed) {
+            flowSetChar { it.copy(link = link) }
+            return
+        }
+        val existing = FlowEditor(state.document.flow).linkRangeAt(sel.start)
+        if (existing != null) {
+            flowText.flushBurst()
+            flowText.commitEdit(FlowEditor(state.document.flow).setCharStyle(existing) { it.copy(link = link) }, null)
+            flowSelTick++
+        } else if (link != null) {
+            flowText.replaceExternal(FlowRange.caret(sel.start), link, CharStyle(link = link))
+            flowSelTick++
+        }
+    }
 
     /** Step the bar's shown size by [delta] and apply that one size across the selection. */
     fun flowAdjustSize(delta: Double) {

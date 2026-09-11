@@ -5,6 +5,7 @@ import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.pal.Renderer
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 
 /**
@@ -98,13 +99,20 @@ class ImageItem(
 
     /**
      * Scale the upright box about its mapped centre and add the transform's own turn to [angle].
-     * The scale factors are the world axes' — an image already turned is stretched along its own
-     * axes rather than sheared, since a bitmap has no shear to be drawn with.
+     * The scale is measured along the image's OWN axes, not the world axes: a single-axis resize
+     * of a turned box is a world-space shear, whose column norms (t.scaleX/scaleY) would grow both
+     * sides near-uniformly and let the bitmap drift out of its transform box. Projecting the linear
+     * part onto the image's current width/height directions recovers the true per-side factors, and
+     * reduces to t.scaleX/scaleY at angle 0. A bitmap has no shear to be drawn with.
      */
     override fun applyTransform(t: Affine) {
         val c = t.apply(rect.center)
-        val w = rect.w * t.scaleX
-        val h = rect.h * t.scaleY
+        val ca = cos(angle)
+        val sa = sin(angle)
+        val wScale = hypot(t.a * ca + t.c * sa, t.b * ca + t.d * sa)
+        val hScale = hypot(-t.a * sa + t.c * ca, -t.b * sa + t.d * ca)
+        val w = rect.w * wScale
+        val h = rect.h * hScale
         rect = Rect(c.x - w / 2.0, c.y - h / 2.0, w, h)
         angle += t.rotationAngle
     }
