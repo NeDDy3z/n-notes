@@ -1,5 +1,6 @@
 package com.xnotes.canvas
 
+import com.xnotes.core.model.Rgba
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -59,6 +60,92 @@ class PdfColorFilterTest {
         assertEquals(93.7f, b, 0.1f)
     }
 
+    @Test fun sepiaPastFullKeepsPushingTheTint() {
+        // CSS clamps sepia at 100%; 200% extrapolates the same matrix, so mid-grey goes warmer.
+        val (r1, _, b1) = apply(PdfColorFilter.matrix(100, 0, 100, 100), 128f, 128f, 128f)
+        val (r2, _, b2) = apply(PdfColorFilter.matrix(100, 0, 100, 200), 128f, 128f, 128f)
+        assertTrue(r2 > r1)
+        assertTrue(b2 < b1)
+    }
+
+    @Test fun multiplyScalesEachChannelByTheBlendColour() {
+        val m = PdfColorFilter.matrix(100, 0, 100, 0, multiply = Rgba(255, 255, 0))
+        val (r, g, b) = apply(m, 200f, 200f, 200f)
+        assertEquals(200f, r, 1e-3f)
+        assertEquals(200f, g, 1e-3f)
+        assertEquals(0f, b, 1e-3f) // blue channel multiplied by 0
+    }
+
+    @Test fun multiplyLeavesWhiteAloneAndBlackBlack() {
+        val m = PdfColorFilter.matrix(100, 0, 100, 0, multiply = Rgba(255, 230, 120))
+        val (wr, wg, wb) = apply(m, 255f, 255f, 255f)
+        assertEquals(255f, wr, 1e-3f)
+        assertEquals(230f, wg, 1e-3f)
+        assertEquals(120f, wb, 1e-3f) // white takes the blend colour, like a highlighter on paper
+        val (br, bg, bb) = apply(m, 0f, 0f, 0f)
+        assertEquals(0f, br, 1e-3f)
+        assertEquals(0f, bg, 1e-3f)
+        assertEquals(0f, bb, 1e-3f) // black ink stays readable
+    }
+
+    @Test fun screenIsTheInverseHighlighter() {
+        val m = PdfColorFilter.matrix(100, 0, 100, 0, screen = Rgba(40, 80, 160))
+        val (br, bg, bb) = apply(m, 0f, 0f, 0f)
+        assertEquals(40f, br, 1e-3f)
+        assertEquals(80f, bg, 1e-3f)
+        assertEquals(160f, bb, 1e-3f) // black takes the blend colour
+        val (wr, wg, wb) = apply(m, 255f, 255f, 255f)
+        assertEquals(255f, wr, 1e-3f)
+        assertEquals(255f, wg, 1e-3f)
+        assertEquals(255f, wb, 1e-3f) // white is unreachable by SCREEN
+    }
+
+    @Test fun screenMatchesTheBlendFormula() {
+        // out = 255 - (255 - in)(255 - c) / 255
+        val m = PdfColorFilter.matrix(100, 0, 100, 0, screen = Rgba(64, 64, 64))
+        val (r, _, _) = apply(m, 128f, 128f, 128f)
+        assertEquals(255f - (255f - 128f) * (255f - 64f) / 255f, r, 1e-3f)
+    }
+
+    @Test fun blendIdentityColoursAreNoOps() {
+        assertTrue(
+            PdfColorFilter.isIdentity(
+                100, 0, 100, 0, multiply = Rgba(255, 255, 255), screen = Rgba(0, 0, 0),
+            ),
+        )
+        assertSame(
+            PdfPageFilter.NONE,
+            PdfPageFilter.of(100, 0, 100, 0, Rgba(255, 255, 255), Rgba(0, 0, 0), keepImages = true),
+        )
+        assertFalse(PdfColorFilter.isIdentity(100, 0, 100, 0, multiply = Rgba(255, 255, 254)))
+        assertFalse(PdfColorFilter.isIdentity(100, 0, 100, 0, screen = Rgba(0, 0, 1)))
+    }
+
+    @Test fun blendAlphaIsIgnored() {
+        // A blend colour's alpha is meaningless; a translucent white must still read as "off".
+        assertTrue(PdfColorFilter.isIdentity(100, 0, 100, 0, multiply = Rgba(255, 255, 255, 7)))
+    }
+
+    @Test fun multiplyAppliesAfterInvert() {
+        // invert(100%) turns 255 into 0, so a later multiply cannot bring it back.
+        val (r, _, _) = apply(
+            PdfColorFilter.matrix(100, 100, 100, 0, multiply = Rgba(255, 0, 0)),
+            255f, 255f, 255f,
+        )
+        assertEquals(0f, r, 1e-3f)
+    }
+
+    @Test fun screenAppliesAfterMultiply() {
+        // Multiply by black kills the page; screen then lifts it to exactly the screen colour.
+        val m = PdfColorFilter.matrix(
+            100, 0, 100, 0, multiply = Rgba(0, 0, 0), screen = Rgba(30, 60, 90),
+        )
+        val (r, g, b) = apply(m, 200f, 100f, 50f)
+        assertEquals(30f, r, 1e-3f)
+        assertEquals(60f, g, 1e-3f)
+        assertEquals(90f, b, 1e-3f)
+    }
+
     @Test fun contrastAppliesBeforeInvert() {
         // contrast(200%) turns 100 into 72.5; invert(100%) then yields 182.5.
         val (r, _, _) = apply(PdfColorFilter.matrix(200, 100, 100, 0), 100f, 100f, 100f)
@@ -79,6 +166,9 @@ class PdfColorFilterTest {
         val sepiaOnly = PdfPageFilter.of(100, 0, 100, 30, keepImages = true)
         assertNotNull(sepiaOnly.pageMatrix)
         assertTrue(sepiaOnly.stampImages)
+        val multiplyOnly = PdfPageFilter.of(100, 0, 100, 0, multiply = Rgba(255, 240, 160), keepImages = true)
+        assertNotNull(multiplyOnly.pageMatrix)
+        assertTrue(multiplyOnly.stampImages)
     }
 
     @Test fun noStampingWhenImagesFollowTheFilter() {

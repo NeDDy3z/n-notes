@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import com.xnotes.canvas.PdfColorFilter
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
@@ -420,6 +421,8 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     fun setInvert(v: Int) = apply(overrides.copy(invert = v))
     fun setBrightness(v: Int) = apply(overrides.copy(brightness = v))
     fun setSepia(v: Int) = apply(overrides.copy(sepia = v))
+    fun setMultiply(v: Rgba) = apply(overrides.copy(multiply = v))
+    fun setScreen(v: Rgba) = apply(overrides.copy(screen = v))
     fun setKeepImages(v: Boolean) = apply(overrides.copy(keepImages = v))
     fun setRotation(v: Int) = apply(overrides.copy(rotation = v))
     fun setScrollbar(v: Boolean) = apply(overrides.copy(scrollbar = v))
@@ -442,7 +445,9 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
             FilterSpinRow("Contrast", vs.contrast, 0, 200) { setContrast(it) }
             FilterSpinRow("Invert", vs.invert, 0, 100) { setInvert(it) }
             FilterSpinRow("Brightness", vs.brightness, 0, 200) { setBrightness(it) }
-            FilterSpinRow("Sepia", vs.sepia, 0, 100) { setSepia(it) }
+            FilterSpinRow("Sepia", vs.sepia, 0, 200) { setSepia(it) }
+            FilterColorRow("Multiply", vs.multiply, PdfColorFilter.MULTIPLY_OFF) { setMultiply(it) }
+            FilterColorRow("Screen", vs.screen, PdfColorFilter.SCREEN_OFF) { setScreen(it) }
             ToggleRow("DON'T FILTER IMAGES", vs.keepImages) { setKeepImages(it) }
 
             Spacer(Modifier.size(10.dp))
@@ -502,6 +507,28 @@ private fun FilterSpinRow(label: String, value: Int, min: Int, max: Int, onChang
         Box(Modifier.size(34.dp).clickable { onChange((value + 5).coerceIn(min, max)) }, contentAlignment = Alignment.Center) {
             Text("+", color = palette.text.toComposeColor(), fontSize = 18.sp)
         }
+    }
+}
+
+/**
+ * A labelled colour row for the two blend filters: the shared picker dot plus an Off chip that
+ * writes the blend's identity colour (white for multiply, black for screen), so "no filter" and
+ * "blend with the no-op colour" are the same state and the row needs no separate enable flag.
+ */
+@Composable
+private fun FilterColorRow(label: String, value: Rgba, off: Rgba, onChange: (Rgba) -> Unit) {
+    val palette = LocalPalette.current
+    val on = value != off
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(84.dp))
+        ColorPickerDot(
+            current = value,
+            custom = on,
+            onPick = onChange,
+            dismissOnPick = false,
+        ) { d, p -> PageColorGridPopup(value, d, p) }
+        Spacer(Modifier.size(8.dp))
+        ModeChip("Off", !on) { onChange(off) }
     }
 }
 

@@ -5,6 +5,7 @@ import com.xnotes.canvas.ViewingMode
 import com.xnotes.core.FakeImageCodec
 import com.xnotes.core.FakeTextMeasurer
 import com.xnotes.core.model.Document
+import com.xnotes.core.model.Rgba
 import com.xnotes.format.DocumentCodec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -65,6 +66,8 @@ class SessionStoreTest {
             invert = 40,
             brightness = 85,
             sepia = 25,
+            multiply = Rgba(200, 255, 200),
+            screen = Rgba(90, 0, 30),
             keepImages = true,
             rotation = 270,
             scrollbar = true,

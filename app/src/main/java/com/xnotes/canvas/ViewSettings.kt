@@ -1,5 +1,7 @@
 package com.xnotes.canvas
 
+import com.xnotes.core.model.Rgba
+
 /** How pages are grouped into rows on the canvas (the View menu's viewing mode). */
 enum class ViewingMode(val id: String) {
     /** One page per row (the classic column). */
@@ -21,7 +23,8 @@ enum class ViewingMode(val id: String) {
  * (saved via the menu's "Default for all notes" checkbox, persisted in
  * [com.xnotes.settings.Settings]) and the **resolved** effective settings of the open
  * note ([ViewOverrides.resolve]). The colour filters follow CSS filter semantics and are
- * applied to the PDF page raster only, in the fixed order contrast, invert, brightness, sepia.
+ * applied to the PDF page raster only, in the fixed order contrast, invert, brightness, sepia,
+ * multiply, screen.
  */
 data class ViewSettings(
     val mode: ViewingMode = ViewingMode.SINGLE,
@@ -30,7 +33,11 @@ data class ViewSettings(
     val contrast: Int = 100, // 0..200, 100 = untouched
     val invert: Int = 0, // 0..100
     val brightness: Int = 100, // 0..200, 100 = untouched
-    val sepia: Int = 0, // 0..100
+    val sepia: Int = 0, // 0..200, 0 = untouched (CSS stops at 100, past it the tint keeps going)
+    /** MULTIPLY blend colour, like laying a highlighter over the page: white = untouched. */
+    val multiply: Rgba = PdfColorFilter.MULTIPLY_OFF,
+    /** SCREEN blend colour, the inverse highlighter (lifts the blacks): black = untouched. */
+    val screen: Rgba = PdfColorFilter.SCREEN_OFF,
     /** Embedded PDF images keep their original pixels instead of taking the filters. */
     val keepImages: Boolean = false,
     /** Whole-file page rotation, clockwise degrees: 0, 90, 180 or 270. */
@@ -60,6 +67,8 @@ data class ViewOverrides(
     val invert: Int? = null,
     val brightness: Int? = null,
     val sepia: Int? = null,
+    val multiply: Rgba? = null,
+    val screen: Rgba? = null,
     val keepImages: Boolean? = null,
     val rotation: Int? = null,
     val scrollbar: Boolean? = null,
@@ -72,6 +81,8 @@ data class ViewOverrides(
         invert = invert ?: defaults.invert,
         brightness = brightness ?: defaults.brightness,
         sepia = sepia ?: defaults.sepia,
+        multiply = multiply ?: defaults.multiply,
+        screen = screen ?: defaults.screen,
         keepImages = keepImages ?: defaults.keepImages,
         rotation = rotation ?: defaults.rotation,
         scrollbar = scrollbar ?: defaults.scrollbar,

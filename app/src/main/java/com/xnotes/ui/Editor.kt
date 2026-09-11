@@ -3382,6 +3382,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         val filterChanged = prev.contrast != new.contrast || prev.invert != new.invert ||
             prev.brightness != new.brightness || prev.sepia != new.sepia ||
+            prev.multiply != new.multiply || prev.screen != new.screen ||
             prev.keepImages != new.keepImages
         if (filterChanged) {
             state.invalidateAllBackgrounds()
@@ -3397,7 +3398,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun pdfPageFilter(): com.xnotes.canvas.PdfPageFilter = pdfPageFilterFor(viewSettings)
 
     private fun pdfPageFilterFor(vs: com.xnotes.canvas.ViewSettings): com.xnotes.canvas.PdfPageFilter =
-        com.xnotes.canvas.PdfPageFilter.of(vs.contrast, vs.invert, vs.brightness, vs.sepia, keepImages = vs.keepImages)
+        com.xnotes.canvas.PdfPageFilter.of(
+            vs.contrast, vs.invert, vs.brightness, vs.sepia, vs.multiply, vs.screen,
+            keepImages = vs.keepImages,
+        )
 
     /** A note's resolved View-menu settings by URI: the open note's live value, a folder note's
      *  remembered overrides over the global defaults, else the defaults themselves. */
@@ -3411,6 +3415,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun pdfKeepsImageColors(): Boolean = viewSettings.keepImages &&
         !com.xnotes.canvas.PdfColorFilter.isIdentity(
             viewSettings.contrast, viewSettings.invert, viewSettings.brightness, viewSettings.sepia,
+            viewSettings.multiply, viewSettings.screen,
         )
 
     /** Drop every cached side-panel thumbnail backed by a PDF page (the filter changed). */
