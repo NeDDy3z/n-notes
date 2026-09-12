@@ -321,7 +321,7 @@ private fun EditorScreen(
         }
     }
 
-    // Save a copy of an explorer file (.xnote) elsewhere.
+    // Save a copy of an explorer file (a note or a canvas) elsewhere.
     val saveCopyLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
@@ -505,10 +505,17 @@ private fun EditorScreen(
     fun stemOf(uriStr: String): String =
         com.xnotes.core.util.Paths.stem(displayNameOf(resolver, Uri.parse(uriStr)) ?: "Note")
 
-    /** What the export dialog counts for the stored document at [uriStr]: a note's pages, a canvas's items. */
-    fun countingOf(uriStr: String): String = ExportProgress.countingFor(
+    /**
+     * The kind of the stored document at [uriStr], read from its file name, falling back to a note
+     * for anything unrecognizable. Every place that has to name a copy of that file goes through
+     * here: spelling an extension at the call site is how an `.xcanvas` ended up shared as `.xnote`.
+     */
+    fun kindOf(uriStr: String): com.xnotes.core.util.DocumentKind =
         com.xnotes.core.util.DocumentKind.ofName(displayNameOf(resolver, Uri.parse(uriStr)).orEmpty())
-    )
+            ?: com.xnotes.core.util.DocumentKind.NOTE
+
+    /** What the export dialog counts for the stored document at [uriStr]: a note's pages, a canvas's items. */
+    fun countingOf(uriStr: String): String = ExportProgress.countingFor(kindOf(uriStr))
 
     // Render a PDF off the main thread into a temp file behind a cancellable progress dialog;
     // only once it finishes does [onReady] run — opening the SAF picker or a share sheet.
@@ -572,11 +579,12 @@ private fun EditorScreen(
                 render = { o, prog, cancel -> editor.exportFileToPdf(uriStr, o, prog, cancel) },
                 onReady = { temp -> runCatching { launchShare(temp, stem, "application/pdf") }.onFailure { editor.message = "Could not share the note." } })
         } else {
-            // A plain .xnote share is just a fast byte copy — no render, no dialog needed.
+            // Sharing the bundle itself is just a fast byte copy — no render, no dialog needed. It
+            // keeps the source's own extension, so a canvas is shared as a canvas.
             runCatching {
                 val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() } // keep only the file we're about to share
-                val file = java.io.File(dir, "$stem.xnote")
+                val file = java.io.File(dir, "$stem${kindOf(uriStr).suffix}")
                 java.io.FileOutputStream(file).use { o -> editor.copyFileTo(uriStr, o) }
                 launchShare(file, stem, "application/octet-stream")
             }.onFailure { editor.message = "Could not share the note." }
@@ -705,7 +713,7 @@ private fun EditorScreen(
                 onOpenFile = { uri -> guarded(editor) { openTreeFile(uri) } },
                 onPickRoot = { pickRootLauncher.launch(null) },
                 onShareFile = { uri -> pendingShareUri = uri; showShareChooser = true },
-                onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}.xnote") },
+                onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}${kindOf(uri).suffix}") },
                 onExportFilePdf = { uri ->
                     runPdfExport(stemOf(uri), shareDir = false, counting = countingOf(uri),
                         render = { o, prog, cancel -> editor.exportFileToPdf(uri, o, prog, cancel) },
@@ -754,6 +762,10 @@ private fun EditorScreen(
     }
     if (showShareChooser) {
         val shareUri = pendingShareUri
+        // Remembered because resolving the kind is a SAF query, and this is composition.
+        val shareSuffix = remember(shareUri) {
+            shareUri?.let { kindOf(it).suffix } ?: com.xnotes.core.util.DocumentKind.NOTE.suffix
+        }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showShareChooser = false; pendingShareUri = null },
             title = { androidx.compose.material3.Text("Share note") },
@@ -761,7 +773,7 @@ private fun EditorScreen(
             confirmButton = {
                 androidx.compose.foundation.layout.Row {
                     androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null; shareUri?.let { shareFile(it, asPdf = false) } }) {
-                        androidx.compose.material3.Text(".xnote file")
+                        androidx.compose.material3.Text("$shareSuffix file")
                     }
                     androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null; shareUri?.let { shareFile(it, asPdf = true) } }) {
                         androidx.compose.material3.Text("PDF")
@@ -863,7 +875,7 @@ private class PendingPages(val editor: Editor, val pages: List<Int>)
 private class ExportProgress(val done: Int, val total: Int, val counting: String) {
     companion object {
         /** What a document of [kind] counts on its way out. */
-        fun countingFor(kind: com.xnotes.core.util.DocumentKind?): String =
+        fun countingFor(kind: com.xnotes.core.util.DocumentKind): String =
             if (kind == com.xnotes.core.util.DocumentKind.CANVAS) "item" else "page"
     }
 }

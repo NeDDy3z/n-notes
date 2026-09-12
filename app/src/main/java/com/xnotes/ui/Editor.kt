@@ -3620,7 +3620,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 if (e.isDir) {
                     stack.addLast(browseDocId(e.documentUri))
                 } else {
-                    val display = if (e.name.endsWith(".xnote", ignoreCase = true)) e.name.dropLast(6) else e.name
+                    val display = com.xnotes.core.util.DocumentKind.stripSuffix(e.name)
                     if (display.contains(needle, ignoreCase = true)) out.add(e)
                 }
             }
