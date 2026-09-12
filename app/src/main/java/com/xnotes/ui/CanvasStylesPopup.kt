@@ -4,21 +4,30 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
+import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 
@@ -27,16 +36,21 @@ import kotlin.math.roundToInt
  *
  * Unlike the paged [StylesPopup] there is no inheritance to express, because a canvas has no page
  * level under it, so every control sets a real value rather than choosing between "default" and an
- * override. Everything here is per canvas and saved with it.
+ * override. Everything here is per canvas and saved with it, apart from the "Default for new
+ * canvases" checkbox, which stamps the current background onto every canvas made from then on.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
     var background by remember { mutableStateOf(editor.document.background) }
+    // Mirrors the paged StylesPopup: the row shows once the background differs from the saved
+    // new-canvas default and stays for the popup session, and a stock background hides it.
+    var showNewCanvasRow by remember { mutableStateOf(editor.document.background != editor.newCanvasBackground) }
 
     fun apply(next: CanvasBackground) {
         background = next
         editor.setBackground(next)
+        if (next != editor.newCanvasBackground) showNewCanvasRow = true
     }
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
@@ -113,7 +127,23 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                 ) { d, p -> PageColorGridPopup(background.paperColor, d, p) }
             }
 
-            Spacer(Modifier.size(10.dp))
+            Spacer(Modifier.size(8.dp))
+            if (showNewCanvasRow && background != CanvasBackground()) {
+                // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
+                    Checkbox(
+                        checked = background == editor.newCanvasBackground,
+                        onCheckedChange = { on -> editor.saveNewCanvasBackground(if (on) background else null) },
+                    )
+                    Text(
+                        "Default for new canvases",
+                        color = LocalPalette.current.text.toComposeColor(),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                }
+                Spacer(Modifier.size(4.dp))
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ModeChip("Reset", selected = false) { apply(CanvasBackground()) }
             }

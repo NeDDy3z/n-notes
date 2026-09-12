@@ -669,6 +669,19 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Fired when a tool's style changed here, so the host can persist it. */
     var onToolStyleChanged: (() -> Unit)? = null
 
+    /** The saved background new canvases start with (null ⇒ app built-ins), fed by the host. */
+    var newCanvasBackground by mutableStateOf<CanvasBackground?>(null)
+
+    /** Fired when the styles popup saved (or cleared) that background, so the host can persist it. */
+    var onSaveNewCanvasBackground: ((CanvasBackground?) -> Unit)? = null
+
+    /** Save (or, passing null, forget) the background new canvases start with. */
+    fun saveNewCanvasBackground(background: CanvasBackground?) {
+        if (newCanvasBackground == background) return
+        newCanvasBackground = background
+        onSaveNewCanvasBackground?.invoke(background)
+    }
+
     /** Latch a stylus side button that arrived as a key event, so the pen behaves as on a note. */
     fun onStylusButtonKey(keyCode: Int, down: Boolean): Boolean =
         interaction.onStylusButtonKey(keyCode, down)

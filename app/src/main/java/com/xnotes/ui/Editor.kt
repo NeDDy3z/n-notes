@@ -485,6 +485,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // A style tuned on the canvas is the same style, so it persists through this editor.
             it.onToolStyleChanged = { settingsDirty = true }
             it.onSwatchColorChanged = { index, color -> adoptSwatchColor(index, color) }
+            // The new-canvas background lives in the settings file this editor owns.
+            it.newCanvasBackground = newCanvasBackground
+            it.onSaveNewCanvasBackground = { bg -> saveNewCanvasBackground(bg) }
             it.onColorRemembered = { color ->
                 settings = settings.rememberColor(color)
                 it.recentColors = recentColors
@@ -510,7 +513,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Open a fresh, unsaved infinite canvas on top of backstage. */
     fun newCanvas() {
-        openCanvasDocument(com.xnotes.core.infinite.InfiniteDocument(), uri = null, displayName = null)
+        val doc = com.xnotes.core.infinite.InfiniteDocument()
+        settings.newCanvasBackground?.let { doc.background = it }
+        openCanvasDocument(doc, uri = null, displayName = null)
     }
 
     /**
@@ -1878,6 +1883,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (newNoteFlow == defaults) return
         newNoteFlow = defaults
         settings = settings.copy(newNoteFlow = defaults)
+        settingsRepo.save(settings)
+    }
+
+    /** The saved background stamped onto newly created canvases (null ⇒ app built-ins). */
+    var newCanvasBackground by mutableStateOf(settings.newCanvasBackground)
+        private set
+
+    /** Save (or, passing null, forget) the background new canvases start with. */
+    fun saveNewCanvasBackground(background: com.xnotes.core.infinite.CanvasBackground?) {
+        if (newCanvasBackground == background) return
+        newCanvasBackground = background
+        settings = settings.copy(newCanvasBackground = background)
         settingsRepo.save(settings)
     }
 

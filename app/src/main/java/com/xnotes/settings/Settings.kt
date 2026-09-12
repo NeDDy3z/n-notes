@@ -1,5 +1,6 @@
 package com.xnotes.settings
 
+import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
@@ -59,6 +60,8 @@ data class Settings(
     val newNoteStyle: PageStyle = PageStyle(),
     /** Flow (text tool) defaults stamped onto every newly created note; empty ⇒ none saved. */
     val newNoteFlow: FlowDefaults = FlowDefaults(),
+    /** Background stamped onto every newly created canvas; null ⇒ none saved. */
+    val newCanvasBackground: CanvasBackground? = null,
     val prefs: Preferences = Preferences(),
     /** One-shot flag: the first-run stylus check (which may auto-enable finger-draw) has run. */
     val fingerDrawAutoChecked: Boolean = false,
@@ -92,6 +95,7 @@ data class Settings(
             .put("render_scale", renderScale)
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .apply { if (!newNoteFlow.isEmpty) put("new_note_flow", flowDefaultsJson(newNoteFlow)) }
+            .apply { newCanvasBackground?.let { put("new_canvas_background", canvasBackgroundJson(it)) } }
             .put("prefs", prefs.toJson())
             .put("view_defaults", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaults))
             .put("finger_draw_auto_checked", fingerDrawAutoChecked)
@@ -139,6 +143,7 @@ data class Settings(
                 renderScale = o.optDouble("render_scale", 1.0),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 newNoteFlow = flowDefaults(o.optJSONObject("new_note_flow")),
+                newCanvasBackground = canvasBackground(o.optJSONObject("new_canvas_background")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
                 fingerDrawAutoChecked = o.optBoolean("finger_draw_auto_checked", false),
             )
@@ -172,6 +177,25 @@ data class Settings(
                 pattern = PagePattern.fromId(o.optString("pattern", "")),
                 patternColor = rgba(o.optJSONArray("pattern_color")),
                 spacing = if (o.has("spacing")) o.optDouble("spacing") else null,
+            )
+        }
+
+        /** Written in full, like the canvas file's own copy: a canvas has no level to inherit
+         *  from, so every field carries a real value. */
+        private fun canvasBackgroundJson(b: CanvasBackground) = JSONObject()
+            .put("pattern", b.pattern.id)
+            .put("pattern_color", rgbaArr(b.patternColor))
+            .put("spacing", b.spacing)
+            .apply { b.paperColor?.let { put("paper_color", rgbaArr(it)) } }
+
+        private fun canvasBackground(o: JSONObject?): CanvasBackground? {
+            if (o == null) return null
+            val d = CanvasBackground()
+            return CanvasBackground(
+                pattern = PagePattern.fromId(o.optString("pattern", "")) ?: d.pattern,
+                patternColor = rgba(o.optJSONArray("pattern_color")) ?: d.patternColor,
+                spacing = o.optDouble("spacing", d.spacing),
+                paperColor = rgba(o.optJSONArray("paper_color")),
             )
         }
 
