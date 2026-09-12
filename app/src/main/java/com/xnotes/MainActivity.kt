@@ -260,8 +260,8 @@ private fun EditorScreen(
     var pendingSaveCopyUri by remember { mutableStateOf<String?>(null) }
     // A finished PDF render awaiting a SAF "Save as" destination (open-note / file / pages export).
     var pendingExportTemp by remember { mutableStateOf<java.io.File?>(null) }
-    // In-flight PDF render: (pagesDone, totalPages) drives the progress dialog; null hides it.
-    var exportProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    // In-flight PDF render; drives the progress dialog, null hides it.
+    var exportProgress by remember { mutableStateOf<ExportProgress?>(null) }
     // The running export's coroutine and its own cancel flag. Each export gets a fresh flag so a new
     // export can abort the previous one (set its flag, then join it) without un-cancelling itself.
     var exportJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -505,6 +505,11 @@ private fun EditorScreen(
     fun stemOf(uriStr: String): String =
         com.xnotes.core.util.Paths.stem(displayNameOf(resolver, Uri.parse(uriStr)) ?: "Note")
 
+    /** What the export dialog counts for the stored document at [uriStr]: a note's pages, a canvas's items. */
+    fun countingOf(uriStr: String): String = ExportProgress.countingFor(
+        com.xnotes.core.util.DocumentKind.ofName(displayNameOf(resolver, Uri.parse(uriStr)).orEmpty())
+    )
+
     // Render a PDF off the main thread into a temp file behind a cancellable progress dialog;
     // only once it finishes does [onReady] run — opening the SAF picker or a share sheet.
     // Dismissing the dialog flips this export's cancel flag, which aborts the page loop AND the
@@ -514,6 +519,7 @@ private fun EditorScreen(
     fun runPdfExport(
         stem: String,
         shareDir: Boolean,
+        counting: String = "page",
         render: (java.io.OutputStream, (Int, Int) -> Unit, () -> Boolean) -> Unit,
         onReady: (java.io.File) -> Unit,
     ) {
@@ -521,7 +527,7 @@ private fun EditorScreen(
         val prevCancel = exportCancel
         val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
         exportCancel = cancel // the dialog's Cancel flips THIS export's flag
-        exportProgress = 0 to 0 // show the dialog at once; the render fills in the real total
+        exportProgress = ExportProgress(0, 0, counting) // show the dialog at once; the render fills in the real total
         exportJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             // Abort any still-running previous export (its write stream throws on the next buffer) and
             // wait for it to fully unwind before we touch the shared temp dir — no overlapping saves.
@@ -534,7 +540,7 @@ private fun EditorScreen(
                 java.io.FileOutputStream(temp).use { fo ->
                     // Abort the (otherwise uninterruptible) PdfBox save the moment Cancel is tapped.
                     val o = CancellableOutputStream(fo) { cancel.get() }
-                    render(o, { done, total -> if (!cancel.get()) exportProgress = done to total }, { cancel.get() })
+                    render(o, { done, total -> if (!cancel.get()) exportProgress = ExportProgress(done, total, counting) }, { cancel.get() })
                 }
             }.isSuccess
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -562,7 +568,7 @@ private fun EditorScreen(
         val stem = stemOf(uriStr)
         if (asPdf) {
             // Render with progress, then share the finished PDF (writes into cache/share for FileProvider).
-            runPdfExport(stem, shareDir = true,
+            runPdfExport(stem, shareDir = true, counting = countingOf(uriStr),
                 render = { o, prog, cancel -> editor.exportFileToPdf(uriStr, o, prog, cancel) },
                 onReady = { temp -> runCatching { launchShare(temp, stem, "application/pdf") }.onFailure { editor.message = "Could not share the note." } })
         } else {
@@ -701,7 +707,7 @@ private fun EditorScreen(
                 onShareFile = { uri -> pendingShareUri = uri; showShareChooser = true },
                 onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}.xnote") },
                 onExportFilePdf = { uri ->
-                    runPdfExport(stemOf(uri), shareDir = false,
+                    runPdfExport(stemOf(uri), shareDir = false, counting = countingOf(uri),
                         render = { o, prog, cancel -> editor.exportFileToPdf(uri, o, prog, cancel) },
                         onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${stemOf(uri)}.pdf") })
                 },
@@ -801,8 +807,8 @@ private fun EditorScreen(
             },
         )
     }
-    exportProgress?.let { (done, total) ->
-        PdfExportDialog(done = done, total = total, onCancel = {
+    exportProgress?.let { p ->
+        PdfExportDialog(done = p.done, total = p.total, counting = p.counting, onCancel = {
             exportCancel?.set(true) // abort this export's page loop AND its write stream
             exportProgress = null   // hide at once; the job then discards the half-written temp
         })
@@ -847,6 +853,20 @@ private class PendingInsert(val editor: Editor, val at: com.xnotes.core.geometry
 
 /** Side-panel pages of [editor] waiting on a SAF "Save as" destination. */
 private class PendingPages(val editor: Editor, val pages: List<Int>)
+
+/**
+ * A running PDF export's progress: [done] of [total], and what those are. [counting] exists because
+ * a canvas has no pages to count — it exports as one, and reports the items it is drawing instead —
+ * so the dialog cannot assume the unit. `total < 0` marks the final write phase, where [done] is a
+ * 0..1000 permille of the output bytes.
+ */
+private class ExportProgress(val done: Int, val total: Int, val counting: String) {
+    companion object {
+        /** What a document of [kind] counts on its way out. */
+        fun countingFor(kind: com.xnotes.core.util.DocumentKind?): String =
+            if (kind == com.xnotes.core.util.DocumentKind.CANVAS) "item" else "page"
+    }
+}
 
 /**
  * What a pane can ask the screen around it to do: open a SAF picker, run an export, or change the
@@ -1163,7 +1183,7 @@ private class CancellableOutputStream(
  * back, or tapping outside) aborts the export via [onCancel]. Styled to match the monospace surfaces.
  */
 @Composable
-private fun PdfExportDialog(done: Int, total: Int, onCancel: () -> Unit) {
+private fun PdfExportDialog(done: Int, total: Int, counting: String, onCancel: () -> Unit) {
     val palette = LocalPalette.current
     // Only the final PDF write has a meaningful, moving percentage (reported as byte progress with
     // total = -1, done a 0..1000 permille). Preparing and the page phase sit at 0% (the page loop is
@@ -1213,8 +1233,8 @@ private fun PdfExportDialog(done: Int, total: Int, onCancel: () -> Unit) {
                 when {
                     writing -> "Writing the PDF…"
                     total == 0 -> "Preparing…"
-                    done < total -> "page $done / $total"
-                    else -> "Writing $total page${if (total == 1) "" else "s"}…"
+                    done < total -> "$counting $done / $total"
+                    else -> "Writing $total $counting${if (total == 1) "" else "s"}…"
                 },
                 color = palette.textDim.toComposeColor(),
                 fontSize = 13.sp,
