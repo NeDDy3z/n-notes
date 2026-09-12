@@ -807,41 +807,29 @@ private fun formatMm(v: Double): String =
     if (v == Math.floor(v) && !v.isInfinite()) v.toInt().toString() else v.toString()
 
 @Composable
-private fun SizeDropdown(size: PageSize, onSelect: (PageSize) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val palette = LocalPalette.current
-    Box {
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            Text(size.displayName, color = palette.text.toComposeColor(), fontSize = 14.sp)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            PageSize.entries.forEach { s ->
-                DropdownMenuItem(text = { Text(s.displayName) }, onClick = { onSelect(s); expanded = false })
-            }
-        }
+private fun SizeDropdown(size: PageSize, onSelect: (PageSize) -> Unit) =
+    OptionDropdown(PageSize.entries.map { it.name to it.displayName }, size.name) { id ->
+        onSelect(PageSize.valueOf(id))
     }
-}
 
+/** The shared preferences dropdown: a bordered field showing the current choice and a down chevron. */
 @Composable
-private fun OptionDropdown(options: List<Pair<String, String>>, selectedId: String, onSelect: (String) -> Unit) {
+internal fun OptionDropdown(options: List<Pair<String, String>>, selectedId: String, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val palette = LocalPalette.current
     val label = options.firstOrNull { it.first == selectedId }?.second ?: options.first().second
     Box {
-        Box(
+        Row(
             Modifier
                 .clip(RoundedCornerShape(6.dp))
                 .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
                 .clickable { expanded = true }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, color = palette.text.toComposeColor(), fontSize = 14.sp)
+            Spacer(Modifier.width(6.dp))
+            Icon(XnotesIcons.chevronDown, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (id, lbl) ->

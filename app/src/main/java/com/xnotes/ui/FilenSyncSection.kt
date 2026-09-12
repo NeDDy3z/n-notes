@@ -1,6 +1,5 @@
 package com.xnotes.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,8 +20,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,6 +59,13 @@ private val SYNC_INTERVALS = listOf(
     360 to "Every 6 hours",
     720 to "Every 12 hours",
     1440 to "Once a day",
+)
+
+private val SYNC_DIRECTIONS = listOf(
+    "both" to "Both ways",
+    "up" to "N-Notes to Filen",
+    "down" to "Filen to N-Notes",
+    "off" to "None - off",
 )
 
 @Composable
@@ -169,13 +173,18 @@ private fun FilenSignedIn(
     FilenCheckRow("Sync when leaving a note", prefs.filenSyncOnNoteExit) { onUpdate(prefs.copy(filenSyncOnNoteExit = it)) }
     FilenCheckRow("Only on Wi-Fi", prefs.filenWifiOnly) { onUpdate(prefs.copy(filenWifiOnly = it)) }
 
+    FilenLabel("Sync direction")
+    OptionDropdown(SYNC_DIRECTIONS, prefs.filenSyncDirection) { onUpdate(prefs.copy(filenSyncDirection = it)) }
+
     FilenLabel("Sync frequency")
-    FilenIntervalDropdown(prefs.filenSyncIntervalMinutes) { onUpdate(prefs.copy(filenSyncIntervalMinutes = it)) }
+    OptionDropdown(SYNC_INTERVALS.map { it.first.toString() to it.second }, prefs.filenSyncIntervalMinutes.toString()) {
+        onUpdate(prefs.copy(filenSyncIntervalMinutes = it.toInt()))
+    }
 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(
             onClick = { scope.launch { FilenSyncManager.syncNow(context) } },
-            enabled = !status.running && prefs.filenFolderUuid.isNotEmpty(),
+            enabled = !status.running && prefs.filenFolderUuid.isNotEmpty() && prefs.filenSyncDirection != "off",
             colors = ButtonDefaults.buttonColors(containerColor = palette.accent.toComposeColor(), contentColor = palette.bg.toComposeColor()),
         ) { Text("Sync now") }
         if (status.running) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = palette.accent.toComposeColor(), strokeWidth = 2.dp)
@@ -274,31 +283,6 @@ private fun FilenFolderPicker(baseUuid: String, onDismiss: () -> Unit, onSelecte
             }
         },
     )
-}
-
-@Composable
-private fun FilenIntervalDropdown(minutes: Int, onSelect: (Int) -> Unit) {
-    val palette = LocalPalette.current
-    var open by remember { mutableStateOf(false) }
-    val label = SYNC_INTERVALS.firstOrNull { it.first == minutes }?.second ?: "Every hour"
-    Box {
-        Row(
-            Modifier.clip(RoundedCornerShape(8.dp))
-                .background(palette.surface.toComposeColor())
-                .clickable { open = true }
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-                .width(220.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(label, color = palette.text.toComposeColor(), fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Text("v", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            SYNC_INTERVALS.forEach { (m, text) ->
-                DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onSelect(m) })
-            }
-        }
-    }
 }
 
 @Composable

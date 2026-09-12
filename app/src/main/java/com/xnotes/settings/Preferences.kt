@@ -91,6 +91,8 @@ data class Preferences(
     val filenWifiOnly: Boolean = false,
     val filenSyncIntervalMinutes: Int = 60,
     val filenSyncOnNoteExit: Boolean = false,
+    /** Which way notes flow: "both", "up" (local to Filen), "down" (Filen to local), "off". */
+    val filenSyncDirection: String = "both",
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -172,6 +174,7 @@ data class Preferences(
             put("filen_wifi_only", filenWifiOnly)
             put("filen_sync_interval_minutes", filenSyncIntervalMinutes)
             put("filen_sync_on_note_exit", filenSyncOnNoteExit)
+            put("filen_sync_direction", filenSyncDirection)
         }
 
     companion object {
@@ -248,6 +251,8 @@ data class Preferences(
                 filenWifiOnly = o.optBoolean("filen_wifi_only", false),
                 filenSyncIntervalMinutes = o.optInt("filen_sync_interval_minutes", 60).coerceIn(15, 1440),
                 filenSyncOnNoteExit = o.optBoolean("filen_sync_on_note_exit", false),
+                filenSyncDirection = o.optString("filen_sync_direction", "both")
+                    .let { if (it == "up" || it == "down" || it == "off") it else "both" },
             )
         }
     }

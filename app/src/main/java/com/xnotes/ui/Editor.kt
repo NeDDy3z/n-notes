@@ -606,7 +606,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     @Suppress("DEPRECATION")
     private fun decodeCropRegion(path: String, x: Int, y: Int, w: Int, h: Int): android.graphics.Bitmap? {
         var ss = 1
-        while (w / (ss * 2) >= CROP_MAX_PX || h / (ss * 2) >= CROP_MAX_PX) ss *= 2
+        while (w / ss > CROP_MAX_PX || h / ss > CROP_MAX_PX) ss *= 2
         val opts = android.graphics.BitmapFactory.Options().apply {
             inSampleSize = ss
             inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
@@ -2759,6 +2759,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         settingsRepo.save(settings)
         val cmp = explorerComparator(key, descending) { it.created }
         browseCache.replaceAll { _, v -> v.sortedWith(cmp) }
+    }
+
+    /** Whether the explorer shows a compact list instead of the tile grid. */
+    val explorerListView: Boolean get() = settings.explorerListView
+
+    fun setExplorerListView(list: Boolean) {
+        if (settings.explorerListView == list) return
+        settings = settings.copy(explorerListView = list)
+        settingsRepo.save(settings)
     }
 
     /** Forget the granted folder: release its SAF permission and clear the root. */

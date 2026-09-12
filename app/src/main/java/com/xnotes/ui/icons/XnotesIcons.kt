@@ -133,6 +133,7 @@ object XnotesIcons {
     )
     val prev = icon("M15 18l-6-6 6-6")
     val next = icon("M9 18l6-6-6-6")
+    val chevronDown = icon("M6 9l6 6 6-6")
     val file = icon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6")
     val edit = icon("M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7", "M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z")
     val sidebar = icon(rect(3.0, 3.0, 18.0, 18.0), "M9 3v18")

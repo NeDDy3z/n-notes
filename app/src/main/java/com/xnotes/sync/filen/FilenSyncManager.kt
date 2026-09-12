@@ -114,12 +114,15 @@ object FilenSyncManager {
             _status.value = _status.value.copy(running = true, message = "Syncing")
             val result = runCatching {
                 val prefs = settings(context).prefs
+                require(prefs.filenSyncDirection != "off") { "Sync direction is off" }
                 val folderUuid = prefs.filenFolderUuid
                 require(folderUuid.isNotEmpty()) { "No Filen folder selected" }
                 val treeUri = effectiveTreeUri(context)
                 val client = clientOrThrow(context)
                 val state = FilenSyncState.load(context)
-                val summary = FilenSyncEngine(context, treeUri, client, folderUuid).sync(state)
+                val up = prefs.filenSyncDirection == "both" || prefs.filenSyncDirection == "up"
+                val down = prefs.filenSyncDirection == "both" || prefs.filenSyncDirection == "down"
+                val summary = FilenSyncEngine(context, treeUri, client, folderUuid, up, down).sync(state)
                 runCatching { FilenSettingsSync.sync(context, client, folderUuid, state) }
                 state.save(context)
                 summary to state.paths().count { !it.startsWith(".") }
@@ -153,7 +156,7 @@ object FilenSyncManager {
     fun syncOnNoteExit(context: Context) {
         val appCtx = context.applicationContext
         val prefs = settings(appCtx).prefs
-        if (!prefs.filenSyncEnabled || !prefs.filenSyncOnNoteExit || !isConfigured(appCtx)) return
+        if (!prefs.filenSyncEnabled || prefs.filenSyncDirection == "off" || !prefs.filenSyncOnNoteExit || !isConfigured(appCtx)) return
         if (_status.value.running) return // a periodic/manual sync is already covering these changes
         if (prefs.filenWifiOnly && !isUnmetered(appCtx)) return
         exitSyncScope.launch { runCatching { syncNow(appCtx) } }
@@ -169,7 +172,7 @@ object FilenSyncManager {
     fun reschedule(context: Context) {
         val prefs = settings(context).prefs
         val wm = WorkManager.getInstance(context)
-        if (!prefs.filenSyncEnabled || !prefs.filenAutoSync || !isConfigured(context)) {
+        if (!prefs.filenSyncEnabled || prefs.filenSyncDirection == "off" || !prefs.filenAutoSync || !isConfigured(context)) {
             wm.cancelUniqueWork(WORK_NAME)
             return
         }

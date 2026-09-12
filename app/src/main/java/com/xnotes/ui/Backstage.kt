@@ -634,6 +634,20 @@ private fun SortOption(
     )
 }
 
+@Composable
+private fun DisplayOption(label: String, active: Boolean, onPick: () -> Unit) {
+    val palette = LocalPalette.current
+    val tint = (if (active) palette.accent else palette.text).toComposeColor()
+    DropdownMenuItem(
+        text = { Text(label, color = tint) },
+        leadingIcon = {
+            if (active) Icon(XnotesIcons.check, null, tint = tint, modifier = Modifier.size(18.dp))
+            else Spacer(Modifier.size(18.dp))
+        },
+        onClick = onPick,
+    )
+}
+
 // --- home pane: the folder explorer ---
 
 @Composable
@@ -901,6 +915,10 @@ private fun ExplorerSection(
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("Change folder") }, onClick = { menuOpen = false; onPickRoot() })
                         DropdownMenuItem(text = { Text("Forget folder") }, onClick = { menuOpen = false; editor.clearBrowseRoot() })
+                        HorizontalDivider(color = palette.border.toComposeColor())
+                        val listView = editor.explorerListView
+                        DisplayOption("Grid", active = !listView) { editor.setExplorerListView(false); refreshKey++ }
+                        DisplayOption("List", active = listView) { editor.setExplorerListView(true); refreshKey++ }
                     }
                 }
             } else {
@@ -956,7 +974,8 @@ private fun ExplorerSection(
         // A fixed column count per orientation, derived from the full screen width (not the pane), so
         // toggling the sidebar never changes how many tiles are in a row — closing it just widens the
         // pane and enlarges the tiles.
-        val gridColumns = (LocalConfiguration.current.screenWidthDp / 240).coerceIn(2, 8)
+        val listView = editor.explorerListView
+        val gridColumns = if (listView) 1 else (LocalConfiguration.current.screenWidthDp / 240).coerceIn(2, 8)
         // Read inside the long-lived drag gesture below, which never restarts, so snapshot the values
         // that change as the user navigates (the folder it sources from, the current file list).
         val filesNow = rememberUpdatedState(files)
@@ -1110,28 +1129,34 @@ private fun ExplorerSection(
                     // Files: big square thumbnail tiles, captioned with the name and date.
                     items(files, key = { it.documentUri }) { entry ->
                         val fileActions = selection.isEmpty()
-                        FileTile(
-                            editor = editor,
-                            entry = entry,
-                            selected = selection.any { it.documentUri == entry.documentUri },
-                            dimmed = clipboard?.let { c -> c.isCut && c.entries.any { it.documentUri == entry.documentUri } } == true,
-                            inSelectMode = selection.isNotEmpty(),
-                            onShare = if (fileActions) ({ onShareFile(entry.documentUri) }) else null,
-                            onSaveCopy = if (fileActions) ({ onSaveCopyFile(entry.documentUri) }) else null,
-                            onExportPdf = if (fileActions) ({ onExportFilePdf(entry.documentUri) }) else null,
-                            onRename = if (fileActions) ({ renaming = entry }) else null,
-                            onCopy = if (fileActions) ({ clipboard = ClipItem(listOf(entry), currentDocId, false) }) else null,
-                            onCut = if (fileActions) ({ clipboard = ClipItem(listOf(entry), currentDocId, true) }) else null,
-                            onDelete = if (fileActions) ({ pendingDelete = listOf(entry) }) else null,
-                            onColor = if (fileActions) ({ c ->
-                                scope.launch { withContext(Dispatchers.IO) { editor.setItemColor(root, entry.parentDocId, entry.name, c) }; refreshKey++ }
-                            }) else null,
-                            onClick = {
-                                opError = null
-                                if (selection.isNotEmpty()) toggleSelect(entry) else onOpenFile(entry.documentUri)
-                            },
-                            onBounds = { r -> if (r == null) fileBounds.remove(entry.documentUri) else fileBounds[entry.documentUri] = r },
-                        )
+                        val selected = selection.any { it.documentUri == entry.documentUri }
+                        val dimmed = clipboard?.let { c -> c.isCut && c.entries.any { it.documentUri == entry.documentUri } } == true
+                        val onShare = if (fileActions) ({ onShareFile(entry.documentUri) }) else null
+                        val onSaveCopy = if (fileActions) ({ onSaveCopyFile(entry.documentUri) }) else null
+                        val onExportPdf = if (fileActions) ({ onExportFilePdf(entry.documentUri) }) else null
+                        val onRename = if (fileActions) ({ renaming = entry }) else null
+                        val onCopy = if (fileActions) ({ clipboard = ClipItem(listOf(entry), currentDocId, false) }) else null
+                        val onCut = if (fileActions) ({ clipboard = ClipItem(listOf(entry), currentDocId, true) }) else null
+                        val onDelete = if (fileActions) ({ pendingDelete = listOf(entry) }) else null
+                        val onColor: ((Rgba?) -> Unit)? = if (fileActions) ({ c ->
+                            scope.launch { withContext(Dispatchers.IO) { editor.setItemColor(root, entry.parentDocId, entry.name, c) }; refreshKey++ }
+                        }) else null
+                        val onClick = {
+                            opError = null
+                            if (selection.isNotEmpty()) toggleSelect(entry) else onOpenFile(entry.documentUri)
+                        }
+                        val onBounds: (Rect?) -> Unit = { r -> if (r == null) fileBounds.remove(entry.documentUri) else fileBounds[entry.documentUri] = r }
+                        if (listView) {
+                            FileRow(
+                                editor, entry, selected, dimmed, inSelectMode = selection.isNotEmpty(),
+                                onShare, onSaveCopy, onExportPdf, onRename, onCopy, onCut, onDelete, onColor, onClick, onBounds,
+                            )
+                        } else {
+                            FileTile(
+                                editor, entry, selected, dimmed, inSelectMode = selection.isNotEmpty(),
+                                onShare, onSaveCopy, onExportPdf, onRename, onCopy, onCut, onDelete, onColor, onClick, onBounds,
+                            )
+                        }
                     }
                 }
             }
@@ -1684,6 +1709,80 @@ private fun FileTile(
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+/** The list-mode counterpart of [FileTile]: a compact row with a small thumbnail, name + date. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FileRow(
+    editor: Editor,
+    entry: BrowseEntry,
+    selected: Boolean,
+    dimmed: Boolean,
+    inSelectMode: Boolean,
+    onShare: (() -> Unit)?,
+    onSaveCopy: (() -> Unit)?,
+    onExportPdf: (() -> Unit)?,
+    onRename: (() -> Unit)?,
+    onCopy: (() -> Unit)?,
+    onCut: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    onColor: ((Rgba?) -> Unit)?,
+    onClick: () -> Unit,
+    onBounds: (Rect?) -> Unit,
+) {
+    val palette = LocalPalette.current
+    var menuOpen by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { onBounds(null) } }
+    val thumb by produceState<ImageBitmap?>(editor.cachedNoteTile(entry.documentUri), entry.documentUri, entry.modified) {
+        value = editor.tileThumbnail(entry.documentUri, entry.name)
+    }
+    val accent = palette.accent.toComposeColor()
+    val onAccent = palette.bg.toComposeColor()
+    val codeColor = entry.color?.let { codeOutline(it, palette.isDark).toComposeColor() }
+    val shape = chipShape(palette)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { onBounds(it.boundsInWindow()) }
+            .clip(shape)
+            .background(if (selected) accent else Color.Transparent)
+            .then(if (!selected && codeColor != null) Modifier.colorHatch(codeColor) else Modifier)
+            .border(1.dp, if (selected) accent else (codeColor ?: palette.border.toComposeColor()), shape)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .alpha(if (dimmed) 0.4f else 1f)
+            .padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(40.dp).clip(chipShape(palette)).background(palette.paper.toComposeColor())) {
+            val img = thumb
+            if (img != null) {
+                Image(img, entryLabel(entry), contentScale = ContentScale.Crop, alignment = Alignment.TopCenter, modifier = Modifier.matchParentSize())
+            } else {
+                Icon(XnotesIcons.file, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp).align(Alignment.Center))
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                entryLabel(entry), color = if (selected) onAccent else palette.text.toComposeColor(), fontSize = 13.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            val date = entryDate(entry)
+            if (date.isNotEmpty()) {
+                Text(
+                    date, color = if (selected) onAccent else palette.textDim.toComposeColor(), fontSize = 11.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+                Icon(XnotesIcons.more, "More", tint = if (selected) onAccent else palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
+            }
+            if (!inSelectMode) EntryMenu(menuOpen, { menuOpen = false }, onRename, onCopy, onCut, onDelete, onShare, onSaveCopy, onExportPdf, onColor = onColor)
         }
     }
 }

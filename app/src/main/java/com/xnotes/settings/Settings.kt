@@ -54,6 +54,8 @@ data class Settings(
     /** Explorer grid sort: which field orders entries, and whether it's reversed. */
     val explorerSortKey: ExplorerSortKey = ExplorerSortKey.MODIFIED,
     val explorerSortDescending: Boolean = true,
+    /** Explorer display: false shows the tile grid, true a compact list. */
+    val explorerListView: Boolean = false,
     val renderScale: Double = 1.0,
     /** All Pages style stamped onto every newly created note; empty ⇒ none saved. */
     val newNoteStyle: PageStyle = PageStyle(),
@@ -89,6 +91,7 @@ data class Settings(
             .put("sidebar_visible", sidebarVisible)
             .put("explorer_sort_key", explorerSortKey.id)
             .put("explorer_sort_descending", explorerSortDescending)
+            .put("explorer_list_view", explorerListView)
             .put("render_scale", renderScale)
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .apply { if (!newNoteFlow.isEmpty) put("new_note_flow", flowDefaultsJson(newNoteFlow)) }
@@ -136,6 +139,7 @@ data class Settings(
                 sidebarVisible = o.optBoolean("sidebar_visible", false),
                 explorerSortKey = ExplorerSortKey.fromId(o.optString("explorer_sort_key", "modified")),
                 explorerSortDescending = o.optBoolean("explorer_sort_descending", true),
+                explorerListView = o.optBoolean("explorer_list_view", false),
                 renderScale = o.optDouble("render_scale", 1.0),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 newNoteFlow = flowDefaults(o.optJSONObject("new_note_flow")),

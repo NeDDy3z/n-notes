@@ -25,6 +25,11 @@ class FilenSyncEngine(
     private val treeUri: String,
     private val client: FilenClient,
     private val remoteRootUuid: String,
+    // Direction gates. [up] permits changes to the remote (uploads, remote deletes); [down]
+    // permits changes to the local tree (downloads, local deletes). A conflict is resolved
+    // toward whichever side is allowed; with both on it keeps the lossless conflict copy.
+    private val up: Boolean = true,
+    private val down: Boolean = true,
 ) {
     /** A note whose two sides diverged: the edit was kept and the user should know. */
     data class ConflictNote(val path: String, val message: String)
@@ -84,49 +89,63 @@ class FilenSyncEngine(
                         state.put(path, FilenSyncState.Entry(rem.file.uuid, rem.meta.lastModified, loc.modified, loc.size))
                         summary.skipped++
                     } else {
-                        doConflict(path, loc, rem, state, summary)
+                        resolveConflict(path, loc, rem, state, summary)
                     }
                 } else {
                     val localChanged = loc.modified != st.localModified
                     val remoteChanged = rem.meta.lastModified != st.remoteLastModified
                     when {
-                        localChanged && !remoteChanged -> doUpload(path, loc, rem.file.uuid, state, summary)
-                        remoteChanged && !localChanged -> doDownload(path, rem, state, summary)
-                        localChanged && remoteChanged -> doConflict(path, loc, rem, state, summary)
+                        localChanged && !remoteChanged -> if (up) doUpload(path, loc, rem.file.uuid, state, summary) else summary.skipped++
+                        remoteChanged && !localChanged -> if (down) doDownload(path, rem, state, summary) else summary.skipped++
+                        localChanged && remoteChanged -> resolveConflict(path, loc, rem, state, summary)
                         else -> Unit
                     }
                 }
             }
             loc != null && rem == null -> when {
-                st == null -> doUpload(path, loc, null, state, summary) // a brand-new local note
+                st == null -> if (up) doUpload(path, loc, null, state, summary) else summary.skipped++ // a brand-new local note
                 loc.modified != st.localModified -> {
                     // Edited here, but deleted on another device: the edit wins (re-upload) and we flag it.
-                    doUpload(path, loc, null, state, summary)
-                    if (!FilenLocalStore.isTrashPath(path)) note(summary, path, "was deleted on another device, but you had edited it, so your copy was kept")
+                    if (up) {
+                        doUpload(path, loc, null, state, summary)
+                        if (!FilenLocalStore.isTrashPath(path)) note(summary, path, "was deleted on another device, but you had edited it, so your copy was kept")
+                    } else summary.skipped++
                 }
                 suppressDeletes -> summary.skipped++
-                else -> {
-                    // Unchanged here and gone from the other device: apply that deletion locally.
-                    if (FilenLocalStore.deleteLocal(context, treeUri, path)) { state.remove(path); summary.deleted++ }
-                    else summary.skipped++
-                }
+                // Unchanged here and gone from the other device: applying that deletion locally is a
+                // download-side change, so only when down is allowed.
+                down -> if (FilenLocalStore.deleteLocal(context, treeUri, path)) { state.remove(path); summary.deleted++ } else summary.skipped++
+                else -> summary.skipped++
             }
             rem != null && loc == null -> when {
-                st == null -> doDownload(path, rem, state, summary) // a note new to this device
+                st == null -> if (down) doDownload(path, rem, state, summary) else summary.skipped++ // a note new to this device
                 rem.meta.lastModified != st.remoteLastModified -> {
                     // Deleted here, but changed on another device: the edit wins (re-download) and we flag it.
-                    doDownload(path, rem, state, summary)
-                    if (!FilenLocalStore.isTrashPath(path)) note(summary, path, "you deleted it, but it was changed on another device, so it came back")
+                    if (down) {
+                        doDownload(path, rem, state, summary)
+                        if (!FilenLocalStore.isTrashPath(path)) note(summary, path, "you deleted it, but it was changed on another device, so it came back")
+                    } else summary.skipped++
                 }
                 suppressDeletes -> summary.skipped++
-                else -> {
-                    // Unchanged remotely and deleted here: trash it on Filen so every device drops it.
+                // Unchanged remotely and deleted here: trashing it on Filen is an upload-side change.
+                up -> {
                     runCatching { client.trashFile(rem.file.uuid) }
                     state.remove(path)
                     summary.deleted++
                 }
+                else -> summary.skipped++
             }
             else -> state.remove(path)
+        }
+    }
+
+    /** Resolve a two-sided change toward the allowed direction; keep the lossless copy only when both are on. */
+    private fun resolveConflict(path: String, loc: FilenLocalStore.LocalEntry, rem: RemoteInfo, state: FilenSyncState, summary: Summary) {
+        when {
+            up && down -> doConflict(path, loc, rem, state, summary)
+            up -> doUpload(path, loc, rem.file.uuid, state, summary)
+            down -> doDownload(path, rem, state, summary)
+            else -> summary.skipped++
         }
     }
 
