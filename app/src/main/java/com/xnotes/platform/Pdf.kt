@@ -14,18 +14,13 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.xnotes.core.geometry.Rect
-import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageInsets
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
-import com.xnotes.core.model.ShapeItem
-import com.xnotes.core.model.Stroke
-import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.insets
 import com.xnotes.core.pal.Renderer
-import com.xnotes.core.tools.Tool
 import java.io.File
 import java.io.OutputStream
 import kotlin.math.ceil
@@ -76,11 +71,6 @@ object PdfExporter {
             val NONE = FlowExport({ _, _, _ -> }, { null })
         }
     }
-
-    private const val MAX_RASTER_DIM = 4096
-
-    /** Supersample factor for rasterized effect/text items (×150 dpi content ⇒ ~300 dpi). */
-    private const val RASTER_ITEM_SCALE = 2.0
 
     /** Cap on PdfBox's in-RAM scratch buffers during export; the rest spills to temp files so a large
      *  source PDF can't exhaust the heap. Small/medium exports stay fully in memory (fast). */
@@ -162,7 +152,7 @@ object PdfExporter {
                 } else {
                     vectorBlankPage(srcDoc, page, ins, s, paperColor, paintRuling, flow) // a blank note page appended after the PDF
                 }
-                releaseInkGeometry(page)
+                PdfItemRaster.releaseInkGeometry(page.items)
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return
@@ -196,7 +186,7 @@ object PdfExporter {
                     else ->
                         vectorBlankPage(outDoc, page, ins, s, paperColor, paintRuling, flow)
                 }
-                releaseInkGeometry(page)
+                PdfItemRaster.releaseInkGeometry(page.items)
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return
@@ -204,16 +194,6 @@ object PdfExporter {
         } finally {
             outDoc.runCatching { close() }
         }
-    }
-
-    /**
-     * Drop the ribbon geometry painting [page] just built. An export is a single pass that never
-     * revisits a page, so holding every page's ribbons to the end would leave the whole document's
-     * worth resident (~30 bytes per sample) exactly while the encoder wants the heap. The canvas
-     * rebuilds whatever it still needs on its next frame.
-     */
-    private fun releaseInkGeometry(page: Page) {
-        for (item in page.items) if (item is Stroke) item.releaseGeometry()
     }
 
     /** True when the note's pages are the source's pages 0..N-1 in order (rotation-0), optionally
@@ -288,8 +268,8 @@ object PdfExporter {
             raster.bmp.recycle()
         }
         for (item in page.items) {
-            if (needsRaster(item)) {
-                val raster = rasterizeItem(item, cover) ?: continue
+            if (PdfItemRaster.needsRaster(item)) {
+                val raster = PdfItemRaster.item(item, cover) ?: continue
                 renderer.drawItemBitmap(raster.bmp, raster.rect, raster.multiply)
                 raster.bmp.recycle()
             } else {
@@ -310,9 +290,9 @@ object PdfExporter {
     private fun rasterFullPage(outDoc: PDDocument, page: Page, ins: PageInsets, source: PdfSource?, paperColor: (Page) -> Rgba, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
         val cover = footprintOf(page, ins)
         // One scale for both axes, so a page bigger than the cap shrinks instead of being cropped.
-        val scale = minOf(1.0, MAX_RASTER_DIM / cover.w, MAX_RASTER_DIM / cover.h)
-        val wPx = ceil(cover.w * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
-        val hPx = ceil(cover.h * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
+        val scale = minOf(1.0, PdfItemRaster.MAX_DIM / cover.w, PdfItemRaster.MAX_DIM / cover.h)
+        val wPx = ceil(cover.w * scale).toInt().coerceIn(1, PdfItemRaster.MAX_DIM)
+        val hPx = ceil(cover.h * scale).toInt().coerceIn(1, PdfItemRaster.MAX_DIM)
         val bmp = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         canvas.drawColor(paperColor(page).toArgb())
@@ -320,8 +300,8 @@ object PdfExporter {
         canvas.translate(-cover.left.toFloat(), -cover.top.toFloat()) // into page space, past the margins
         val srcIdx = page.pdfPage
         if (srcIdx != null && source != null) {
-            val bgW = (page.width * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
-            val bgH = (page.height * scale).toInt().coerceIn(1, MAX_RASTER_DIM)
+            val bgW = (page.width * scale).toInt().coerceIn(1, PdfItemRaster.MAX_DIM)
+            val bgH = (page.height * scale).toInt().coerceIn(1, PdfItemRaster.MAX_DIM)
             val bg = source.renderPage(srcIdx, bgW, bgH)
             if (bg != null) {
                 canvas.drawBitmap(bg.bitmap, null, RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
@@ -343,20 +323,6 @@ object PdfExporter {
         }
         bmp.recycle()
     }
-
-    /** Items whose look can't be reproduced as plain vector and so are rasterized in place. */
-    private fun needsRaster(item: CanvasItem): Boolean = when (item) {
-        is Stroke -> item.tool == Tool.HIGHLIGHTER ||
-            (item.config.neon && item.tool != Tool.HIGHLIGHTER) ||
-            item.renderColor.a < 255
-        is ShapeItem -> item.neon ||
-            item.strokeRgba.a < 255 ||
-            (item.fillRgba?.let { it.a < 255 } ?: false)
-        is TextItem -> true
-        else -> false // ImageItem is embedded as an image XObject by the renderer's drawRaster
-    }
-
-    private class RasterItem(val bmp: Bitmap, val rect: Rect, val multiply: Boolean)
 
     /**
      * Wraps [out] and reports write progress as a 0..999 permille of [estTotal] bytes (throttled to
@@ -381,44 +347,9 @@ object PdfExporter {
     }
 
     /** Render the page's flow text, cropped to its extent, into a transparent bitmap (like an item). */
-    private fun rasterizeFlow(page: Page, cover: Rect, flow: FlowExport): RasterItem? {
+    private fun rasterizeFlow(page: Page, cover: Rect, flow: FlowExport): PdfItemRaster.Raster? {
         val fb = flow.bounds(page) ?: return null
-        val left = fb.left.coerceAtLeast(cover.left)
-        val top = fb.top.coerceAtLeast(cover.top)
-        val right = fb.right.coerceAtMost(cover.right)
-        val bottom = fb.bottom.coerceAtMost(cover.bottom)
-        val cw = right - left
-        val ch = bottom - top
-        if (cw <= 0.0 || ch <= 0.0) return null
-        val w = ceil(cw * RASTER_ITEM_SCALE).toInt().coerceIn(1, MAX_RASTER_DIM)
-        val h = ceil(ch * RASTER_ITEM_SCALE).toInt().coerceIn(1, MAX_RASTER_DIM)
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        canvas.scale((w / cw).toFloat(), (h / ch).toFloat())
-        canvas.translate(-left.toFloat(), -top.toFloat())
-        flow.paint(page, AndroidRenderer(canvas), Rect(left, top, cw, ch))
-        return RasterItem(bmp, Rect(left, top, cw, ch), multiply = false)
-    }
-
-    /** Render a single item, cropped to its (page-clamped) paint bounds, into a transparent bitmap. */
-    private fun rasterizeItem(item: CanvasItem, cover: Rect): RasterItem? {
-        val pb = item.paintBounds()
-        val left = pb.left.coerceAtLeast(cover.left)
-        val top = pb.top.coerceAtLeast(cover.top)
-        val right = pb.right.coerceAtMost(cover.right)
-        val bottom = pb.bottom.coerceAtMost(cover.bottom)
-        val cw = right - left
-        val ch = bottom - top
-        if (cw <= 0.0 || ch <= 0.0) return null
-        val w = ceil(cw * RASTER_ITEM_SCALE).toInt().coerceIn(1, MAX_RASTER_DIM)
-        val h = ceil(ch * RASTER_ITEM_SCALE).toInt().coerceIn(1, MAX_RASTER_DIM)
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) // starts fully transparent
-        val canvas = Canvas(bmp)
-        canvas.scale((w / cw).toFloat(), (h / ch).toFloat()) // content px → bitmap px
-        canvas.translate(-left.toFloat(), -top.toFloat())
-        item.paint(AndroidRenderer(canvas))
-        val multiply = item is Stroke && item.tool == Tool.HIGHLIGHTER
-        return RasterItem(bmp, Rect(left, top, cw, ch), multiply)
+        return PdfItemRaster.region(fb, cover, multiply = false) { r, crop -> flow.paint(page, r, crop) }
     }
 
     /**
@@ -466,7 +397,7 @@ object PdfExporter {
                 flow.paint(page, renderer, cover)
                 for (item in page.items) item.paint(renderer)
                 pdf.finishPage(pdfPage)
-                releaseInkGeometry(page)
+                PdfItemRaster.releaseInkGeometry(page.items)
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return
