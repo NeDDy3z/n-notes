@@ -2379,7 +2379,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     renderCanvasThumbnailSquare(doc, tilePx)?.also { thumbCache.store(uri, it) }
                         ?: return@withContext null
                 } finally {
-                    for (item in doc.items) if (item is ImageItem) runCatching { item.image.file.delete() }
+                    deleteCanvasImageTemps(doc)
                 }
             }
             val img = bmp.asImageBitmap()
@@ -2439,6 +2439,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         for (page in doc.pages) for (item in page.items) {
             if (item is ImageItem) runCatching { item.image.file.delete() }
         }
+    }
+
+    /** [deleteImageTemps] for a canvas, whose items are one flat list rather than per page. */
+    private fun deleteCanvasImageTemps(doc: com.xnotes.core.infinite.InfiniteDocument) {
+        for (item in doc.items) if (item is ImageItem) runCatching { item.image.file.delete() }
     }
 
     /** Drop a note's cached tile (memory + disk) so it re-renders with fresh content next time it's shown. */
@@ -3644,13 +3649,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         appContext.contentResolver.openInputStream(android.net.Uri.parse(srcUri))?.use { it.copyTo(out) }
     }
 
-    /** Loads the note at [srcUri] and writes it flattened to a PDF in [out] (share-as-PDF / export). */
+    /**
+     * Loads the document at [srcUri] and writes it flattened to a PDF in [out] (share-as-PDF /
+     * export). Dispatches on the stored file's kind, because a canvas is a different bundle read by a
+     * different codec and flattened by a different exporter. The decision lives here rather than at
+     * the call sites so neither of them can forget it and export an `.xcanvas` as a paged note.
+     */
     fun exportFileToPdf(
         srcUri: String,
         out: OutputStream,
         onProgress: (Int, Int) -> Unit = { _, _ -> },
         isCancelled: () -> Boolean = { false },
     ) {
+        val name = queryDisplayName(android.net.Uri.parse(srcUri)).orEmpty()
+        if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
+            exportCanvasFileToPdf(srcUri, out, onProgress, isCancelled)
+            return
+        }
         val doc = appContext.contentResolver.openInputStream(android.net.Uri.parse(srcUri))?.use { codec.read(it, pdfDir, imageDir) } ?: return
         val src = doc.pdfFile?.let { com.xnotes.platform.PdfSource.create(appContext, it) }
         try {
@@ -3665,6 +3680,30 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             src?.close()
             doc.pdfFile?.delete() // transient doc loaded just for export; drop its extracts
             deleteImageTemps(doc)
+        }
+    }
+
+    /**
+     * The canvas half of [exportFileToPdf]: one page cut to the drawing. The paper is the canvas's own
+     * colour where it set one, else the theme's, which is what the explorer tile and the live canvas
+     * both show.
+     */
+    private fun exportCanvasFileToPdf(
+        srcUri: String,
+        out: OutputStream,
+        onProgress: (Int, Int) -> Unit,
+        isCancelled: () -> Boolean,
+    ) {
+        val doc = appContext.contentResolver.openInputStream(android.net.Uri.parse(srcUri))
+            ?.use { canvasCodec.read(it, imageDir) } ?: return
+        try {
+            com.xnotes.platform.CanvasPdfExporter.export(
+                appContext, doc, out,
+                doc.background.paperColor ?: state.palette.paper,
+                onProgress, isCancelled,
+            )
+        } finally {
+            deleteCanvasImageTemps(doc) // transient doc loaded just for export; drop its extracts
         }
     }
 

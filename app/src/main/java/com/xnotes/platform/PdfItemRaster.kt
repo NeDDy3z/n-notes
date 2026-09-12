@@ -81,6 +81,11 @@ internal object PdfItemRaster {
      * rebuilds whatever it still needs on its next frame.
      */
     fun releaseInkGeometry(items: List<CanvasItem>) {
-        for (item in items) if (item is Stroke) item.releaseGeometry()
+        for (item in items) releaseInkGeometry(item)
+    }
+
+    /** [releaseInkGeometry] for one item, for a pass that frees each as it goes past it. */
+    fun releaseInkGeometry(item: CanvasItem) {
+        if (item is Stroke) item.releaseGeometry()
     }
 }
