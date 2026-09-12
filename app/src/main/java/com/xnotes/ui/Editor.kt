@@ -480,6 +480,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.recentColors = recentColors
             it.toolbarColorCount = toolbarColorCount
             it.toolbarLayout = canvasToolbarLayout
+            it.pad.frontBuffering = !settings.prefs.disableFrontBuffering
             it.pickColor(activeColorIndex)
             // A style tuned on the canvas is the same style, so it persists through this editor.
             it.onToolStyleChanged = { settingsDirty = true }
@@ -1598,6 +1599,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             p.zoomLockPan,
         )
         infiniteOrNull?.applyZoomRange(p.canvasMinZoomPercent, p.canvasMaxZoomPercent)
+        // Both surfaces' pads: the switch is about the device, not about one of them.
+        pad.frontBuffering = !p.disableFrontBuffering
+        infiniteOrNull?.pad?.frontBuffering = !p.disableFrontBuffering
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
@@ -1630,6 +1634,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         settings = settings.copy(prefs = p)
         fullscreen = p.startFullscreen ?: !deviceHasDisplayCutout // keep in sync (e.g. Reset to defaults)
         applyPagePrefsToState(p)
+        // The other pane took its pad from the settings it loaded, so a live change has to reach it.
+        secondary?.pad?.frontBuffering = !p.disableFrontBuffering
         republishFlow(invalidate = true) // re-bake flow colours (default text, code) for the new appearance
         state.invalidateAllCaches()
         if (marginChanged) {

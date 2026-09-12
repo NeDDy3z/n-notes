@@ -792,6 +792,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      */
     private fun decideFrontInk(stroke: Stroke, parts: List<MeshPart>) {
         frontDecided = true
+        // Turned off for this device, so there is no pad to consult and nothing to time against it.
+        if (!pad.frontBuffering) return
         if (parts.isEmpty() || parts.any { it.pass != InkPass.OPAQUE }) return
         if (joinFrontInk()) return
         // Nothing joined, so the pad has to be wiped for this stroke, and whatever it was showing

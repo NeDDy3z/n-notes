@@ -386,6 +386,14 @@ fun PreferencesPane(
                 color = palette.textDim.toComposeColor(),
                 fontSize = 12.sp,
             )
+            CheckRow("Disable front buffering", prefs.disableFrontBuffering) {
+                update(prefs.copy(disableFrontBuffering = it))
+            }
+            Text(
+                "Front buffering paints the pen's ink straight into the frame the screen is showing, which is what makes it feel instant. A few panels do not hand that over cleanly, and there the ink can flicker or fall behind the nib. Turn it off on those and every stroke goes through the ordinary canvas.",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 12.sp,
+            )
 
             if (editor.treeSitterAvailable) {
                 HorizontalDivider(color = palette.border.toComposeColor())

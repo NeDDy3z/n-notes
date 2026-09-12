@@ -73,6 +73,8 @@ data class Preferences(
     val canvasMaxZoomPercent: Int = 6400,
     /** Long-edge cap (px) for the on-screen page cache; higher holds more of the page ready at deep zoom. */
     val maxCacheResolution: Int = 2048,
+    /** Whether wet ink keeps off the front buffer, so every stroke takes the ordinary canvas path. */
+    val disableFrontBuffering: Boolean = false,
     /** Open in fullscreen; null ⇒ auto (on unless the display has a camera cutout). */
     val startFullscreen: Boolean? = null,
     /** An imported Helix code theme's file path, or null for the built-in colours. */
@@ -150,6 +152,7 @@ data class Preferences(
         .put("canvas_min_zoom_percent", canvasMinZoomPercent)
         .put("canvas_max_zoom_percent", canvasMaxZoomPercent)
         .put("max_cache_resolution", maxCacheResolution)
+        .put("disable_front_buffering", disableFrontBuffering)
         .apply {
             materialSeed?.let { put("material_seed", Rgba.toHex(it)) }
             startFullscreen?.let { put("start_fullscreen", it) }
@@ -220,6 +223,7 @@ data class Preferences(
                 canvasMinZoomPercent = o.optInt("canvas_min_zoom_percent", 2).coerceIn(1, 100),
                 canvasMaxZoomPercent = o.optInt("canvas_max_zoom_percent", 6400).coerceIn(200, 100000),
                 maxCacheResolution = o.optInt("max_cache_resolution", 2048).coerceIn(1024, 4096),
+                disableFrontBuffering = o.optBoolean("disable_front_buffering", false),
                 startFullscreen = if (o.has("start_fullscreen")) o.getBoolean("start_fullscreen") else null,
                 codeThemePath = o.optString("code_theme_path").ifEmpty { null },
                 codeThemeName = o.optString("code_theme_name").ifEmpty { null },

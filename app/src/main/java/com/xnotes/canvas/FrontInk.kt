@@ -199,6 +199,8 @@ class FrontInk(
      */
     private fun decide(stroke: Stroke, pageIndex: Int) {
         decided = true
+        // Turned off for this device, so there is no pad to consult and nothing to time against it.
+        if (!pad.frontBuffering) return
         if (ItemMesher.passFor(stroke) != InkPass.OPAQUE) return
         // A rotated view is a rotation, and the ink shader has room for a scroll and a zoom.
         if (state.rotationDeg != 0) return

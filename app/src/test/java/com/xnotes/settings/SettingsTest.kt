@@ -101,6 +101,13 @@ class SettingsTest {
         assertEquals("undo", back.stylusButton2Tap)
     }
 
+    @Test fun frontBufferingIsOnUntilItIsTurnedOff() {
+        // Settings written before the switch existed, which is every install that has one.
+        assertFalse(Settings.fromJson(JSONObject()).prefs.disableFrontBuffering)
+        val back = Settings.fromJson(Settings(prefs = Preferences(disableFrontBuffering = true)).toJson()).prefs
+        assertTrue(back.disableFrontBuffering)
+    }
+
     @Test fun customPageSizeRoundTripsAndSizesANewPage() {
         val prefs = Preferences(
             defaultPageSize = PageSize.CUSTOM,
