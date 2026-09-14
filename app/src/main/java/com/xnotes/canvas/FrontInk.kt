@@ -84,8 +84,8 @@ class FrontInk(
     var live = false
         private set
 
-    /** A committed item whose pixels are still the pad's, and the page it belongs to. */
-    private class Held(val item: CanvasItem, val page: Page)
+    /** An item whose pixels are still the pad's, and the page whose cache takes it, if any. */
+    private class Held(val item: CanvasItem, val page: Page?)
 
     /**
      * The committed items the pad is still showing, kept out of the ink cache until it lets go.
@@ -333,12 +333,17 @@ class FrontInk(
      * file it as it always has. The pad keeps it until the handover, or until a stroke that joins
      * this one has been handed over with it.
      */
-    fun hold(item: CanvasItem, page: Page): Boolean {
+    fun hold(item: CanvasItem, page: Page): Boolean = take(Held(item, page))
+
+    /** [hold] for disappearing ink, which the caller's overlay paints once the pad lets go. */
+    fun holdFading(stroke: Stroke): Boolean = take(Held(stroke, null))
+
+    private fun take(held: Held): Boolean {
         if (!live) return false
         abandonToHold()
         // A capture in flight was started for a run this stroke has since grown.
         handoffGen++
-        holds = holds + Held(item, page)
+        holds = holds + held
         capture()
         return true
     }
@@ -410,7 +415,7 @@ class FrontInk(
         if (items.isEmpty()) return false
         holds = emptyList()
         handoverTail = null
-        for (h in items) state.appendToCache(h.page, h.item)
+        for (h in items) h.page?.let { state.appendToCache(it, h.item) }
         // Every settle tracks its own publication, whichever path settled: what the caller does
         // next is not what says when these pixels reached the glass.
         awaitingPublish = true

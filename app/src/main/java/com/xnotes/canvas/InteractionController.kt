@@ -962,6 +962,7 @@ class InteractionController(
         stroke.finished = true
         if (wandMode && stroke.tool.isStroke) {
             fadingStrokes.add(FadingStroke(stroke, pageIndex))
+            frontInk?.holdFading(stroke)
             return
         }
         crossedSegments.add(fileStroke(stroke, pageIndex))
@@ -1014,6 +1015,7 @@ class InteractionController(
                     // Disappearing ink: held ephemerally, never committed to the model/undo/cache/save.
                     // A stroke drawn mid-fade cancels the fade and re-solidifies the whole held batch.
                     fadingStrokes.add(FadingStroke(stroke, pi))
+                    frontInk?.holdFading(stroke)
                     stopFade()
                     fadeAlpha = 1.0
                     scheduleFade()
@@ -2869,6 +2871,8 @@ class InteractionController(
             // Disappearing ink (magic wand): ephemeral strokes drawn live at the shared fade alpha,
             // without mutating their stored colour. Highlighters keep their MULTIPLY look while fading.
             for (fs in fadingStrokes) {
+                // Still on the front buffer, which would otherwise draw it a second time.
+                if (frontInk?.holding(fs.stroke) == true) continue
                 paintClippedToPage(r, fs.pageIndex) {
                     r.saveLayerBlended(fs.stroke.paintBounds(), fadeAlpha, fs.stroke.blendMode)
                     fs.stroke.paint(r)
