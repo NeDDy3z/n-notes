@@ -3919,11 +3919,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
         }
         val colors = sidecarDocId?.let { readSidecarColors(tree, it) }.orEmpty()
-        // Stamp any item we haven't seen before with the moment we discovered it, so the grid can
-        // order by creation even though SAF reports only last-modified: items the app created are
-        // discovered on the listing right after, and an externally-added file is "created" when found.
+        // SAF reports no creation time, so an item seen for the first time is stamped with the earlier of
+        // now and its modified time: nothing was created after its last edit, and a fresh item gets now.
         val now = System.currentTimeMillis()
-        createdStore.stampMissing(out.map { documentKey(it.documentUri) }, now)
+        createdStore.stampMissing(out.associate { documentKey(it.documentUri) to (com.xnotes.core.util.DocKeys.inferCreated(now, it.modified) ?: now) })
         val withCreated = out.map {
             it.copy(created = createdStore.get(documentKey(it.documentUri)) ?: now, color = colors[it.name])
         }
@@ -4105,25 +4104,37 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun cachedMeta(entry: BrowseEntry): com.xnotes.platform.DocMetaStore.Meta? =
         docMeta.get(documentKey(entry.documentUri), entry.modified)
 
-    /** [cachedMeta], reading the note's manifest when the cache has nothing current; null for folders and canvases. IO. */
+    /** [cachedMeta], reading the file's manifest when the cache has nothing current, and taking the created time it records; null for folders. IO. */
     fun docMetaFor(entry: BrowseEntry): com.xnotes.platform.DocMetaStore.Meta? {
-        if (entry.isDir || DocumentKind.ofName(entry.name) != DocumentKind.NOTE) return null
+        if (entry.isDir) return null
+        val kind = DocumentKind.ofName(entry.name) ?: return null
         val key = documentKey(entry.documentUri)
         docMeta.get(key, entry.modified)?.let { return it }
-        val peek = peekNote(entry.documentUri) ?: return null
-        peek.created?.let { createdStore.put(key, it) }
-        return com.xnotes.platform.DocMetaStore.Meta(peek.pages, peek.hasPdf, entry.modified).also { docMeta.put(key, it) }
+        val meta = if (kind == DocumentKind.CANVAS) {
+            val peek = peekFile(entry.documentUri, { canvasCodec.peek(it) }, { canvasCodec.peek(it) }) ?: return null
+            peek.created?.let { createdStore.put(key, it) }
+            // A canvas has no pages or PDF; the entry just marks it read at this modified time.
+            com.xnotes.platform.DocMetaStore.Meta(0, false, entry.modified)
+        } else {
+            val peek = peekFile(entry.documentUri, { codec.peek(it) }, { codec.peek(it) }) ?: return null
+            peek.created?.let { createdStore.put(key, it) }
+            com.xnotes.platform.DocMetaStore.Meta(peek.pages, peek.hasPdf, entry.modified)
+        }
+        return meta.also { docMeta.put(key, it) }
     }
+
+    /** [entry]'s created time as known now, which its file's own record, read after the listing, may have replaced. Instant. */
+    fun createdOf(entry: BrowseEntry): Long = createdStore.get(documentKey(entry.documentUri)) ?: entry.created
 
     /** Whether a note annotates a PDF, from whatever was last read of it, however old. */
     fun knownPdf(entry: BrowseEntry): Boolean = docMeta.latest(documentKey(entry.documentUri))?.pdf == true
 
-    private fun peekNote(uri: String): com.xnotes.format.NotePeek? {
+    private fun <T> peekFile(uri: String, viaChannel: (java.nio.channels.FileChannel) -> T?, viaStream: (java.io.InputStream) -> T?): T? {
         val u = android.net.Uri.parse(uri)
         runCatching {
-            appContext.contentResolver.openFileDescriptor(u, "r")?.use { pfd -> codec.peek(java.io.FileInputStream(pfd.fileDescriptor).channel) }
+            appContext.contentResolver.openFileDescriptor(u, "r")?.use { pfd -> viaChannel(java.io.FileInputStream(pfd.fileDescriptor).channel) }
         }.getOrNull()?.let { return it }
-        return runCatching { appContext.contentResolver.openInputStream(u)?.use { codec.peek(it) } }.getOrNull()
+        return runCatching { appContext.contentResolver.openInputStream(u)?.use { viaStream(it) } }.getOrNull()
     }
 
     private val folderCounts = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Int>>()

@@ -1011,9 +1011,9 @@ private fun ExplorerSection(
         layout == ExplorerLayout.TIMELINE -> timeline?.files
         else -> entries
     }
-    // Page counts and PDF flags fill in behind the listing, a few notes at a time.
+    // Page counts, PDF flags and the created times files record fill in behind the listing, a few files at a time.
     LaunchedEffect(source) {
-        val todo = source?.filter { !it.isDir && editor.cachedMeta(it) == null && DocumentKind.ofName(it.name) == DocumentKind.NOTE }
+        val todo = source?.filter { !it.isDir && editor.cachedMeta(it) == null && DocumentKind.isDocument(it.name) }
         if (todo.isNullOrEmpty()) return@LaunchedEffect
         for (chunk in todo.chunked(6)) {
             withContext(Dispatchers.IO) { chunk.forEach { editor.docMetaFor(it) } }
@@ -1021,9 +1021,11 @@ private fun ExplorerSection(
         }
     }
     val kindOf: (BrowseEntry) -> EntryKind = { entryKind(it, editor.cachedMeta(it)) }
+    val withCreated: (BrowseEntry) -> BrowseEntry = { e -> editor.createdOf(e).let { if (it == e.created) e else e.copy(created = it) } }
     val arrange: (List<BrowseEntry>) -> List<BrowseEntry> = remember(view.sortKey, view.descending, view.folders, kindFilter, metaTick) {
         { list ->
             list.filter { e -> if (e.isDir) view.folders != FolderPlacement.HIDDEN && kindFilter == null else kindFilter == null || kindOf(e) == kindFilter }
+                .map(withCreated)
                 .sortedWith(explorerComparator(view.sortKey, view.descending, foldersFirst = view.folders != FolderPlacement.MIXED) { it.created })
         }
     }
@@ -1035,6 +1037,7 @@ private fun ExplorerSection(
     val columnsArrange: (List<BrowseEntry>) -> List<BrowseEntry> = remember(view.sortKey, view.descending, kindFilter, metaTick) {
         { list ->
             list.filter { e -> e.isDir || kindFilter == null || kindOf(e) == kindFilter }
+                .map(withCreated)
                 .sortedWith(explorerComparator(view.sortKey, view.descending) { it.created })
         }
     }

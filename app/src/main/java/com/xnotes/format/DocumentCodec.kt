@@ -573,21 +573,8 @@ class DocumentCodec(
      * straight to the manifest, so neither the embedded PDF nor any image is read. Null when [ch] is not a
      * note it can read that way (a pipe from a cloud provider, say), for [peek] from a stream instead.
      */
-    fun peek(ch: java.nio.channels.FileChannel): NotePeek? = runCatching {
-        val entry = ZipTail.read(ch)?.entries?.firstOrNull { it.name == "manifest.json" } ?: return null
-        val head = java.nio.ByteBuffer.allocate(LOCAL_HEADER).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-        while (head.hasRemaining()) if (ch.read(head, entry.localOffset + head.position()) < 0) return null
-        if (head.getInt(0) != LOCAL_SIG) return null
-        val start = entry.localOffset + LOCAL_HEADER + (head.getShort(26).toInt() and 0xFFFF) + (head.getShort(28).toInt() and 0xFFFF)
-        val raw = java.io.BufferedInputStream(java.nio.channels.Channels.newInputStream(ch.position(start)), 64 * 1024)
-        if (entry.method != ZipEntry.DEFLATED) return peekManifest(raw)
-        val inflater = java.util.zip.Inflater(true)
-        try {
-            peekManifest(java.util.zip.InflaterInputStream(raw, inflater, 64 * 1024))
-        } finally {
-            inflater.end()
-        }
-    }.getOrNull()
+    fun peek(ch: java.nio.channels.FileChannel): NotePeek? =
+        runCatching { ZipTail.readEntry(ch, "manifest.json") { peekManifest(it) } }.getOrNull()
 
     /** [peek] for a note that only comes as a stream: reads through to the manifest, skipping what comes before it. */
     fun peek(input: InputStream): NotePeek? = runCatching {
@@ -1148,9 +1135,6 @@ class DocumentCodec(
         private const val SIMPLIFIED_SINCE = 43
 
         private const val NOT_XNOTE = "Not an xnotes document"
-
-        private const val LOCAL_SIG = 0x04034b50
-        private const val LOCAL_HEADER = 30
     }
 }
 

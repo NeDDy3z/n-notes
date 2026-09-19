@@ -1,8 +1,14 @@
 package com.xnotes.format
 
+import java.io.BufferedInputStream
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.channels.Channels
 import java.nio.channels.FileChannel
+import java.util.zip.Inflater
+import java.util.zip.InflaterInputStream
+import java.util.zip.ZipEntry
 
 /**
  * Replaces the tail of an existing bundle in place, so a save does not have to rebuild the whole
@@ -34,6 +40,8 @@ internal object ZipTail {
     private const val CD_SIG = 0x02014b50
     private const val EOCD_LEN = 22
     private const val CD_FIXED = 46
+    private const val LOCAL_SIG = 0x04034b50
+    private const val LOCAL_HEADER = 30
 
     /** The u32 ceiling every offset and size in a plain (non-zip64) zip has to stay under. */
     private const val MAX_U32 = 0xFFFFFFFFL
@@ -95,6 +103,23 @@ internal object ZipTail {
             p += len
         }
         return Directory(entries, cdOffset)
+    }
+
+    /** Hand [reader] entry [name] of [ch], inflated when it was deflated, seeking straight to it; null when there is no such entry. */
+    fun <T> readEntry(ch: FileChannel, name: String, reader: (InputStream) -> T): T? {
+        val entry = read(ch)?.entries?.firstOrNull { it.name == name } ?: return null
+        val head = ByteBuffer.allocate(LOCAL_HEADER).order(ByteOrder.LITTLE_ENDIAN)
+        while (head.hasRemaining()) if (ch.read(head, entry.localOffset + head.position()) < 0) return null
+        if (head.getInt(0) != LOCAL_SIG) return null
+        val start = entry.localOffset + LOCAL_HEADER + (head.getShort(26).toInt() and 0xFFFF) + (head.getShort(28).toInt() and 0xFFFF)
+        val raw = BufferedInputStream(Channels.newInputStream(ch.position(start)), 64 * 1024)
+        if (entry.method != ZipEntry.DEFLATED) return reader(raw)
+        val inflater = Inflater(true)
+        try {
+            return reader(InflaterInputStream(raw, inflater, 64 * 1024))
+        } finally {
+            inflater.end()
+        }
     }
 
     /**
