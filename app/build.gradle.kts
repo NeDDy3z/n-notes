@@ -91,6 +91,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // Lists every values-* translation in the manifest so Android 13+ offers a per-app language.
+    androidResources {
+        generateLocaleConfig = true
+    }
 }
 
 kotlin {
