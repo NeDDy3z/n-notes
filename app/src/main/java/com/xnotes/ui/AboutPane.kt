@@ -44,11 +44,13 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import com.xnotes.R
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -106,7 +108,7 @@ fun AboutPane() {
             Text("xnotes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 24.sp)
             Spacer(Modifier.height(5.dp))
             Text(
-                "A handwriting notes and sketching app for Android",
+                stringResource(R.string.app_tagline),
                 color = palette.textDim.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.Center,
             )
             if (version.isNotEmpty()) {
@@ -116,14 +118,14 @@ fun AboutPane() {
                     Modifier.clickable { copyVersion(ctx, version) }.padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Version $version", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                    Text(stringResource(R.string.version_n, version), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                     Spacer(Modifier.width(6.dp))
-                    Icon(XnotesIcons.copy, "Copy version", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))
+                    Icon(XnotesIcons.copy, stringResource(R.string.copy_version), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))
                 }
             }
 
             Spacer(Modifier.height(28.dp))
-            Text("Help make xnotes better", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(stringResource(R.string.help_make_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
 
             // Three rectangular buttons, side by side; each fills with the accent while pressed.
@@ -131,9 +133,9 @@ fun AboutPane() {
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AboutButton(XnotesIcons.bug, "Report a bug") { open(bugReportUrl(version)) }
-                AboutButton(XnotesIcons.idea, "Request a feature") { open(featureRequestUrl()) }
-                AboutButton(XnotesIcons.heart, "Sponsor") { open(SPONSOR_URL) }
+                AboutButton(XnotesIcons.bug, stringResource(R.string.report_bug)) { open(bugReportUrl(version)) }
+                AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl()) }
+                AboutButton(XnotesIcons.heart, stringResource(R.string.sponsor)) { open(SPONSOR_URL) }
             }
 
             Spacer(Modifier.height(26.dp))
@@ -142,13 +144,13 @@ fun AboutPane() {
                 Modifier.clickable { open(REPO_URL) },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Enjoying xnotes? ", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                Text("Star it on GitHub", color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.enjoying_xnotes), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                Text(stringResource(R.string.star_on_github), color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
 
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("MIT License", color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(LICENSE_URL) })
+                Text(stringResource(R.string.mit_license), color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(LICENSE_URL) })
                 Text("   ·   ", color = palette.textDim.toComposeColor(), fontSize = 11.sp)
                 Text("F-Droid", color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(FDROID_URL) })
             }
@@ -212,7 +214,7 @@ private fun copyVersion(ctx: Context, version: String) {
     runCatching {
         val clip = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clip.setPrimaryClip(ClipData.newPlainText("xnotes version", "xnotes $version"))
-        Toast.makeText(ctx, "Version copied", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, ctx.getString(R.string.version_copied), Toast.LENGTH_SHORT).show()
     }
 }
 

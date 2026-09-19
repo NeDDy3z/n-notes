@@ -3,12 +3,12 @@ package com.xnotes.settings
 import org.json.JSONObject
 
 /** The explorer's ways of laying out a folder. */
-enum class ExplorerLayout(val id: String, val label: String) {
-    GRID("grid", "Grid"),
-    GALLERY("gallery", "Gallery"),
-    LIST("list", "List"),
-    COLUMNS("columns", "Columns"),
-    TIMELINE("timeline", "Timeline");
+enum class ExplorerLayout(val id: String) {
+    GRID("grid"),
+    GALLERY("gallery"),
+    LIST("list"),
+    COLUMNS("columns"),
+    TIMELINE("timeline");
 
     companion object {
         fun fromId(id: String?): ExplorerLayout? = entries.firstOrNull { it.id == id }
@@ -38,11 +38,11 @@ enum class ThumbShape(val id: String) {
 }
 
 /** What the explorer puts its items under a heading by. */
-enum class GroupBy(val id: String, val label: String) {
-    NONE("none", "None"),
-    DATE("date", "Date"),
-    KIND("kind", "Kind"),
-    COLOUR("colour", "Colour");
+enum class GroupBy(val id: String) {
+    NONE("none"),
+    DATE("date"),
+    KIND("kind"),
+    COLOUR("colour");
 
     companion object {
         fun fromId(id: String?): GroupBy = entries.firstOrNull { it.id == id } ?: DATE
@@ -50,10 +50,10 @@ enum class GroupBy(val id: String, val label: String) {
 }
 
 /** Where folders go among the files: in their own row above them, sorted in with them, or left out. */
-enum class FolderPlacement(val id: String, val label: String) {
-    TOP("top", "On top"),
-    MIXED("mixed", "Mixed in"),
-    HIDDEN("hidden", "Hidden");
+enum class FolderPlacement(val id: String) {
+    TOP("top"),
+    MIXED("mixed"),
+    HIDDEN("hidden");
 
     companion object {
         fun fromId(id: String?): FolderPlacement = entries.firstOrNull { it.id == id } ?: TOP

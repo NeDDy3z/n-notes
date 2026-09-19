@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.xnotes.R
 import com.xnotes.canvas.CanvasState
 import com.xnotes.canvas.CanvasView
 import com.xnotes.canvas.EditingField
@@ -1028,7 +1029,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val ok = bmp != null && putBitmapOnClipboard(bmp, "xnotes capture")
         controller.clearScreenshot()
         controller.switchBackAfterScreenshot() // return to the previous pen, like the eraser
-        message = if (ok) "Image copied. Paste it anywhere." else "Couldn’t copy the image."
+        message = if (ok) appContext.getString(R.string.image_copied) else appContext.getString(R.string.err_copy_image)
     }
 
     /** Render a content-space rectangle (whatever it overlaps: pages, backgrounds, ink, the gap)
@@ -1089,13 +1090,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt) {
         val uri = clipboardImageUri() ?: run {
             clipboardSvgBytes()?.let { insertImageAt(it, content) }
-                ?: run { message = "The clipboard has no image to paste." }
+                ?: run { message = appContext.getString(R.string.err_clipboard_no_image) }
             return
         }
         runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
             .getOrNull()
             ?.let { insertImageAt(it, content) }
-            ?: run { message = "The clipboard has no image to paste." }
+            ?: run { message = appContext.getString(R.string.err_clipboard_no_image) }
     }
 
     /** SVG markup sitting on the clipboard as plain text (copied source), as insertable bytes. */
@@ -1413,7 +1414,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val size = file?.let { imageCodec.probeFile(it.path) }
         if (file == null || size == null || size.width <= 0 || size.height <= 0) {
             file?.delete()
-            message = "Could not read the image."
+            message = appContext.getString(R.string.err_read_image)
             return
         }
         val index = (atContent?.let { state.pageIndexAtContent(it) } ?: state.currentPageIndex())
@@ -1454,7 +1455,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val size = file?.let { imageCodec.probeFile(it.path) }
         if (file == null || size == null || size.width <= 0 || size.height <= 0) {
             file?.delete()
-            message = "Could not read the image."
+            message = appContext.getString(R.string.err_read_image)
             return
         }
         refreshStickers()
@@ -1469,7 +1470,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun insertSticker(file: java.io.File) {
         val bytes = runCatching { file.takeIf { it.isFile }?.readBytes() }.getOrNull()
         if (bytes == null) {
-            message = "Could not read the sticker."
+            message = appContext.getString(R.string.err_read_sticker)
             refreshStickers()
             return
         }
@@ -1481,13 +1482,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val uri = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
         if (uri == null) {
             clipboardSvgBytes()?.let { insertImage(it) }
-                ?: run { message = "The clipboard has no image to paste." }
+                ?: run { message = appContext.getString(R.string.err_clipboard_no_image) }
             return
         }
         runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
             .getOrNull()
             ?.let { insertImage(it) }
-            ?: run { message = "The clipboard has no image to paste." }
+            ?: run { message = appContext.getString(R.string.err_clipboard_no_image) }
     }
 
     /**
@@ -2257,7 +2258,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 "open read ${readMs}ms = inflate ${timing.inflateMs} + parse ${timing.parseMs}" +
                     " + assets ${timing.assetsMs} + compact ${timing.compactMs}, $fileBytes bytes",
             )
-            if (doc == null) { message = "Could not open that note."; return }
+            if (doc == null) { message = appContext.getString(R.string.err_open_that_note); return }
             if (openCancelled.get()) { doc.pdfFile?.delete(); deleteImageTemps(doc); return } // tapped Cancel mid-read; stay put
             doc.path = uri
             doc.displayName = name
@@ -2269,9 +2270,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             noteOpen = true // push the editor on top of backstage (only on a successful open)
             rememberOpened(uri, name)
         } catch (e: XNoteFormatException) {
-            message = e.message ?: "Not an xnotes document."
+            message = appContext.getString(R.string.err_not_xnotes)
         } catch (e: Exception) {
-            message = "Could not open the note."
+            message = appContext.getString(R.string.err_open_note)
         } finally {
             // Record the timings for the debug overlay, so a genuinely fast open (read < 160ms, no
             // spinner) can be told apart from a bug where the spinner is wrongly skipped.
@@ -2295,7 +2296,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             invalidateThumb(uri) // content changed; re-render its tile next time it's shown
         } catch (e: Throwable) {
             // Throwable, not Exception: an OutOfMemoryError mid-encode must surface a message, not crash.
-            message = "Could not save the note."
+            message = appContext.getString(R.string.err_save_note)
         }
     }
 
@@ -2338,7 +2339,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 invalidateThumb(uri)
             } else {
                 if (wasDirty && state.document === doc) { doc.dirty = true; dirty = true }
-                message = "Could not save the note."
+                message = appContext.getString(R.string.err_save_note)
             }
             state.lastSaveTotalMs = msSince(startNs)
             onDone(ok)
@@ -3476,7 +3477,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.document.displayName = fork.name
         autosaveUri = fork.uri
         refreshContent()
-        message = "This note changed elsewhere. Your edits are now in \u201c${com.xnotes.core.util.DocumentKind.stripSuffix(fork.name)}\u201d."
+        message = appContext.getString(R.string.note_forked, com.xnotes.core.util.DocumentKind.stripSuffix(fork.name))
     }
 
     /** The canvas sibling of [adoptNoteFork]. Main thread. */
@@ -3486,7 +3487,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         canvas.document.displayName = fork.name
         canvasAutosaveUri = fork.uri
         refreshContent()
-        message = "This canvas changed elsewhere. Your edits are now in \u201c${com.xnotes.core.util.DocumentKind.stripSuffix(fork.name)}\u201d."
+        message = appContext.getString(R.string.canvas_forked, com.xnotes.core.util.DocumentKind.stripSuffix(fork.name))
     }
 
     private fun maybeBindAutosave(uri: String?) {
@@ -4757,7 +4758,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun deleteCurrentPage() {
         if (state.document.pages.size <= 1) {
-            message = "A note must keep at least one page."
+            message = appContext.getString(R.string.err_keep_one_page)
             return
         }
         val index = state.currentPageIndex()
@@ -4781,7 +4782,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Clear all of a page's items but keep the page (and its PDF/template background). Undoable. */
     fun erasePage(index: Int) {
         val page = pageAt(index) ?: return
-        if (page.items.isEmpty()) { message = "That page is already empty."; return }
+        if (page.items.isEmpty()) { message = appContext.getString(R.string.page_already_empty); return }
         val removals = page.items.map { page to it }
         page.items.clear()
         history.push(EraseItems(removals))
@@ -4801,7 +4802,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun cutPages(indices: List<Int>) {
         if (indices.isEmpty()) return
         if (indices.distinct().size >= state.document.pages.size) {
-            message = "A note must keep at least one page."
+            message = appContext.getString(R.string.err_keep_one_page)
             return
         }
         copyPages(indices)
@@ -4832,7 +4833,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val targets = indices.filter { it in pages.indices }.distinct().sortedDescending()
         if (targets.isEmpty()) return
         if (targets.size >= pages.size) {
-            message = "A note must keep at least one page."
+            message = appContext.getString(R.string.err_keep_one_page)
             return
         }
         val cmds = ArrayList<Command>()
@@ -5235,18 +5236,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun importCodeTheme(bytes: ByteArray, sourceName: String? = null) {
         val parsed = com.xnotes.format.HelixTheme.parse(String(bytes, Charsets.UTF_8))
         if (parsed == null) {
-            message = "Not a usable Helix theme (a self-contained .toml is needed)."
+            message = appContext.getString(R.string.err_helix_theme)
             return
         }
         val file = java.io.File(java.io.File(appContext.filesDir, "theme").apply { mkdirs() }, "code.toml")
         runCatching { file.writeBytes(bytes) }.onFailure {
-            message = "Couldn't store the theme file."
+            message = appContext.getString(R.string.err_store_theme)
             return
         }
         customCodeTheme = parsed
         applyPreferences(settings.prefs.copy(codeThemePath = file.path, codeThemeName = sourceName))
         retheme()
-        message = "Code theme imported."
+        message = appContext.getString(R.string.code_theme_imported)
     }
 
     /** Back to the built-in dark/light code colours. */
@@ -5271,9 +5272,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Adopt a font file for the pickers; reports via [message]. */
     fun importFont(bytes: ByteArray, sourceName: String?) {
-        com.xnotes.platform.FontCatalog.importFont(bytes, sourceName)
-            .onSuccess { message = "Font \"${it.id}\" imported." }
-            .onFailure { message = it.message ?: "Could not import that font." }
+        com.xnotes.platform.FontCatalog.importFont(appContext, bytes, sourceName)
+            .onSuccess { message = appContext.getString(R.string.font_imported, it.id) }
+            .onFailure { message = it.message ?: appContext.getString(R.string.err_import_font) }
         fontsChanged()
     }
 

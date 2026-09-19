@@ -49,6 +49,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +58,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.util.DocumentKind
 import com.xnotes.platform.DocMetaStore
@@ -118,6 +121,7 @@ internal class ExplorerBody(
     /** What the menus call deleting: "Move to trash" while Trash is on. */
     val deleteLabel: String,
     val host: TileHost,
+    val words: ExplorerWords,
     /** A line to show under an item in place of its date, as Recent does with when it was opened. */
     val metaOverride: ((BrowseEntry) -> String?)? = null,
     /** The folder each item sits in, shown where items come from many folders. */
@@ -134,12 +138,12 @@ internal class ExplorerBody(
     fun pages(e: BrowseEntry): Int = meta(e)?.pages ?: 0
 
     fun whenText(e: BrowseEntry, withTime: Boolean = view.showTime): String =
-        formatWhen(if (view.sortKey == ExplorerSortKey.CREATED) e.created else e.modified, now, dateStyle, withTime, clock24, zone)
+        formatWhen(words, if (view.sortKey == ExplorerSortKey.CREATED) e.created else e.modified, now, dateStyle, withTime, clock24, zone)
 
     /** The line under a tile's name: its date, and its size when tiles show sizes. */
     fun metaText(e: BrowseEntry): String {
         metaOverride?.invoke(e)?.let { return it }
-        if (e.isDir) return counts[e.documentUri]?.let { itemsLabel(it) } ?: whenText(e)
+        if (e.isDir) return counts[e.documentUri]?.let { itemsLabel(words, it) } ?: whenText(e)
         return listOfNotNull(whenText(e).ifEmpty { null }, formatSize(e.size).takeIf { view.showSize }).joinToString(" · ")
     }
 
@@ -160,11 +164,12 @@ internal fun kindIcon(k: EntryKind): ImageVector = when (k) {
     EntryKind.CANVAS -> XnotesIcons.canvas
 }
 
+@Composable
 internal fun kindLabel(k: EntryKind): String = when (k) {
-    EntryKind.FOLDER -> "Folder"
-    EntryKind.NOTE -> "Note"
-    EntryKind.PDF -> "PDF note"
-    EntryKind.CANVAS -> "Canvas"
+    EntryKind.FOLDER -> stringResource(R.string.folder)
+    EntryKind.NOTE -> stringResource(R.string.kind_note)
+    EntryKind.PDF -> stringResource(R.string.kind_pdf_note)
+    EntryKind.CANVAS -> stringResource(R.string.kind_canvas)
 }
 
 /** A document's first page: the top cropped to fill [shape]'s square, or the whole page fitted in. */
@@ -221,7 +226,7 @@ internal fun ThumbBadges(b: ExplorerBody, e: BrowseEntry, inset: Dp = 8.dp) {
     Box(Modifier.fillMaxSize().padding(inset)) {
         val kind = b.kind(e)
         if (b.view.showKind && (kind == EntryKind.PDF || kind == EntryKind.CANVAS)) {
-            TileBadge(kindIcon(kind), if (kind == EntryKind.PDF) "PDF" else "Canvas", Modifier.align(Alignment.BottomStart))
+            TileBadge(kindIcon(kind), if (kind == EntryKind.PDF) "PDF" else stringResource(R.string.kind_canvas), Modifier.align(Alignment.BottomStart))
         }
         val pages = b.pages(e)
         if (b.view.showPages && pages > 1) TileBadge(XnotesIcons.pages, "$pages", Modifier.align(Alignment.BottomEnd))
@@ -233,7 +238,7 @@ private fun EntryMenuButton(b: ExplorerBody, e: BrowseEntry, tint: Color, size: 
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }, modifier = Modifier.size(width = size, height = 36.dp)) {
-            Icon(XnotesIcons.more, "More for ${b.label(e)}", tint = tint, modifier = Modifier.size(17.dp))
+            Icon(XnotesIcons.more, stringResource(R.string.more_for, b.label(e)), tint = tint, modifier = Modifier.size(17.dp))
         }
         EntryMenuFor(b, e, open) { open = false }
     }
@@ -357,10 +362,10 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(b.label(e), color = if (active) onAccent else palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val meta = b.metaOverride?.invoke(e) ?: b.counts[e.documentUri]?.let { itemsLabel(it) }
+            val meta = b.metaOverride?.invoke(e) ?: b.counts[e.documentUri]?.let { itemsLabel(b.words, it) }
             if (meta != null) Text(meta, color = if (active) onAccent else palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
         }
-        if (b.host.isPinned(e)) Icon(XnotesIcons.pin, "Pinned to sidebar", tint = if (active) onAccent else palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+        if (b.host.isPinned(e)) Icon(XnotesIcons.pin, stringResource(R.string.pinned_to_sidebar), tint = if (active) onAccent else palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
         // Kept in select mode so the chip never changes width; there it only ends the selection.
         if (selecting) {
             IconButton(onClick = { b.host.onClick(e) }, modifier = Modifier.size(width = 32.dp, height = 40.dp)) {
@@ -466,7 +471,7 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
                 else if (where != null && !compact) Text(where, color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (code != null && !e.isDir) Box(Modifier.size(8.dp).clip(CircleShape).background(code))
-            if (b.host.isPinned(e)) Icon(XnotesIcons.pin, "Pinned to sidebar", tint = dim, modifier = Modifier.size(14.dp))
+            if (b.host.isPinned(e)) Icon(XnotesIcons.pin, stringResource(R.string.pinned_to_sidebar), tint = dim, modifier = Modifier.size(14.dp))
         }
         if (wide) {
             Row(Modifier.width(LIST_KIND_W), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -475,7 +480,7 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
             }
             Text(if (e.isDir || kind == EntryKind.CANVAS) "–" else b.pages(e).takeIf { it > 0 }?.toString() ?: "", color = palette.text.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.End, modifier = Modifier.width(LIST_PAGES_W))
             Text(
-                if (e.isDir) b.counts[e.documentUri]?.let { itemsLabel(it) } ?: "" else formatSize(e.size),
+                if (e.isDir) b.counts[e.documentUri]?.let { itemsLabel(b.words, it) } ?: "" else formatSize(e.size),
                 color = if (e.isDir) dim else palette.text.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.End, maxLines = 1,
                 modifier = Modifier.width(LIST_SIZE_W),
             )
@@ -536,8 +541,8 @@ internal fun GalleryItem(b: ExplorerBody, e: BrowseEntry, shelf: Dp) {
             }
             val count = when {
                 !b.view.showPages -> null
-                kind == EntryKind.CANVAS -> "Canvas"
-                pages > 0 -> if (pages == 1) "1 page" else "$pages pages"
+                kind == EntryKind.CANVAS -> stringResource(R.string.kind_canvas)
+                pages > 0 -> pluralStringResource(R.plurals.pages_count, pages, pages)
                 else -> null
             }
             Text(listOfNotNull(count, b.metaText(e).ifEmpty { null }).joinToString(" · "), color = palette.textDim.toComposeColor(), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -567,7 +572,7 @@ internal fun TimelineCard(b: ExplorerBody, e: BrowseEntry, side: Dp) {
             if (b.view.showKind) {
                 val kind = b.kind(e)
                 if (kind == EntryKind.PDF || kind == EntryKind.CANVAS) {
-                    TileBadge(kindIcon(kind), if (kind == EntryKind.PDF) "PDF" else "Canvas", Modifier.align(Alignment.BottomStart).padding(6.dp))
+                    TileBadge(kindIcon(kind), if (kind == EntryKind.PDF) "PDF" else stringResource(R.string.kind_canvas), Modifier.align(Alignment.BottomStart).padding(6.dp))
                 }
             }
             if (selecting) CheckRing(selected, Modifier.align(Alignment.TopStart).padding(6.dp))
@@ -575,7 +580,7 @@ internal fun TimelineCard(b: ExplorerBody, e: BrowseEntry, side: Dp) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(formatClock(b.view.timelineTime(e), b.clock24, b.zone), color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
+                Text(formatClock(b.words, b.view.timelineTime(e), b.clock24, b.zone), color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
                 val where = b.whereOf?.invoke(e)
                 if (where != null) {
                     Icon(XnotesIcons.folder, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))
@@ -619,11 +624,10 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
     }
 }
 
-internal fun formatClock(time: Long, clock24: Boolean, zone: ZoneId): String {
+internal fun formatClock(w: ExplorerWords, time: Long, clock24: Boolean, zone: ZoneId): String {
     if (time <= 0) return ""
     val t = java.time.Instant.ofEpochMilli(time).atZone(zone).toLocalTime()
-    return if (clock24) "%02d:%02d".format(java.util.Locale.ROOT, t.hour, t.minute)
-    else "%d:%02d %s".format(java.util.Locale.ROOT, (t.hour + 11) % 12 + 1, t.minute, if (t.hour < 12) "AM" else "PM")
+    return clockText(w, t, clock24)
 }
 
 /**
@@ -645,14 +649,14 @@ internal fun HomeShelves(
     val palette = LocalPalette.current
     Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
         if (recents.isNotEmpty()) {
-            ShelfTitle("Recent", "See all", onSeeAll)
+            ShelfTitle(stringResource(R.string.recent), stringResource(R.string.see_all), onSeeAll)
             androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(recents.take(8).size) { i -> RecentCard(b, recents[i], onOpenRecent) }
             }
             Spacer(Modifier.height(20.dp))
         }
         if (pins.isNotEmpty()) {
-            ShelfTitle("Pinned")
+            ShelfTitle(stringResource(R.string.pinned))
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 pins.forEach { pin ->
                     val shape = chipShape(palette)
@@ -670,7 +674,7 @@ internal fun HomeShelves(
             Spacer(Modifier.height(20.dp))
         }
         Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("In $rootName", color = palette.text.toComposeColor(), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Text(stringResource(R.string.in_folder, rootName), color = palette.text.toComposeColor(), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             Text(counts, color = palette.textDim.toComposeColor(), fontSize = 12.5.sp)
         }
     }
@@ -693,7 +697,7 @@ private fun RecentCard(b: ExplorerBody, r: RecentEntry, onOpen: (BrowseEntry) ->
         }
         Spacer(Modifier.height(4.dp))
         Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(openedLabel(r.opened, b.now, b.zone), color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
+        Text(openedLabel(b.words, r.opened, b.now, b.zone), color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
         r.where?.let { where ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Icon(XnotesIcons.folder, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))

@@ -53,12 +53,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.settings.ExplorerSortKey
 import com.xnotes.settings.ExplorerView
 import com.xnotes.settings.TileSize
@@ -133,13 +135,13 @@ internal fun ListBody(
         item(key = "chips", contentType = "chips") { chips(48.dp) }
         item(key = "columnHeads", contentType = "columnHeads") {
             Row(Modifier.fillMaxWidth().height(36.dp).padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                ColumnHead("Name", ExplorerSortKey.NAME, b, onSort, Modifier.weight(1f).padding(start = inset))
+                ColumnHead(stringResource(R.string.sort_name), ExplorerSortKey.NAME, b, onSort, Modifier.weight(1f).padding(start = inset))
                 if (wide) {
-                    ColumnHead("Kind", null, b, null, Modifier.width(LIST_KIND_W))
-                    ColumnHead("Pages", null, b, null, Modifier.width(LIST_PAGES_W), TextAlign.End)
-                    ColumnHead("Size", ExplorerSortKey.SIZE, b, onSort, Modifier.width(LIST_SIZE_W), TextAlign.End)
+                    ColumnHead(stringResource(R.string.group_kind), null, b, null, Modifier.width(LIST_KIND_W))
+                    ColumnHead(stringResource(R.string.pages), null, b, null, Modifier.width(LIST_PAGES_W), TextAlign.End)
+                    ColumnHead(stringResource(R.string.sort_size), ExplorerSortKey.SIZE, b, onSort, Modifier.width(LIST_SIZE_W), TextAlign.End)
                     val byCreated = b.view.sortKey == ExplorerSortKey.CREATED
-                    ColumnHead(if (byCreated) "Created" else "Modified", if (byCreated) ExplorerSortKey.CREATED else ExplorerSortKey.MODIFIED, b, onSort, Modifier.width(LIST_WHEN_W).padding(start = 28.dp))
+                    ColumnHead(if (byCreated) stringResource(R.string.created) else stringResource(R.string.modified), if (byCreated) ExplorerSortKey.CREATED else ExplorerSortKey.MODIFIED, b, onSort, Modifier.width(LIST_WHEN_W).padding(start = 28.dp))
                 }
                 Spacer(Modifier.width(40.dp))
             }
@@ -320,7 +322,7 @@ internal fun ColumnsBody(
                     } }
                 }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
-                    if (picked != null) preview(picked) else EmptyNote("Pick a note to see it here", Modifier.fillMaxSize())
+                    if (picked != null) preview(picked) else EmptyNote(stringResource(R.string.pick_note_hint), Modifier.fillMaxSize())
                 }
             }
         }
@@ -363,13 +365,13 @@ internal fun TimelineBody(
         item(key = "month", contentType = "month") {
             Row(Modifier.fillMaxWidth().height(70.dp).padding(top = 4.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.width(164.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ExplorerIcon(XnotesIcons.prev, "Previous month", palette.textDim.toComposeColor()) { onMonth(month.minusMonths(1)) }
+                    ExplorerIcon(XnotesIcons.prev, stringResource(R.string.previous_month), palette.textDim.toComposeColor()) { onMonth(month.minusMonths(1)) }
                     Text(
-                        if (month.year == today.year) monthName(month.month) else "${monthName(month.month)} ${month.year}",
+                        if (month.year == today.year) b.words.month(month.month) else b.words.monthYear(month.month, month.year),
                         color = palette.text.toComposeColor(), fontSize = 15.sp, fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(1f),
                     )
-                    ExplorerIcon(XnotesIcons.next, "Next month", palette.textDim.toComposeColor(), enabled = month < YearMonth.from(today)) { onMonth(month.plusMonths(1)) }
+                    ExplorerIcon(XnotesIcons.next, stringResource(R.string.next_month), palette.textDim.toComposeColor(), enabled = month < YearMonth.from(today)) { onMonth(month.plusMonths(1)) }
                 }
                 Spacer(Modifier.width(16.dp))
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -415,7 +417,7 @@ internal fun TimelineBody(
             }
         }
         if (byDay.isEmpty()) {
-            item(key = "none", contentType = "none") { EmptyNote("Nothing was ${if (view.timelineByCreated) "created" else "saved"} in ${monthName(month.month)}.") }
+            item(key = "none", contentType = "none") { EmptyNote(stringResource(if (view.timelineByCreated) R.string.nothing_created_in else R.string.nothing_saved_in, b.words.month(month.month))) }
         } else {
             byDay.forEach { (date, files) ->
                 item(key = date.toString()) { TimelineDay(b, date, today, files, card) }
@@ -431,10 +433,10 @@ private fun TimelineDay(b: ExplorerBody, date: LocalDate, today: LocalDate, file
         Column(Modifier.width(84.dp)) {
             Text("${date.dayOfMonth}", color = palette.text.toComposeColor(), fontSize = 28.sp, fontWeight = FontWeight.Medium, lineHeight = 28.sp)
             Spacer(Modifier.height(6.dp))
-            Text(date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }.take(3), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+            Text(b.words.shortWeekday(date.dayOfWeek), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
             val rel = when (date) {
-                today -> "Today"
-                today.minusDays(1) -> "Yesterday"
+                today -> b.words.today
+                today.minusDays(1) -> b.words.yesterday
                 else -> null
             }
             if (rel != null) Text(rel, color = palette.textDim.toComposeColor(), fontSize = 12.sp)

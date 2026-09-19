@@ -27,9 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -73,8 +75,8 @@ internal fun FolderPickerDialog(
                 Spacer(Modifier.height(8.dp))
                 val list = folders
                 when {
-                    list == null -> EmptyNote("Loading…")
-                    list.isEmpty() -> EmptyNote("No folders in here.")
+                    list == null -> EmptyNote(stringResource(R.string.loading))
+                    list.isEmpty() -> EmptyNote(stringResource(R.string.no_folders_here))
                     else -> LazyColumn(Modifier.fillMaxWidth()) {
                         items(list, key = { it.documentUri }) { f ->
                             val id = editor.browseDocId(f.documentUri)
@@ -103,7 +105,7 @@ internal fun FolderPickerDialog(
         confirmButton = {
             TextButton(onClick = { onPick(here) }, enabled = !blocked(here)) { Text(confirmLabel) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         containerColor = palette.menuBg.toComposeColor(),
     )
 }

@@ -21,9 +21,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
@@ -55,37 +57,37 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("STYLES")
+            PopupTitle(stringResource(R.string.title_styles))
 
-            StyleCaption("PATTERN")
+            StyleCaption(stringResource(R.string.caption_pattern))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                ModeChip("None", background.pattern == PagePattern.NONE) {
+                ModeChip(stringResource(R.string.none), background.pattern == PagePattern.NONE) {
                     apply(background.copy(pattern = PagePattern.NONE))
                 }
-                ModeChip("Lines", background.pattern == PagePattern.LINES) {
+                ModeChip(stringResource(R.string.pattern_lines), background.pattern == PagePattern.LINES) {
                     apply(background.copy(pattern = PagePattern.LINES))
                 }
-                ModeChip("Dots", background.pattern == PagePattern.DOTS) {
+                ModeChip(stringResource(R.string.pattern_dots), background.pattern == PagePattern.DOTS) {
                     apply(background.copy(pattern = PagePattern.DOTS))
                 }
-                ModeChip("Grid", background.pattern == PagePattern.GRID) {
+                ModeChip(stringResource(R.string.pattern_grid), background.pattern == PagePattern.GRID) {
                     apply(background.copy(pattern = PagePattern.GRID))
                 }
             }
 
             Spacer(Modifier.size(12.dp))
             SliderRow(
-                "SPACING",
+                stringResource(R.string.caption_spacing),
                 background.clampedSpacing.toFloat(),
                 PageStyle.MIN_SPACING.toFloat()..PageStyle.MAX_SPACING.toFloat(),
                 enabled = background.pattern != PagePattern.NONE,
             ) { apply(background.copy(spacing = it.toDouble())) }
 
             Spacer(Modifier.size(8.dp))
-            StyleCaption("PATTERN COLOUR")
+            StyleCaption(stringResource(R.string.caption_pattern_colour))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -98,7 +100,7 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                 ) { d, p -> PageColorGridPopup(background.patternColor.copy(a = 255), d, p) }
             }
             SliderRow(
-                "OPACITY",
+                stringResource(R.string.caption_opacity),
                 background.patternColor.a / 255f * 100f,
                 5f..100f,
                 enabled = background.pattern != PagePattern.NONE,
@@ -108,12 +110,12 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(8.dp))
-            StyleCaption("PAPER")
+            StyleCaption(stringResource(R.string.caption_paper))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                ModeChip("Theme", background.paperColor == null) { apply(background.copy(paperColor = null)) }
+                ModeChip(stringResource(R.string.paper_theme), background.paperColor == null) { apply(background.copy(paperColor = null)) }
                 pageColorPresets.forEach { c ->
                     ColorDot(c.toComposeColor(), background.paperColor == c) {
                         apply(background.copy(paperColor = c))
@@ -136,7 +138,7 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                         onCheckedChange = { on -> editor.saveNewCanvasBackground(if (on) background else null) },
                     )
                     Text(
-                        "Default for new canvases",
+                        stringResource(R.string.default_for_new_canvases),
                         color = LocalPalette.current.text.toComposeColor(),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
@@ -145,7 +147,7 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                 Spacer(Modifier.size(4.dp))
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("Reset", selected = false) { apply(CanvasBackground()) }
+                ModeChip(stringResource(R.string.reset), selected = false) { apply(CanvasBackground()) }
             }
         }
     }

@@ -21,7 +21,7 @@ class ExplorerGroupsTest {
     private fun file(name: String, modified: Long, created: Long = modified, color: Rgba? = null, dir: Boolean = false) =
         BrowseEntry(name, "content://t/$name", dir, modified = modified, created = created, color = color)
 
-    private fun bucket(time: Long) = dateBucket(time, now, zone).label
+    private fun bucket(time: Long) = dateBucket(EnglishWords, time, now, zone).label
 
     @Test
     fun `dates fall under the headings the design names`() {
@@ -38,11 +38,11 @@ class ExplorerGroupsTest {
 
     @Test
     fun `a week that starts on Sunday moves the boundary`() {
-        assertEquals("Earlier this week", dateBucket(at(2026, 9, 13), now, zone, java.time.DayOfWeek.SUNDAY).label)
+        assertEquals("Earlier this week", dateBucket(EnglishWords, at(2026, 9, 13), now, zone, java.time.DayOfWeek.SUNDAY).label)
     }
 
     private fun group(items: List<BrowseEntry>, by: GroupBy, key: ExplorerSortKey = ExplorerSortKey.MODIFIED, descending: Boolean = true) =
-        groupEntries(items, by, key, descending, { if (it.isDir) EntryKind.FOLDER else EntryKind.NOTE }, { null }, now, zone)
+        groupEntries(EnglishWords, items, by, key, descending, { if (it.isDir) EntryKind.FOLDER else EntryKind.NOTE }, { null }, now, zone)
 
     @Test
     fun `date headings run newest first and keep each list's order`() {
@@ -83,7 +83,7 @@ class ExplorerGroupsTest {
         val green = Rgba(40, 200, 80)
         val items = listOf(file("x", now), file("r", now, color = red), file("b", now, color = blue), file("g", now, color = green))
         val names = mapOf(blue to "Courses", red to "Important")
-        val groups = groupEntries(items, GroupBy.COLOUR, ExplorerSortKey.MODIFIED, true, { EntryKind.NOTE }, { names[it] }, now, zone)
+        val groups = groupEntries(EnglishWords, items, GroupBy.COLOUR, ExplorerSortKey.MODIFIED, true, { EntryKind.NOTE }, { names[it] }, now, zone)
         assertEquals(listOf("Courses", "Important", "Green", "No colour"), groups.map { it.label })
         assertEquals(green, groups[2].color)
     }
@@ -97,38 +97,38 @@ class ExplorerGroupsTest {
 
     @Test
     fun `the day style names recent days and dates the rest`() {
-        fun day(t: Long, time: Boolean = true) = formatWhen(t, now, "day", time, clock24 = true, zone = zone)
+        fun day(t: Long, time: Boolean = true) = formatWhen(EnglishWords, t, now, "day", time, clock24 = true, zone = zone)
         assertEquals("Today 09:12", day(at(2026, 9, 18, 9, 12)))
         assertEquals("Today", day(at(2026, 9, 18, 9, 12), time = false))
         assertEquals("Yesterday 16:05", day(at(2026, 9, 17, 16, 5)))
         assertEquals("Tue 17:30", day(at(2026, 9, 15, 17, 30)))
         assertEquals("11 Sep", day(at(2026, 9, 11)))
         assertEquals("16 Aug 2025", day(at(2025, 8, 16)))
-        assertEquals("Today 9:12 AM", formatWhen(at(2026, 9, 18, 9, 12), now, "day", true, clock24 = false, zone = zone))
-        assertEquals("Yesterday 5:30 PM", formatWhen(at(2026, 9, 17, 17, 30), now, "day", true, clock24 = false, zone = zone))
+        assertEquals("Today 9:12 AM", formatWhen(EnglishWords, at(2026, 9, 18, 9, 12), now, "day", true, clock24 = false, zone = zone))
+        assertEquals("Yesterday 5:30 PM", formatWhen(EnglishWords, at(2026, 9, 17, 17, 30), now, "day", true, clock24 = false, zone = zone))
     }
 
     @Test
     fun `the relative and date styles`() {
-        fun rel(t: Long) = formatWhen(t, now, "relative", true, clock24 = true, zone = zone)
+        fun rel(t: Long) = formatWhen(EnglishWords, t, now, "relative", true, clock24 = true, zone = zone)
         assertEquals("Just now", rel(now - 20_000))
         assertEquals("25 min ago", rel(now - 25 * 60_000))
         assertEquals("3 h ago", rel(at(2026, 9, 18, 9)))
         assertEquals("Yesterday", rel(at(2026, 9, 17)))
         assertEquals("3 days ago", rel(at(2026, 9, 15)))
         assertEquals("16 Aug", rel(at(2026, 8, 16)))
-        assertEquals("16 Sep 2026, 09:12", formatWhen(at(2026, 9, 16, 9, 12), now, "date", true, clock24 = true, zone = zone))
-        assertEquals("16 Sep 2026", formatWhen(at(2026, 9, 16, 9, 12), now, "date", false, clock24 = true, zone = zone))
-        assertEquals("", formatWhen(0, now, "day", true, clock24 = true, zone = zone))
-        assertEquals("16 Sep 2026, 09:12", formatFull(at(2026, 9, 16, 9, 12), clock24 = true, zone = zone))
+        assertEquals("16 Sep 2026, 09:12", formatWhen(EnglishWords, at(2026, 9, 16, 9, 12), now, "date", true, clock24 = true, zone = zone))
+        assertEquals("16 Sep 2026", formatWhen(EnglishWords, at(2026, 9, 16, 9, 12), now, "date", false, clock24 = true, zone = zone))
+        assertEquals("", formatWhen(EnglishWords, 0, now, "day", true, clock24 = true, zone = zone))
+        assertEquals("16 Sep 2026, 09:12", formatFull(EnglishWords, at(2026, 9, 16, 9, 12), clock24 = true, zone = zone))
     }
 
     @Test
     fun `recent says when a note was opened`() {
-        assertEquals("Opened 25 min ago", openedLabel(now - 25 * 60_000, now, zone))
-        assertEquals("Opened just now", openedLabel(now - 5_000, now, zone))
-        assertEquals("Opened yesterday", openedLabel(at(2026, 9, 17), now, zone))
-        assertEquals("Opened 16 Aug", openedLabel(at(2026, 8, 16), now, zone))
+        assertEquals("Opened 25 min ago", openedLabel(EnglishWords, now - 25 * 60_000, now, zone))
+        assertEquals("Opened just now", openedLabel(EnglishWords, now - 5_000, now, zone))
+        assertEquals("Opened yesterday", openedLabel(EnglishWords, at(2026, 9, 17), now, zone))
+        assertEquals("Opened 16 Aug", openedLabel(EnglishWords, at(2026, 8, 16), now, zone))
     }
 
     @Test
@@ -138,21 +138,21 @@ class ExplorerGroupsTest {
         assertEquals("24 KB", formatSize(24 * 1024))
         assertEquals("940 KB", formatSize(940 * 1024))
         assertEquals("3.4 MB", formatSize(3480L * 1024))
-        assertEquals("5 folders · 18 files", countsLabel(5, 18))
-        assertEquals("1 file", countsLabel(0, 1))
-        assertEquals("1 item", itemsLabel(1))
-        assertEquals("24 items", itemsLabel(24))
+        assertEquals("5 folders · 18 files", countsLabel(EnglishWords, 5, 18))
+        assertEquals("1 file", countsLabel(EnglishWords, 0, 1))
+        assertEquals("1 item", itemsLabel(EnglishWords, 1))
+        assertEquals("24 items", itemsLabel(EnglishWords, 24))
     }
 
     @Test
     fun `unnamed colours are called by their hue`() {
-        assertEquals("Red", hueName(Rgba(230, 40, 40)))
-        assertEquals("Orange", hueName(Rgba(242, 166, 90)))
-        assertEquals("Blue", hueName(Rgba(116, 169, 245)))
-        assertEquals("Teal", hueName(Rgba(95, 211, 200)))
-        assertEquals("Purple", hueName(Rgba(160, 100, 240)))
-        assertEquals("Grey", hueName(Rgba(128, 128, 128)))
-        assertEquals("Black", hueName(Rgba(10, 10, 10)))
+        assertEquals("Red", hueName(EnglishWords, Rgba(230, 40, 40)))
+        assertEquals("Orange", hueName(EnglishWords, Rgba(242, 166, 90)))
+        assertEquals("Blue", hueName(EnglishWords, Rgba(116, 169, 245)))
+        assertEquals("Teal", hueName(EnglishWords, Rgba(95, 211, 200)))
+        assertEquals("Purple", hueName(EnglishWords, Rgba(160, 100, 240)))
+        assertEquals("Grey", hueName(EnglishWords, Rgba(128, 128, 128)))
+        assertEquals("Black", hueName(EnglishWords, Rgba(10, 10, 10)))
     }
 
     @Test

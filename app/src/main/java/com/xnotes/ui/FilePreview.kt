@@ -38,12 +38,15 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.xnotes.R
 import com.xnotes.core.model.Rgba
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -82,26 +85,26 @@ internal fun FilePreview(b: ExplorerBody, e: BrowseEntry, where: String?, action
                         Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 25.sp)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(kindIcon(kind), null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(15.dp))
-                            val count = if (pages > 0 && !landscape) " · " + if (pages == 1) "1 page" else "$pages pages" else ""
+                            val count = if (pages > 0 && !landscape) " · " + pluralStringResource(R.plurals.pages_count, pages, pages) else ""
                             Text(kindLabel(kind) + count, color = palette.textDim.toComposeColor(), fontSize = 13.sp)
                         }
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DetailRow("Modified", formatFull(e.modified, b.clock24, b.zone))
-                        DetailRow("Created", formatFull(e.created, b.clock24, b.zone))
-                        DetailRow("Size", formatSize(e.size))
-                        if (where != null) DetailRow("Where", where)
+                        DetailRow(stringResource(R.string.modified), formatFull(b.words, e.modified, b.clock24, b.zone))
+                        DetailRow(stringResource(R.string.created), formatFull(b.words, e.created, b.clock24, b.zone))
+                        DetailRow(stringResource(R.string.sort_size), formatSize(e.size))
+                        if (where != null) DetailRow(stringResource(R.string.where_label), where)
                     }
                     Column(Modifier.widthIn(max = 320.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PreviewButton(XnotesIcons.edit, "Open", filled = true, onClick = actions.open)
-                        PreviewButton(XnotesIcons.split, "Open side by side", filled = false, enabled = actions.openBeside != null) { actions.openBeside?.invoke() }
+                        PreviewButton(XnotesIcons.edit, stringResource(R.string.open), filled = true, onClick = actions.open)
+                        PreviewButton(XnotesIcons.split, stringResource(R.string.open_side_by_side), filled = false, enabled = actions.openBeside != null) { actions.openBeside?.invoke() }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ExplorerIcon(XnotesIcons.share, "Share", palette.accent.toComposeColor(), onClick = actions.share)
-                        ExplorerIcon(XnotesIcons.pdfFile, "Export to PDF", palette.accent.toComposeColor(), onClick = actions.exportPdf)
+                        ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.accent.toComposeColor(), onClick = actions.share)
+                        ExplorerIcon(XnotesIcons.pdfFile, stringResource(R.string.export_pdf), palette.accent.toComposeColor(), onClick = actions.exportPdf)
                         var colors by remember { mutableStateOf(false) }
                         Box {
-                            ExplorerIcon(XnotesIcons.palette, "Colour code", palette.accent.toComposeColor()) { colors = true }
+                            ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), palette.accent.toComposeColor()) { colors = true }
                             DropdownMenu(expanded = colors, onDismissRequest = { colors = false }) {
                                 ColorCodeMenuContent { c -> colors = false; actions.color(c) }
                             }
@@ -125,7 +128,7 @@ internal fun FilePreview(b: ExplorerBody, e: BrowseEntry, where: String?, action
                 value = b.editor.pageStrip(e.documentUri, e.name, PREVIEW_PAGES, stripPx)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Pages", color = palette.textDim.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.4.sp)
+                Text(stringResource(R.string.pages), color = palette.textDim.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.4.sp)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val shown = strip
                     if (shown == null) {
@@ -211,7 +214,7 @@ internal fun FilePreviewDialog(b: ExplorerBody, e: BrowseEntry, where: String?, 
         ) {
             FilePreview(b, e, where, actions)
             Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                ExplorerIcon(XnotesIcons.close, "Close preview", palette.textDim.toComposeColor(), onClick = onDismiss)
+                ExplorerIcon(XnotesIcons.close, stringResource(R.string.close_preview), palette.textDim.toComposeColor(), onClick = onDismiss)
             }
         }
     }

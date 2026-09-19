@@ -10,6 +10,7 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
+import com.xnotes.R
 import java.io.File
 import java.io.FileNotFoundException
 
@@ -115,7 +116,7 @@ class AppStorageDocumentsProvider : DocumentsProvider() {
         }
         cursor.newRow().apply {
             add(Document.COLUMN_DOCUMENT_ID, documentId)
-            add(Document.COLUMN_DISPLAY_NAME, if (documentId == ROOT_DOC_ID) ROOT_DISPLAY_NAME else file.name)
+            add(Document.COLUMN_DISPLAY_NAME, if (documentId == ROOT_DOC_ID) context?.getString(R.string.app_storage).orEmpty() else file.name)
             add(Document.COLUMN_MIME_TYPE, if (isDir) Document.MIME_TYPE_DIR else mimeOf(file))
             add(Document.COLUMN_SIZE, file.length())
             add(Document.COLUMN_LAST_MODIFIED, file.lastModified())
@@ -149,7 +150,6 @@ class AppStorageDocumentsProvider : DocumentsProvider() {
 
     companion object {
         private const val ROOT_DOC_ID = "root"
-        private const val ROOT_DISPLAY_NAME = "App storage"
         private const val DIR_NAME = "Notes"
 
         private val DEFAULT_ROOT_PROJECTION = arrayOf(

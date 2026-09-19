@@ -9,44 +9,44 @@ package com.xnotes.core.tools
 /** Every atomic, movable toolbar element. The three block ids each render a fixed multi-control
  *  cluster but move and hide as one unit. [id] is the persistence key (never rename without a
  *  migration); the tool ids match the matching [Tool.id]. */
-enum class ToolbarItem(val id: String, val label: String) {
-    HOME("home", "Home"),
-    TITLE("title", "Title"),
-    SIDEBAR("sidebar", "Sidebar"),
-    PEN("pen", "Pen"),
-    DASHED("dashed", "Dashed"),
-    CALLIGRAPHY("calligraphy", "Calligraphy"),
-    SPEED("speed", "Speed"),
-    TAPER("taper", "Taper"),
-    HIGHLIGHTER("highlighter", "Highlighter"),
-    ERASER("eraser", "Eraser"),
-    PAN("pan", "Pan"),
-    SELECT("select", "Select"),
-    LASSO("lasso", "Lasso"),
-    SCREENSHOT("screenshot", "Screenshot"),
-    WAND("wand", "Disappearing ink"),
-    SHAPE("shape", "Shape"),
-    RULER("ruler", "Ruler"),
-    TEXT("text", "Text"),
-    TEXT_BOX("text_box", "Text box"),
-    IMAGE("image", "Image"),
-    UNDO("undo", "Undo"),
-    REDO("redo", "Redo"),
-    PAGE_NAV("page_nav", "Page nav"),
-    STYLES("styles", "Styles"),
-    MARGINS("margins", "Margins"),
-    VIEW("view", "View"),
-    ZOOM("zoom", "Zoom"),
-    FIT("fit", "Fit"),
-    ZOOM_LOCK("zoom_lock", "Zoom lock"),
-    FULLSCREEN("fullscreen", "Full screen"),
-    COLORS("colors", "Colours"),
+enum class ToolbarItem(val id: String) {
+    HOME("home"),
+    TITLE("title"),
+    SIDEBAR("sidebar"),
+    PEN("pen"),
+    DASHED("dashed"),
+    CALLIGRAPHY("calligraphy"),
+    SPEED("speed"),
+    TAPER("taper"),
+    HIGHLIGHTER("highlighter"),
+    ERASER("eraser"),
+    PAN("pan"),
+    SELECT("select"),
+    LASSO("lasso"),
+    SCREENSHOT("screenshot"),
+    WAND("wand"),
+    SHAPE("shape"),
+    RULER("ruler"),
+    TEXT("text"),
+    TEXT_BOX("text_box"),
+    IMAGE("image"),
+    UNDO("undo"),
+    REDO("redo"),
+    PAGE_NAV("page_nav"),
+    STYLES("styles"),
+    MARGINS("margins"),
+    VIEW("view"),
+    ZOOM("zoom"),
+    FIT("fit"),
+    ZOOM_LOCK("zoom_lock"),
+    FULLSCREEN("fullscreen"),
+    COLORS("colors"),
 
     /** Canvas only: saved views, which are what page numbers are on an unbounded surface. */
-    WAYPOINTS("waypoints", "Waypoints"),
+    WAYPOINTS("waypoints"),
 
     /** Canvas only: the overview map in the corner. */
-    MINIMAP("minimap", "Minimap");
+    MINIMAP("minimap");
 
     companion object {
         fun fromId(id: String?): ToolbarItem? = entries.firstOrNull { it.id == id }

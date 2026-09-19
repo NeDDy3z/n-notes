@@ -47,11 +47,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.xnotes.R
 import com.xnotes.core.model.Rgba
 import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
@@ -129,8 +131,8 @@ internal fun ColorPickerPopup(
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(GRID_W.dp).padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TabChip("Swatches", tab == 0) { tab = 0 }
-                TabChip("Spectrum", tab == 1) { tab = 1 }
+                TabChip(stringResource(R.string.swatches), tab == 0) { tab = 0 }
+                TabChip(stringResource(R.string.spectrum), tab == 1) { tab = 1 }
             }
             Spacer(Modifier.size(12.dp))
             when (tab) {
@@ -165,7 +167,7 @@ private fun SwatchesTab(recents: List<Rgba>, current: Rgba, onPick: (Rgba) -> Un
     // a fixed cell size would accumulate dp→px rounding and clip the rightmost column.
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (recents.isNotEmpty()) {
-            Caption("RECENT")
+            Caption(stringResource(R.string.caption_recent))
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 recents.take(13).forEach { c -> SwatchCell(c, c == current, Modifier.size(CELL.dp)) { onPick(c) } }
             }

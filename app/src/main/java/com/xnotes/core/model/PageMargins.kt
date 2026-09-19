@@ -1,11 +1,11 @@
 package com.xnotes.core.model
 
-/** The four page edges a margin can be added to. [label] is what the UI shows. */
-enum class PageEdge(val id: String, val label: String) {
-    LEFT("left", "Left"),
-    RIGHT("right", "Right"),
-    TOP("top", "Top"),
-    BOTTOM("bottom", "Bottom"),
+/** The four page edges a margin can be added to. */
+enum class PageEdge(val id: String) {
+    LEFT("left"),
+    RIGHT("right"),
+    TOP("top"),
+    BOTTOM("bottom"),
 }
 
 /**
