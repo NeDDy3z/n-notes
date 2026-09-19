@@ -41,6 +41,13 @@
     <string name="edge_bottom">底部</string>
     <string name="page_size_custom">自定义</string>
     <string name="page_size_letter">Letter</string>
+    <string name="page_size_legal">Legal</string>
+    <string name="page_size_slide_16_9">幻灯片 16:9</string>
+    <string name="page_size_slide_4_3">幻灯片 4:3</string>
+    <string name="font_sans">无衬线</string>
+    <string name="font_serif">衬线</string>
+    <string name="font_mono">等宽</string>
+    <string name="font_hand">手写</string>
 
     <!-- Tool, style, margin, view and zoom popups -->
     <string name="caption_colour">颜色</string>
@@ -84,6 +91,7 @@
     <string name="filter_sepia">复古棕</string>
     <string name="filter_multiply">正片叠底</string>
     <string name="filter_screen">滤色</string>
+    <string name="caption_keep_images">不过滤图片</string>
     <string name="caption_scrollbar">滚动条</string>
     <string name="default_for_all_notes">所有笔记的默认值</string>
     <string name="off">关闭</string>
@@ -251,6 +259,7 @@
     <string name="export_pdf">导出为 PDF</string>
     <string name="sort_descending">降序</string>
     <string name="sort_ascending">升序</string>
+    <string name="folder">文件夹</string>
     <string name="err_paste_some">无法在此处粘贴部分项目。</string>
     <string name="err_move_some">无法移动部分项目。</string>
     <string name="no_notes_match">没有与“%1$s”匹配的笔记。</string>
@@ -265,6 +274,60 @@
     <string name="err_delete_some">无法删除部分项目。</string>
     <plurals name="delete_items_confirm">
         <item quantity="other">删除 %d 个项目？此操作无法撤销。</item>
+    </plurals>
+    <string name="expand_sidebar">展开侧边栏</string>
+    <string name="unpin_from_sidebar">从侧边栏取消固定</string>
+    <string name="remove_name">移除名称</string>
+    <string name="name_this_colour">为此颜色命名</string>
+    <string name="colour_name_placeholder">例如：重要</string>
+    <string name="new_folder_menu">新建文件夹</string>
+    <string name="finding">正在查找…</string>
+    <string name="nothing_this_colour">没有项目使用此颜色。</string>
+    <string name="recent_empty">还没有打开过任何内容。你打开的笔记和画布会显示在这里。</string>
+    <string name="nothing_to_show">这里没有可显示的内容。</string>
+    <string name="no_pdf_notes_here">这里没有 PDF 笔记。</string>
+    <string name="include_subfolders">包括子文件夹</string>
+    <string name="opened_on_device">在此设备上打开过</string>
+    <string name="clear">清除</string>
+    <string name="in_every_folder">所有文件夹中</string>
+    <string name="clear_colour_filter">清除颜色筛选</string>
+    <string name="top_folder">顶层文件夹</string>
+    <string name="view_options">视图选项</string>
+    <string name="move_to_folder">移动到文件夹</string>
+    <string name="move_here">移到此处</string>
+    <string name="preview">预览</string>
+    <string name="move_to_folder_ellipsis">移动到文件夹…</string>
+    <string name="name_colour_ellipsis">为颜色命名…</string>
+    <string name="err_open_folder">无法打开该文件夹。</string>
+    <string name="moved_one_to_trash">已将“%1$s”移到回收站</string>
+    <string name="move_to_trash">移到回收站</string>
+    <string name="nothing_here_yet">这里还没有内容。</string>
+    <string name="kind_no_folders">这里没有文件夹。</string>
+    <string name="kind_no_notes">这里没有笔记。</string>
+    <string name="kind_no_canvases">这里没有画布。</string>
+    <string name="all_kinds">所有类型</string>
+    <string name="move_one_to">将“%1$s”移动到</string>
+    <string name="pin_to_sidebar">固定到侧边栏</string>
+    <plurals name="moved_items_to_trash">
+        <item quantity="other">已将 %d 个项目移到回收站</item>
+    </plurals>
+    <plurals name="err_move_items_to_trash">
+        <item quantity="other">无法将 %d 个项目移到回收站。</item>
+    </plurals>
+    <plurals name="paste_items">
+        <item quantity="other">粘贴 %d 个项目</item>
+    </plurals>
+    <plurals name="paste_items_here">
+        <item quantity="other">在此处粘贴 %d 个项目</item>
+    </plurals>
+    <plurals name="notes_created_in">
+        <item quantity="other">%2$s创建了 %1$d 篇笔记</item>
+    </plurals>
+    <plurals name="notes_saved_in">
+        <item quantity="other">%2$s保存了 %1$d 篇笔记</item>
+    </plurals>
+    <plurals name="move_items_to">
+        <item quantity="other">将 %d 个项目移动到</item>
     </plurals>
 
     <!-- Messages, sharing and export -->
@@ -324,6 +387,14 @@
     <string name="code_theme_imported">已导入代码主题。</string>
     <string name="font_imported">已导入字体“%1$s”。</string>
     <string name="err_import_font">无法导入该字体。</string>
+    <string name="font_err_unavailable">字体不可用。</string>
+    <string name="font_err_unnamed">无法确定此字体的名称。</string>
+    <string name="font_err_built_in">“%1$s”已是内置字体。</string>
+    <string name="font_err_unreadable">不是可读取的 .ttf/.otf 字体。</string>
+    <string name="err_share_notes">无法分享这些笔记。</string>
+    <plurals name="share_n_notes">
+        <item quantity="other">分享 %d 篇笔记</item>
+    </plurals>
 
     <!-- Side panel -->
     <string name="pages">页面</string>
@@ -345,6 +416,7 @@
     <string name="no_bookmarks">— 没有书签 —</string>
     <string name="add">添加</string>
     <string name="page_n">第 %1$d 页</string>
+    <string name="bookmark_entry">%1$s · 第 %2$d 页</string>
 
     <!-- Selection and long-press menus -->
     <string name="bring_to_front">置于顶层</string>
@@ -369,6 +441,7 @@
     <string name="sponsor">赞助</string>
     <string name="enjoying_xnotes">喜欢 xnotes？</string>
     <string name="star_on_github">在 GitHub 上加星</string>
+    <string name="mit_license">MIT 许可证</string>
     <string name="version_n">版本 %1$s</string>
     <string name="version_copied">版本号已复制</string>
 
@@ -408,9 +481,210 @@
     <string name="spectrum">光谱</string>
     <string name="caption_recent">最近使用</string>
 
+    <!-- Canvas and storage -->
+    <string name="pull_to_add_page">拉动以添加页面</string>
+    <string name="release_to_add_page">松开以添加页面</string>
+    <string name="app_storage">应用存储</string>
+
     <!-- Explorer: dates, counts and kinds -->
+    <string name="today">今天</string>
+    <string name="yesterday">昨天</string>
+    <string name="earlier_this_week">本周早些时候</string>
+    <string name="last_week">上周</string>
+    <string name="earlier_in">%1$s早些时候</string>
+    <string name="month_year">%2$d年%1$s</string>
+    <string name="just_now">刚刚</string>
+    <string name="minutes_ago">%1$d 分钟前</string>
+    <string name="hours_ago">%1$d 小时前</string>
+    <string name="day_month">%2$s%1$d日</string>
+    <string name="day_month_year">%3$d年%2$s%1$d日</string>
+    <string name="date_with_time">%1$s %2$s</string>
+    <string name="clock_12h">%3$s%1$d:%2$02d</string>
+    <string name="am">上午</string>
+    <string name="pm">下午</string>
+    <string name="opened_ago">%1$s打开</string>
+    <string name="kind_folders">文件夹</string>
+    <string name="kind_notes">笔记</string>
+    <string name="kind_pdf_notes">PDF 笔记</string>
+    <string name="kind_canvases">画布</string>
+    <string name="hue_black">黑色</string>
+    <string name="hue_white">白色</string>
+    <string name="hue_grey">灰色</string>
+    <string name="hue_red">红色</string>
+    <string name="hue_orange">橙色</string>
+    <string name="hue_yellow">黄色</string>
+    <string name="hue_green">绿色</string>
+    <string name="hue_teal">蓝绿色</string>
+    <string name="hue_blue">蓝色</string>
+    <string name="hue_purple">紫色</string>
+    <string name="hue_pink">粉色</string>
+    <string name="no_colour">无颜色</string>
     <string name="layout_grid">网格</string>
+    <string name="layout_gallery">画廊</string>
+    <string name="layout_list">列表</string>
+    <string name="layout_columns">分栏</string>
+    <string name="layout_timeline">时间线</string>
+    <string name="group_date">日期</string>
+    <string name="group_kind">类型</string>
+    <string name="no_grouping">不分组</string>
+    <string name="grouped_by_date">按日期分组</string>
+    <string name="grouped_by_kind">按类型分组</string>
+    <string name="grouped_by_colour">按颜色分组</string>
+    <string name="folders_on_top">置顶</string>
+    <string name="folders_mixed">混排</string>
+    <string name="folders_hidden">隐藏</string>
+    <string-array name="months">
+        <item>1月</item>
+        <item>2月</item>
+        <item>3月</item>
+        <item>4月</item>
+        <item>5月</item>
+        <item>6月</item>
+        <item>7月</item>
+        <item>8月</item>
+        <item>9月</item>
+        <item>10月</item>
+        <item>11月</item>
+        <item>12月</item>
+    </string-array>
+    <string-array name="months_short">
+        <item>1月</item>
+        <item>2月</item>
+        <item>3月</item>
+        <item>4月</item>
+        <item>5月</item>
+        <item>6月</item>
+        <item>7月</item>
+        <item>8月</item>
+        <item>9月</item>
+        <item>10月</item>
+        <item>11月</item>
+        <item>12月</item>
+    </string-array>
+    <string-array name="weekdays_short">
+        <item>周一</item>
+        <item>周二</item>
+        <item>周三</item>
+        <item>周四</item>
+        <item>周五</item>
+        <item>周六</item>
+        <item>周日</item>
+    </string-array>
+    <plurals name="days_ago">
+        <item quantity="other">%d 天前</item>
+    </plurals>
+    <plurals name="folders_count">
+        <item quantity="other">%d 个文件夹</item>
+    </plurals>
+    <plurals name="files_count">
+        <item quantity="other">%d 个文件</item>
+    </plurals>
+    <plurals name="items_count">
+        <item quantity="other">%d 项</item>
+    </plurals>
 
     <!-- Explorer -->
+    <string name="sort_created">创建日期</string>
+    <string name="select_all">全选</string>
+    <string name="close_view_options">关闭视图选项</string>
+    <string name="opt_layout">布局</string>
+    <string name="opt_rows">行</string>
+    <string name="rows_comfortable">宽松</string>
+    <string name="rows_compact">紧凑</string>
+    <string name="opt_tile_size">图块大小</string>
+    <string name="pinch_hint">也可以双指缩放网格来调整图块大小</string>
+    <string name="opt_place_by">文件放置依据</string>
+    <string name="opt_thumbnail">缩略图</string>
+    <string name="thumb_top">页面顶部</string>
+    <string name="thumb_page">整页</string>
+    <string name="opt_show_on_tiles">图块上显示</string>
+    <string name="show_page_count">页数</string>
+    <string name="show_time">时间</string>
+    <string name="colour_code">颜色标记</string>
+    <string name="opt_group_by">分组方式</string>
+    <string name="view_every_folder">在所有文件夹中使用此视图</string>
+    <string name="view_every_folder_hint">关闭时：每个文件夹记住自己的视图</string>
+    <string name="sort_z_to_a">Z 到 A</string>
+    <string name="sort_a_to_z">A 到 Z</string>
+    <string name="largest_first">从大到小</string>
+    <string name="smallest_first">从小到大</string>
+    <string name="newest_first">最新优先</string>
+    <string name="oldest_first">最旧优先</string>
+    <string name="n_selected">已选择 %1$d 项</string>
+    <string name="modified">修改时间</string>
+    <string name="created">创建时间</string>
     <string name="kind_note">笔记</string>
+    <string name="kind_pdf_note">PDF 笔记</string>
+    <string name="kind_canvas">画布</string>
+    <string name="more_for">“%1$s”的更多选项</string>
+    <string name="pinned_to_sidebar">已固定到侧边栏</string>
+    <string name="recent">最近</string>
+    <string name="see_all">查看全部</string>
+    <string name="pinned">已固定</string>
+    <string name="in_folder">%1$s 中</string>
+    <plurals name="pages_count">
+        <item quantity="other">%d 页</item>
+    </plurals>
+    <string name="pick_note_hint">选择一篇笔记以在此处查看</string>
+    <string name="previous_month">上个月</string>
+    <string name="next_month">下个月</string>
+    <string name="nothing_created_in">%1$s没有创建任何内容。</string>
+    <string name="nothing_saved_in">%1$s没有保存任何内容。</string>
+    <string name="open">打开</string>
+    <string name="close_preview">关闭预览</string>
+    <string name="where_label">位置</string>
+    <string name="no_folders_here">这里没有文件夹。</string>
+
+    <!-- Trash -->
+    <string name="trash">回收站</string>
+    <string name="empty_trash">清空回收站</string>
+    <string name="trash_off_hint">回收站已关闭，删除将是永久性的。已在此处的项目会保留，直到你清空回收站。</string>
+    <string name="trash_forever_hint">项目会一直保留在这里，直到你清空回收站。</string>
+    <string name="change">更改</string>
+    <string name="trash_no_root">请先选择一个用于保存笔记的文件夹。</string>
+    <string name="trash_empty">回收站是空的。</string>
+    <string name="trash_was_in">原位置</string>
+    <string name="trash_deleted">删除时间</string>
+    <string name="trash_removed_in">剩余时间</string>
+    <string name="empty_trash_confirm">清空回收站？</string>
+    <string name="empty_trash_body">回收站中的所有内容都将被永久删除。此操作无法撤销。</string>
+    <string name="delete_permanently_confirm">永久删除？</string>
+    <string name="restore">恢复</string>
+    <string name="delete_permanently">永久删除</string>
+    <string name="trash_no_match">回收站中没有与“%1$s”匹配的内容。</string>
+    <string name="the_top_folder">顶层文件夹</string>
+    <string name="restored_item">已恢复“%1$s”</string>
+    <string name="err_restore_item">无法恢复“%1$s”</string>
+    <string name="restore_hint">恢复会将项目放回它原来所在的文件夹；如果该文件夹已不存在，则放回%1$s。</string>
+    <string name="delete_permanently_body">“%1$s”将被永久删除。此操作无法撤销。</string>
+    <string name="trash_row_sub">%1$s · 来自 %2$s · %3$s</string>
+    <string name="never">永不</string>
+    <plurals name="trash_deleted_after">
+        <item quantity="other">项目将在 %d 天后被永久删除。</item>
+    </plurals>
+    <plurals name="days_count">
+        <item quantity="other">%d 天</item>
+    </plurals>
+
+    <!-- Preferences: home and explorer -->
+    <string name="pref_home_explorer">首页与文件浏览器</string>
+    <string name="pref_home_explorer_help">首页和文件浏览器的外观与行为。仍可在文件浏览器中为每个文件夹单独切换布局。</string>
+    <string name="pref_default_layout">默认布局</string>
+    <string name="pref_switcher_layouts">切换器中的布局</string>
+    <string name="pref_sidebar_sections">侧边栏分区</string>
+    <string name="pref_home_opens_to">首页打开位置</string>
+    <string name="last_folder">上次的文件夹</string>
+    <string name="recent_and_pinned">最近与已固定</string>
+    <string name="pref_tapping_file">点按文件时</string>
+    <string name="tap_opens">直接打开</string>
+    <string name="tap_previews">显示预览</string>
+    <string name="pref_keep_deleted">保留已删除项目</string>
+    <string name="until_emptied">直到清空</string>
+    <string name="pref_colour_names">颜色名称</string>
+    <string name="name_a_colour">为颜色命名</string>
+    <string name="pref_per_folder_views">为每个文件夹记住视图</string>
+    <string name="pref_show_create_button">显示快速创建按钮</string>
+    <string name="pref_show_folder_counts">在文件夹上显示项目数</string>
+    <string name="pref_show_extensions">显示文件扩展名（.xnote、.xcanvas）</string>
+    <string name="pref_dates">日期</string>
 </resources>
