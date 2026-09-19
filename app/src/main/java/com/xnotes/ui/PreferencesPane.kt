@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
+import com.xnotes.settings.ExplorerLayout
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.NameTemplate
@@ -127,6 +129,13 @@ fun PreferencesPane(
         prefs = p
         editor.applyPreferences(p)
     }
+    // Home and explorer settings leave the open note alone, so they skip its canvas refresh.
+    fun updateHome(p: Preferences) {
+        prefs = p
+        editor.applyHomePreferences(p)
+    }
+    var namingColor by remember { mutableStateOf<Rgba?>(null) }
+    namingColor?.let { c -> ColorNameDialog(editor, c) { namingColor = null } }
     // Follow out-of-pane preference changes too (the .scm import round-trips a picker).
     LaunchedEffect(editor.prefsVersion) { prefs = editor.preferences }
 
@@ -202,7 +211,8 @@ fun PreferencesPane(
         }
         Spacer(Modifier.height(12.dp))
         Column(
-            Modifier.fillMaxSize().verticalScroll(scrollState)
+            // Ending at the keyboard's edge scrolls a focused field up out from under it.
+            Modifier.fillMaxSize().imePadding().verticalScroll(scrollState)
                 .onGloballyPositioned { viewport = it.boundsInRoot() },
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -370,6 +380,90 @@ fun PreferencesPane(
             CheckRow("Page colour follows the theme", prefs.pageColor == null) {
                 update(prefs.copy(pageColor = if (it) null else pageColorPresets.first()))
             }
+
+            HorizontalDivider(color = palette.border.toComposeColor())
+            SectionTitle("Home & explorer")
+            Text(
+                "How the home screen and the file explorer look and behave. Layouts can still be switched per folder from the explorer.",
+                color = palette.textDim.toComposeColor(),
+                fontSize = 12.sp,
+            )
+            FieldLabel("Default layout")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExplorerLayout.entries.forEach { l -> Chip(l.label, editor.explorerView.layout == l) { editor.setDefaultLayout(l) } }
+            }
+            FieldLabel("Layouts in the switcher")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExplorerLayout.entries.forEach { l ->
+                    val on = l in prefs.switcherLayouts
+                    ExplorerChip(l.label, on, icon = if (on) XnotesIcons.check else XnotesIcons.plus) {
+                        val next = if (on) prefs.switcherLayouts - l else prefs.switcherLayouts + l
+                        if (next.isNotEmpty()) updateHome(prefs.copy(switcherLayouts = ExplorerLayout.entries.filter { it in next }))
+                    }
+                }
+            }
+            FieldLabel("Sidebar sections")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                @Composable
+                fun section(label: String, on: Boolean, flip: () -> Preferences) =
+                    ExplorerChip(label, on, icon = if (on) XnotesIcons.check else XnotesIcons.plus) { updateHome(flip()) }
+                section("Recent", prefs.sidebarRecent) { prefs.copy(sidebarRecent = !prefs.sidebarRecent) }
+                section("Pinned", prefs.sidebarPinned) { prefs.copy(sidebarPinned = !prefs.sidebarPinned) }
+                section("Colours", prefs.sidebarColours) { prefs.copy(sidebarColours = !prefs.sidebarColours) }
+                if (prefs.trashDays != 0) section("Trash", prefs.sidebarTrash) { prefs.copy(sidebarTrash = !prefs.sidebarTrash) }
+            }
+            FieldLabel("Home opens to")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Top folder", prefs.homeOpensTo == "top") { updateHome(prefs.copy(homeOpensTo = "top")) }
+                Chip("Last folder", prefs.homeOpensTo == "last") { updateHome(prefs.copy(homeOpensTo = "last")) }
+                Chip("Recent & pinned", prefs.homeOpensTo == "shelves") { updateHome(prefs.copy(homeOpensTo = "shelves")) }
+            }
+            FieldLabel("Dates")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("2 days ago", prefs.dateStyle == "relative") { updateHome(prefs.copy(dateStyle = "relative")) }
+                Chip("Wed 17:30", prefs.dateStyle == "day") { updateHome(prefs.copy(dateStyle = "day")) }
+                Chip("16 Sep 2026", prefs.dateStyle == "date") { updateHome(prefs.copy(dateStyle = "date")) }
+            }
+            FieldLabel("Tapping a file")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Opens it", !prefs.tapPreviews) { updateHome(prefs.copy(tapPreviews = false)) }
+                Chip("Shows a preview", prefs.tapPreviews) { updateHome(prefs.copy(tapPreviews = true)) }
+            }
+            FieldLabel("Keep deleted items")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Off", prefs.trashDays == 0) { updateHome(prefs.copy(trashDays = 0)) }
+                Chip("7 days", prefs.trashDays == 7) { updateHome(prefs.copy(trashDays = 7)) }
+                Chip("30 days", prefs.trashDays == 30) { updateHome(prefs.copy(trashDays = 30)) }
+                Chip("Until emptied", prefs.trashDays == Preferences.TRASH_FOREVER) { updateHome(prefs.copy(trashDays = Preferences.TRASH_FOREVER)) }
+            }
+            if (editor.browseRoot != null) {
+                FieldLabel("Colour names")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    editor.colorNames.entries.sortedBy { it.value.lowercase() }.forEach { (c, name) ->
+                        Row(
+                            Modifier.clip(RoundedCornerShape(6.dp)).background(palette.surface.toComposeColor())
+                                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                                .clickable { namingColor = c }.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(codeTint(c, palette)))
+                            Text(name, color = palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1)
+                        }
+                    }
+                    var picking by remember { mutableStateOf(false) }
+                    Box {
+                        ExplorerChip("Name a colour", false, icon = XnotesIcons.plus) { picking = true }
+                        DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
+                            ColorCodeMenuContent { c -> picking = false; if (c != null) namingColor = c }
+                        }
+                    }
+                }
+            }
+            CheckRow("Remember the view per folder", prefs.perFolderViews) { updateHome(prefs.copy(perFolderViews = it)) }
+            CheckRow("Show the quick-create button", prefs.showCreateButton) { updateHome(prefs.copy(showCreateButton = it)) }
+            CheckRow("Show item counts on folders", prefs.showFolderCounts) { updateHome(prefs.copy(showFolderCounts = it)) }
+            CheckRow("Show file extensions (.xnote, .xcanvas)", prefs.showExtensions) { updateHome(prefs.copy(showExtensions = it)) }
 
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle("Performance")

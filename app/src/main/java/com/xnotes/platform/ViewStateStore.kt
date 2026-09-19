@@ -31,24 +31,39 @@ class ViewStateStore(private val store: JsonStore) {
         return out
     }
 
+    @Synchronized
     fun get(key: String): View? = views[key]
 
+    @Synchronized
     fun put(key: String, zoom: Double, scrollX: Double, scrollY: Double, overrides: ViewOverrides) {
         views[key] = View(zoom, scrollX, scrollY, overrides)
         store.write(toJson())
     }
 
     /** Forget one note's remembered view (e.g. when its file is deleted). */
+    @Synchronized
     fun remove(key: String) {
         if (views.remove(key) != null) store.write(toJson())
     }
 
     /** Forget the remembered view for every note whose key matches [predicate] — a deleted file, or a deleted folder's whole subtree. */
+    @Synchronized
     fun removeMatching(predicate: (String) -> Boolean) {
         if (views.keys.removeAll(predicate)) store.write(toJson())
     }
 
+    /** Carry remembered views across a rename or move that changed the document id, a folder's descendants included. */
+    @Synchronized
+    fun rekeyTree(from: String, to: String) {
+        val moves = views.keys.mapNotNull { k -> com.xnotes.core.util.DocKeys.moved(k, from, to)?.let { k to it } }
+        if (moves.isEmpty()) return
+        val values = moves.map { (old, _) -> views.remove(old) }
+        moves.forEachIndexed { i, (_, new) -> values[i]?.let { views[new] = it } }
+        store.write(toJson())
+    }
+
     /** Forget every remembered view (e.g. when the granted folder is released). */
+    @Synchronized
     fun clear() {
         views.clear()
         store.write(JSONObject())

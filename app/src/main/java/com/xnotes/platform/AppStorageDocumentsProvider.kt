@@ -45,6 +45,14 @@ class AppStorageDocumentsProvider : DocumentsProvider() {
     override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean =
         documentId == parentDocumentId || documentId.startsWith("$parentDocumentId/")
 
+    // Ids are paths, so the chain from [parentDocumentId] down to the child is just its successive prefixes.
+    override fun findDocumentPath(parentDocumentId: String?, childDocumentId: String): DocumentsContract.Path {
+        val top = parentDocumentId ?: ROOT_DOC_ID
+        val ids = com.xnotes.core.util.DocKeys.chain(top, childDocumentId)
+            ?: throw FileNotFoundException("$childDocumentId is not under $top")
+        return DocumentsContract.Path(if (parentDocumentId == null) ROOT_DOC_ID else null, ids)
+    }
+
     override fun getDocumentType(documentId: String): String = mimeOf(fileFor(documentId))
 
     override fun openDocument(documentId: String, mode: String, signal: CancellationSignal?): ParcelFileDescriptor =

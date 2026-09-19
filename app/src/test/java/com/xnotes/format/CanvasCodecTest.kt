@@ -123,6 +123,20 @@ class CanvasCodecTest {
         assertEquals(0.05, back.waypoints[1].zoom, 1e-12)
     }
 
+    @Test fun createdTimeRoundTripsAndIsOmittedWhenUnknown() {
+        val stamped = InfiniteDocument(created = 1_789_720_071_123L)
+        assertTrue(manifestText(stamped).contains("2026-09-18T08:27:51.123Z"))
+        assertEquals(1_789_720_071_123L, roundTrip(stamped).created)
+        val unknown = InfiniteDocument()
+        assertTrue(!manifestText(unknown).contains("\"created\""))
+        assertNull(roundTrip(unknown).created)
+    }
+
+    @Test fun aMalformedCreatedTimeLoadsAsUnknown() {
+        assertNull(readManifest("""{"format":"xcanvas","created":"yesterday","items":[]}""").created)
+        assertNull(readManifest("""{"format":"xcanvas","created":12,"items":[]}""").created)
+    }
+
     @Test fun anEmptyCanvasRoundTrips() {
         val back = roundTrip(InfiniteDocument())
         assertTrue(back.isEmpty)

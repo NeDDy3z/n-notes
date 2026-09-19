@@ -21,6 +21,18 @@ import java.security.MessageDigest
  */
 class NoteThumbnailCache(private val dir: File, private val maxFiles: Int = 256) {
 
+    /** Drops every thumbnail drawn before the current [FORMAT], once, on first use (off the main thread in practice). */
+    private val current by lazy {
+        runCatching {
+            val mark = File(dir, MARK)
+            if (mark.takeIf { it.exists() }?.readText()?.trim() != FORMAT.toString()) {
+                dir.listFiles()?.forEach { it.delete() }
+                dir.mkdirs()
+                mark.writeText(FORMAT.toString())
+            }
+        }
+    }
+
     /**
      * The cached thumbnail, decoded small and 16-bit for the grid, or null when not cached.
      * Tiles are opaque (filled with the paper colour), so RGB_565 halves the bytes of ARGB with
@@ -28,6 +40,7 @@ class NoteThumbnailCache(private val dir: File, private val maxFiles: Int = 256)
      * texture upload — the two things that drop frames while the grid scrolls.
      */
     fun load(uri: String): Bitmap? {
+        current
         val png = File(dir, "${key(uri)}.png")
         if (!png.exists()) return null
         return runCatching {
@@ -51,6 +64,7 @@ class NoteThumbnailCache(private val dir: File, private val maxFiles: Int = 256)
 
     /** Cache [bitmap] for [uri]. */
     fun store(uri: String, bitmap: Bitmap) {
+        current
         runCatching {
             dir.mkdirs()
             FileOutputStream(File(dir, "${key(uri)}.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -69,7 +83,7 @@ class NoteThumbnailCache(private val dir: File, private val maxFiles: Int = 256)
         runCatching {
             val keepKeys = keep.mapTo(HashSet()) { key(it) }
             dir.listFiles()?.forEach { f ->
-                if (f.name.substringBeforeLast('.') !in keepKeys) f.delete()
+                if (f.name != MARK && f.name.substringBeforeLast('.') !in keepKeys) f.delete()
             }
         }
     }
@@ -92,5 +106,9 @@ class NoteThumbnailCache(private val dir: File, private val maxFiles: Int = 256)
     private companion object {
         /** Target decode width for grid tiles; well above the on-screen tile size on a tablet. */
         const val DECODE_PX = 300
+
+        /** How tiles are drawn; bump it when that changes so old ones are redrawn. 2: wide pages centred. */
+        const val FORMAT = 2
+        const val MARK = "format"
     }
 }

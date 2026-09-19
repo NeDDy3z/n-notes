@@ -101,6 +101,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         j.name("format").value(FORMAT)
         j.name("version").value(VERSION)
         j.name("writer").value(WRITER)
+        doc.created?.let { j.name("created").value(java.time.Instant.ofEpochMilli(it).toString()) }
         j.name("dpi").value(doc.dpi)
         writeBackground(j, doc.background)
         // The last view and the waypoints are written only when there is something to say.
@@ -313,6 +314,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         if (!m.formatOk) throw XCanvasFormatException(NOT_XCANVAS)
 
         val doc = InfiniteDocument(dpi = m.dpi)
+        doc.created = m.created
         doc.background = m.background
         doc.lastView = m.view
         doc.waypoints.addAll(m.waypoints)
@@ -333,6 +335,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
     private class ParsedManifest {
         var formatOk = false
         var writer = 0
+        var created: Long? = null
         var dpi = PageSize.DEFAULT_DPI
         var background = CanvasBackground()
         var view: Waypoint? = null
@@ -363,6 +366,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
                     m.formatOk = true
                 }
                 "writer" -> m.writer = intOr(p, 0)
+                "created" -> m.created = stringOrNull(p)?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
                 "dpi" -> m.dpi = intOr(p, PageSize.DEFAULT_DPI)
                 "background" -> m.background = parseBackground(p)
                 "view" -> m.view = parseWaypoint(p, named = false)

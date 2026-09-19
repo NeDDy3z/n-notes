@@ -1,5 +1,6 @@
 package com.xnotes.platform
 
+import com.xnotes.core.util.DocKeys
 import org.json.JSONObject
 
 /**
@@ -23,28 +24,43 @@ class CreationTimeStore(private val store: JsonStore) {
         return out
     }
 
+    @Synchronized
     fun get(key: String): Long? = times[key]
 
     /** Assign [now] to every key not seen before; persist once if anything changed. */
+    @Synchronized
     fun stampMissing(keys: Collection<String>, now: Long) {
         var changed = false
         for (k in keys) if (k !in times) { times[k] = now; changed = true }
         if (changed) store.write(toJson())
     }
 
-    /** Carry a created time across a rename/move (the document id, hence the key, changed). */
-    fun rekey(oldKey: String, newKey: String) {
-        val v = times.remove(oldKey) ?: return
-        times[newKey] = v
+    /** Record the created time a file carries itself, which outranks any first-seen stamp. */
+    @Synchronized
+    fun put(key: String, time: Long) {
+        if (times[key] == time) return
+        times[key] = time
+        store.write(toJson())
+    }
+
+    /** Carry created times across a rename or move that changed the document id, a folder's descendants included. */
+    @Synchronized
+    fun rekeyTree(from: String, to: String) {
+        val moves = times.keys.mapNotNull { k -> DocKeys.moved(k, from, to)?.let { k to it } }
+        if (moves.isEmpty()) return
+        val values = moves.map { (old, _) -> times.remove(old) }
+        moves.forEachIndexed { i, (_, new) -> values[i]?.let { times[new] = it } }
         store.write(toJson())
     }
 
     /** Forget the created time for every key matching [predicate] — a deleted file, or a deleted folder's whole subtree. */
+    @Synchronized
     fun removeMatching(predicate: (String) -> Boolean) {
         if (times.keys.removeAll(predicate)) store.write(toJson())
     }
 
     /** Forget every created time (e.g. when the granted folder is released). */
+    @Synchronized
     fun clear() {
         times.clear()
         store.write(JSONObject())

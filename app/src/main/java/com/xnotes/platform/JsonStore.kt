@@ -43,5 +43,9 @@ class JsonStore(private val file: File) {
         /** App-tracked creation times for explorer items, under the private config directory. */
         fun createdTimes(context: Context): JsonStore =
             JsonStore(File(File(context.filesDir, "config"), "created_times.json"))
+
+        /** Page counts and PDF flags the explorer read from notes, under the private config directory. */
+        fun docMeta(context: Context): JsonStore =
+            JsonStore(File(File(context.filesDir, "config"), "doc_meta.json"))
     }
 }

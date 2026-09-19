@@ -196,10 +196,64 @@ object XnotesIcons {
     val arrowUp = icon("M12 19V5", "M5 12l7-7 7 7")
     val arrowDown = icon("M12 5v14", "M19 12l-7 7-7-7")
     val newFolder = icon("M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2Z", "M12 11v6", "M9 14h6")
+    val pin = icon(
+        "M12 17v5",
+        "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
+    )
     val paste = icon("M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2", "M9 2h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z")
     val more = icon(circle(12.0, 5.0, 1.0), circle(12.0, 12.0, 1.0), circle(12.0, 19.0, 1.0))
     val menu = icon("M4 6h16", "M4 12h16", "M4 18h16")
     val search = icon(circle(11.0, 11.0, 8.0), "M21 21l-4.35-4.35")
+
+    // Explorer layouts and view options.
+    val layoutGrid = icon(
+        roundRect(3.0, 3.0, 7.0, 7.0, 1.0), roundRect(14.0, 3.0, 7.0, 7.0, 1.0),
+        roundRect(14.0, 14.0, 7.0, 7.0, 1.0), roundRect(3.0, 14.0, 7.0, 7.0, 1.0),
+    )
+    /** Two whole pages standing on a shelf. */
+    val gallery = icon(roundRect(3.0, 3.0, 8.0, 14.0, 1.0), roundRect(13.0, 3.0, 8.0, 14.0, 1.0), "M2 21h20")
+    val list = icon("M8 6h13", "M8 12h13", "M8 18h13", "M3 6h.01", "M3 12h.01", "M3 18h.01")
+    val columns = icon(roundRect(3.0, 3.0, 18.0, 18.0, 2.0), "M9 3v18", "M15 3v18")
+    val timeline = icon(
+        roundRect(3.0, 4.0, 18.0, 18.0, 2.0), "M16 2v4", "M8 2v4", "M3 10h18",
+        "M8 14h.01", "M12 14h.01", "M16 14h.01", "M8 18h.01", "M12 18h.01",
+    )
+    val sort = icon("M21 16l-4 4-4-4", "M17 20V4", "M3 8l4-4 4 4", "M7 4v16")
+    val layers = icon(
+        "M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z",
+        "M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12",
+        "M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17",
+    )
+    val filter = icon("M3 6h18", "M7 12h10", "M10 18h4")
+    val chevronDown = icon("M6 9l6 6 6-6")
+    val clock = icon(circle(12.0, 12.0, 10.0), "M12 6v6l4 2")
+    val restore = icon("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5")
+    val moveToFolder = icon(
+        "M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1",
+        "M2 13h10", "M9 16l3-3-3-3",
+    )
+    val palette = icon(
+        "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.83-.44-1.12-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2Z",
+        circle(13.5, 6.5, 0.5), circle(17.5, 10.5, 0.5), circle(8.5, 7.5, 0.5), circle(6.5, 12.5, 0.5),
+    )
+    /** A stack of pages, for a note's page count. */
+    val pages = icon(
+        "M20 7h-3a2 2 0 0 1-2-2V2",
+        "M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z",
+        "M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8",
+    )
+    /** A document with lines of text: a note that annotates a PDF. */
+    val pdf = icon(
+        "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", "M14 2v4a2 2 0 0 0 2 2h4",
+        "M10 9H8", "M16 13H8", "M16 17H8",
+    )
+    /** The top of a page with "PDF" lettered beneath it: exporting to PDF. */
+    val pdfFile = icon(
+        "M4 11V4a2 2 0 0 1 2-2h9l5 5v4", "M14 2v4a2 2 0 0 0 2 2h4",
+        "M4.5 21v-6h1.5a1.5 1.5 0 0 1 0 3h-1.5",
+        "M10.5 15v6h1a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2Z",
+        "M19.5 15h-3v6", "M16.5 18h2",
+    )
 
     // About / feedback links.
     val info = icon(circle(12.0, 12.0, 10.0), "M12 16v-4", "M12 8h.01")

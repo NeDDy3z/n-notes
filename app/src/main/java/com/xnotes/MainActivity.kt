@@ -26,7 +26,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,7 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -272,15 +274,6 @@ private fun EditorScreen(
     val resolver = context.contentResolver
     val rwFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
-    // "Open…" remembers the picked .xnote and shows the name dialog at once; it's copied into the folder at Save.
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { u ->
-            val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Note")
-            editor.requestImport(com.xnotes.ui.ImportKind.OPEN, stem, u.toString())
-            backstageView = com.xnotes.ui.BackstageView.HOME
-            editor.goHomeAll() // land on backstage to name/place the pending import
-        }
-    }
     // Which pane a "Save as" writes: the focused one at the moment the picker opened.
     var savePane by remember { mutableStateOf(editor) }
     val createLauncher = rememberLauncherForActivityResult(
@@ -300,7 +293,7 @@ private fun EditorScreen(
     val importPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
             val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Document")
-            editor.requestImport(com.xnotes.ui.ImportKind.PDF, stem, u.toString())
+            editor.requestImport(stem, u.toString())
             backstageView = com.xnotes.ui.BackstageView.HOME
             editor.goHomeAll() // land on backstage to name/place the pending import
         }
@@ -591,6 +584,38 @@ private fun EditorScreen(
         }
     }
 
+    // Share several stored files at once, each as the bundle it is (no PDF render for a batch).
+    fun shareFiles(uris: List<String>) {
+        if (uris.isEmpty()) return
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val intent = runCatching {
+                val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+                dir.listFiles()?.forEach { it.delete() }
+                val auth = "${context.packageName}.fileprovider"
+                val taken = HashSet<String>()
+                val out = ArrayList<Uri>()
+                for (u in uris) {
+                    val stem = stemOf(u)
+                    val suffix = kindOf(u).suffix
+                    var name = "$stem$suffix"
+                    var n = 2
+                    while (!taken.add(name.lowercase())) name = "$stem (${n++})$suffix"
+                    val file = java.io.File(dir, name)
+                    java.io.FileOutputStream(file).use { o -> editor.copyFileTo(u, o) }
+                    out.add(androidx.core.content.FileProvider.getUriForFile(context, auth, file))
+                }
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "application/octet-stream"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, out)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }.getOrNull()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (intent != null) context.startActivity(Intent.createChooser(intent, "Share ${uris.size} notes")) else editor.message = "Could not share the notes."
+            }
+        }
+    }
+
     // Share the selected side-panel pages: as one PDF, or as one/many PNGs (ACTION_SEND_MULTIPLE).
     fun sharePages(from: Editor, pages: List<Int>, asPdf: Boolean) {
         if (pages.isEmpty()) return
@@ -644,10 +669,7 @@ private fun EditorScreen(
     editor.keyActions = remember {
         Editor.KeyActions(
             newNote = { guarded { editor.active.newNote() } },
-            open = {
-                if (editor.browseRoot != null) openLauncher.launch(arrayOf("*/*"))
-                else { backstageView = com.xnotes.ui.BackstageView.HOME; guardedAll { editor.goHomeAll() } }
-            },
+            open = { backstageView = com.xnotes.ui.BackstageView.HOME; guardedAll { editor.goHomeAll() } },
             save = { saveOrPrompt() },
             saveAs = { launchSaveAs(editor.active) },
             exportPdf = {
@@ -663,7 +685,13 @@ private fun EditorScreen(
 
     LaunchedEffect(editor.message) {
         editor.message?.let {
-            snackbar.showSnackbar(it)
+            val action = editor.messageAction
+            editor.messageAction = null
+            val result = snackbar.showSnackbar(
+                it, actionLabel = action?.first,
+                duration = if (action != null) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short,
+            )
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) action?.second?.invoke()
             editor.message = null
         }
     }
@@ -685,7 +713,7 @@ private fun EditorScreen(
         val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, src) ?: "Document")
         guardedAll {
             if (editor.browseRoot == null) editor.useInternalStorage()
-            editor.requestImport(com.xnotes.ui.ImportKind.PDF, stem, src.toString())
+            editor.requestImport(stem, src.toString())
             backstageView = com.xnotes.ui.BackstageView.HOME
             editor.goHomeAll()
         }
@@ -694,11 +722,14 @@ private fun EditorScreen(
     // In fullscreen the window runs edge to edge and the swipe-in system bars are transient, so
     // zero the content insets: otherwise their inset animates 0 -> N -> 0 and resizes the canvas,
     // forcing a re-render every time the bars hide. Non-fullscreen keeps the normal bar insets.
-    // The IME inset joins both cases so a DOCKED keyboard lifts the content (the bottom format
-    // bar rides right above it); a floating keyboard reports no inset and the bar stays at the
-    // bottom. Insets are consumed below so inner imePadding fields don't pad a second time.
-    val contentInsets = if (fullscreen) WindowInsets.ime else WindowInsets.systemBars.union(WindowInsets.ime)
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }, contentWindowInsets = contentInsets) { inner ->
+    // A DOCKED keyboard lifts only the open panes (the bottom format bar rides right above it) and
+    // the snackbar; Home stays put and the keyboard slides over it. A floating keyboard reports no
+    // inset. Insets are consumed below so inner imePadding only adds what the bars don't cover.
+    val contentInsets = if (fullscreen) WindowInsets(0, 0, 0, 0) else WindowInsets.systemBars
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar, Modifier.windowInsetsPadding(WindowInsets.ime.exclude(contentInsets))) },
+        contentWindowInsets = contentInsets,
+    ) { inner ->
         Box(modifier = Modifier.fillMaxSize().padding(inner).consumeWindowInsets(contentInsets)) {
             // BASE LAYER: backstage is the root of the stack — always present underneath.
             com.xnotes.ui.Backstage(
@@ -708,7 +739,6 @@ private fun EditorScreen(
                 onExitApp = { (context as? android.app.Activity)?.finish() },
                 onImportCodeTheme = { importCodeThemeLauncher.launch(arrayOf("*/*")) },
                 onImportFont = { importFontLauncher.launch(arrayOf("*/*")) },
-                onOpenSystem = { openLauncher.launch(arrayOf("*/*")) },
                 onImportPdf = { importPdfLauncher.launch(arrayOf("application/pdf")) },
                 onOpenFile = { uri -> guarded(editor) { openTreeFile(uri) } },
                 onPickRoot = { pickRootLauncher.launch(null) },
@@ -720,6 +750,10 @@ private fun EditorScreen(
                         onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${stemOf(uri)}.pdf") })
                 },
                 onOpenSplit = { first, second -> guardedAll { openSplit(first, second) } },
+                onShareFiles = { uris -> shareFiles(uris) },
+                onOpenBeside = { uri ->
+                    editor.currentUri?.takeIf { !editor.isSameDocument(it, uri) }?.let { first -> { guardedAll { openSplit(first, uri) } } }
+                },
             )
 
             // TOP LAYER: the open panes (toolbar + canvas each), pushed over backstage. Back acts on
@@ -826,11 +860,7 @@ private fun EditorScreen(
         })
     }
     if (editor.importing) {
-        // OPEN imports an .xnote; everything else is the PDF import the loader is named for.
-        PdfImportDialog(
-            isPdf = editor.pendingImport?.kind != com.xnotes.ui.ImportKind.OPEN,
-            onCancel = { editor.cancelImportInProgress() }, // the stream-copy stops at its next buffer
-        )
+        PdfImportDialog(onCancel = { editor.cancelImportInProgress() }) // the stream-copy stops at its next buffer
     }
     // Tapping a note reads it off-thread (editor.opening). Only show the spinner once the read has run
     // long enough to matter, so opening a small note never flashes a dialog; a big PDF gets the loader.
@@ -942,7 +972,7 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
     val sideBySide = LocalConfiguration.current.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val ratio = editor.splitRatio.coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
-    BoxWithConstraints(Modifier.fillMaxSize().then(SwallowTouches)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(SwallowTouches).imePadding()) {
         val fullW = maxWidth
         val fullH = maxHeight
         val full = if (sideBySide) fullW else fullH
@@ -1337,8 +1367,7 @@ private fun SavingDialog() {
  * cost is copying the (possibly large) source bytes — so it shows an animated spinner.
  */
 @Composable
-private fun PdfImportDialog(isPdf: Boolean, onCancel: () -> Unit) =
-    SpinnerDialog(if (isPdf) "Importing PDF…" else "Importing note…", onCancel)
+private fun PdfImportDialog(onCancel: () -> Unit) = SpinnerDialog("Importing PDF…", onCancel)
 
 /**
  * Subtle, non-blocking hint shown bottom-right while a dark-mode PDF's embedded-image colours are
