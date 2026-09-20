@@ -320,6 +320,33 @@ class SettingsTest {
         assertNull(cleared.materialSeed)
     }
 
+    @Test fun customMaterialOptionsDefaultForgivingly() {
+        for (value in listOf<Any>(JSONObject.NULL, "unknown", "medium", "high", 123, JSONObject())) {
+            val p = Preferences.fromJson(JSONObject().put("material_style", value).put("material_contrast", value))
+            assertEquals(MaterialStyle.TONAL_SPOT, p.materialStyle)
+            assertFalse(p.toJson().has("material_contrast"))
+        }
+        val defaults = Preferences.fromJson(JSONObject())
+        assertEquals(MaterialStyle.TONAL_SPOT, defaults.materialStyle)
+        assertFalse(defaults.toJson().has("material_style"))
+        assertFalse(defaults.toJson().has("material_contrast"))
+    }
+
+    @Test fun customMaterialOptionsSurviveSystemAndAppearanceSwitches() {
+        for (style in MaterialStyle.entries) {
+            val custom = Preferences(materialSeed = Rgba(128, 0, 0), materialStyle = style)
+            assertEquals(custom, Preferences.fromJson(custom.toJson()))
+            val system = Preferences.fromJson(custom.copy(materialSeed = null).toJson())
+            assertNull(system.materialSeed)
+            assertEquals(style, system.materialStyle)
+            for (mode in listOf("light", "dark", "oled", "system")) {
+                val switched = Preferences.fromJson(custom.copy(uiAppearance = mode).toJson())
+                assertEquals(custom.materialSeed, switched.materialSeed)
+                assertEquals(style, switched.materialStyle)
+            }
+        }
+    }
+
     @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {
         val p = Preferences(
             uiAppearance = "oled",

@@ -407,7 +407,7 @@ internal fun TimelineBody(
                                 "$d", fontSize = 10.5.sp,
                                 color = when {
                                     ahead -> palette.textDim.toComposeColor()
-                                    n >= 4 -> palette.bg.toComposeColor()
+                                    n >= 4 -> palette.onAccent.toComposeColor()
                                     else -> palette.text.toComposeColor()
                                 },
                             )

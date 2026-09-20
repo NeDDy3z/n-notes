@@ -23,11 +23,16 @@ data class Palette(
     val isDark: Boolean,
     /** True when the chrome is built from a Material 3 scheme (rounded card corners etc.). */
     val isMaterial: Boolean = false,
+    val materialColors: MaterialColors? = null,
 ) {
     /** The accent lightened ~28% (hover highlights). */
     val accentLight: Rgba get() = ColorMath.lighten(accent, 0.28)
 
     fun accentAlpha(alpha: Int): Rgba = accent.withAlpha(alpha)
+
+    val onAccent: Rgba get() = materialColors?.onPrimary ?: bg
+    val selectionBackground: Rgba get() = materialColors?.primaryContainer ?: accentAlpha(48)
+    val selectionForeground: Rgba get() = materialColors?.onPrimaryContainer ?: accent
 
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118) // #00e676
@@ -113,7 +118,7 @@ data class Palette(
             paper = m.surfaceContainerLowest,
             paperBorder = m.outline,
             accent = m.primary,
-            accentDim = ColorMath.dim(m.primary),
+            accentDim = m.primaryContainer,
             // Raw outlineVariant reads too hard against the chrome; sink it a third of the way in.
             border = ColorMath.mix(m.outlineVariant, m.surfaceContainer, 0.35),
             text = m.onSurface,
@@ -123,15 +128,16 @@ data class Palette(
             menuBg = m.surfaceContainer,
             isDark = false,
             isMaterial = true,
+            materialColors = m,
         )
 
         fun materialDark(m: MaterialColors): Palette = Palette(
             bg = m.surfaceContainerLowest,
             panel = m.surface,
-            paper = m.surfaceContainer,
+            paper = m.surfaceContainerLow,
             paperBorder = m.outlineVariant,
             accent = m.primary,
-            accentDim = ColorMath.dim(m.primary),
+            accentDim = m.primaryContainer,
             // Raw outlineVariant reads too hard against the chrome; sink it a third of the way in.
             border = ColorMath.mix(m.outlineVariant, m.surfaceContainerLowest, 0.35),
             text = m.onSurface,
@@ -141,6 +147,7 @@ data class Palette(
             menuBg = m.surfaceContainerLow,
             isDark = true,
             isMaterial = true,
+            materialColors = m,
         )
 
         /** Material OLED: the big surfaces drop to pure black, small lifts step down one slot. */

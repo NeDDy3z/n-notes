@@ -20,6 +20,7 @@ data class Preferences(
     val oledPaletteStyle: String = "classic",
     /** Material palette seed colour; null (default) follows the system dynamic colours. */
     val materialSeed: Rgba? = null,
+    val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
     val pageTemplatePdf: String? = null,
@@ -174,6 +175,7 @@ data class Preferences(
         .put("disable_front_buffering", disableFrontBuffering)
         .apply {
             materialSeed?.let { put("material_seed", Rgba.toHex(it)) }
+            if (materialStyle != MaterialStyle.TONAL_SPOT) put("material_style", materialStyle.id)
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
             codeThemeName?.let { put("code_theme_name", it) }
@@ -226,6 +228,7 @@ data class Preferences(
                 lightPaletteStyle = paletteStyle("light_palette_style", "material"),
                 oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
                 materialSeed = Rgba.fromHex(o.optString("material_seed")),
+                materialStyle = MaterialStyle.fromId(o.optString("material_style")),
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },

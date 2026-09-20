@@ -344,13 +344,11 @@ internal fun ToolbarIcon(
     onClick: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    // Material tones can sit too close to the idle grey for an accent tint to read as
-    // "selected", so the material chrome marks active icons with a filled accent disc
-    // (the icon flipped to the on-accent colour) instead of a tint swap.
+    // Material selections use the generated container and its matching foreground.
     val filled = active && palette.isMaterial
     val tint = when {
         !enabled -> com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor()
-        filled -> palette.bg.toComposeColor()
+        filled -> palette.selectionForeground.toComposeColor()
         active -> palette.accent.toComposeColor()
         else -> palette.textDim.toComposeColor()
     }
@@ -359,7 +357,7 @@ internal fun ToolbarIcon(
             Modifier
                 .size(34.dp)
                 .clip(CircleShape)
-                .background(if (filled) palette.accent.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent),
+                .background(if (filled) palette.selectionBackground.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))

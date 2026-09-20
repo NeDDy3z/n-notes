@@ -327,7 +327,7 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
     val active = b.host.isSelected(e) || b.host.isDropTarget(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.bg.toComposeColor()
+    val onAccent = palette.onAccent.toComposeColor()
     val pulse = remember { Animatable(1f) }
     val pulsing = b.host.isPulsing(e)
     LaunchedEffect(pulsing) {
@@ -617,7 +617,7 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        val fg = if (active) palette.bg.toComposeColor() else palette.text.toComposeColor()
+        val fg = if (active) palette.onAccent.toComposeColor() else palette.text.toComposeColor()
         Icon(XnotesIcons.folder, null, tint = if (active) fg else (code ?: palette.textDim.toComposeColor()), modifier = Modifier.size(20.dp))
         Text(b.label(e), color = fg, fontSize = 14.sp, maxLines = 1)
         b.counts[e.documentUri]?.let { Text("$it", color = if (active) fg else palette.textDim.toComposeColor(), fontSize = 12.sp) }

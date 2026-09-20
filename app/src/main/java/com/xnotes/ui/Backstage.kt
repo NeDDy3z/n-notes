@@ -817,7 +817,7 @@ private fun HomePane(
                     onClick = { createMenuOpen = true },
                     shape = CircleShape,
                     containerColor = palette.accent.toComposeColor(),
-                    contentColor = palette.bg.toComposeColor(),
+                    contentColor = palette.onAccent.toComposeColor(),
                 ) {
                     Icon(XnotesIcons.edit, stringResource(R.string.create_new), modifier = Modifier.size(24.dp))
                 }
@@ -2163,7 +2163,7 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
         }
     }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.bg.toComposeColor()
+    val onAccent = palette.onAccent.toComposeColor()
     val shape = cardShape(palette)
     Column(
         modifier

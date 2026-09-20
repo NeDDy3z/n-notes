@@ -1626,7 +1626,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val appearance = resolvedAppearance(p)
         val dark = appearance != "light"
         if (p.paletteStyle == "material") {
-            val m = p.materialSeed?.let { MaterialColors.seeded(it, dark = dark) }
+            val m = p.materialSeed?.let {
+                MaterialColors.seeded(it, dark, p.materialStyle)
+            }
                 ?: dynamicMaterialColors(appContext, dark = dark)
                 ?: MaterialColors.seeded(p.accentColor, dark = dark)
             return Palette.material(appearance, m)
@@ -1692,19 +1694,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun applyPreferences(p: Preferences) {
         val marginChanged = p.sideMargin != settings.prefs.sideMargin
         settings = settings.copy(prefs = p)
-        fullscreen = p.startFullscreen ?: !deviceHasDisplayCutout // keep in sync (e.g. Reset to defaults)
-        applyPagePrefsToState(p)
-        // The other pane took its pad from the settings it loaded, so a live change has to reach it.
-        secondary?.pad?.frontBuffering = !p.disableFrontBuffering
-        republishFlow(invalidate = true) // re-bake flow colours (default text, code) for the new appearance
-        state.invalidateAllCaches()
-        if (marginChanged) {
-            state.fitWidth() // re-fit so the new side margin takes effect immediately
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.fullscreen = p.startFullscreen ?: !editor.deviceHasDisplayCutout
+            editor.applyPagePrefsToState(p)
+            editor.republishFlow(invalidate = true)
+            editor.state.invalidateAllCaches()
+            if (marginChanged) editor.state.fitWidth()
+            editor.refreshView()
+            editor.prefsVersion++
+            editor.view.requestRender()
         }
-        refreshView() // margin re-fits and zoom-limit clamps must surface in the toolbar readouts
         settingsRepo.save(settings)
-        prefsVersion++
-        view.requestRender()
     }
 
     /** Apply preferences only the home screen reads, without the canvas refresh [applyPreferences] does. */

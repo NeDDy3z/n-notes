@@ -177,7 +177,7 @@ private fun PreviewButton(icon: ImageVector, label: String, filled: Boolean, ena
     val shape = roundedIf(palette, 22)
     val fg = when {
         !enabled -> palette.textDim.toComposeColor().copy(alpha = 0.5f)
-        filled -> palette.bg.toComposeColor()
+        filled -> palette.onAccent.toComposeColor()
         else -> palette.text.toComposeColor()
     }
     Row(

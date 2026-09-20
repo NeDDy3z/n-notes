@@ -4,7 +4,7 @@ Source: https://github.com/material-foundation/material-color-utilities
 Revision: 5b3618b16fdc3825e21d5679bafd144662088ea1
 License: Apache-2.0 (bundled in assets/licenses/material-color-utilities.txt).
 
-This directory contains the five scheme variants used by xnotes and their
+This directory contains the eight scheme variants used by xnotes and their
 transitive Java source dependencies. Quantization, scoring, blending and the
 legacy static scheme API are omitted. Nothing is fetched during the build.
 

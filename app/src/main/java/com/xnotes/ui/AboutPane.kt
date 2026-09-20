@@ -188,7 +188,7 @@ private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -
         }
     }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.bg.toComposeColor()
+    val onAccent = palette.onAccent.toComposeColor()
     Column(
         Modifier
             .weight(1f)

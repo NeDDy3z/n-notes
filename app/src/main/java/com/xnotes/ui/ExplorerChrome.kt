@@ -315,7 +315,7 @@ internal fun CheckRing(selected: Boolean, modifier: Modifier = Modifier) {
             .border(2.dp, if (selected) palette.accent.toComposeColor() else Color.White.copy(alpha = 0.85f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Icon(XnotesIcons.check, null, tint = palette.bg.toComposeColor(), modifier = Modifier.size(14.dp))
+        if (selected) Icon(XnotesIcons.check, null, tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(14.dp))
     }
 }
 
@@ -332,7 +332,7 @@ internal fun RowCheck(selected: Boolean, modifier: Modifier = Modifier) {
             .border(2.dp, if (selected) palette.accent.toComposeColor() else palette.textDim.toComposeColor(), shape),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Icon(XnotesIcons.check, null, tint = palette.bg.toComposeColor(), modifier = Modifier.size(12.dp))
+        if (selected) Icon(XnotesIcons.check, null, tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(12.dp))
     }
 }
 

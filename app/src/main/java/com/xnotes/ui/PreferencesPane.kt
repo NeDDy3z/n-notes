@@ -44,16 +44,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,6 +75,7 @@ import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.settings.Preferences
+import com.xnotes.settings.MaterialStyle
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
@@ -239,9 +245,29 @@ fun PreferencesPane(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     DynamicSeedDot(prefs.materialSeed == null) { update(prefs.copy(materialSeed = null)) }
+                    val colourEnabled = prefs.materialSeed == null || prefs.materialStyle != MaterialStyle.MONOCHROME
                     materialSeedPresets.forEach { c ->
-                        ColorDot(c.toComposeColor(), prefs.materialSeed == c) { update(prefs.copy(materialSeed = c)) }
+                        ColorDot(c.toComposeColor(), prefs.materialSeed == c, enabled = colourEnabled) {
+                            update(prefs.copy(materialSeed = c))
+                        }
                     }
+                    ColorPickerDot(
+                        current = prefs.materialSeed,
+                        custom = prefs.materialSeed != null && prefs.materialSeed !in materialSeedPresets,
+                        onPick = { update(prefs.copy(materialSeed = it)) },
+                        dismissOnPick = false,
+                        enabled = colourEnabled,
+                    ) { onDismiss, onPick ->
+                        ColorPickerPopup(prefs.materialSeed ?: prefs.accentColor, emptyList(), onDismiss, onPick)
+                    }
+                }
+                if (prefs.materialSeed != null) {
+                    CustomMaterialControls(prefs, ::update)
+                } else {
+                    Text(
+                        stringResource(if (android.os.Build.VERSION.SDK_INT >= 31) R.string.material_follow_system else R.string.material_system_fallback),
+                        color = palette.textDim.toComposeColor(), fontSize = 12.sp,
+                    )
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -691,20 +717,54 @@ private fun FieldLabel(text: String) {
     Text(text, color = LocalPalette.current.accent.toComposeColor(), fontSize = 13.sp)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CustomMaterialControls(prefs: Preferences, update: (Preferences) -> Unit) {
+    val palette = LocalPalette.current
+    val styles = listOf(
+        MaterialStyle.TONAL_SPOT to R.string.material_style_soft,
+        MaterialStyle.VIBRANT to R.string.material_style_vivid,
+        MaterialStyle.FIDELITY to R.string.material_style_original,
+        MaterialStyle.EXPRESSIVE to R.string.material_style_playful,
+        MaterialStyle.FRUIT_SALAD to R.string.material_style_fresh,
+        MaterialStyle.RAINBOW to R.string.material_style_clean,
+        MaterialStyle.NEUTRAL to R.string.material_style_muted,
+        MaterialStyle.MONOCHROME to R.string.material_style_grayscale,
+    )
+    FieldLabel(stringResource(R.string.material_style))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        styles.forEach { (style, label) ->
+            Chip(stringResource(label), prefs.materialStyle == style) { update(prefs.copy(materialStyle = style)) }
+        }
+    }
+    val description = when (prefs.materialStyle) {
+        MaterialStyle.TONAL_SPOT -> R.string.material_style_soft_description
+        MaterialStyle.VIBRANT -> R.string.material_style_vivid_description
+        MaterialStyle.FIDELITY -> R.string.material_style_original_description
+        MaterialStyle.EXPRESSIVE -> R.string.material_style_playful_description
+        MaterialStyle.FRUIT_SALAD -> R.string.material_style_fresh_description
+        MaterialStyle.RAINBOW -> R.string.material_style_clean_description
+        MaterialStyle.NEUTRAL -> R.string.material_style_muted_description
+        MaterialStyle.MONOCHROME -> R.string.material_style_grayscale_description
+    }
+    Text(stringResource(description), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+}
+
 @Composable
 private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(if (selected) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
+            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
             .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+            .semantics { this.selected = selected }
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
         Text(
             label,
-            color = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
+            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
             fontSize = 14.sp,
             maxLines = 1,
             softWrap = false,
@@ -713,17 +773,23 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit) {
+internal fun ColorDot(color: Color, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val palette = LocalPalette.current
+    val label = Rgba.toHex(Rgba.fromArgb(color.toArgb()))
     Box(
         Modifier
             .size(30.dp)
+            .alpha(if (enabled) 1f else 0.4f)
+            .semantics {
+                this.selected = selected
+                contentDescription = label
+            }
             .then(if (selected) Modifier.border(2.dp, palette.accent.toComposeColor(), CircleShape) else Modifier)
             .padding(4.dp)
             .clip(CircleShape)
             .background(color)
             .border(1.dp, palette.border.toComposeColor(), CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
     )
 }
 
@@ -739,9 +805,11 @@ private val materialSweepBrush = Brush.sweepGradient(
 @Composable
 private fun DynamicSeedDot(selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
+    val label = stringResource(R.string.material_follow_system)
     Box(
         Modifier
             .size(30.dp)
+            .semantics { this.selected = selected; contentDescription = label }
             .then(if (selected) Modifier.border(2.dp, palette.accent.toComposeColor(), CircleShape) else Modifier)
             .padding(4.dp)
             .clip(CircleShape)
@@ -770,20 +838,24 @@ internal fun ColorPickerDot(
     custom: Boolean,
     onPick: (Rgba) -> Unit,
     dismissOnPick: Boolean = true,
+    enabled: Boolean = true,
     grid: @Composable (onDismiss: () -> Unit, onPick: (Rgba) -> Unit) -> Unit,
 ) {
     val palette = LocalPalette.current
+    val label = stringResource(R.string.material_custom_colour)
     var open by remember { mutableStateOf(false) }
     Box {
         Box(
             Modifier
                 .size(30.dp)
+                .alpha(if (enabled) 1f else 0.4f)
+                .semantics { contentDescription = label }
                 .then(if (custom) Modifier.border(2.dp, palette.accent.toComposeColor(), CircleShape) else Modifier)
                 .padding(4.dp)
                 .clip(CircleShape)
                 .then(if (custom && current != null) Modifier.background(current.toComposeColor()) else Modifier.background(spectrumBrush))
                 .border(1.dp, palette.border.toComposeColor(), CircleShape)
-                .clickable { open = true },
+                .clickable(enabled = enabled) { open = true },
         )
         // A live picker (e.g. the page/ink popup) edits across several taps, so it stays open until a
         // tap outside; a one-shot grid (the accent swatches) closes the moment a colour is chosen.

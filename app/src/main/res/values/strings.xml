@@ -708,4 +708,24 @@
     <string name="pref_show_folder_counts">Show item counts on folders</string>
     <string name="pref_show_extensions">Show file extensions (.xnote, .xcanvas)</string>
     <string name="pref_dates">Dates</string>
+    <string name="material_follow_system">Follow system colours</string>
+    <string name="material_system_fallback">Uses the default accent on this device.</string>
+    <string name="material_custom_colour">Choose a custom colour</string>
+    <string name="material_style">Style</string>
+    <string name="material_style_soft">Soft</string>
+    <string name="material_style_vivid">Vivid</string>
+    <string name="material_style_original">Original</string>
+    <string name="material_style_playful">Playful</string>
+    <string name="material_style_fresh">Fresh</string>
+    <string name="material_style_clean">Clean</string>
+    <string name="material_style_muted">Muted</string>
+    <string name="material_style_grayscale">Grayscale</string>
+    <string name="material_style_soft_description">Gentle colour accents.</string>
+    <string name="material_style_vivid_description">Stronger colour accents.</string>
+    <string name="material_style_original_description">Follows your chosen colour more closely, adjusted for readability.</string>
+    <string name="material_style_playful_description">Unexpected accent colours inspired by your chosen colour.</string>
+    <string name="material_style_fresh_description">Shifted accents with backgrounds tinted by your chosen colour.</string>
+    <string name="material_style_clean_description">Colourful accents with untinted neutral backgrounds.</string>
+    <string name="material_style_muted_description">Subtle colour with neutral surfaces.</string>
+    <string name="material_style_grayscale_description">No colour tint. Your chosen colour is kept for other styles.</string>
 </resources>
