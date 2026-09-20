@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -181,17 +182,19 @@ private fun PageThumb(
     val current = index == editor.pageIndex
     val selected = editor.isPageSelected(index)
     var menuOpen by remember { mutableStateOf(false) }
-    val bitmap by produceState<ImageBitmap?>(editor.cachedPageThumbnail(page), page, editor.contentVersion, editor.pdfThumbTick, settled) {
-        val cached = editor.cachedPageThumbnail(page)
-        if (cached != null) {
-            value = cached
-        } else if (settled) {
-            // Render only once the panel has stopped moving (see the panel-wide `settled` flag in
-            // PagesTab): a scroll keeps `settled` false, so rows swept past never render — the
-            // producer relaunches and renders this row when motion settles.
-            value = editor.pageThumbnail(page, 300)
+    val bitmap by key(editor.thumbnailVersion) {
+        produceState<ImageBitmap?>(editor.cachedPageThumbnail(page), page, editor.contentVersion, editor.pdfThumbTick, settled) {
+            val cached = editor.cachedPageThumbnail(page)
+            if (cached != null) {
+                value = cached
+            } else if (settled) {
+                // Render only once the panel has stopped moving (see the panel-wide `settled` flag in
+                // PagesTab): a scroll keeps `settled` false, so rows swept past never render — the
+                // producer relaunches and renders this row when motion settles.
+                value = editor.pageThumbnail(page, 300)
+            }
+            // not cached and not settled: leave value as-is (placeholder); relaunch on settle renders it.
         }
-        // not cached and not settled: leave value as-is (placeholder); relaunch on settle renders it.
     }
     // Reserve the row's height from the aspect ratio so it stays put before the bitmap loads.
     val aspect = editor.pageAspectRatio(page)

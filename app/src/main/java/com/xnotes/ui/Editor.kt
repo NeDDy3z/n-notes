@@ -308,8 +308,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private var lastSessionContentVersion = -1
     private var sessionLoaded = false
 
-    /** On-disk note-thumbnail cache (png + source mtime) so the grid paints instantly across launches. */
+    // The disk cache is shared by both panes and remembers which theme produced its pixels.
     private val thumbCache = com.xnotes.platform.NoteThumbnailCache(java.io.File(appContext.filesDir, "note_thumbs"))
+    @Volatile private var thumbnailGeneration = -1L
+    private var thumbnailTheme: String? = null
+    var thumbnailVersion by mutableStateOf(0)
+        private set
     /** In-memory note-tile thumbnails keyed by SAF URI, bounded by bytes (Compose owns the pixels —
      *  no manual recycle). */
     private val noteThumbs = object : LruCache<String, ImageBitmap>(32 * 1024 * 1024) {
@@ -1665,6 +1669,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         pad.frontBuffering = !p.disableFrontBuffering
         infiniteOrNull?.pad?.frontBuffering = !p.disableFrontBuffering
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
+        val theme = "$palette|${state.pageColorOverride}"
+        if (thumbnailTheme != theme) {
+            thumbnailTheme = theme
+            thumbnailGeneration = thumbCache.useTheme(theme)
+            synchronized(noteThumbs) { noteThumbs.evictAll() }
+            synchronized(pageThumbs) { pageThumbs.evictAll() }
+            thumbnailVersion++
+        }
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
         controller.detectShapes = p.detectShapes
@@ -2177,15 +2189,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * reorder keeps it; dropped wholesale when [contentVersion] moves (see [cachedPageThumbnail]).
      */
     suspend fun pageThumbnail(page: Page, widthPx: Int): ImageBitmap? {
+        val generation = thumbnailGeneration
+        val version = contentVersion
         cachedPageThumbnail(page)?.let { return it }
         return withContext(Dispatchers.Default) {
             cachedPageThumbnail(page)?.let { return@withContext it }
             // Render in page space sized so the rotated result lands at [widthPx] wide.
             val renderW = (state.outerW(page) * (widthPx / state.displayW(page))).roundToInt().coerceAtLeast(1)
-            val bmp = renderThumbnail(page, renderW, active = { isActive })
-                ?.let { rotateForView(it) }?.asImageBitmap() ?: return@withContext null
-            synchronized(pageThumbs) { pageThumbs.put(page, bmp) }
-            bmp
+            val bmp = renderThumbnail(page, renderW, active = { isActive && isCurrentThumbnail(generation) })
+                ?.let { rotateForView(it) } ?: return@withContext null
+            synchronized(pageThumbs) {
+                if (!isActive || !isCurrentThumbnail(generation) || version != contentVersion) {
+                    bmp.recycle()
+                    null
+                } else {
+                    bmp.asImageBitmap().also { pageThumbs.put(page, it) }
+                }
+            }
         }
     }
 
@@ -2483,12 +2503,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** The square thumbnail for the canvas at [uri]; null when it is not a readable canvas. */
     suspend fun canvasTileThumbnail(uri: String): ImageBitmap? {
+        val generation = thumbnailGeneration
         synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return it } }
         return withContext(thumbDispatcher) {
             delay(150)
-            if (!isActive) return@withContext null
+            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
             synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return@withContext it } }
-            val bmp = thumbCache.load(uri) ?: run {
+            val bmp = thumbCache.load(uri, generation) ?: run {
                 val doc = runCatching {
                     appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use {
                         canvasCodec.read(it, imageDir)
@@ -2496,17 +2517,28 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 }.getOrNull() ?: return@withContext null
                 doc.created?.let { createdStore.put(documentKey(uri), it) }
                 try {
-                    renderCanvasThumbnailSquare(doc, tilePx)?.also { thumbCache.store(uri, it) }
+                    renderCanvasThumbnailSquare(doc, tilePx)?.also { thumbCache.store(uri, it, generation) }
                         ?: return@withContext null
                 } finally {
                     deleteCanvasImageTemps(doc)
                 }
             }
-            val img = bmp.asImageBitmap()
-            synchronized(noteThumbs) { noteThumbs.put(uri, img) }
-            img
+            publishThumbnail(uri, bmp, generation)
         }
     }
+
+    private fun isCurrentThumbnail(generation: Long): Boolean =
+        generation == thumbnailGeneration && thumbCache.isCurrent(generation)
+
+    private fun publishThumbnail(key: String, bitmap: android.graphics.Bitmap, generation: Long): ImageBitmap? =
+        synchronized(noteThumbs) {
+            if (!isCurrentThumbnail(generation)) {
+                bitmap.recycle()
+                null
+            } else {
+                bitmap.asImageBitmap().also { noteThumbs.put(key, it) }
+            }
+        }
 
     /** The square tile for the document at [uri], whichever kind it is. */
     suspend fun tileThumbnail(uri: String, name: String): ImageBitmap? =
@@ -2533,27 +2565,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * change drops it ([invalidateThumb]) so it re-renders, and closing a note regenerates it.
      */
     suspend fun noteTileThumbnail(uri: String): ImageBitmap? {
+        val generation = thumbnailGeneration
         synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return it } }
         return withContext(thumbDispatcher) {
             delay(150) // let a quick scroll-past cancel this before any heavy work begins
-            if (!isActive) return@withContext null
+            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
             synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return@withContext it } }
-            val bmp = thumbCache.load(uri) ?: run {
+            val bmp = thumbCache.load(uri, generation) ?: run {
                 val doc = runCatching {
                     appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { codec.read(it, pdfDir, imageDir) }
                 }.getOrNull() ?: return@withContext null
                 doc.created?.let { createdStore.put(documentKey(uri), it) }
                 try {
                     val vs = viewSettingsFor(uri)
-                    renderDocThumbnailSquare(doc, tilePx, pdfPageFilterFor(vs), vs.rotation)?.also { thumbCache.store(uri, it) } ?: return@withContext null
+                    renderDocThumbnailSquare(doc, tilePx, pdfPageFilterFor(vs), vs.rotation)?.also { thumbCache.store(uri, it, generation) } ?: return@withContext null
                 } finally {
                     doc.pdfFile?.delete() // transient doc loaded just for a thumbnail; drop its extracts
                     deleteImageTemps(doc)
                 }
             }
-            val img = bmp.asImageBitmap()
-            synchronized(noteThumbs) { noteThumbs.put(uri, img) }
-            img
+            publishThumbnail(uri, bmp, generation)
         }
     }
 
@@ -2569,13 +2600,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * with them when the document changes.
      */
     suspend fun pageThumbnail(uri: String, name: String): ImageBitmap? {
+        val generation = thumbnailGeneration
         val key = pageThumbKey(uri)
         synchronized(noteThumbs) { noteThumbs.get(key)?.let { return it } }
         return withContext(thumbDispatcher) {
             delay(150)
-            if (!isActive) return@withContext null
+            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
             synchronized(noteThumbs) { noteThumbs.get(key)?.let { return@withContext it } }
-            val bmp = thumbCache.load(key) ?: run {
+            val bmp = thumbCache.load(key, generation) ?: run {
                 val u = android.net.Uri.parse(uri)
                 val rendered = if (DocumentKind.ofName(name) == DocumentKind.CANVAS) {
                     val doc = runCatching { appContext.contentResolver.openInputStream(u)?.use { canvasCodec.read(it, imageDir) } }.getOrNull()
@@ -2596,16 +2628,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                         deleteImageTemps(doc)
                     }
                 } ?: return@withContext null
-                rendered.also { thumbCache.store(key, it) }
+                rendered.also { thumbCache.store(key, it, generation) }
             }
-            val img = bmp.asImageBitmap()
-            synchronized(noteThumbs) { noteThumbs.put(key, img) }
-            img
+            publishThumbnail(key, bmp, generation)
         }
     }
 
     /** The first [max] pages of the note at [uri], each [heightPx] tall, for a preview's page strip; empty for a canvas. */
     suspend fun pageStrip(uri: String, name: String, max: Int, heightPx: Int): List<ImageBitmap> {
+        val generation = thumbnailGeneration
         if (DocumentKind.ofName(name) == DocumentKind.CANVAS) return emptyList()
         return withContext(thumbDispatcher) {
             val doc = runCatching {
@@ -2615,9 +2646,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 val vs = viewSettingsFor(uri)
                 val filter = pdfPageFilterFor(vs)
                 (0 until minOf(max, doc.pages.size)).mapNotNull { i ->
-                    if (!isActive) return@withContext emptyList()
+                    if (!isActive || !isCurrentThumbnail(generation)) return@withContext emptyList()
                     runCatching { renderDocPage(doc, i, heightPx, filter, vs.rotation) }.getOrNull()?.asImageBitmap()
-                }
+                }.takeIf { isActive && isCurrentThumbnail(generation) } ?: emptyList()
             } finally {
                 doc.pdfFile?.delete()
                 deleteImageTemps(doc)
@@ -2652,6 +2683,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * rather than caching the wrong pixels. Called from [goHome] — never during editing.
      */
     private suspend fun regenerateClosedNoteThumb(uri: String) {
+        val generation = thumbnailGeneration
         val doc = state.document
         // The closing note's own filter + rotation, captured before any swap.
         val filter = pdfPageFilter()
@@ -2659,12 +2691,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         withContext(thumbDispatcher) {
             if (state.document !== doc) return@withContext // a new note was opened; don't cache stale pixels
             val bmp = runCatching { renderDocThumbnailSquare(doc, tilePx, filter, rotation) }.getOrNull() ?: return@withContext
-            thumbCache.store(uri, bmp)
+            thumbCache.store(uri, bmp, generation)
             // The whole-page tile is drawn again the next time it's shown.
             synchronized(noteThumbs) { noteThumbs.remove(pageThumbKey(uri)) }
             thumbCache.remove(pageThumbKey(uri))
-            val img = bmp.asImageBitmap()
-            synchronized(noteThumbs) { noteThumbs.put(uri, img) }
+            publishThumbnail(uri, bmp, generation)
         }
     }
 

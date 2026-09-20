@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -124,8 +125,10 @@ internal fun FilePreview(b: ExplorerBody, e: BrowseEntry, where: String?, action
         }
         if (!landscape && pages > 1) {
             val stripPx = with(LocalDensity.current) { 87.dp.roundToPx() }
-            val strip by produceState<List<ImageBitmap>?>(null, e.documentUri, e.modified) {
-                value = b.editor.pageStrip(e.documentUri, e.name, PREVIEW_PAGES, stripPx)
+            val strip by key(b.editor.thumbnailVersion) {
+                produceState<List<ImageBitmap>?>(null, e.documentUri, e.modified) {
+                    value = b.editor.pageStrip(e.documentUri, e.name, PREVIEW_PAGES, stripPx)
+                }
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(stringResource(R.string.pages), color = palette.textDim.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.4.sp)

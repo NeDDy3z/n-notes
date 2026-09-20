@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -181,14 +182,14 @@ internal fun EntryThumb(editor: Editor, entry: BrowseEntry, shape: ThumbShape, m
 
 /** The top of [entry]'s first page as a square, or with [whole] the page entire; seeded from memory, null until loaded. */
 @Composable
-internal fun rememberThumb(editor: Editor, entry: BrowseEntry, whole: Boolean): ImageBitmap? {
+internal fun rememberThumb(editor: Editor, entry: BrowseEntry, whole: Boolean): ImageBitmap? = key(editor, editor.thumbnailVersion) {
     val thumb by produceState<ImageBitmap?>(
         if (whole) editor.cachedPageThumb(entry.documentUri) else editor.cachedNoteTile(entry.documentUri),
         entry.documentUri, entry.modified, whole,
     ) {
         value = if (whole) editor.pageThumbnail(entry.documentUri, entry.name) else editor.tileThumbnail(entry.documentUri, entry.name)
     }
-    return thumb
+    thumb
 }
 
 /** Width over height of an A4 page upright, and of the landscape frame a canvas is drawn in. */
