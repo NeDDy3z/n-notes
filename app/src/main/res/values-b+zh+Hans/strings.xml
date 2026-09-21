@@ -159,8 +159,8 @@
     <string name="theme_light">浅色</string>
     <string name="theme_oled">OLED</string>
     <string name="pref_colour_palette">调色板</string>
-    <string name="palette_classic">经典强调色</string>
-    <string name="palette_material">Material You</string>
+    <string name="palette_classic">经典</string>
+    <string name="palette_material">Material</string>
     <string name="pref_accent_colour">强调色</string>
     <string name="pref_start_fullscreen">启动时全屏</string>
     <string name="pref_input">输入</string>

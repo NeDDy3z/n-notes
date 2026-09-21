@@ -41,11 +41,11 @@ class MaterialSchemeTest {
     }
 
     @Test fun foregroundPairsRemainReadableAfterPaletteMapping() {
-        for (seed in seeds) for (style in MaterialStyle.entries) {
+        for (seed in seeds) for (style in MaterialStyle.entries) for (surfaceSeed in listOf(null, 0x0000ff, 0xffaa00, 0xffffff, 0x000000)) {
             for (appearance in listOf("light", "dark", "oled")) {
-                val m = MaterialColors.seeded(rgb(seed), appearance != "light", style)
+                val m = MaterialColors.seeded(rgb(seed), appearance != "light", style, surfaceSeed?.let(::rgb))
                 val p = Palette.material(appearance, m)
-                val context = "$seed $style $appearance"
+                val context = "$seed $surfaceSeed $style $appearance"
                 for ((fg, bg) in listOf(p.onAccent to p.accent, p.selectionForeground to p.selectionBackground)) {
                     assertTrue("$context foreground ${contrast(fg, bg)}", contrast(fg, bg) >= 4.45)
                 }
@@ -106,5 +106,41 @@ class MaterialSchemeTest {
 
     @Test fun seedAlphaCannotMakeChromeTransparent() {
         assertEquals(MaterialColors.seeded(rgb(0xff5733), false), MaterialColors.seeded(rgb(0xff5733).copy(a = 0), false))
+    }
+
+    @Test fun matchingDualToneSeedsReproduceSingleToneForEveryStyle() {
+        for (style in MaterialStyle.entries) for (dark in listOf(false, true)) for (seed in seeds) {
+            val colour = rgb(seed)
+            assertEquals(MaterialColors.seeded(colour, dark, style), MaterialColors.seeded(colour, dark, style, colour))
+        }
+    }
+
+    @Test fun dualToneKeepsAccentAndSurfaceFamiliesIndependent() {
+        fun accents(m: MaterialColors) = listOf(
+            m.primary, m.onPrimary, m.primaryContainer, m.onPrimaryContainer,
+            m.secondary, m.onSecondary, m.secondaryContainer, m.onSecondaryContainer,
+            m.tertiary, m.onTertiary, m.tertiaryContainer, m.onTertiaryContainer, m.error,
+        )
+        fun surfaces(m: MaterialColors) = listOf(
+            m.background, m.surface, m.surfaceDim, m.surfaceBright, m.onSurface, m.onSurfaceVariant,
+            m.surfaceContainerLowest, m.surfaceContainerLow, m.surfaceContainer, m.surfaceContainerHigh,
+            m.surfaceContainerHighest, m.outline, m.outlineVariant,
+        )
+        for (style in MaterialStyle.entries) for (dark in listOf(false, true)) {
+            val red = MaterialColors.seeded(rgb(0x800000), dark, style)
+            val blue = MaterialColors.seeded(rgb(0x0000ff), dark, style)
+            val dual = MaterialColors.seeded(rgb(0x800000), dark, style, rgb(0x0000ff))
+            val reverse = MaterialColors.seeded(rgb(0x0000ff), dark, style, rgb(0x800000))
+            assertEquals(accents(red), accents(dual))
+            assertEquals(surfaces(blue), surfaces(dual))
+            assertEquals(accents(blue), accents(reverse))
+            assertEquals(surfaces(red), surfaces(reverse))
+            if (style != MaterialStyle.MONOCHROME && style != MaterialStyle.RAINBOW) {
+                assertNotEquals(surfaces(red), surfaces(dual))
+            } else {
+                assertEquals(red, dual)
+            }
+            assertEquals(dual, MaterialColors.seeded(rgb(0x800000).copy(a = 0), dark, style, rgb(0x0000ff).copy(a = 0)))
+        }
     }
 }

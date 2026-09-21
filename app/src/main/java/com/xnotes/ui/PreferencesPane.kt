@@ -1,5 +1,6 @@
 package com.xnotes.ui
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +78,7 @@ import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.MaterialStyle
+import com.xnotes.settings.MaterialColourMode
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
@@ -84,17 +87,6 @@ import kotlinx.coroutines.delay
 
 private val accentPresets = listOf(
     Rgba(0, 230, 118), Rgba(255, 138, 30), Rgba(255, 77, 77), Rgba(255, 210, 30),
-)
-/** The classic Material accents (500 series), offered as seeds for the material palette. */
-private val materialSeedPresets = listOf(
-    Rgba(244, 67, 54),   // red
-    Rgba(233, 30, 99),   // pink
-    Rgba(156, 39, 176),  // purple
-    Rgba(63, 81, 181),   // indigo
-    Rgba(33, 150, 243),  // blue
-    Rgba(0, 150, 136),   // teal
-    Rgba(76, 175, 80),   // green
-    Rgba(255, 193, 7),   // amber
 )
 internal val pageColorPresets = listOf(
     Rgba(22, 22, 22), Rgba(13, 13, 13), Rgba(255, 255, 255), Rgba(247, 243, 233), Rgba(232, 232, 232),
@@ -238,38 +230,28 @@ fun PreferencesPane(
                 Chip(stringResource(R.string.palette_classic), prefs.paletteStyle == "classic") { update(prefs.withPaletteStyle("classic")) }
                 Chip(stringResource(R.string.palette_material), prefs.paletteStyle == "material") { update(prefs.withPaletteStyle("material")) }
             }
-            FieldLabel(stringResource(R.string.pref_accent_colour))
             if (prefs.paletteStyle == "material") {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    DynamicSeedDot(prefs.materialSeed == null) { update(prefs.copy(materialSeed = null)) }
-                    val colourEnabled = prefs.materialSeed == null || prefs.materialStyle != MaterialStyle.MONOCHROME
-                    materialSeedPresets.forEach { c ->
-                        ColorDot(c.toComposeColor(), prefs.materialSeed == c, enabled = colourEnabled) {
-                            update(prefs.copy(materialSeed = c))
-                        }
+                val systemColours = prefs.materialMode == MaterialColourMode.SYSTEM
+                FieldLabel(stringResource(R.string.material_tone))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip(stringResource(R.string.material_system_colours), systemColours) {
+                        update(prefs.copy(materialMode = MaterialColourMode.SYSTEM))
                     }
-                    ColorPickerDot(
-                        current = prefs.materialSeed,
-                        custom = prefs.materialSeed != null && prefs.materialSeed !in materialSeedPresets,
-                        onPick = { update(prefs.copy(materialSeed = it)) },
-                        dismissOnPick = false,
-                        enabled = colourEnabled,
-                    ) { onDismiss, onPick ->
-                        ColorPickerPopup(prefs.materialSeed ?: prefs.accentColor, emptyList(), onDismiss, onPick)
+                    Chip(stringResource(R.string.material_single_tone), prefs.materialMode == MaterialColourMode.SINGLE) {
+                        update(prefs.copy(materialMode = MaterialColourMode.SINGLE))
+                    }
+                    Chip(stringResource(R.string.material_dual_tone), prefs.materialMode == MaterialColourMode.DUAL) {
+                        update(prefs.copy(materialMode = MaterialColourMode.DUAL))
                     }
                 }
-                if (prefs.materialSeed != null) {
+                if (!systemColours) {
+                    key(prefs.materialMode) { MaterialColourPicker(prefs, ::update) }
                     CustomMaterialControls(prefs, ::update)
-                } else {
-                    Text(
-                        stringResource(if (android.os.Build.VERSION.SDK_INT >= 31) R.string.material_follow_system else R.string.material_system_fallback),
-                        color = palette.textDim.toComposeColor(), fontSize = 12.sp,
-                    )
+                } else if (Build.VERSION.SDK_INT < 31) {
+                    Text(stringResource(R.string.material_system_fallback), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                 }
             } else {
+                FieldLabel(stringResource(R.string.pref_accent_colour))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     accentPresets.forEach { c ->
                         ColorDot(c.toComposeColor(), prefs.accentColor == c) { update(prefs.copy(accentColor = c)) }
@@ -734,7 +716,9 @@ private fun CustomMaterialControls(prefs: Preferences, update: (Preferences) -> 
     FieldLabel(stringResource(R.string.material_style))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         styles.forEach { (style, label) ->
-            Chip(stringResource(label), prefs.materialStyle == style) { update(prefs.copy(materialStyle = style)) }
+            Chip(stringResource(label), prefs.materialStyle == style) {
+                update(prefs.copy(materialStyle = style))
+            }
         }
     }
     val description = when (prefs.materialStyle) {
@@ -790,32 +774,6 @@ internal fun ColorDot(color: Color, selected: Boolean, enabled: Boolean = true, 
             .background(color)
             .border(1.dp, palette.border.toComposeColor(), CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
-    )
-}
-
-/** A soft material sweep stands in for whatever colours the system derives from the wallpaper. */
-private val materialSweepBrush = Brush.sweepGradient(
-    listOf(
-        Color(0xFF2196F3), Color(0xFF9C27B0), Color(0xFFF44336),
-        Color(0xFFFFC107), Color(0xFF4CAF50), Color(0xFF2196F3),
-    ),
-)
-
-/** The dynamic (wallpaper-following) material seed choice, first in the seed row. */
-@Composable
-private fun DynamicSeedDot(selected: Boolean, onClick: () -> Unit) {
-    val palette = LocalPalette.current
-    val label = stringResource(R.string.material_follow_system)
-    Box(
-        Modifier
-            .size(30.dp)
-            .semantics { this.selected = selected; contentDescription = label }
-            .then(if (selected) Modifier.border(2.dp, palette.accent.toComposeColor(), CircleShape) else Modifier)
-            .padding(4.dp)
-            .clip(CircleShape)
-            .background(materialSweepBrush)
-            .border(1.dp, palette.border.toComposeColor(), CircleShape)
-            .clickable(onClick = onClick),
     )
 }
 

@@ -78,6 +78,7 @@ import com.xnotes.platform.AndroidTextMeasurer
 import com.xnotes.settings.ExplorerView
 import com.xnotes.settings.LiveSettings
 import com.xnotes.settings.Preferences
+import com.xnotes.settings.MaterialColourMode
 import com.xnotes.settings.Settings
 import com.xnotes.settings.SettingsRepository
 import com.xnotes.ui.theme.MaterialColors
@@ -1630,11 +1631,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val appearance = resolvedAppearance(p)
         val dark = appearance != "light"
         if (p.paletteStyle == "material") {
-            val m = p.materialSeed?.let {
-                MaterialColors.seeded(it, dark, p.materialStyle)
+            val m = when (p.materialMode) {
+                MaterialColourMode.DUAL -> MaterialColors.seeded(p.materialDualSeed, dark, p.materialStyle, p.materialSurfaceSeed)
+                MaterialColourMode.SINGLE -> MaterialColors.seeded(p.materialSingleSeed, dark, p.materialStyle)
+                MaterialColourMode.SYSTEM -> dynamicMaterialColors(appContext, dark = dark)
+                    ?: MaterialColors.seeded(p.accentColor, dark = dark)
             }
-                ?: dynamicMaterialColors(appContext, dark = dark)
-                ?: MaterialColors.seeded(p.accentColor, dark = dark)
             return Palette.material(appearance, m)
         }
         return Palette.forAppearance(appearance, p.accentColor)

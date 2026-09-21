@@ -13,14 +13,16 @@ import org.json.JSONObject
 data class Preferences(
     val uiAppearance: String = "system", // "system" (follows OS dark/light) | "dark" | "light" | "oled"
     val accentColor: Rgba = DEFAULT_ACCENT,
-    /** Chrome palette per appearance mode: "classic" (accent-derived) | "material" (Material You). */
+    /** Chrome palette per appearance mode: "classic" (accent-derived) | "material". */
     val systemPaletteStyle: String = "material",
     val darkPaletteStyle: String = "material",
     val lightPaletteStyle: String = "material",
     val oledPaletteStyle: String = "classic",
-    /** Material palette seed colour; null (default) follows the system dynamic colours. */
-    val materialSeed: Rgba? = null,
+    val materialMode: MaterialColourMode = MaterialColourMode.SYSTEM,
+    val materialSingleSeed: Rgba = DEFAULT_MATERIAL_SINGLE,
+    val materialDualSeed: Rgba = DEFAULT_MATERIAL_DUAL,
     val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
+    val materialSurfaceSeed: Rgba = DEFAULT_MATERIAL_SURFACE,
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
     val pageTemplatePdf: String? = null,
@@ -174,8 +176,19 @@ data class Preferences(
         .put("max_cache_resolution", maxCacheResolution)
         .put("disable_front_buffering", disableFrontBuffering)
         .apply {
-            materialSeed?.let { put("material_seed", Rgba.toHex(it)) }
+            if (materialMode != MaterialColourMode.SYSTEM) put("material_mode", materialMode.id)
+            if (materialSingleSeed != DEFAULT_MATERIAL_SINGLE) put("material_single_seed", Rgba.toHex(materialSingleSeed))
+            if (materialDualSeed != DEFAULT_MATERIAL_DUAL) put("material_dual_seed", Rgba.toHex(materialDualSeed))
+            // Keep the active colours readable by versions with a shared accent seed.
+            when (materialMode) {
+                MaterialColourMode.SYSTEM -> Unit
+                MaterialColourMode.SINGLE -> put("material_seed", Rgba.toHex(materialSingleSeed))
+                MaterialColourMode.DUAL -> put("material_seed", Rgba.toHex(materialDualSeed)).put("material_dual_tone", true)
+            }
             if (materialStyle != MaterialStyle.TONAL_SPOT) put("material_style", materialStyle.id)
+            if (materialMode == MaterialColourMode.DUAL || materialSurfaceSeed != DEFAULT_MATERIAL_SURFACE) {
+                put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
+            }
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
             codeThemeName?.let { put("code_theme_name", it) }
@@ -198,6 +211,9 @@ data class Preferences(
 
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118, 255)
+        val DEFAULT_MATERIAL_SINGLE = Rgba(244, 67, 54, 255)
+        val DEFAULT_MATERIAL_DUAL = Rgba(154, 124, 66, 255)
+        val DEFAULT_MATERIAL_SURFACE = Rgba(61, 117, 230, 255)
 
         /** [trashDays] for keeping deleted items until Trash is emptied by hand. */
         const val TRASH_FOREVER = -1
@@ -220,6 +236,14 @@ data class Preferences(
             fun tapAction(key: String) = o.optString(key, "none").let { if (it in tapActions) it else "none" }
             fun paletteStyle(key: String, default: String) =
                 o.optString(key, default).let { if (it == "classic" || it == "material") it else default }
+            val legacySeed = Rgba.fromHex(o.optString("material_seed"))
+            val legacyDual = o.optBoolean("material_dual_tone", false)
+            val materialMode = MaterialColourMode.fromId(o.optString("material_mode")) ?: when {
+                legacyDual -> MaterialColourMode.DUAL
+                legacySeed != null -> MaterialColourMode.SINGLE
+                else -> MaterialColourMode.SYSTEM
+            }
+            val legacyDualAccent = legacySeed ?: Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT
             return Preferences(
                 uiAppearance = appearance,
                 accentColor = Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT,
@@ -227,8 +251,14 @@ data class Preferences(
                 darkPaletteStyle = paletteStyle("dark_palette_style", "material"),
                 lightPaletteStyle = paletteStyle("light_palette_style", "material"),
                 oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
-                materialSeed = Rgba.fromHex(o.optString("material_seed")),
+                materialMode = materialMode,
+                materialSingleSeed = Rgba.fromHex(o.optString("material_single_seed"))
+                    ?: legacySeed?.takeIf { !legacyDual } ?: DEFAULT_MATERIAL_SINGLE,
+                materialDualSeed = Rgba.fromHex(o.optString("material_dual_seed"))
+                    ?: if (legacyDual) legacyDualAccent else DEFAULT_MATERIAL_DUAL,
                 materialStyle = MaterialStyle.fromId(o.optString("material_style")),
+                materialSurfaceSeed = Rgba.fromHex(o.optString("material_surface_seed"))
+                    ?: if (legacyDual && !o.has("material_mode")) Rgba(33, 150, 243, 255) else DEFAULT_MATERIAL_SURFACE,
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },
