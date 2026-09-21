@@ -9,6 +9,7 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import com.xnotes.R
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.xnotes.core.geometry.Pt
@@ -109,6 +110,8 @@ class CanvasView @JvmOverloads constructor(
     // Reused paints for the elastic "pull to add page" badge, so onDraw allocates nothing.
     private val overscrollStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val overscrollText = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val pullLabel = context.getString(R.string.pull_to_add_page)
+    private val releaseLabel = context.getString(R.string.release_to_add_page)
     private val overscrollArc = RectF()
 
     /**
@@ -669,7 +672,7 @@ class CanvasView @JvmOverloads constructor(
         overscrollText.color = if (ready) accent else dim
         overscrollText.alpha = (235 * alpha).toInt()
         overscrollText.textSize = 11f * d
-        canvas.drawText(if (ready) "Release to add page" else "Pull to add page", cx, cy + radius + 16f * d, overscrollText)
+        canvas.drawText(if (ready) releaseLabel else pullLabel, cx, cy + radius + 16f * d, overscrollText)
     }
 
     /** A centred "+" glyph (two rounded strokes) for the overscroll badge. */

@@ -52,6 +52,7 @@ class MaterialPaletteTest {
     @Test fun seededDarkSurfacesStayDarkWithPastelPrimary() {
         val m = MaterialColors.seeded(seed, dark = true)
         val p = Palette.materialDark(m)
+        assertEquals(m.surfaceContainerLow, p.paper)
         assertTrue(luminance(p.bg) < 0.1)
         assertTrue(luminance(p.paper) < 0.2)
         assertTrue(luminance(p.accent) > 0.5)

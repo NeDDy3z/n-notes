@@ -101,6 +101,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         j.name("format").value(FORMAT)
         j.name("version").value(VERSION)
         j.name("writer").value(WRITER)
+        doc.created?.let { j.name("created").value(java.time.Instant.ofEpochMilli(it).toString()) }
         j.name("dpi").value(doc.dpi)
         writeBackground(j, doc.background)
         // The last view and the waypoints are written only when there is something to say.
@@ -313,6 +314,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         if (!m.formatOk) throw XCanvasFormatException(NOT_XCANVAS)
 
         val doc = InfiniteDocument(dpi = m.dpi)
+        doc.created = m.created
         doc.background = m.background
         doc.lastView = m.view
         doc.waypoints.addAll(m.waypoints)
@@ -330,9 +332,48 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         return doc
     }
 
+    /**
+     * A canvas's created time, read from [ch] through the zip's central directory straight to the head of
+     * the manifest, so no item or image is read. Null when [ch] is not a canvas it can read that way, for
+     * [peek] from a stream instead.
+     */
+    fun peek(ch: java.nio.channels.FileChannel): CanvasPeek? =
+        runCatching { ZipTail.readEntry(ch, "manifest.json") { peekManifest(it) } }.getOrNull()
+
+    /** [peek] for a canvas that only comes as a stream. */
+    fun peek(input: InputStream): CanvasPeek? = runCatching {
+        ZipInputStream(input).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                if (entry.name == "manifest.json") return@runCatching peekManifest(zis)
+                entry = zis.nextEntry
+            }
+            null
+        }
+    }.getOrNull()
+
+    /** The header fields of manifest [json], stopping at the items; null when it isn't a canvas's. */
+    fun peekManifest(json: InputStream): CanvasPeek? {
+        val p = JsonPull(InputStreamReader(json, Charsets.UTF_8))
+        var isCanvas = false
+        var created: Long? = null
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "format" -> isCanvas = stringOr(p, "") == FORMAT
+                "created" -> created = stringOrNull(p)?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+                // The writer puts every field the peek wants ahead of the items, so the rest can go unread.
+                "items" -> break
+                else -> p.skipValue()
+            }
+        }
+        return if (isCanvas) CanvasPeek(created) else null
+    }
+
     private class ParsedManifest {
         var formatOk = false
         var writer = 0
+        var created: Long? = null
         var dpi = PageSize.DEFAULT_DPI
         var background = CanvasBackground()
         var view: Waypoint? = null
@@ -363,6 +404,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
                     m.formatOk = true
                 }
                 "writer" -> m.writer = intOr(p, 0)
+                "created" -> m.created = stringOrNull(p)?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
                 "dpi" -> m.dpi = intOr(p, PageSize.DEFAULT_DPI)
                 "background" -> m.background = parseBackground(p)
                 "view" -> m.view = parseWaypoint(p, named = false)
@@ -791,6 +833,9 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         private const val NOT_XCANVAS = "Not an xnotes canvas"
     }
 }
+
+/** What the explorer reads from a canvas without loading it. */
+class CanvasPeek(val created: Long?)
 
 private fun ZipOutputStream.putStored(name: String, file: File, isCancelled: () -> Boolean) {
     val buf = ByteArray(64 * 1024)

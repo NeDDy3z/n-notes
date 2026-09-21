@@ -218,6 +218,7 @@ class DocumentCodec(
         j.name("format").value(FORMAT)
         j.name("version").value(VERSION)
         j.name("writer").value(WRITER)
+        doc.created?.let { j.name("created").value(java.time.Instant.ofEpochMilli(it).toString()) }
         j.name("dpi").value(doc.dpi)
         j.name("has_pdf").value(doc.pdfFile != null)
         j.name("bookmarks").beginArray()
@@ -512,6 +513,7 @@ class DocumentCodec(
         if (!m.formatOk) throw XNoteFormatException(NOT_XNOTE)
 
         val doc = Document(dpi = m.dpi)
+        doc.created = m.created
         doc.style = m.style
         doc.margins = m.margins
 
@@ -569,6 +571,7 @@ class DocumentCodec(
     private class ParsedManifest {
         var formatOk = false
         var writer = 0
+        var created: Long? = null
         var dpi = PageSize.DEFAULT_DPI
         var hasPdf = false
         var style = PageStyle()
@@ -591,6 +594,53 @@ class DocumentCodec(
         val link: String?,
     )
 
+    /**
+     * A note's page count, PDF flag and created time, read from [ch] through the zip's central directory
+     * straight to the manifest, so neither the embedded PDF nor any image is read. Null when [ch] is not a
+     * note it can read that way (a pipe from a cloud provider, say), for [peek] from a stream instead.
+     */
+    fun peek(ch: java.nio.channels.FileChannel): NotePeek? =
+        runCatching { ZipTail.readEntry(ch, "manifest.json") { peekManifest(it) } }.getOrNull()
+
+    /** [peek] for a note that only comes as a stream: reads through to the manifest, skipping what comes before it. */
+    fun peek(input: InputStream): NotePeek? = runCatching {
+        ZipInputStream(input).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                if (entry.name == "manifest.json") return@runCatching peekManifest(zis)
+                entry = zis.nextEntry
+            }
+            null
+        }
+    }.getOrNull()
+
+    /** The header fields and the page count of manifest [json], skipping every page's contents; null when it isn't a note's. */
+    fun peekManifest(json: InputStream): NotePeek? {
+        val p = JsonPull(InputStreamReader(json, Charsets.UTF_8))
+        var isNote = false
+        var hasPdf = false
+        var created: Long? = null
+        var pages = 0
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "format" -> isNote = stringOr(p, "") == FORMAT
+                "created" -> created = stringOrNull(p)?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+                "has_pdf" -> hasPdf = boolOr(p, false)
+                "pages" -> {
+                    if (p.peek() != JsonPull.Token.BEGIN_ARRAY) { p.skipValue(); continue }
+                    p.beginArray()
+                    while (p.hasNext()) { p.skipValue(); pages++ }
+                    p.endArray()
+                    // The writer puts every field the peek wants ahead of the pages, so the rest can go unread.
+                    if (isNote) break
+                }
+                else -> p.skipValue()
+            }
+        }
+        return if (isNote) NotePeek(pages, hasPdf, created) else null
+    }
+
     private fun parseManifest(p: JsonPull): ParsedManifest {
         val m = ParsedManifest()
         p.beginObject()
@@ -601,6 +651,7 @@ class DocumentCodec(
                     m.formatOk = true
                 }
                 "writer" -> m.writer = intOr(p, 0)
+                "created" -> m.created = stringOrNull(p)?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
                 "dpi" -> m.dpi = intOr(p, PageSize.DEFAULT_DPI)
                 "has_pdf" -> m.hasPdf = boolOr(p, false)
                 "style" -> m.style = parseStyle(p)
@@ -1159,6 +1210,9 @@ class DocumentCodec(
         private const val NOT_XNOTE = "Not an xnotes document"
     }
 }
+
+/** What the explorer shows about a note without loading it. */
+class NotePeek(val pages: Int, val hasPdf: Boolean, val created: Long?)
 
 private fun ZipOutputStream.putDeflated(name: String, data: ByteArray) {
     val entry = ZipEntry(name).apply { method = ZipEntry.DEFLATED }

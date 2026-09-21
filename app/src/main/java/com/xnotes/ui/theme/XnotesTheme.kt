@@ -1,5 +1,6 @@
 package com.xnotes.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -16,6 +17,13 @@ val LocalPalette = staticCompositionLocalOf { Palette.dark() }
 
 @Composable
 fun XnotesTheme(palette: Palette, content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalPalette provides palette) {
+        MaterialTheme(colorScheme = palette.composeColorScheme(), content = content)
+    }
+}
+
+internal fun Palette.composeColorScheme(): ColorScheme {
+    val palette = this
     val accent = palette.accent.toComposeColor()
     // The surfaceContainer* roles must come from the palette too: components read them
     // directly (menus draw surfaceContainer), and the darkColorScheme()/lightColorScheme()
@@ -61,7 +69,40 @@ fun XnotesTheme(palette: Palette, content: @Composable () -> Unit) {
             surfaceContainerHighest = palette.bg.toComposeColor(),
         )
     }
-    CompositionLocalProvider(LocalPalette provides palette) {
-        MaterialTheme(colorScheme = scheme, content = content)
-    }
+    val m = materialColors ?: return scheme
+    return scheme.copy(
+        onPrimary = m.onPrimary.toComposeColor(),
+        primaryContainer = m.primaryContainer.toComposeColor(),
+        onPrimaryContainer = m.onPrimaryContainer.toComposeColor(),
+        inversePrimary = m.inversePrimary.toComposeColor(),
+        secondary = m.secondary.toComposeColor(),
+        onSecondary = m.onSecondary.toComposeColor(),
+        secondaryContainer = m.secondaryContainer.toComposeColor(),
+        onSecondaryContainer = m.onSecondaryContainer.toComposeColor(),
+        tertiary = m.tertiary.toComposeColor(),
+        onTertiary = m.onTertiary.toComposeColor(),
+        tertiaryContainer = m.tertiaryContainer.toComposeColor(),
+        onTertiaryContainer = m.onTertiaryContainer.toComposeColor(),
+        surfaceTint = m.surfaceTint.toComposeColor(),
+        inverseSurface = m.inverseSurface.toComposeColor(),
+        inverseOnSurface = m.inverseOnSurface.toComposeColor(),
+        error = m.error.toComposeColor(),
+        onError = m.onError.toComposeColor(),
+        errorContainer = m.errorContainer.toComposeColor(),
+        onErrorContainer = m.onErrorContainer.toComposeColor(),
+        outlineVariant = m.outlineVariant.toComposeColor(),
+        scrim = m.scrim.toComposeColor(),
+        primaryFixed = m.primaryFixed.toComposeColor(),
+        primaryFixedDim = m.primaryFixedDim.toComposeColor(),
+        onPrimaryFixed = m.onPrimaryFixed.toComposeColor(),
+        onPrimaryFixedVariant = m.onPrimaryFixedVariant.toComposeColor(),
+        secondaryFixed = m.secondaryFixed.toComposeColor(),
+        secondaryFixedDim = m.secondaryFixedDim.toComposeColor(),
+        onSecondaryFixed = m.onSecondaryFixed.toComposeColor(),
+        onSecondaryFixedVariant = m.onSecondaryFixedVariant.toComposeColor(),
+        tertiaryFixed = m.tertiaryFixed.toComposeColor(),
+        tertiaryFixedDim = m.tertiaryFixedDim.toComposeColor(),
+        onTertiaryFixed = m.onTertiaryFixed.toComposeColor(),
+        onTertiaryFixedVariant = m.onTertiaryFixedVariant.toComposeColor(),
+    )
 }

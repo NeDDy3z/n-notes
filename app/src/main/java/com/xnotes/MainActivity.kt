@@ -26,7 +26,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,7 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,6 +61,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -78,6 +82,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.IntentCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.xnotes.R
 import com.xnotes.ui.CanvasToastPill
 import com.xnotes.ui.Editor
 import com.xnotes.ui.Toolbar
@@ -263,8 +268,8 @@ private fun EditorScreen(
     var pendingSaveCopyUri by remember { mutableStateOf<String?>(null) }
     // A finished PDF render awaiting a SAF "Save as" destination (open-note / file / pages export).
     var pendingExportTemp by remember { mutableStateOf<java.io.File?>(null) }
-    // In-flight PDF render: (pagesDone, totalPages) drives the progress dialog; null hides it.
-    var exportProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    // In-flight PDF render; drives the progress dialog, null hides it.
+    var exportProgress by remember { mutableStateOf<ExportProgress?>(null) }
     // The running export's coroutine and its own cancel flag. Each export gets a fresh flag so a new
     // export can abort the previous one (set its flag, then join it) without un-cancelling itself.
     var exportJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -275,15 +280,6 @@ private fun EditorScreen(
     val resolver = context.contentResolver
     val rwFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
-    // "Open…" remembers the picked .xnote and shows the name dialog at once; it's copied into the folder at Save.
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { u ->
-            val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Note")
-            editor.requestImport(com.xnotes.ui.ImportKind.OPEN, stem, u.toString())
-            backstageView = com.xnotes.ui.BackstageView.HOME
-            editor.goHomeAll() // land on backstage to name/place the pending import
-        }
-    }
     // Which pane a "Save as" writes: the focused one at the moment the picker opened.
     var savePane by remember { mutableStateOf(editor) }
     val createLauncher = rememberLauncherForActivityResult(
@@ -294,7 +290,7 @@ private fun EditorScreen(
             val name = displayNameOf(resolver, it)
             runCatching { resolver.openOutputStream(it, "wt")?.use { o -> savePane.save(o, it.toString(), name) } }
                 .onSuccess { val p = pendingAfterSave; pendingAfterSave = null; p?.invoke() }
-                .onFailure { editor.message = "Could not save the note."; pendingAfterSave = null }
+                .onFailure { editor.message = context.getString(R.string.err_save_note); pendingAfterSave = null }
         }
     }
 
@@ -339,20 +335,20 @@ private fun EditorScreen(
         if (temp != null) {
             if (uri != null) {
                 val ok = runCatching { resolver.openOutputStream(uri)?.use { o -> temp.inputStream().use { it.copyTo(o) } } != null }.getOrDefault(false)
-                editor.message = if (ok) "Exported to PDF." else "Could not export to PDF."
+                editor.message = if (ok) context.getString(R.string.exported_pdf) else context.getString(R.string.err_export_pdf)
             }
             temp.delete() // discard the temp whether saved or the picker was dismissed
         }
     }
 
-    // Save a copy of an explorer file (.xnote) elsewhere.
+    // Save a copy of an explorer file (a note or a canvas) elsewhere.
     val saveCopyLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
         val src = pendingSaveCopyUri; pendingSaveCopyUri = null
         if (uri != null && src != null) {
             runCatching { resolver.openOutputStream(uri)?.use { o -> editor.copyFileTo(src, o) } }
-                .onFailure { editor.message = "Could not save a copy." }
+                .onFailure { editor.message = context.getString(R.string.err_save_copy) }
         }
     }
 
@@ -368,7 +364,7 @@ private fun EditorScreen(
                     val png = pending.editor.pageImagePng(index) ?: return@runCatching false
                     resolver.openOutputStream(uri)?.use { it.write(png) } != null
                 }.getOrDefault(false)
-                if (!ok) editor.message = "Could not save the image."
+                if (!ok) editor.message = context.getString(R.string.err_save_image)
             }
         }
     }
@@ -395,7 +391,7 @@ private fun EditorScreen(
                     }
                     n
                 }.getOrDefault(0)
-                editor.message = if (saved > 0) "Saved $saved image${if (saved == 1) "" else "s"}." else "Could not save the images."
+                editor.message = if (saved > 0) context.resources.getQuantityString(R.plurals.saved_images, saved, saved) else context.getString(R.string.err_save_images)
             }
         }
     }
@@ -405,7 +401,7 @@ private fun EditorScreen(
         if (uri != null && pending != null) {
             runCatching {
                 resolver.openInputStream(uri)?.use { s -> pending.editor.insertImageAt(s.readBytes(), pending.at) }
-            }.onFailure { editor.message = "Could not read the image." }
+            }.onFailure { editor.message = context.getString(R.string.err_read_image) }
         }
     }
 
@@ -413,7 +409,7 @@ private fun EditorScreen(
     val addStickersLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { uri ->
             runCatching { resolver.openInputStream(uri)?.use { s -> editor.addSticker(s.readBytes()) } }
-                .onFailure { editor.message = "Could not read the image." }
+                .onFailure { editor.message = context.getString(R.string.err_read_image) }
         }
     }
 
@@ -423,7 +419,7 @@ private fun EditorScreen(
             runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }
                 .getOrNull()
                 ?.let { editor.importCodeTheme(it, displayNameOf(resolver, uri)) }
-                ?: run { editor.message = "Could not read the file." }
+                ?: run { editor.message = context.getString(R.string.err_read_file) }
         }
     }
 
@@ -433,7 +429,7 @@ private fun EditorScreen(
             runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }
                 .getOrNull()
                 ?.let { editor.importFont(it, displayNameOf(resolver, uri)) }
-                ?: run { editor.message = "Could not read the file." }
+                ?: run { editor.message = context.getString(R.string.err_read_file) }
         }
     }
 
@@ -521,13 +517,25 @@ private fun EditorScreen(
             // A file that would not open leaves no half-built pane behind; the other stays as it is.
             if (!second.noteOpen) {
                 editor.abandonSecondary()
-                editor.message = "Could not open the second note."
+                editor.message = context.getString(R.string.err_open_second)
             }
         }
     }
 
     fun stemOf(uriStr: String): String =
         com.xnotes.core.util.Paths.stem(displayNameOf(resolver, Uri.parse(uriStr)) ?: "Note")
+
+    /**
+     * The kind of the stored document at [uriStr], read from its file name, falling back to a note
+     * for anything unrecognizable. Every place that has to name a copy of that file goes through
+     * here: spelling an extension at the call site is how an `.xcanvas` ended up shared as `.xnote`.
+     */
+    fun kindOf(uriStr: String): com.xnotes.core.util.DocumentKind =
+        com.xnotes.core.util.DocumentKind.ofName(displayNameOf(resolver, Uri.parse(uriStr)).orEmpty())
+            ?: com.xnotes.core.util.DocumentKind.NOTE
+
+    /** What the export dialog counts for the stored document at [uriStr]: a note's pages, a canvas's items. */
+    fun countingOf(uriStr: String): String = ExportProgress.countingFor(kindOf(uriStr))
 
     // Render a PDF off the main thread into a temp file behind a cancellable progress dialog;
     // only once it finishes does [onReady] run — opening the SAF picker or a share sheet.
@@ -538,6 +546,7 @@ private fun EditorScreen(
     fun runPdfExport(
         stem: String,
         shareDir: Boolean,
+        counting: String = "page",
         render: (java.io.OutputStream, (Int, Int) -> Unit, () -> Boolean) -> Unit,
         onReady: (java.io.File) -> Unit,
     ) {
@@ -545,7 +554,7 @@ private fun EditorScreen(
         val prevCancel = exportCancel
         val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
         exportCancel = cancel // the dialog's Cancel flips THIS export's flag
-        exportProgress = 0 to 0 // show the dialog at once; the render fills in the real total
+        exportProgress = ExportProgress(0, 0, counting) // show the dialog at once; the render fills in the real total
         exportJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             // Abort any still-running previous export (its write stream throws on the next buffer) and
             // wait for it to fully unwind before we touch the shared temp dir — no overlapping saves.
@@ -558,7 +567,7 @@ private fun EditorScreen(
                 java.io.FileOutputStream(temp).use { fo ->
                     // Abort the (otherwise uninterruptible) PdfBox save the moment Cancel is tapped.
                     val o = CancellableOutputStream(fo) { cancel.get() }
-                    render(o, { done, total -> if (!cancel.get()) exportProgress = done to total }, { cancel.get() })
+                    render(o, { done, total -> if (!cancel.get()) exportProgress = ExportProgress(done, total, counting) }, { cancel.get() })
                 }
             }.isSuccess
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -566,7 +575,7 @@ private fun EditorScreen(
                 when {
                     cancel.get() -> temp.delete()
                     ok -> onReady(temp)
-                    else -> { temp.delete(); if (exportCancel === cancel) editor.message = "Could not export to PDF." }
+                    else -> { temp.delete(); if (exportCancel === cancel) editor.message = context.getString(R.string.err_export_pdf) }
                 }
             }
         }
@@ -579,25 +588,58 @@ private fun EditorScreen(
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, "Share $stem"))
+        context.startActivity(Intent.createChooser(send, context.getString(R.string.share_named, stem)))
     }
 
     fun shareFile(uriStr: String, asPdf: Boolean) {
         val stem = stemOf(uriStr)
         if (asPdf) {
             // Render with progress, then share the finished PDF (writes into cache/share for FileProvider).
-            runPdfExport(stem, shareDir = true,
+            runPdfExport(stem, shareDir = true, counting = countingOf(uriStr),
                 render = { o, prog, cancel -> editor.exportFileToPdf(uriStr, o, prog, cancel) },
-                onReady = { temp -> runCatching { launchShare(temp, stem, "application/pdf") }.onFailure { editor.message = "Could not share the note." } })
+                onReady = { temp -> runCatching { launchShare(temp, stem, "application/pdf") }.onFailure { editor.message = context.getString(R.string.err_share_note) } })
         } else {
-            // A plain .xnote share is just a fast byte copy — no render, no dialog needed.
+            // Sharing the bundle itself is just a fast byte copy — no render, no dialog needed. It
+            // keeps the source's own extension, so a canvas is shared as a canvas.
             runCatching {
                 val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() } // keep only the file we're about to share
-                val file = java.io.File(dir, "$stem.xnote")
+                val file = java.io.File(dir, "$stem${kindOf(uriStr).suffix}")
                 java.io.FileOutputStream(file).use { o -> editor.copyFileTo(uriStr, o) }
                 launchShare(file, stem, "application/octet-stream")
-            }.onFailure { editor.message = "Could not share the note." }
+            }.onFailure { editor.message = context.getString(R.string.err_share_note) }
+        }
+    }
+
+    // Share several stored files at once, each as the bundle it is (no PDF render for a batch).
+    fun shareFiles(uris: List<String>) {
+        if (uris.isEmpty()) return
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val intent = runCatching {
+                val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+                dir.listFiles()?.forEach { it.delete() }
+                val auth = "${context.packageName}.fileprovider"
+                val taken = HashSet<String>()
+                val out = ArrayList<Uri>()
+                for (u in uris) {
+                    val stem = stemOf(u)
+                    val suffix = kindOf(u).suffix
+                    var name = "$stem$suffix"
+                    var n = 2
+                    while (!taken.add(name.lowercase())) name = "$stem (${n++})$suffix"
+                    val file = java.io.File(dir, name)
+                    java.io.FileOutputStream(file).use { o -> editor.copyFileTo(u, o) }
+                    out.add(androidx.core.content.FileProvider.getUriForFile(context, auth, file))
+                }
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "application/octet-stream"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, out)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }.getOrNull()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (intent != null) context.startActivity(Intent.createChooser(intent, context.resources.getQuantityString(R.plurals.share_n_notes, uris.size, uris.size))) else editor.message = context.getString(R.string.err_share_notes)
+            }
         }
     }
 
@@ -608,7 +650,7 @@ private fun EditorScreen(
         if (asPdf) {
             runPdfExport(stem, shareDir = true,
                 render = { o, prog, cancel -> from.exportPagesToPdf(pages, o, prog, cancel) },
-                onReady = { temp -> runCatching { launchShare(temp, stem, "application/pdf") }.onFailure { editor.message = "Could not share the pages." } })
+                onReady = { temp -> runCatching { launchShare(temp, stem, "application/pdf") }.onFailure { editor.message = context.getString(R.string.err_share_pages) } })
             return
         }
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -630,7 +672,7 @@ private fun EditorScreen(
                 }
             }.getOrNull()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                if (intent != null) context.startActivity(Intent.createChooser(intent, "Share $stem")) else editor.message = "Could not share the pages."
+                if (intent != null) context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_named, stem))) else editor.message = context.getString(R.string.err_share_pages)
             }
         }
     }
@@ -654,10 +696,7 @@ private fun EditorScreen(
     editor.keyActions = remember {
         Editor.KeyActions(
             newNote = { guarded { editor.active.newNote() } },
-            open = {
-                if (editor.browseRoot != null) openLauncher.launch(arrayOf("*/*"))
-                else { backstageView = com.xnotes.ui.BackstageView.HOME; guardedAll { editor.goHomeAll() } }
-            },
+            open = { backstageView = com.xnotes.ui.BackstageView.HOME; guardedAll { editor.goHomeAll() } },
             save = { saveOrPrompt() },
             saveAs = { launchSaveAs(editor.active) },
             exportPdf = {
@@ -673,7 +712,13 @@ private fun EditorScreen(
 
     LaunchedEffect(editor.message) {
         editor.message?.let {
-            snackbar.showSnackbar(it)
+            val action = editor.messageAction
+            editor.messageAction = null
+            val result = snackbar.showSnackbar(
+                it, actionLabel = action?.first,
+                duration = if (action != null) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short,
+            )
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) action?.second?.invoke()
             editor.message = null
         }
     }
@@ -704,11 +749,14 @@ private fun EditorScreen(
     // In fullscreen the window runs edge to edge and the swipe-in system bars are transient, so
     // zero the content insets: otherwise their inset animates 0 -> N -> 0 and resizes the canvas,
     // forcing a re-render every time the bars hide. Non-fullscreen keeps the normal bar insets.
-    // The IME inset joins both cases so a DOCKED keyboard lifts the content (the bottom format
-    // bar rides right above it); a floating keyboard reports no inset and the bar stays at the
-    // bottom. Insets are consumed below so inner imePadding fields don't pad a second time.
-    val contentInsets = if (fullscreen) WindowInsets.ime else WindowInsets.systemBars.union(WindowInsets.ime)
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }, contentWindowInsets = contentInsets) { inner ->
+    // A DOCKED keyboard lifts only the open panes (the bottom format bar rides right above it) and
+    // the snackbar; Home stays put and the keyboard slides over it. A floating keyboard reports no
+    // inset. Insets are consumed below so inner imePadding only adds what the bars don't cover.
+    val contentInsets = if (fullscreen) WindowInsets(0, 0, 0, 0) else WindowInsets.systemBars
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar, Modifier.windowInsetsPadding(WindowInsets.ime.exclude(contentInsets))) },
+        contentWindowInsets = contentInsets,
+    ) { inner ->
         Box(modifier = Modifier.fillMaxSize().padding(inner).consumeWindowInsets(contentInsets)) {
             // BASE LAYER: backstage is the root of the stack — always present underneath.
             com.xnotes.ui.Backstage(
@@ -718,18 +766,21 @@ private fun EditorScreen(
                 onExitApp = { (context as? android.app.Activity)?.finish() },
                 onImportCodeTheme = { importCodeThemeLauncher.launch(arrayOf("*/*")) },
                 onImportFont = { importFontLauncher.launch(arrayOf("*/*")) },
-                onOpenSystem = { openLauncher.launch(arrayOf("*/*")) },
                 onImportPdf = { importPdfLauncher.launch(importMimeTypes) },
                 onOpenFile = { uri -> guarded(editor) { openTreeFile(uri) } },
                 onPickRoot = { pickRootLauncher.launch(null) },
                 onShareFile = { uri -> pendingShareUri = uri; showShareChooser = true },
-                onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}.xnote") },
+                onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}${kindOf(uri).suffix}") },
                 onExportFilePdf = { uri ->
-                    runPdfExport(stemOf(uri), shareDir = false,
+                    runPdfExport(stemOf(uri), shareDir = false, counting = countingOf(uri),
                         render = { o, prog, cancel -> editor.exportFileToPdf(uri, o, prog, cancel) },
                         onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${stemOf(uri)}.pdf") })
                 },
                 onOpenSplit = { first, second -> guardedAll { openSplit(first, second) } },
+                onShareFiles = { uris -> shareFiles(uris) },
+                onOpenBeside = { uri ->
+                    editor.currentUri?.takeIf { !editor.isSameDocument(it, uri) }?.let { first -> { guardedAll { openSplit(first, uri) } } }
+                },
             )
 
             // TOP LAYER: the open panes (toolbar + canvas each), pushed over backstage. Back acts on
@@ -772,14 +823,18 @@ private fun EditorScreen(
     }
     if (showShareChooser) {
         val shareUri = pendingShareUri
+        // Remembered because resolving the kind is a SAF query, and this is composition.
+        val shareSuffix = remember(shareUri) {
+            shareUri?.let { kindOf(it).suffix } ?: com.xnotes.core.util.DocumentKind.NOTE.suffix
+        }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showShareChooser = false; pendingShareUri = null },
-            title = { androidx.compose.material3.Text("Share note") },
-            text = { androidx.compose.material3.Text("Share “${shareUri?.let { stemOf(it) } ?: ""}” as:") },
+            title = { androidx.compose.material3.Text(stringResource(R.string.share_note)) },
+            text = { androidx.compose.material3.Text(stringResource(R.string.share_as, shareUri?.let { stemOf(it) } ?: "")) },
             confirmButton = {
                 androidx.compose.foundation.layout.Row {
                     androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null; shareUri?.let { shareFile(it, asPdf = false) } }) {
-                        androidx.compose.material3.Text(".xnote file")
+                        androidx.compose.material3.Text(stringResource(R.string.file_of_kind, shareSuffix))
                     }
                     androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null; shareUri?.let { shareFile(it, asPdf = true) } }) {
                         androidx.compose.material3.Text("PDF")
@@ -788,7 +843,7 @@ private fun EditorScreen(
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null }) {
-                    androidx.compose.material3.Text("Cancel")
+                    androidx.compose.material3.Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -798,8 +853,8 @@ private fun EditorScreen(
         val action = request.action
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { guardAction = null },
-            title = { androidx.compose.material3.Text("Unsaved changes") },
-            text = { androidx.compose.material3.Text("Save changes to “${guarded.title}” before continuing?") },
+            title = { androidx.compose.material3.Text(stringResource(R.string.unsaved_changes)) },
+            text = { androidx.compose.material3.Text(stringResource(R.string.unsaved_changes_prompt, guarded.title)) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     guardAction = null
@@ -811,32 +866,28 @@ private fun EditorScreen(
                         pendingAfterSave = action
                         launchSaveAs(guarded)
                     }
-                }) { androidx.compose.material3.Text("Save") }
+                }) { androidx.compose.material3.Text(stringResource(R.string.save)) }
             },
             dismissButton = {
                 androidx.compose.foundation.layout.Row {
                     androidx.compose.material3.TextButton(onClick = { guardAction = null; action() }) {
-                        androidx.compose.material3.Text("Discard")
+                        androidx.compose.material3.Text(stringResource(R.string.discard))
                     }
                     androidx.compose.material3.TextButton(onClick = { guardAction = null }) {
-                        androidx.compose.material3.Text("Cancel")
+                        androidx.compose.material3.Text(stringResource(R.string.cancel))
                     }
                 }
             },
         )
     }
-    exportProgress?.let { (done, total) ->
-        PdfExportDialog(done = done, total = total, onCancel = {
+    exportProgress?.let { p ->
+        PdfExportDialog(done = p.done, total = p.total, counting = p.counting, onCancel = {
             exportCancel?.set(true) // abort this export's page loop AND its write stream
             exportProgress = null   // hide at once; the job then discards the half-written temp
         })
     }
     if (editor.importing) {
-        // OPEN imports an .xnote; everything else is the PDF import the loader is named for.
-        PdfImportDialog(
-            isPdf = editor.pendingImport?.kind != com.xnotes.ui.ImportKind.OPEN,
-            onCancel = { editor.cancelImportInProgress() }, // the stream-copy stops at its next buffer
-        )
+        PdfImportDialog(isPdf = editor.pendingImport?.kind != com.xnotes.ui.ImportKind.OPEN, onCancel = { editor.cancelImportInProgress() }) // the stream-copy stops at its next buffer
     }
     // Tapping a note reads it off-thread (editor.opening). Only show the spinner once the read has run
     // long enough to matter, so opening a small note never flashes a dialog; a big PDF gets the loader.
@@ -846,7 +897,7 @@ private fun EditorScreen(
         if (opening) { delay(160); showOpening = opening } else showOpening = false
     }
     if (showOpening && opening) {
-        SpinnerDialog("Opening note…", onCancel = {
+        SpinnerDialog(stringResource(R.string.opening_note), onCancel = {
             // Discard whichever pane's note is still being read when it returns.
             editor.cancelOpenInProgress()
             editor.secondary?.cancelOpenInProgress()
@@ -871,6 +922,20 @@ private class PendingInsert(val editor: Editor, val at: com.xnotes.core.geometry
 
 /** Side-panel pages of [editor] waiting on a SAF "Save as" destination. */
 private class PendingPages(val editor: Editor, val pages: List<Int>)
+
+/**
+ * A running PDF export's progress: [done] of [total], and what those are. [counting] exists because
+ * a canvas has no pages to count — it exports as one, and reports the items it is drawing instead —
+ * so the dialog cannot assume the unit. `total < 0` marks the final write phase, where [done] is a
+ * 0..1000 permille of the output bytes.
+ */
+private class ExportProgress(val done: Int, val total: Int, val counting: String) {
+    companion object {
+        /** What a document of [kind] counts on its way out. */
+        fun countingFor(kind: com.xnotes.core.util.DocumentKind): String =
+            if (kind == com.xnotes.core.util.DocumentKind.CANVAS) "item" else "page"
+    }
+}
 
 /**
  * What a pane can ask the screen around it to do: open a SAF picker, run an export, or change the
@@ -934,7 +999,7 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
     val sideBySide = LocalConfiguration.current.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val ratio = editor.splitRatio.coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
-    BoxWithConstraints(Modifier.fillMaxSize().then(SwallowTouches)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(SwallowTouches).imePadding()) {
         val fullW = maxWidth
         val fullH = maxHeight
         val full = if (sideBySide) fullW else fullH
@@ -1191,7 +1256,7 @@ private class CancellableOutputStream(
  * back, or tapping outside) aborts the export via [onCancel]. Styled to match the monospace surfaces.
  */
 @Composable
-private fun PdfExportDialog(done: Int, total: Int, onCancel: () -> Unit) {
+private fun PdfExportDialog(done: Int, total: Int, counting: String, onCancel: () -> Unit) {
     val palette = LocalPalette.current
     // Only the final PDF write has a meaningful, moving percentage (reported as byte progress with
     // total = -1, done a 0..1000 permille). Preparing and the page phase sit at 0% (the page loop is
@@ -1232,24 +1297,24 @@ private fun PdfExportDialog(done: Int, total: Int, onCancel: () -> Unit) {
             }
             Spacer(Modifier.height(18.dp))
             Text(
-                "Exporting to PDF…",
+                stringResource(R.string.exporting_pdf),
                 color = palette.text.toComposeColor(),
                 fontSize = 15.sp,
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 when {
-                    writing -> "Writing the PDF…"
-                    total == 0 -> "Preparing…"
-                    done < total -> "page $done / $total"
-                    else -> "Writing $total page${if (total == 1) "" else "s"}…"
+                    writing -> stringResource(R.string.writing_pdf)
+                    total == 0 -> stringResource(R.string.preparing)
+                    done < total -> stringResource(if (counting == "item") R.string.export_item_progress else R.string.export_page_progress, done, total)
+                    else -> pluralStringResource(if (counting == "item") R.plurals.export_writing_items else R.plurals.export_writing_pages, total, total)
                 },
                 color = palette.textDim.toComposeColor(),
                 fontSize = 13.sp,
             )
             Spacer(Modifier.height(14.dp))
             androidx.compose.material3.TextButton(onClick = onCancel) {
-                Text("Cancel", color = palette.accent.toComposeColor())
+                Text(stringResource(R.string.cancel), color = palette.accent.toComposeColor())
             }
         }
     }
@@ -1284,10 +1349,10 @@ private fun SpinnerDialog(title: String, onCancel: () -> Unit) {
             Spacer(Modifier.height(18.dp))
             Text(title, color = palette.text.toComposeColor(), fontSize = 15.sp)
             Spacer(Modifier.height(4.dp))
-            Text("This may take a moment.", color = palette.textDim.toComposeColor(), fontSize = 13.sp)
+            Text(stringResource(R.string.may_take_moment), color = palette.textDim.toComposeColor(), fontSize = 13.sp)
             Spacer(Modifier.height(14.dp))
             androidx.compose.material3.TextButton(onClick = onCancel) {
-                Text("Cancel", color = palette.accent.toComposeColor())
+                Text(stringResource(R.string.cancel), color = palette.accent.toComposeColor())
             }
         }
     }
@@ -1320,9 +1385,9 @@ private fun SavingDialog() {
                 )
             }
             Spacer(Modifier.height(18.dp))
-            Text("Saving your notes…", color = palette.text.toComposeColor(), fontSize = 15.sp)
+            Text(stringResource(R.string.saving_notes), color = palette.text.toComposeColor(), fontSize = 15.sp)
             Spacer(Modifier.height(4.dp))
-            Text("This may take a moment.", color = palette.textDim.toComposeColor(), fontSize = 13.sp)
+            Text(stringResource(R.string.may_take_moment), color = palette.textDim.toComposeColor(), fontSize = 13.sp)
         }
     }
 }
@@ -1376,7 +1441,7 @@ private fun BoxScope.RefiningPdfHint(editor: Editor) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Refining PDF colours $done/$total pages…",
+                stringResource(R.string.refining_pdf_colours, done, total),
                 color = palette.textDim.toComposeColor(),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
@@ -1431,13 +1496,13 @@ private fun BoxScope.ZoomLockHint(editor: Editor) {
         ) {
             Icon(
                 if (locked) XnotesIcons.lock else XnotesIcons.unlock,
-                contentDescription = if (locked) "Unlock zoom" else "Lock zoom at fit width",
+                contentDescription = if (locked) stringResource(R.string.unlock_zoom) else stringResource(R.string.lock_zoom_fit_width),
                 tint = (if (locked) palette.accent else palette.textDim).toComposeColor(),
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                if (locked) "Unlock zoom" else "Lock zoom",
+                if (locked) stringResource(R.string.unlock_zoom) else stringResource(R.string.lock_zoom),
                 color = palette.text.toComposeColor(),
                 fontSize = 13.sp,
             )

@@ -22,9 +22,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -40,11 +42,11 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(268.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("WAYPOINTS")
+            PopupTitle(stringResource(R.string.title_waypoints))
 
             if (editor.waypoints.isEmpty()) {
                 Text(
-                    "No saved views yet.",
+                    stringResource(R.string.no_waypoints),
                     color = palette.textDim.toComposeColor(),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
@@ -75,7 +77,7 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                     IconButton(onClick = { editor.removeWaypoint(waypoint) }, modifier = Modifier.size(30.dp)) {
                         Icon(
                             XnotesIcons.close,
-                            contentDescription = "Remove",
+                            contentDescription = stringResource(R.string.remove),
                             tint = palette.textDim.toComposeColor(),
                             modifier = Modifier.size(14.dp),
                         )
@@ -84,7 +86,7 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(8.dp))
-            StyleCaption("SAVE THIS VIEW")
+            StyleCaption(stringResource(R.string.caption_save_view))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -96,7 +98,7 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )
-                ModeChip("Save", selected = false) {
+                ModeChip(stringResource(R.string.save), selected = false) {
                     if (name.isNotBlank()) {
                         editor.saveWaypoint(name)
                         name = ""
@@ -106,8 +108,8 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
 
             Spacer(Modifier.size(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("Minimap", editor.minimapVisible) { editor.toggleMinimap() }
-                ModeChip("Fit all", selected = false) { editor.zoomToFit(); onDismiss() }
+                ModeChip(stringResource(R.string.toolbar_minimap), editor.minimapVisible) { editor.toggleMinimap() }
+                ModeChip(stringResource(R.string.fit_all), selected = false) { editor.zoomToFit(); onDismiss() }
             }
         }
     }

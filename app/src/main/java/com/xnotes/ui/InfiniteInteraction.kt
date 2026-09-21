@@ -191,6 +191,7 @@ class InfiniteInteraction(
     private var lastPan = Pt.ZERO
     private var lastMoveMs = 0L
     private var panVel = Pt.ZERO
+    private var panFromPenButton = false // a side-button pan parks where the pen lifted: no glide
     private var flinging = false
     private var flingVel = Pt.ZERO
     private var lastFlingMs = 0L
@@ -286,7 +287,7 @@ class InfiniteInteraction(
             effective == Tool.SHAPE -> beginShape(vx, vy)
             effective == Tool.SELECT -> beginSelect(vx, vy)
             effective == Tool.LASSO -> beginLasso(vx, vy)
-            else -> beginPan(vx, vy)
+            else -> beginPan(vx, vy, fromPenButton = buttonHeld && penButtonTool == Tool.PAN)
         }
     }
 
@@ -415,7 +416,7 @@ class InfiniteInteraction(
 
     private fun handleUp(e: MotionEvent) {
         cancelLongPress()
-        val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed()) ||
+        val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed() && !panFromPenButton) ||
             (mode == CanvasPointerMode.PINCH && pinchPanAllowed())
         // A finger tap off the selection puts it away; a tap is the only way to say so with a
         // finger, since a drag there is a pan.
@@ -614,34 +615,42 @@ class InfiniteInteraction(
         requestRender()
     }
 
+    /**
+     * A press on the settled selection grabs it: the grip rotates, a handle resizes, inside the box
+     * moves. Shared by the select and lasso tools so both grab the same way, whatever is pressing.
+     */
+    private fun tryGrabSelection(sel: CanvasSelection, at: Pt): Boolean {
+        if (sel.isEmpty) return false
+        val tolerance = HANDLE_TOUCH_PX / viewport.zoom
+        val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
+        if (grip != null && at.distanceTo(grip) <= tolerance) {
+            sel.beginTransform(at)
+            beginLiftedTransform(sel, at)
+            mode = CanvasPointerMode.ROTATE
+            return true
+        }
+        val handle = sel.hitHandle(at, tolerance)
+        if (handle != null) {
+            grabHandle = handle
+            sel.beginTransform()
+            beginLiftedTransform(sel, at)
+            mode = CanvasPointerMode.RESIZE
+            return true
+        }
+        if (sel.contains(at)) {
+            beginMoveAt(sel, at)
+            return true
+        }
+        return false
+    }
+
     private fun beginSelect(vx: Double, vy: Double) {
         val sel = selection() ?: return
         val at = viewport.viewportToContent(Pt(vx, vy))
         setInteractive(false, false)
         // A press on a handle or the grip transforms; inside the box it moves; anywhere else
         // starts a fresh band, which is what makes an empty patch of canvas deselect.
-        if (!sel.isEmpty) {
-            val tolerance = HANDLE_TOUCH_PX / viewport.zoom
-            val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
-            if (grip != null && at.distanceTo(grip) <= tolerance) {
-                sel.beginTransform(at)
-                beginLiftedTransform(sel, at)
-                mode = CanvasPointerMode.ROTATE
-                return
-            }
-            val handle = sel.hitHandle(at, tolerance)
-            if (handle != null) {
-                grabHandle = handle
-                sel.beginTransform()
-                beginLiftedTransform(sel, at)
-                mode = CanvasPointerMode.RESIZE
-                return
-            }
-            if (sel.contains(at)) {
-                beginMoveAt(sel, at)
-                return
-            }
-        }
+        if (tryGrabSelection(sel, at)) return
         // A press that lands on an item picks that item up, as it does on a note. A band is what
         // the empty canvas between items starts, not what selecting anything at all takes. A locked
         // item is not there as far as this is concerned, so a band can be started over one.
@@ -702,10 +711,14 @@ class InfiniteInteraction(
 
     private fun beginLasso(vx: Double, vy: Double) {
         val sel = selection() ?: return
+        val at = viewport.viewportToContent(Pt(vx, vy))
         setInteractive(false, false)
+        // Grabbing the settled selection comes first, as it does for the select tool: a pen press
+        // inside it moves it instead of throwing it away to draw another lasso.
+        if (tryGrabSelection(sel, at)) return
         sel.clear()
         lassoPoints.clear()
-        lassoPoints.add(viewport.viewportToContent(Pt(vx, vy)))
+        lassoPoints.add(at)
         mode = CanvasPointerMode.LASSO
         onSelectionChanged()
     }
@@ -1034,9 +1047,10 @@ class InfiniteInteraction(
 
     // --- pan ---
 
-    private fun beginPan(vx: Double, vy: Double) {
+    private fun beginPan(vx: Double, vy: Double, fromPenButton: Boolean = false) {
         mode = CanvasPointerMode.PAN
         panDownAt = Pt(vx, vy)
+        panFromPenButton = fromPenButton
         // Moving the view is paced by the display, so the render thread stays up for it.
         setInteractive(true, true)
         startTrackingVelocity(vx, vy)

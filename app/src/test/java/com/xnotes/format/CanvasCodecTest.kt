@@ -123,6 +123,45 @@ class CanvasCodecTest {
         assertEquals(0.05, back.waypoints[1].zoom, 1e-12)
     }
 
+    @Test fun createdTimeRoundTripsAndIsOmittedWhenUnknown() {
+        val stamped = InfiniteDocument(created = 1_789_720_071_123L)
+        assertTrue(manifestText(stamped).contains("2026-09-18T08:27:51.123Z"))
+        assertEquals(1_789_720_071_123L, roundTrip(stamped).created)
+        val unknown = InfiniteDocument()
+        assertTrue(!manifestText(unknown).contains("\"created\""))
+        assertNull(roundTrip(unknown).created)
+    }
+
+    @Test fun aMalformedCreatedTimeLoadsAsUnknown() {
+        assertNull(readManifest("""{"format":"xcanvas","created":"yesterday","items":[]}""").created)
+        assertNull(readManifest("""{"format":"xcanvas","created":12,"items":[]}""").created)
+    }
+
+    @Test fun aPeekReadsTheCreatedTimeWithoutLoadingTheCanvas() {
+        val dir = Files.createTempDirectory("xcanvas-peek").toFile()
+        try {
+            val doc = InfiniteDocument(created = 1_789_720_071_123L)
+            doc.add(ImageItem(ImageData(imageFile(ByteArray(200_000) { (it % 251).toByte() }), 64, 48), Rect(0.0, 0.0, 64.0, 48.0)))
+            val file = File(dir, "c.xcanvas").apply { writeBytes(bytesOf(doc)) }
+            assertEquals(1_789_720_071_123L, java.io.RandomAccessFile(file, "r").use { codec.peek(it.channel) }!!.created)
+            assertEquals(1_789_720_071_123L, file.inputStream().use { codec.peek(it) }!!.created)
+            val plain = File(dir, "p.xcanvas").apply { writeBytes(bytesOf(InfiniteDocument())) }
+            assertNull(java.io.RandomAccessFile(plain, "r").use { codec.peek(it.channel) }!!.created)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test fun aPeekStopsAtTheItems() {
+        val cut = """{"format":"xcanvas","created":"2026-09-18T08:27:51.123Z","items":[{"kind":"""
+        assertEquals(1_789_720_071_123L, codec.peekManifest(ByteArrayInputStream(cut.toByteArray()))!!.created)
+    }
+
+    @Test fun aPeekAtSomethingElseComesBackEmpty() {
+        assertNull(codec.peek(ByteArrayInputStream(byteArrayOf(1, 2, 3))))
+        assertNull(codec.peekManifest(ByteArrayInputStream("""{"format":"xnote","pages":[]}""".toByteArray())))
+    }
+
     @Test fun anEmptyCanvasRoundTrips() {
         val back = roundTrip(InfiniteDocument())
         assertTrue(back.isEmpty)

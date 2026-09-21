@@ -42,12 +42,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.platform.FontCatalog
@@ -150,7 +152,7 @@ fun TextBoxFormatBar(editor: Editor) {
         ) {
             Icon(
                 XnotesIcons.check,
-                contentDescription = "Done",
+                contentDescription = stringResource(R.string.done),
                 tint = palette.text.toComposeColor(),
                 modifier = Modifier.size(22.dp),
             )
@@ -227,7 +229,7 @@ private fun FacePicker(current: FontFace, onPick: (FontFace) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                FontCatalog.label(current),
+                fontLabel(current),
                 color = palette.text.toComposeColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

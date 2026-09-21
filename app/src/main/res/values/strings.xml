@@ -1,4 +1,753 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">n-notes</string>
+    <string name="app_name" translatable="false">n-notes</string>
+
+    <!-- Tools and toolbar items -->
+    <string name="tool_pen">Pen</string>
+    <string name="tool_dashed">Dashed</string>
+    <string name="tool_calligraphy">Calligraphy</string>
+    <string name="tool_speed">Speed</string>
+    <string name="tool_taper">Taper</string>
+    <string name="tool_highlighter">Highlighter</string>
+    <string name="tool_eraser">Eraser</string>
+    <string name="tool_pan">Pan</string>
+    <string name="tool_select">Select</string>
+    <string name="tool_lasso">Lasso</string>
+    <string name="tool_screenshot">Screenshot</string>
+    <string name="tool_wand">Disappearing ink</string>
+    <string name="tool_shape">Shape</string>
+    <string name="tool_ruler">Ruler</string>
+    <string name="tool_text">Text</string>
+    <string name="tool_text_box">Text box</string>
+    <string name="tool_image">Image</string>
+    <string name="toolbar_home">Home</string>
+    <string name="toolbar_title">Title</string>
+    <string name="toolbar_sidebar">Sidebar</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="toolbar_page_nav">Page nav</string>
+    <string name="toolbar_styles">Styles</string>
+    <string name="toolbar_margins">Margins</string>
+    <string name="toolbar_view">View</string>
+    <string name="toolbar_zoom">Zoom</string>
+    <string name="toolbar_fit">Fit</string>
+    <string name="toolbar_zoom_lock">Zoom lock</string>
+    <string name="toolbar_fullscreen">Full screen</string>
+    <string name="toolbar_colours">Colours</string>
+    <string name="toolbar_waypoints">Waypoints</string>
+    <string name="toolbar_minimap">Minimap</string>
+    <string name="edge_left">Left</string>
+    <string name="edge_right">Right</string>
+    <string name="edge_top">Top</string>
+    <string name="edge_bottom">Bottom</string>
+    <string name="page_size_custom">Custom</string>
+    <string name="page_size_letter">Letter</string>
+    <string name="page_size_legal">Legal</string>
+    <string name="page_size_slide_16_9">Slide 16:9</string>
+    <string name="page_size_slide_4_3">Slide 4:3</string>
+    <string name="font_sans">Sans</string>
+    <string name="font_serif">Serif</string>
+    <string name="font_mono">Mono</string>
+    <string name="font_hand">Hand</string>
+
+    <!-- Tool, style, margin, view and zoom popups -->
+    <string name="caption_colour">COLOUR</string>
+    <string name="default_choice">Default</string>
+    <string name="caption_pressure">PRESSURE</string>
+    <string name="caption_sensitivity">SENSITIVITY</string>
+    <string name="caption_multiplier">MULTIPLIER</string>
+    <string name="caption_speed">SPEED</string>
+    <string name="caption_tip_width">TIP WIDTH PERCENTAGE</string>
+    <string name="caption_width">WIDTH</string>
+    <string name="caption_scale">SCALE</string>
+    <string name="caption_dash">DASH</string>
+    <string name="caption_gap">GAP</string>
+    <string name="caption_intensity">INTENSITY</string>
+    <string name="caption_straight_line">STRAIGHT LINE</string>
+    <string name="caption_inverse">INVERSE</string>
+    <string name="caption_neon">NEON</string>
+    <string name="title_styles">STYLES</string>
+    <string name="all_pages">All Pages</string>
+    <string name="current_page">Current Page</string>
+    <string name="caption_page_colour">PAGE COLOUR</string>
+    <string name="caption_pattern">PATTERN</string>
+    <string name="none">None</string>
+    <string name="pattern_lines">Lines</string>
+    <string name="pattern_dots">Dots</string>
+    <string name="pattern_grid">Grid</string>
+    <string name="caption_pattern_colour">PATTERN COLOUR</string>
+    <string name="default_for_new_notes">Default for new notes</string>
+    <string name="reset">Reset</string>
+    <string name="title_margins">MARGINS</string>
+    <string name="title_view">VIEW</string>
+    <string name="caption_viewing_mode">VIEWING MODE</string>
+    <string name="view_single">Single</string>
+    <string name="view_double">Double</string>
+    <string name="view_cover">Cover</string>
+    <string name="caption_vertical_scrolling">VERTICAL SCROLLING</string>
+    <string name="caption_pdf_filters">PDF COLOUR FILTERS</string>
+    <string name="filter_contrast">Contrast</string>
+    <string name="filter_invert">Invert</string>
+    <string name="filter_brightness">Brightness</string>
+    <string name="filter_sepia">Sepia</string>
+    <string name="filter_multiply">Multiply</string>
+    <string name="filter_screen">Screen</string>
+    <string name="caption_keep_images">DON\'T FILTER IMAGES</string>
+    <string name="caption_scrollbar">SCROLLBAR</string>
+    <string name="default_for_all_notes">Default for all notes</string>
+    <string name="off">Off</string>
+    <string name="title_go_to_page">GO TO PAGE</string>
+    <string name="go">GO</string>
+    <string name="title_zoom">ZOOM</string>
+    <string name="caption_min_zoom">MIN ZOOM</string>
+    <string name="caption_max_zoom">MAX ZOOM</string>
+    <string name="title_eraser">ERASER</string>
+    <string name="eraser_stroke">STROKE</string>
+    <string name="eraser_area">AREA</string>
+    <string name="caption_size">SIZE</string>
+    <string name="caption_switch_back">SWITCH BACK</string>
+    <string name="title_select">SELECT</string>
+    <string name="title_shape">SHAPE</string>
+    <string name="caption_fill">FILL</string>
+    <string name="caption_opacity">OPACITY</string>
+    <string name="caption_dashed">DASHED</string>
+    <string name="caption_spacing_px">"SPACING  %1$d px"</string>
+    <string name="default_suffix">"  (default)"</string>
+    <string name="caption_opacity_percent">"OPACITY  %1$d%%"</string>
+    <string name="caption_value_percent">"%1$s  %2$d%%"</string>
+    <string name="caption_rotate_degrees">"ROTATE  %1$d°"</string>
+    <string name="caption_glow_intensity">INTENSITY</string>
+
+    <!-- Toolbar -->
+    <string name="side_panel">Side panel</string>
+    <string name="previous_page">Previous page</string>
+    <string name="next_page">Next page</string>
+    <string name="zoom_out">Zoom out</string>
+    <string name="zoom_in">Zoom in</string>
+    <string name="rename_note">Rename note</string>
+    <string name="rename">Rename</string>
+    <string name="cancel">Cancel</string>
+    <string name="close_pane">Close this pane</string>
+    <string name="paste_image">Paste image</string>
+    <string name="insert_image_ellipsis">Insert image…</string>
+    <string name="stickers">Stickers</string>
+    <string name="add_stickers">Add stickers…</string>
+    <string name="no_stickers">No stickers yet.</string>
+    <string name="stickers_hint">Tap to insert, hold to remove</string>
+    <string name="sticker">Sticker</string>
+    <string name="fit_page">Fit whole page</string>
+    <string name="fit_width">Fit page width</string>
+    <string name="fit_height">Fit page height</string>
+    <string name="err_rename_note">Couldn’t rename the note.</string>
+    <string name="untitled">Untitled</string>
+    <string name="insert_image">Insert image</string>
+    <string name="fit_all">Fit all</string>
+    <string name="gl_unavailable">GL unavailable</string>
+
+    <!-- Toolbar customizer -->
+    <string name="drop_here">drop here</string>
+    <string name="delete_section">Delete section</string>
+    <string name="add_section">Add section</string>
+
+    <!-- Preferences -->
+    <string name="back_to_home">Back to home</string>
+    <string name="show_sidebar">Show sidebar</string>
+    <string name="preferences">Preferences</string>
+    <string name="reset_to_defaults">Reset to defaults</string>
+    <string name="pref_general">General</string>
+    <string name="pref_ui_theme">UI theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_oled">OLED</string>
+    <string name="pref_colour_palette">Colour palette</string>
+    <string name="palette_classic">Classic</string>
+    <string name="palette_material">Material</string>
+    <string name="pref_accent_colour">Accent colour</string>
+    <string name="pref_start_fullscreen">Start in fullscreen</string>
+    <string name="pref_input">Input</string>
+    <string name="pref_finger_draws">Draw with finger (off = finger pans)</string>
+    <string name="pref_zoom_lock_pan">Panning while zoom is locked</string>
+    <string name="pan_single">Single-finger pan</string>
+    <string name="pan_two">Two-finger pan</string>
+    <string name="pan_none">No pan</string>
+    <string name="pref_detect_shapes">Snap held strokes to shapes (hold the pen still)</string>
+    <string name="pref_pen_button_hold">Stylus/Pen side button (hold)</string>
+    <string name="pref_pen_button_hover">Activate during hover (no need to touch the screen)</string>
+    <string name="pref_two_finger_tap">Two-finger tap</string>
+    <string name="pref_three_finger_tap">Three-finger tap</string>
+    <string name="pref_stylus_double_tap">Stylus double-tap</string>
+    <string name="pref_stylus_button_tap">Stylus side button (tap)</string>
+    <string name="pref_redmi_buttons">Redmi Smart Pen side buttons (tap)</string>
+    <string name="pen_button_1">Button 1</string>
+    <string name="pen_button_2">Button 2</string>
+    <string name="pref_new_notes">New notes</string>
+    <string name="pref_filename_template">Filename template</string>
+    <string name="pref_page">Page</string>
+    <string name="pref_default_page_size">Default page size</string>
+    <string name="width_mm">Width (mm)</string>
+    <string name="height_mm">Height (mm)</string>
+    <string name="pref_orientation">Orientation</string>
+    <string name="orientation_portrait">Portrait</string>
+    <string name="orientation_landscape">Landscape</string>
+    <string name="pref_hide_page_borders">Hide page borders</string>
+    <string name="pref_page_colour">Page colour</string>
+    <string name="pref_page_colour_follows_theme">Page colour follows the theme</string>
+    <string name="pref_performance">Performance</string>
+    <string name="pref_cache_help">Higher feels smoother when you pan and zoom but uses more memory. Your ink and PDFs look just as crisp either way.</string>
+    <string name="pref_disable_front_buffering">Disable front buffering</string>
+    <string name="pref_front_buffering_help">Front buffering paints the pen\'s ink straight into the frame the screen is showing, which is what makes it feel instant. A few panels do not hand that over cleanly, and there the ink can flicker or fall behind the nib. Turn it off on those and every stroke goes through the ordinary canvas.</string>
+    <string name="pref_code_highlighting">Code highlighting</string>
+    <string name="pref_default_code_language">Default code language</string>
+    <string name="pref_code_language_help">\"Paste as Code\" highlights the pasted block in this language.</string>
+    <string name="code_plain">plain (no highlighting)</string>
+    <string name="pref_code_theme">Code theme</string>
+    <string name="pref_code_theme_help">Import a Helix editor theme (.toml) to recolour code.</string>
+    <string name="custom_theme">Custom theme</string>
+    <string name="import_theme">Import theme…</string>
+    <string name="pref_fonts">Fonts</string>
+    <string name="pref_fonts_help">Import a .ttf or .otf to offer it in the text font pickers.</string>
+    <string name="import_font">Import font…</string>
+    <string name="mono_suffix">"  mono"</string>
+    <string name="remove">Remove</string>
+    <string name="pref_toolbar">Toolbar</string>
+    <string name="pref_toolbar_help">Tap a tool to show or hide it. Long-press to drag it within or across sections. Long-press a section\'s top to move the whole section.</string>
+    <string name="toggle_pan">Toggle pan</string>
+    <string name="toggle_eraser">Toggle eraser</string>
+    <string name="toggle_previous">Toggle previous tool</string>
+    <string name="pref_filename_template_help">YYYY YY MM DD HH mm ss expand to the creation date and time. # becomes the number that keeps the name free in its folder.</string>
+    <string name="pref_next_note_named">The next note would be named %1$s</string>
+    <string name="pref_side_margin_px">"Side margin  %1$d px"</string>
+    <string name="pref_max_cache_px">"Max cache resolution  %1$d px"</string>
+    <string name="pref_toolbar_colours_n">"Colours on the toolbar  %1$d"</string>
+
+    <!-- Home screen and explorer -->
+    <string name="collapse_sidebar">Collapse sidebar</string>
+    <string name="home">Home</string>
+    <string name="new_note">New note</string>
+    <string name="new_canvas">New canvas</string>
+    <string name="about">About</string>
+    <string name="new_note_menu">New Note</string>
+    <string name="new_canvas_menu">New Canvas</string>
+    <string name="import_pdf">Import PDF</string>
+    <string name="create_new">New</string>
+    <string name="choose_folder_hint">Choose a folder to keep and browse your notes in.</string>
+    <string name="choose_folder">Choose folder</string>
+    <string name="use_app_storage">Use App Storage</string>
+    <string name="new_folder">New folder</string>
+    <string name="paste">Paste</string>
+    <string name="clear_clipboard">Clear clipboard</string>
+    <string name="more">More</string>
+    <string name="sort_by">Sort by</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_modified">Date modified</string>
+    <string name="sort_size">Size</string>
+    <string name="change_folder">Change folder</string>
+    <string name="forget_folder">Forget folder</string>
+    <string name="open_side_by_side">Open side by side</string>
+    <string name="copy">Copy</string>
+    <string name="cut">Cut</string>
+    <string name="delete">Delete</string>
+    <string name="searching">Searching…</string>
+    <string name="loading">Loading…</string>
+    <string name="folder_empty">This folder has no notes.</string>
+    <string name="import_title">Import</string>
+    <string name="folder_name">Folder name</string>
+    <string name="delete_confirm_title">Delete?</string>
+    <string name="search_notes">Search notes</string>
+    <string name="clear_search">Clear search</string>
+    <string name="share">Share</string>
+    <string name="save_copy_ellipsis">Save a copy…</string>
+    <string name="export_pdf">Export to PDF</string>
+    <string name="sort_descending">Descending</string>
+    <string name="sort_ascending">Ascending</string>
+    <string name="folder">Folder</string>
+    <string name="err_paste_some">Couldn’t paste some items here.</string>
+    <string name="err_move_some">Couldn’t move some items.</string>
+    <string name="no_notes_match">No notes match “%1$s”.</string>
+    <string name="save">Save</string>
+    <string name="create">Create</string>
+    <string name="err_save_that_note">Couldn’t save that note.</string>
+    <string name="err_create_folder">Couldn’t create that folder.</string>
+    <string name="err_create_canvas">Couldn’t create the canvas.</string>
+    <string name="err_create_note">Couldn’t create the note.</string>
+    <string name="rename_folder">Rename folder</string>
+    <string name="delete_one_confirm">Delete “%1$s”? This can’t be undone.</string>
+    <string name="err_delete_some">Couldn’t delete some items.</string>
+    <plurals name="delete_items_confirm">
+        <item quantity="one">Delete %d item? This can’t be undone.</item>
+        <item quantity="other">Delete %d items? This can’t be undone.</item>
+    </plurals>
+    <string name="expand_sidebar">Expand sidebar</string>
+    <string name="unpin_from_sidebar">Unpin from sidebar</string>
+    <string name="remove_name">Remove name</string>
+    <string name="name_this_colour">Name this colour</string>
+    <string name="colour_name_placeholder">e.g. Important</string>
+    <string name="new_folder_menu">New Folder</string>
+    <string name="finding">Finding…</string>
+    <string name="nothing_this_colour">Nothing has this colour.</string>
+    <string name="recent_empty">Nothing opened yet. Notes and canvases you open show up here.</string>
+    <string name="nothing_to_show">Nothing to show here.</string>
+    <string name="no_pdf_notes_here">No PDF notes here.</string>
+    <string name="include_subfolders">Include subfolders</string>
+    <string name="opened_on_device">opened on this device</string>
+    <string name="clear">Clear</string>
+    <string name="in_every_folder">in every folder</string>
+    <string name="clear_colour_filter">Clear colour filter</string>
+    <string name="top_folder">Top folder</string>
+    <string name="view_options">View options</string>
+    <string name="move_to_folder">Move to folder</string>
+    <string name="move_here">Move here</string>
+    <string name="preview">Preview</string>
+    <string name="move_to_folder_ellipsis">Move to folder…</string>
+    <string name="name_colour_ellipsis">Name colour…</string>
+    <string name="err_open_folder">Couldn’t open that folder.</string>
+    <string name="moved_one_to_trash">Moved “%1$s” to Trash</string>
+    <string name="move_to_trash">Move to trash</string>
+    <string name="nothing_here_yet">Nothing in here yet.</string>
+    <string name="kind_no_folders">No folders here.</string>
+    <string name="kind_no_notes">No notes here.</string>
+    <string name="kind_no_canvases">No canvases here.</string>
+    <string name="all_kinds">All kinds</string>
+    <string name="move_one_to">Move “%1$s” to</string>
+    <string name="pin_to_sidebar">Pin to sidebar</string>
+    <plurals name="moved_items_to_trash">
+        <item quantity="one">Moved %d item to Trash</item>
+        <item quantity="other">Moved %d items to Trash</item>
+    </plurals>
+    <plurals name="err_move_items_to_trash">
+        <item quantity="one">Couldn’t move %d item to Trash.</item>
+        <item quantity="other">Couldn’t move %d items to Trash.</item>
+    </plurals>
+    <plurals name="paste_items">
+        <item quantity="one">Paste %d item</item>
+        <item quantity="other">Paste %d items</item>
+    </plurals>
+    <plurals name="paste_items_here">
+        <item quantity="one">Paste %d item here</item>
+        <item quantity="other">Paste %d items here</item>
+    </plurals>
+    <plurals name="notes_created_in">
+        <item quantity="one">%1$d note created in %2$s</item>
+        <item quantity="other">%1$d notes created in %2$s</item>
+    </plurals>
+    <plurals name="notes_saved_in">
+        <item quantity="one">%1$d note saved in %2$s</item>
+        <item quantity="other">%1$d notes saved in %2$s</item>
+    </plurals>
+    <plurals name="move_items_to">
+        <item quantity="one">Move %d item to</item>
+        <item quantity="other">Move %d items to</item>
+    </plurals>
+
+    <!-- Messages, sharing and export -->
+    <string name="exporting_pdf">Exporting to PDF…</string>
+    <string name="may_take_moment">This may take a moment.</string>
+    <string name="saving_notes">Saving your notes…</string>
+    <string name="opening_note">Opening note…</string>
+    <string name="share_note">Share note</string>
+    <string name="unsaved_changes">Unsaved changes</string>
+    <string name="discard">Discard</string>
+    <string name="err_save_note">Could not save the note.</string>
+    <string name="exported_pdf">Exported to PDF.</string>
+    <string name="err_export_pdf">Could not export to PDF.</string>
+    <string name="err_save_copy">Could not save a copy.</string>
+    <string name="err_save_image">Could not save the image.</string>
+    <string name="err_save_images">Could not save the images.</string>
+    <string name="err_read_image">Could not read the image.</string>
+    <string name="err_read_file">Could not read the file.</string>
+    <string name="err_open_second">Could not open the second note.</string>
+    <string name="share_named">Share %1$s</string>
+    <string name="err_share_note">Could not share the note.</string>
+    <string name="err_share_pages">Could not share the pages.</string>
+    <string name="share_as">Share “%1$s” as:</string>
+    <string name="file_of_kind">%1$s file</string>
+    <string name="unsaved_changes_prompt">Save changes to “%1$s” before continuing?</string>
+    <string name="writing_pdf">Writing the PDF…</string>
+    <string name="preparing">Preparing…</string>
+    <string name="export_page_progress">page %1$d / %2$d</string>
+    <string name="export_item_progress">item %1$d / %2$d</string>
+    <string name="importing_pdf">Importing PDF…</string>
+    <string name="refining_pdf_colours">Refining PDF colours %1$d/%2$d pages…</string>
+    <string name="unlock_zoom">Unlock zoom</string>
+    <string name="lock_zoom_fit_width">Lock zoom at fit width</string>
+    <string name="lock_zoom">Lock zoom</string>
+    <plurals name="saved_images">
+        <item quantity="one">Saved %d image.</item>
+        <item quantity="other">Saved %d images.</item>
+    </plurals>
+    <plurals name="export_writing_pages">
+        <item quantity="one">Writing %d page…</item>
+        <item quantity="other">Writing %d pages…</item>
+    </plurals>
+    <plurals name="export_writing_items">
+        <item quantity="one">Writing %d item…</item>
+        <item quantity="other">Writing %d items…</item>
+    </plurals>
+    <string name="image_copied">Image copied. Paste it anywhere.</string>
+    <string name="err_copy_image">Couldn’t copy the image.</string>
+    <string name="err_clipboard_no_image">The clipboard has no image to paste.</string>
+    <string name="err_read_sticker">Could not read the sticker.</string>
+    <string name="err_open_that_note">Could not open that note.</string>
+    <string name="err_not_xnotes">Not an xnotes document.</string>
+    <string name="err_open_note">Could not open the note.</string>
+    <string name="note_forked">This note changed elsewhere. Your edits are now in “%1$s”.</string>
+    <string name="canvas_forked">This canvas changed elsewhere. Your edits are now in “%1$s”.</string>
+    <string name="err_keep_one_page">A note must keep at least one page.</string>
+    <string name="page_already_empty">That page is already empty.</string>
+    <string name="err_helix_theme">Not a usable Helix theme (a self-contained .toml is needed).</string>
+    <string name="err_store_theme">Couldn\'t store the theme file.</string>
+    <string name="code_theme_imported">Code theme imported.</string>
+    <string name="font_imported">Font \"%1$s\" imported.</string>
+    <string name="err_import_font">Could not import that font.</string>
+    <string name="font_err_unavailable">Fonts are unavailable.</string>
+    <string name="font_err_unnamed">Could not name this font.</string>
+    <string name="font_err_built_in">“%1$s” is already built in.</string>
+    <string name="font_err_unreadable">Not a readable .ttf/.otf font.</string>
+    <string name="err_share_notes">Could not share the notes.</string>
+    <plurals name="share_n_notes">
+        <item quantity="one">Share %d note</item>
+        <item quantity="other">Share %d notes</item>
+    </plurals>
+
+    <!-- Side panel -->
+    <string name="pages">Pages</string>
+    <string name="contents">Contents</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="selected">Selected</string>
+    <string name="page_options">Page options</string>
+    <string name="back_share_as">"‹  Share as"</string>
+    <string name="image_png">Image (PNG)</string>
+    <string name="back_save_as">"‹  Save as"</string>
+    <string name="add_page">Add page</string>
+    <string name="erase_page">Erase page</string>
+    <string name="share_ellipsis">Share…</string>
+    <string name="save_as_ellipsis">Save as…</string>
+    <string name="clear_selection">Clear selection</string>
+    <string name="save_as">Save as</string>
+    <string name="no_contents">— no table of contents —</string>
+    <string name="add_bookmark">Add bookmark</string>
+    <string name="no_bookmarks">— no bookmarks —</string>
+    <string name="add">Add</string>
+    <string name="page_n">Page %1$d</string>
+    <string name="bookmark_entry">%1$s · p.%2$d</string>
+
+    <!-- Selection and long-press menus -->
+    <string name="bring_to_front">Bring to front</string>
+    <string name="duplicate">Duplicate</string>
+    <string name="change_style">Change style</string>
+    <string name="lock">Lock</string>
+    <string name="title_change_style">CHANGE STYLE</string>
+    <string name="caption_thickness">THICKNESS</string>
+    <string name="change_style_hint">Applies to the selected strokes and shapes.</string>
+    <string name="copy_as_image">Copy as image</string>
+    <string name="unlock">Unlock</string>
+    <string name="paste_here">Paste here</string>
+    <string name="paste_markdown">Paste as Markdown</string>
+    <string name="paste_code">Paste as Code</string>
+
+    <!-- About -->
+    <string name="app_tagline">A handwriting notes and sketching app for Android</string>
+    <string name="copy_version">Copy version</string>
+    <string name="help_make_better">Help make xnotes better</string>
+    <string name="report_bug">Report a bug</string>
+    <string name="request_feature">Request a feature</string>
+    <string name="sponsor">Sponsor</string>
+    <string name="enjoying_xnotes">"Enjoying xnotes? "</string>
+    <string name="star_on_github">Star it on GitHub</string>
+    <string name="mit_license">MIT License</string>
+    <string name="version_n">Version %1$s</string>
+    <string name="version_copied">Version copied</string>
+
+    <!-- Text formatting -->
+    <string name="checkbox_item">Checkbox item</string>
+    <string name="bold">Bold</string>
+    <string name="italic">Italic</string>
+    <string name="underline">Underline</string>
+    <string name="strikethrough">Strikethrough</string>
+    <string name="ordered_list">Ordered list</string>
+    <string name="bullet_list">Bullet list</string>
+    <string name="alignment">Alignment</string>
+    <string name="indent">Indent</string>
+    <string name="outdent">Outdent</string>
+    <string name="code_block">Code block</string>
+    <string name="smaller">Smaller</string>
+    <string name="larger">Larger</string>
+    <string name="font">Font</string>
+    <string name="mono_font">Mono font</string>
+    <string name="size_pt">Size (pt)</string>
+    <string name="colour">Colour</string>
+    <string name="auto">Auto</string>
+    <string name="margins_mm">Margins (mm)</string>
+    <string name="done">Done</string>
+
+    <!-- Canvas styles and waypoints -->
+    <string name="caption_spacing">SPACING</string>
+    <string name="caption_paper">PAPER</string>
+    <string name="paper_theme">Theme</string>
+    <string name="default_for_new_canvases">Default for new canvases</string>
+    <string name="title_waypoints">WAYPOINTS</string>
+    <string name="no_waypoints">No saved views yet.</string>
+    <string name="caption_save_view">SAVE THIS VIEW</string>
+
+    <!-- Colour picker -->
+    <string name="swatches">Swatches</string>
+    <string name="spectrum">Spectrum</string>
+    <string name="caption_recent">RECENT</string>
+
+    <!-- Canvas and storage -->
+    <string name="pull_to_add_page">Pull to add page</string>
+    <string name="release_to_add_page">Release to add page</string>
+    <string name="app_storage">App storage</string>
+
+    <!-- Explorer: dates, counts and kinds -->
+    <string name="today">Today</string>
+    <string name="yesterday">Yesterday</string>
+    <string name="earlier_this_week">Earlier this week</string>
+    <string name="last_week">Last week</string>
+    <string name="earlier_in">Earlier in %1$s</string>
+    <string name="month_year">%1$s %2$d</string>
+    <string name="just_now">Just now</string>
+    <string name="minutes_ago">%1$d min ago</string>
+    <string name="hours_ago">%1$d h ago</string>
+    <string name="day_month">%1$d %2$s</string>
+    <string name="day_month_year">%1$d %2$s %3$d</string>
+    <string name="date_with_time">%1$s, %2$s</string>
+    <string name="clock_12h">%1$d:%2$02d %3$s</string>
+    <string name="am">AM</string>
+    <string name="pm">PM</string>
+    <string name="opened_ago">Opened %1$s</string>
+    <string name="kind_folders">Folders</string>
+    <string name="kind_notes">Notes</string>
+    <string name="kind_pdf_notes">PDF notes</string>
+    <string name="kind_canvases">Canvases</string>
+    <string name="hue_black">Black</string>
+    <string name="hue_white">White</string>
+    <string name="hue_grey">Grey</string>
+    <string name="hue_red">Red</string>
+    <string name="hue_orange">Orange</string>
+    <string name="hue_yellow">Yellow</string>
+    <string name="hue_green">Green</string>
+    <string name="hue_teal">Teal</string>
+    <string name="hue_blue">Blue</string>
+    <string name="hue_purple">Purple</string>
+    <string name="hue_pink">Pink</string>
+    <string name="no_colour">No colour</string>
+    <string name="layout_grid">Grid</string>
+    <string name="layout_gallery">Gallery</string>
+    <string name="layout_list">List</string>
+    <string name="layout_columns">Columns</string>
+    <string name="layout_timeline">Timeline</string>
+    <string name="group_date">Date</string>
+    <string name="group_kind">Kind</string>
+    <string name="no_grouping">No grouping</string>
+    <string name="grouped_by_date">Grouped by date</string>
+    <string name="grouped_by_kind">Grouped by kind</string>
+    <string name="grouped_by_colour">Grouped by colour</string>
+    <string name="folders_on_top">On top</string>
+    <string name="folders_mixed">Mixed in</string>
+    <string name="folders_hidden">Hidden</string>
+    <string-array name="months">
+        <item>January</item>
+        <item>February</item>
+        <item>March</item>
+        <item>April</item>
+        <item>May</item>
+        <item>June</item>
+        <item>July</item>
+        <item>August</item>
+        <item>September</item>
+        <item>October</item>
+        <item>November</item>
+        <item>December</item>
+    </string-array>
+    <string-array name="months_short">
+        <item>Jan</item>
+        <item>Feb</item>
+        <item>Mar</item>
+        <item>Apr</item>
+        <item>May</item>
+        <item>Jun</item>
+        <item>Jul</item>
+        <item>Aug</item>
+        <item>Sep</item>
+        <item>Oct</item>
+        <item>Nov</item>
+        <item>Dec</item>
+    </string-array>
+    <string-array name="weekdays_short">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
+    <plurals name="days_ago">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+    <plurals name="folders_count">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
+    </plurals>
+    <plurals name="files_count">
+        <item quantity="one">%d file</item>
+        <item quantity="other">%d files</item>
+    </plurals>
+    <plurals name="items_count">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+
+    <!-- Explorer -->
+    <string name="sort_created">Date created</string>
+    <string name="select_all">Select all</string>
+    <string name="close_view_options">Close view options</string>
+    <string name="opt_layout">Layout</string>
+    <string name="opt_rows">Rows</string>
+    <string name="rows_comfortable">Comfortable</string>
+    <string name="rows_compact">Compact</string>
+    <string name="opt_tile_size">Tile size</string>
+    <string name="pinch_hint">Or pinch the grid to resize tiles</string>
+    <string name="opt_place_by">Place files by</string>
+    <string name="opt_thumbnail">Thumbnail</string>
+    <string name="thumb_top">Top of page</string>
+    <string name="thumb_page">Whole page</string>
+    <string name="opt_show_on_tiles">Show on tiles</string>
+    <string name="show_page_count">Page count</string>
+    <string name="show_time">Time</string>
+    <string name="colour_code">Colour code</string>
+    <string name="opt_group_by">Group by</string>
+    <string name="view_every_folder">Use this view in every folder</string>
+    <string name="view_every_folder_hint">Off: each folder remembers its own view</string>
+    <string name="sort_z_to_a">Z to A</string>
+    <string name="sort_a_to_z">A to Z</string>
+    <string name="largest_first">Largest first</string>
+    <string name="smallest_first">Smallest first</string>
+    <string name="newest_first">Newest first</string>
+    <string name="oldest_first">Oldest first</string>
+    <string name="n_selected">%1$d selected</string>
+    <string name="modified">Modified</string>
+    <string name="created">Created</string>
+    <string name="kind_note">Note</string>
+    <string name="kind_pdf_note">PDF note</string>
+    <string name="kind_canvas">Canvas</string>
+    <string name="more_for">More for %1$s</string>
+    <string name="pinned_to_sidebar">Pinned to sidebar</string>
+    <string name="recent">Recent</string>
+    <string name="see_all">See all</string>
+    <string name="pinned">Pinned</string>
+    <string name="in_folder">In %1$s</string>
+    <plurals name="pages_count">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+    <string name="pick_note_hint">Pick a note to see it here</string>
+    <string name="previous_month">Previous month</string>
+    <string name="next_month">Next month</string>
+    <string name="nothing_created_in">Nothing was created in %1$s.</string>
+    <string name="nothing_saved_in">Nothing was saved in %1$s.</string>
+    <string name="open">Open</string>
+    <string name="close_preview">Close preview</string>
+    <string name="where_label">Where</string>
+    <string name="no_folders_here">No folders in here.</string>
+
+    <!-- Trash -->
+    <string name="trash">Trash</string>
+    <string name="empty_trash">Empty trash</string>
+    <string name="trash_off_hint">Trash is off. Deleting is permanent. Items already here stay until you empty the trash.</string>
+    <string name="trash_forever_hint">Items stay here until you empty the trash.</string>
+    <string name="change">Change</string>
+    <string name="trash_no_root">Choose a folder to keep your notes in first.</string>
+    <string name="trash_empty">Trash is empty.</string>
+    <string name="trash_was_in">Was in</string>
+    <string name="trash_deleted">Deleted</string>
+    <string name="trash_removed_in">Removed in</string>
+    <string name="empty_trash_confirm">Empty trash?</string>
+    <string name="empty_trash_body">Everything in Trash will be permanently deleted. This can’t be undone.</string>
+    <string name="delete_permanently_confirm">Delete permanently?</string>
+    <string name="restore">Restore</string>
+    <string name="delete_permanently">Delete permanently</string>
+    <string name="trash_no_match">Nothing in Trash matches “%1$s”.</string>
+    <string name="the_top_folder">the top folder</string>
+    <string name="restored_item">Restored “%1$s”</string>
+    <string name="err_restore_item">Couldn’t restore “%1$s”</string>
+    <string name="restore_hint">Restoring puts an item back in the folder it came from, or in %1$s if that folder is gone.</string>
+    <string name="delete_permanently_body">“%1$s” will be permanently deleted. This can’t be undone.</string>
+    <string name="trash_row_sub">%1$s · from %2$s · %3$s</string>
+    <string name="never">Never</string>
+    <plurals name="trash_deleted_after">
+        <item quantity="one">Items are permanently deleted after %d day.</item>
+        <item quantity="other">Items are permanently deleted after %d days.</item>
+    </plurals>
+    <plurals name="days_count">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+
+    <!-- Preferences: home and explorer -->
+    <string name="pref_home_explorer">Home &amp; explorer</string>
+    <string name="pref_home_explorer_help">How the home screen and the file explorer look and behave. Layouts can still be switched per folder from the explorer.</string>
+    <string name="pref_default_layout">Default layout</string>
+    <string name="pref_switcher_layouts">Layouts in the switcher</string>
+    <string name="pref_sidebar_sections">Sidebar sections</string>
+    <string name="pref_home_opens_to">Home opens to</string>
+    <string name="last_folder">Last folder</string>
+    <string name="recent_and_pinned">Recent &amp; pinned</string>
+    <string name="pref_tapping_file">Tapping a file</string>
+    <string name="tap_opens">Opens it</string>
+    <string name="tap_previews">Shows a preview</string>
+    <string name="pref_keep_deleted">Keep deleted items</string>
+    <string name="until_emptied">Until emptied</string>
+    <string name="pref_colour_names">Colour names</string>
+    <string name="name_a_colour">Name a colour</string>
+    <string name="pref_per_folder_views">Remember the view per folder</string>
+    <string name="pref_show_create_button">Show the quick-create button</string>
+    <string name="pref_show_folder_counts">Show item counts on folders</string>
+    <string name="pref_show_extensions">Show file extensions (.xnote, .xcanvas)</string>
+    <string name="pref_dates">Dates</string>
+    <string name="material_system_colours">System colours</string>
+    <string name="material_system_fallback">Uses the default accent on this device.</string>
+    <string name="material_custom_colour">Choose a custom colour</string>
+    <string name="material_style">Style</string>
+    <string name="material_tone">Colour mode</string>
+    <string name="material_single_tone">Single tone</string>
+    <string name="material_dual_tone">Dual tone</string>
+    <string name="material_surface_colour">Surface colour</string>
+    <string name="material_colour_presets">Colour presets</string>
+    <string name="material_custom">Custom</string>
+    <string name="material_indigo">Indigo</string>
+    <string name="material_amber">Amber</string>
+    <string name="material_morning">Morning</string>
+    <string name="material_evening">Evening</string>
+    <string name="material_sea">Sea</string>
+    <string name="material_forest">Forest</string>
+    <string name="material_earth">Earth</string>
+    <string name="material_lavender">Lavender</string>
+    <string name="material_lake">Lake</string>
+    <string name="material_desert">Desert</string>
+    <string name="material_untinted_surfaces">This style uses untinted surfaces. Your surface colour is kept for other styles.</string>
+    <string name="material_style_soft">Soft</string>
+    <string name="material_style_vivid">Vivid</string>
+    <string name="material_style_original">Original</string>
+    <string name="material_style_playful">Playful</string>
+    <string name="material_style_fresh">Fresh</string>
+    <string name="material_style_clean">Clean</string>
+    <string name="material_style_muted">Muted</string>
+    <string name="material_style_grayscale">Grayscale</string>
+    <string name="material_style_soft_description">Gentle colour accents.</string>
+    <string name="material_style_vivid_description">Stronger colour accents.</string>
+    <string name="material_style_original_description">Follows your chosen colour more closely, adjusted for readability.</string>
+    <string name="material_style_playful_description">Unexpected accent colours inspired by your chosen colour.</string>
+    <string name="material_style_fresh_description">Shifted accents with softly tinted backgrounds.</string>
+    <string name="material_style_clean_description">Colourful accents with untinted neutral backgrounds.</string>
+    <string name="material_style_muted_description">Subtle colour with neutral surfaces.</string>
+    <string name="material_style_grayscale_description">No colour tint. Your chosen colour is kept for other styles.</string>
+
+    <!-- n-notes fork additions -->
+    <string name="tool_table">Table</string>
+    <string name="edit_table">Edit table</string>
+    <string name="import_file">Import file</string>
 </resources>

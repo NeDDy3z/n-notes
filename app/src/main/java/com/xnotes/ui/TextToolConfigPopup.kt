@@ -19,10 +19,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.FlowDefaults
 import com.xnotes.core.text.FlowMargins
@@ -54,20 +56,20 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-            Text("Text", color = palette.text.toComposeColor(), fontSize = 15.sp)
+            Text(stringResource(R.string.tool_text), color = palette.text.toComposeColor(), fontSize = 15.sp)
 
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Font", color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
+                Text(stringResource(R.string.font), color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
                 FaceDropdown(config.face) { apply(config.copy(face = it)) }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Mono font", color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
+                Text(stringResource(R.string.mono_font), color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
                 FaceDropdown(config.monoFace, monoOnly = true) { apply(config.copy(monoFace = it)) }
             }
-            SpinField("Size (pt)", config.sizePt, min = 6.0, max = 96.0) { apply(config.copy(sizePt = it)) }
+            SpinField(stringResource(R.string.size_pt), config.sizePt, min = 6.0, max = 96.0) { apply(config.copy(sizePt = it)) }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-                Text("Colour", color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
-                ModeChip("Auto", config.color == null) { apply(config.copy(color = null)) }
+                Text(stringResource(R.string.colour), color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
+                ModeChip(stringResource(R.string.auto), config.color == null) { apply(config.copy(color = null)) }
                 Spacer(Modifier.width(8.dp))
                 ColorPickerDot(
                     config.color,
@@ -78,16 +80,16 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
             }
 
             Text(
-                "Margins (mm)",
+                stringResource(R.string.margins_mm),
                 color = palette.textDim.toComposeColor(),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
             )
             val m = config.margins
-            SpinField("Left", m.leftMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(leftMm = it))) }
-            SpinField("Right", m.rightMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(rightMm = it))) }
-            SpinField("Top", m.topMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(topMm = it))) }
-            SpinField("Bottom", m.bottomMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(bottomMm = it))) }
+            SpinField(stringResource(R.string.edge_left), m.leftMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(leftMm = it))) }
+            SpinField(stringResource(R.string.edge_right), m.rightMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(rightMm = it))) }
+            SpinField(stringResource(R.string.edge_top), m.topMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(topMm = it))) }
+            SpinField(stringResource(R.string.edge_bottom), m.bottomMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(bottomMm = it))) }
 
             Spacer(Modifier.size(8.dp))
             if (showNewNoteRow && !config.isEmpty) {
@@ -98,7 +100,7 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
                         onCheckedChange = { on -> editor.saveNewNoteFlow(if (on) config else FlowDefaults()) },
                     )
                     Text(
-                        "Default for new notes",
+                        stringResource(R.string.default_for_new_notes),
                         color = palette.text.toComposeColor(),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
@@ -107,7 +109,7 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
                 Spacer(Modifier.size(4.dp))
             }
             Row(Modifier.align(Alignment.End)) {
-                ModeChip("Reset", false) { apply(FlowDefaults()) }
+                ModeChip(stringResource(R.string.reset), false) { apply(FlowDefaults()) }
             }
         }
     }
@@ -120,7 +122,7 @@ private fun FaceDropdown(current: FontFace, monoOnly: Boolean = false, onPick: (
     Box {
         Row(Modifier.clickable { open = true }.padding(vertical = 6.dp, horizontal = 4.dp)) {
             Text(
-                FontCatalog.label(current),
+                fontLabel(current),
                 color = palette.text.toComposeColor(),
                 style = TextStyle(fontFamily = current.toComposeFamily(), fontSize = 14.sp),
             )

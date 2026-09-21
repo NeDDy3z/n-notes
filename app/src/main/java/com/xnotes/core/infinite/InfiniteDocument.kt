@@ -48,6 +48,8 @@ class InfiniteDocument(
     val waypoints: MutableList<Waypoint> = mutableListOf(),
     /** The view the canvas was last left at, restored on open. */
     var lastView: Waypoint? = null,
+    /** When the canvas was created (epoch ms), or null for files written before this was recorded. */
+    var created: Long? = null,
 ) {
 
     /** Something that must be patched when the item list changes: the GL geometry store. */
@@ -104,7 +106,7 @@ class InfiniteDocument(
      * drawn or edited.
      */
     fun snapshotForWrite(): InfiniteDocument {
-        val copy = InfiniteDocument(dpi, path, displayName, dirty, background, waypoints.toMutableList(), lastView)
+        val copy = InfiniteDocument(dpi, path, displayName, dirty, background, waypoints.toMutableList(), lastView, created)
         copy.backing.addAll(backing)
         return copy
     }

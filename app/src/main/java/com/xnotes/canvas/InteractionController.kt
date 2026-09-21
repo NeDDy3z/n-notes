@@ -254,6 +254,7 @@ class InteractionController(
     private var lastMoveMs = 0L
     private var panVel = Pt.ZERO // smoothed finger velocity, viewport px/s
     private var panDownViewport = Pt.ZERO // where the current pan began (viewport px), for tap-to-dismiss
+    private var panFromPenButton = false // a side-button pan parks where the pen lifted: no glide
     private var downStoppedFling = false // this touch landed on a moving glide, so its lift isn't a dismiss tap
     private var panMayCommitText = false // pan begun off an open text box: a tap commits it, a drag scrolls
     // Framework singletons, created lazily on first use (always a gesture on the main thread) so
@@ -523,7 +524,7 @@ class InteractionController(
         hoverActionTool = penButtonTool
         when (penButtonTool) {
             Tool.ERASER -> { clearSelection(); beginErase(vx, vy) }
-            Tool.PAN -> beginPan(vx, vy)
+            Tool.PAN -> beginPan(vx, vy, fromPenButton = true)
             else -> hoverActionTool = null
         }
         requestRender()
@@ -541,7 +542,7 @@ class InteractionController(
     private fun endHoverAction() {
         when (hoverActionTool) {
             Tool.ERASER -> endErase()
-            Tool.PAN -> { mode = PointerMode.IDLE; startFling(panVel) }
+            Tool.PAN -> { mode = PointerMode.IDLE; startPanFling() }
             else -> Unit
         }
         hoverActionTool = null
@@ -680,7 +681,7 @@ class InteractionController(
         }
 
         when {
-            effectiveTool == Tool.PAN -> beginPan(vx, vy)
+            effectiveTool == Tool.PAN -> beginPan(vx, vy, fromPenButton = buttonHeld && penButtonTool == Tool.PAN)
             effectiveTool.isStroke -> beginDraw(content, resolvePressure(e, 0, toolType), effectiveTool, e.eventTime, Pt(vx, vy))
             effectiveTool == Tool.ERASER -> {
                 clearSelection()
@@ -791,7 +792,7 @@ class InteractionController(
                         tap -> commitTextEdit(restoreTool = true)
                         state.overscrollY > 0.0 -> releaseOverscroll()
                         !state.verticalScroll -> endPanPaginated()
-                        else -> startFling(panVel)
+                        else -> startPanFling()
                     }
                 } else {
                     // A finger tap (no drag) that didn't just halt a glide, landing off the current
@@ -802,7 +803,7 @@ class InteractionController(
                         state.overscrollY > 0.0 -> releaseOverscroll()
                         tap && hasSelection && selectionBoundsContent()?.contains(content) != true -> clearSelection()
                         !state.verticalScroll -> endPanPaginated()
-                        else -> startFling(panVel)
+                        else -> startPanFling()
                     }
                 }
             }
@@ -1016,6 +1017,7 @@ class InteractionController(
         stroke.finished = true
         if (wandMode && stroke.tool.isStroke) {
             fadingStrokes.add(FadingStroke(stroke, pageIndex))
+            frontInk?.holdFading(stroke)
             return
         }
         crossedSegments.add(fileStroke(stroke, pageIndex))
@@ -1068,6 +1070,7 @@ class InteractionController(
                     // Disappearing ink: held ephemerally, never committed to the model/undo/cache/save.
                     // A stroke drawn mid-fade cancels the fade and re-solidifies the whole held batch.
                     fadingStrokes.add(FadingStroke(stroke, pi))
+                    frontInk?.holdFading(stroke)
                     stopFade()
                     fadeAlpha = 1.0
                     scheduleFade()
@@ -2913,9 +2916,10 @@ class InteractionController(
     private fun singleFingerPanAllowed(): Boolean = !(state.zoomLocked && zoomLockPan != "single")
     private fun pinchPanAllowed(): Boolean = !(state.zoomLocked && zoomLockPan == "none")
 
-    private fun beginPan(vx: Double, vy: Double) {
+    private fun beginPan(vx: Double, vy: Double, fromPenButton: Boolean = false) {
         mode = PointerMode.PAN
         panDownViewport = Pt(vx, vy)
+        panFromPenButton = fromPenButton
         startTrackingVelocity(vx, vy)
     }
 
@@ -3020,7 +3024,7 @@ class InteractionController(
             panVel.x >= FLIP_FLING_VEL && state.atRowEdge(next = false) && state.currentRow > 0 ->
                 flipTo(state.currentRow - 1)
             pull != 0.0 -> { clearFlipPull(); onViewChanged(); requestRender() }
-            else -> startFling(panVel)
+            else -> startPanFling()
         }
     }
 
@@ -3050,6 +3054,11 @@ class InteractionController(
         val inst = Pt((vx - lastPan.x) / dt, (vy - lastPan.y) / dt)
         panVel = Pt(panVel.x * VEL_SMOOTH + inst.x * (1 - VEL_SMOOTH), panVel.y * VEL_SMOOTH + inst.y * (1 - VEL_SMOOTH))
         lastMoveMs = now
+    }
+
+    /** Glide on after a lifted pan, unless the pen's side button drove it: that one stops dead. */
+    private fun startPanFling() {
+        if (!panFromPenButton) startFling(panVel)
     }
 
     private fun startFling(fingerVel: Pt) {
@@ -3373,6 +3382,8 @@ class InteractionController(
             // Disappearing ink (magic wand): ephemeral strokes drawn live at the shared fade alpha,
             // without mutating their stored colour. Highlighters keep their MULTIPLY look while fading.
             for (fs in fadingStrokes) {
+                // Still on the front buffer, which would otherwise draw it a second time.
+                if (frontInk?.holding(fs.stroke) == true) continue
                 paintClippedToPage(r, fs.pageIndex) {
                     r.saveLayerBlended(fs.stroke.paintBounds(), fadeAlpha, fs.stroke.blendMode)
                     fs.stroke.paint(r)

@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -134,11 +135,12 @@ fun Toolbar(
     }
 
     if (renaming) {
+        val renameFailed = stringResource(R.string.err_rename_note)
         RenameDialog(
             initial = editor.title,
             onConfirm = { name ->
                 renaming = false
-                if (!editor.renameCurrentDocument(name)) editor.message = "Couldn’t rename the note."
+                if (!editor.renameCurrentDocument(name)) editor.message = renameFailed
             },
             onDismiss = { renaming = false },
         )
@@ -165,16 +167,16 @@ private fun ToolbarItemView(
         // Canvas-only items; a stored paged layout can never hold one, so nothing is drawn.
         ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP -> Unit
 
-        ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, "Home") { onOpenBackstage() }
+        ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, stringResource(R.string.toolbar_home)) { onOpenBackstage() }
         ToolbarItem.TITLE -> Label(
-            editor.title,
+            if (editor.state.document.displayName == null && editor.state.document.path == null) stringResource(R.string.untitled) else editor.title,
             modifier = Modifier
                 .widthIn(max = 160.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .clickable { onRename() },
         )
         ToolbarItem.SIDEBAR ->
-            ToolbarIcon(XnotesIcons.sidebar, "Side panel", active = editor.sidebarVisible) { editor.toggleSidebar() }
+            ToolbarIcon(XnotesIcons.sidebar, stringResource(R.string.side_panel), active = editor.sidebarVisible) { editor.toggleSidebar() }
 
         ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
         ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER, ToolbarItem.PAN,
@@ -185,17 +187,17 @@ private fun ToolbarItemView(
         }
 
         ToolbarItem.WAND ->
-            ToolbarIcon(XnotesIcons.magicWand, "Disappearing ink", active = editor.wandEnabled) { editor.toggleWand() }
+            ToolbarIcon(XnotesIcons.magicWand, stringResource(R.string.tool_wand), active = editor.wandEnabled) { editor.toggleWand() }
         ToolbarItem.RULER ->
-            ToolbarIcon(XnotesIcons.ruler, "Ruler", active = editor.rulerVisible) { editor.toggleRuler() }
+            ToolbarIcon(XnotesIcons.ruler, stringResource(R.string.tool_ruler), active = editor.rulerVisible) { editor.toggleRuler() }
 
         ToolbarItem.IMAGE -> ImageMenu(editor, onInsertImage, onAddStickers)
 
-        ToolbarItem.UNDO -> ToolbarIcon(XnotesIcons.undo, "Undo", enabled = editor.canUndo) { editor.undo() }
-        ToolbarItem.REDO -> ToolbarIcon(XnotesIcons.redo, "Redo", enabled = editor.canRedo) { editor.redo() }
+        ToolbarItem.UNDO -> ToolbarIcon(XnotesIcons.undo, stringResource(R.string.undo), enabled = editor.canUndo) { editor.undo() }
+        ToolbarItem.REDO -> ToolbarIcon(XnotesIcons.redo, stringResource(R.string.redo), enabled = editor.canRedo) { editor.redo() }
 
         ToolbarItem.PAGE_NAV -> {
-            ToolbarIcon(XnotesIcons.prev, "Previous page") { editor.prevPage() }
+            ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page)) { editor.prevPage() }
             var jumpOpen by remember { mutableStateOf(false) }
             Box {
                 Label(
@@ -206,14 +208,14 @@ private fun ToolbarItemView(
                 )
                 if (jumpOpen) PageJumpPopup(editor) { jumpOpen = false }
             }
-            ToolbarIcon(XnotesIcons.next, "Next page") { editor.nextPage() }
+            ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page)) { editor.nextPage() }
         }
         ToolbarItem.STYLES -> StylesButton(editor)
         ToolbarItem.MARGINS -> MarginsButton(editor)
         ToolbarItem.VIEW -> ViewButton(editor)
 
         ToolbarItem.ZOOM -> {
-            ToolbarIcon(XnotesIcons.zoomOut, "Zoom out", enabled = !editor.zoomLocked) { editor.zoomOut() }
+            ToolbarIcon(XnotesIcons.zoomOut, stringResource(R.string.zoom_out), enabled = !editor.zoomLocked) { editor.zoomOut() }
             var zoomMenuOpen by remember { mutableStateOf(false) }
             Box {
                 Label(
@@ -224,16 +226,16 @@ private fun ToolbarItemView(
                 )
                 if (zoomMenuOpen) ZoomMenuPopup(editor) { zoomMenuOpen = false }
             }
-            ToolbarIcon(XnotesIcons.zoomIn, "Zoom in", enabled = !editor.zoomLocked) { editor.zoomIn() }
+            ToolbarIcon(XnotesIcons.zoomIn, stringResource(R.string.zoom_in), enabled = !editor.zoomLocked) { editor.zoomIn() }
         }
         ToolbarItem.FIT -> FitMenu(editor)
         ToolbarItem.ZOOM_LOCK -> ToolbarIcon(
             if (editor.zoomLocked) XnotesIcons.lock else XnotesIcons.unlock,
-            "Zoom lock",
+            stringResource(R.string.toolbar_zoom_lock),
             active = editor.zoomLocked,
         ) { editor.toggleZoomLock() }
 
-        ToolbarItem.FULLSCREEN -> ToolbarIcon(XnotesIcons.fullscreen, "Full screen") { onToggleFullscreen() }
+        ToolbarItem.FULLSCREEN -> ToolbarIcon(XnotesIcons.fullscreen, stringResource(R.string.toolbar_fullscreen)) { onToggleFullscreen() }
 
         ToolbarItem.COLORS -> editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->
             Box {
@@ -259,7 +261,7 @@ private fun ToolButton(
 ) {
     if (icon == null) return
     Box {
-        ToolbarIcon(icon, tool.name, active = editor.tool == tool) {
+        ToolbarIcon(icon, stringResource(tool.labelRes), active = editor.tool == tool) {
             if (editor.tool == tool && (tool.isStroke || tool == Tool.SHAPE || tool == Tool.ERASER || tool == Tool.SELECT || tool == Tool.TEXT || tool == Tool.TABLE)) {
                 setConfigForTool(tool)
             } else {
@@ -288,7 +290,7 @@ private fun RenameDialog(initial: String, onConfirm: (String) -> Unit, onDismiss
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename note") },
+        title = { Text(stringResource(R.string.rename_note)) },
         text = {
             OutlinedTextField(
                 value = text,
@@ -298,9 +300,9 @@ private fun RenameDialog(initial: String, onConfirm: (String) -> Unit, onDismiss
             )
         },
         confirmButton = {
-            TextButton(onClick = { if (text.isBlank()) onDismiss() else onConfirm(text) }) { Text("Rename") }
+            TextButton(onClick = { if (text.isBlank()) onDismiss() else onConfirm(text) }) { Text(stringResource(R.string.rename)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         containerColor = LocalPalette.current.menuBg.toComposeColor(),
     )
 }
@@ -310,7 +312,7 @@ private fun RenameDialog(initial: String, onConfirm: (String) -> Unit, onDismiss
 private fun StylesButton(editor: Editor) {
     var open by remember { mutableStateOf(false) }
     Box {
-        ToolbarIcon(XnotesIcons.sliders, "Styles") { open = true }
+        ToolbarIcon(XnotesIcons.sliders, stringResource(R.string.toolbar_styles)) { open = true }
         if (open) StylesPopup(editor) { open = false }
     }
 }
@@ -320,7 +322,7 @@ private fun StylesButton(editor: Editor) {
 private fun MarginsButton(editor: Editor) {
     var open by remember { mutableStateOf(false) }
     Box {
-        ToolbarIcon(XnotesIcons.margins, "Margins") { open = true }
+        ToolbarIcon(XnotesIcons.margins, stringResource(R.string.toolbar_margins)) { open = true }
         if (open) MarginsPopup(editor) { open = false }
     }
 }
@@ -330,7 +332,7 @@ private fun MarginsButton(editor: Editor) {
 private fun ViewButton(editor: Editor) {
     var open by remember { mutableStateOf(false) }
     Box {
-        ToolbarIcon(XnotesIcons.view, "View") { open = true }
+        ToolbarIcon(XnotesIcons.view, stringResource(R.string.toolbar_view)) { open = true }
         if (open) ViewMenuPopup(editor) { open = false }
     }
 }
@@ -344,13 +346,11 @@ internal fun ToolbarIcon(
     onClick: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    // Material tones can sit too close to the idle grey for an accent tint to read as
-    // "selected", so the material chrome marks active icons with a filled accent disc
-    // (the icon flipped to the on-accent colour) instead of a tint swap.
+    // Material selections use the generated container and its matching foreground.
     val filled = active && palette.isMaterial
     val tint = when {
         !enabled -> com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor()
-        filled -> palette.bg.toComposeColor()
+        filled -> palette.selectionForeground.toComposeColor()
         active -> palette.accent.toComposeColor()
         else -> palette.textDim.toComposeColor()
     }
@@ -359,7 +359,7 @@ internal fun ToolbarIcon(
             Modifier
                 .size(34.dp)
                 .clip(CircleShape)
-                .background(if (filled) palette.accent.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent),
+                .background(if (filled) palette.selectionBackground.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))
@@ -377,7 +377,7 @@ internal fun ClosePaneButton(onClose: () -> Unit) {
             .height(26.dp)
             .background(palette.border.toComposeColor()),
     )
-    ToolbarIcon(XnotesIcons.close, "Close this pane", onClick = onClose)
+    ToolbarIcon(XnotesIcons.close, stringResource(R.string.close_pane), onClick = onClose)
 }
 
 @Composable
@@ -424,11 +424,11 @@ private fun ImageMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: 
     var expanded by remember { mutableStateOf(false) }
     var stickersOpen by remember { mutableStateOf(false) }
     Box {
-        ToolbarIcon(XnotesIcons.image, "Image") { expanded = true }
+        ToolbarIcon(XnotesIcons.image, stringResource(R.string.tool_image)) { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text("Paste image") }, onClick = { editor.pasteImage(); expanded = false })
-            DropdownMenuItem(text = { Text("Insert image…") }, onClick = { onInsertImage(); expanded = false })
-            DropdownMenuItem(text = { Text("Stickers") }, onClick = { expanded = false; stickersOpen = true })
+            DropdownMenuItem(text = { Text(stringResource(R.string.paste_image)) }, onClick = { editor.pasteImage(); expanded = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.insert_image_ellipsis)) }, onClick = { onInsertImage(); expanded = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.stickers)) }, onClick = { expanded = false; stickersOpen = true })
         }
         if (stickersOpen) StickersMenu(editor, onAddStickers) { stickersOpen = false }
     }
@@ -444,13 +444,13 @@ private fun StickersMenu(editor: Editor, onAddStickers: () -> Unit, onDismiss: (
     val palette = LocalPalette.current
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         DropdownMenuItem(
-            text = { Text("Add stickers…") },
+            text = { Text(stringResource(R.string.add_stickers)) },
             leadingIcon = { Icon(XnotesIcons.plus, contentDescription = null, modifier = Modifier.size(18.dp)) },
             onClick = onAddStickers,
         )
         if (editor.stickers.isEmpty()) {
             Text(
-                "No stickers yet.",
+                stringResource(R.string.no_stickers),
                 color = palette.textDim.toComposeColor(),
                 fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -477,7 +477,7 @@ private fun StickersMenu(editor: Editor, onAddStickers: () -> Unit, onDismiss: (
                 }
             }
             Text(
-                "Tap to insert, hold to remove",
+                stringResource(R.string.stickers_hint),
                 color = palette.textDim.toComposeColor(),
                 fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -507,7 +507,7 @@ private fun StickerTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -
         thumb?.let {
             Image(
                 bitmap = it,
-                contentDescription = "Sticker",
+                contentDescription = stringResource(R.string.sticker),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().padding(3.dp),
             )
@@ -519,11 +519,11 @@ private fun StickerTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -
 private fun FitMenu(editor: Editor) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        ToolbarIcon(XnotesIcons.fit, "Fit") { expanded = true }
+        ToolbarIcon(XnotesIcons.fit, stringResource(R.string.toolbar_fit)) { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text("Fit whole page") }, onClick = { editor.fitPage(); expanded = false })
-            DropdownMenuItem(text = { Text("Fit page width") }, onClick = { editor.fitWidth(); expanded = false })
-            DropdownMenuItem(text = { Text("Fit page height") }, onClick = { editor.fitHeight(); expanded = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.fit_page)) }, onClick = { editor.fitPage(); expanded = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.fit_width)) }, onClick = { editor.fitWidth(); expanded = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.fit_height)) }, onClick = { editor.fitHeight(); expanded = false })
         }
     }
 }

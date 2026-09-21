@@ -1,25 +1,56 @@
 package com.xnotes.canvas
 
+import com.xnotes.core.model.Rgba
+
 /**
  * Composes the View menu's PDF colour filters (CSS filter semantics) into one 4x5 colour
  * matrix in android.graphics.ColorMatrix layout: row-major, offsets in the fifth column,
  * channel range 0..255. Pure math so it is JVM-testable; the platform layer wraps the
  * result in a real ColorMatrix.
+ *
+ * The two blend filters take a colour rather than a percentage. Blending a pixel with a
+ * *constant* colour is affine per channel for both MULTIPLY and SCREEN, so they fold into
+ * the same single matrix as the rest of the chain and cost nothing extra per pixel.
  */
 object PdfColorFilter {
 
-    fun isIdentity(contrast: Int, invert: Int, brightness: Int, sepia: Int): Boolean =
-        contrast == 100 && invert == 0 && brightness == 100 && sepia == 0
+    /** Multiply by white is the identity, so white is this filter's "off". */
+    val MULTIPLY_OFF = Rgba(255, 255, 255)
 
-    /** The composed matrix, applying contrast, then invert, then brightness, then sepia. */
-    fun matrix(contrast: Int, invert: Int, brightness: Int, sepia: Int): FloatArray {
+    /** Screen with black is the identity, so black is this filter's "off". */
+    val SCREEN_OFF = Rgba(0, 0, 0)
+
+    fun isIdentity(
+        contrast: Int,
+        invert: Int,
+        brightness: Int,
+        sepia: Int,
+        multiply: Rgba = MULTIPLY_OFF,
+        screen: Rgba = SCREEN_OFF,
+    ): Boolean = contrast == 100 && invert == 0 && brightness == 100 && sepia == 0 &&
+        multiply.rgbEquals(MULTIPLY_OFF) && screen.rgbEquals(SCREEN_OFF)
+
+    /** The composed matrix: contrast, then invert, brightness, sepia, multiply, screen. */
+    fun matrix(
+        contrast: Int,
+        invert: Int,
+        brightness: Int,
+        sepia: Int,
+        multiply: Rgba = MULTIPLY_OFF,
+        screen: Rgba = SCREEN_OFF,
+    ): FloatArray {
         var m = IDENTITY
         if (contrast != 100) m = concat(contrastMatrix(contrast / 100f), m)
         if (invert != 0) m = concat(invertMatrix(invert / 100f), m)
         if (brightness != 100) m = concat(brightnessMatrix(brightness / 100f), m)
         if (sepia != 0) m = concat(sepiaMatrix(sepia / 100f), m)
+        if (!multiply.rgbEquals(MULTIPLY_OFF)) m = concat(multiplyMatrix(multiply), m)
+        if (!screen.rgbEquals(SCREEN_OFF)) m = concat(screenMatrix(screen), m)
         return m
     }
+
+    /** Alpha is meaningless for a blend colour, so only the channels are compared. */
+    private fun Rgba.rgbEquals(o: Rgba): Boolean = r == o.r && g == o.g && b == o.b
 
     private val IDENTITY = floatArrayOf(
         1f, 0f, 0f, 0f, 0f,
@@ -59,11 +90,30 @@ object PdfColorFilter {
         0f, 0f, 0f, 1f, 0f,
     )
 
-    /** CSS sepia(s): the filter-effects sepia matrix interpolated with identity. */
+    /** CSS sepia(s): the filter-effects sepia matrix interpolated with identity. CSS stops at
+     *  s = 1; past it the same interpolation keeps going, pushing the warm tint further. */
     private fun sepiaMatrix(s: Float): FloatArray = floatArrayOf(
         1f - 0.607f * s, 0.769f * s, 0.189f * s, 0f, 0f,
         0.349f * s, 1f - 0.314f * s, 0.168f * s, 0f, 0f,
         0.272f * s, 0.534f * s, 1f - 0.869f * s, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f,
+    )
+
+    /** MULTIPLY with constant [c]: out = in * c, so white stays white and the page takes the
+     *  tint the way a highlighter stroke does. Per channel a plain scale. */
+    private fun multiplyMatrix(c: Rgba): FloatArray = floatArrayOf(
+        c.r / 255f, 0f, 0f, 0f, 0f,
+        0f, c.g / 255f, 0f, 0f, 0f,
+        0f, 0f, c.b / 255f, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f,
+    )
+
+    /** SCREEN with constant [c]: out = 1 - (1 - in)(1 - c), so black takes the tint and white
+     *  stays white — the inverse highlighter. Per channel a scale plus an offset. */
+    private fun screenMatrix(c: Rgba): FloatArray = floatArrayOf(
+        1f - c.r / 255f, 0f, 0f, 0f, c.r.toFloat(),
+        0f, 1f - c.g / 255f, 0f, 0f, c.g.toFloat(),
+        0f, 0f, 1f - c.b / 255f, 0f, c.b.toFloat(),
         0f, 0f, 0f, 1f, 0f,
     )
 
@@ -97,9 +147,20 @@ class PdfPageFilter private constructor(
     companion object {
         val NONE = PdfPageFilter(null, false)
 
-        fun of(contrast: Int, invert: Int, brightness: Int, sepia: Int, keepImages: Boolean): PdfPageFilter {
-            if (PdfColorFilter.isIdentity(contrast, invert, brightness, sepia)) return NONE
-            return PdfPageFilter(PdfColorFilter.matrix(contrast, invert, brightness, sepia), keepImages)
+        fun of(
+            contrast: Int,
+            invert: Int,
+            brightness: Int,
+            sepia: Int,
+            multiply: Rgba = PdfColorFilter.MULTIPLY_OFF,
+            screen: Rgba = PdfColorFilter.SCREEN_OFF,
+            keepImages: Boolean,
+        ): PdfPageFilter {
+            if (PdfColorFilter.isIdentity(contrast, invert, brightness, sepia, multiply, screen)) return NONE
+            return PdfPageFilter(
+                PdfColorFilter.matrix(contrast, invert, brightness, sepia, multiply, screen),
+                keepImages,
+            )
         }
     }
 }

@@ -97,6 +97,13 @@ class SettingsTest {
         assertEquals("toggle_pan", back.stylusButtonTap)
     }
 
+    @Test fun frontBufferingIsOnUntilItIsTurnedOff() {
+        // Settings written before the switch existed, which is every install that has one.
+        assertFalse(Settings.fromJson(JSONObject()).prefs.disableFrontBuffering)
+        val back = Settings.fromJson(Settings(prefs = Preferences(disableFrontBuffering = true)).toJson()).prefs
+        assertTrue(back.disableFrontBuffering)
+    }
+
     @Test fun customPageSizeRoundTripsAndSizesANewPage() {
         val prefs = Preferences(
             defaultPageSize = PageSize.CUSTOM,
@@ -192,6 +199,30 @@ class SettingsTest {
         assertNull(back.newNoteStyle.spacing)
     }
 
+    @Test fun newCanvasBackgroundNullByDefaultAndUnwritten() {
+        val s = Settings.fromJson(JSONObject())
+        assertNull(s.newCanvasBackground)
+        assertFalse(s.toJson().has("new_canvas_background"))
+    }
+
+    @Test fun newCanvasBackgroundRoundTrips() {
+        val bg = com.xnotes.core.infinite.CanvasBackground(
+            pattern = com.xnotes.core.model.PagePattern.DOTS,
+            patternColor = Rgba(40, 60, 90, 120),
+            spacing = 52.0,
+            paperColor = Rgba(250, 244, 226),
+        )
+        val back = Settings.fromJson(Settings(newCanvasBackground = bg).toJson())
+        assertEquals(bg, back.newCanvasBackground)
+    }
+
+    @Test fun newCanvasBackgroundKeepsThemePaperWhenUnset() {
+        val bg = com.xnotes.core.infinite.CanvasBackground(pattern = com.xnotes.core.model.PagePattern.NONE)
+        val back = Settings.fromJson(Settings(newCanvasBackground = bg).toJson())
+        assertEquals(bg, back.newCanvasBackground)
+        assertNull(back.newCanvasBackground?.paperColor)
+    }
+
     @Test fun fingerDrawAutoCheckedDefaultsFalse() {
         assertFalse(Settings.fromJson(JSONObject()).fingerDrawAutoChecked)
     }
@@ -273,16 +304,120 @@ class SettingsTest {
         assertEquals("classic", p.oledPaletteStyle)
     }
 
-    @Test fun materialSeedNullByDefaultAndUnwritten() {
-        assertNull(Preferences.fromJson(JSONObject()).materialSeed)
-        assertFalse(Preferences().toJson().has("material_seed"))
+    @Test fun materialDefaultsUseSystemWithFirstPresetsReady() {
+        val defaults = Preferences.fromJson(JSONObject())
+        assertEquals(MaterialColourMode.SYSTEM, defaults.materialMode)
+        assertEquals(Rgba(244, 67, 54), defaults.materialSingleSeed)
+        assertEquals(Rgba(154, 124, 66), defaults.materialDualSeed)
+        assertEquals(Rgba(61, 117, 230), defaults.materialSurfaceSeed)
+        for (key in listOf("material_mode", "material_seed", "material_single_seed", "material_dual_seed", "material_surface_seed")) {
+            assertFalse(defaults.toJson().has(key))
+        }
     }
 
-    @Test fun materialSeedRoundTrips() {
-        val back = Preferences.fromJson(Preferences(materialSeed = Rgba(33, 150, 243)).toJson())
-        assertEquals(Rgba(33, 150, 243, 255), back.materialSeed)
-        val cleared = Preferences.fromJson(back.copy(materialSeed = null).toJson())
-        assertNull(cleared.materialSeed)
+    @Test fun legacySingleToneMigratesOnlyItsOwnAccent() {
+        val loaded = Preferences.fromJson(JSONObject().put("material_seed", "#2196f3"))
+        assertEquals(MaterialColourMode.SINGLE, loaded.materialMode)
+        assertEquals(Rgba(33, 150, 243), loaded.materialSingleSeed)
+        assertEquals(Preferences.DEFAULT_MATERIAL_DUAL, loaded.materialDualSeed)
+        assertEquals(Preferences.DEFAULT_MATERIAL_SURFACE, loaded.materialSurfaceSeed)
+        assertEquals(loaded, Preferences.fromJson(loaded.toJson()))
+    }
+
+    @Test fun legacyDualToneMigratesOnlyItsOwnColours() {
+        val loaded = Preferences.fromJson(JSONObject()
+            .put("material_dual_tone", true).put("material_seed", "#800000")
+            .put("material_surface_seed", "#000080"))
+        assertEquals(MaterialColourMode.DUAL, loaded.materialMode)
+        assertEquals(Preferences.DEFAULT_MATERIAL_SINGLE, loaded.materialSingleSeed)
+        assertEquals(Rgba(128, 0, 0), loaded.materialDualSeed)
+        assertEquals(Rgba(0, 0, 128), loaded.materialSurfaceSeed)
+        assertEquals(loaded, Preferences.fromJson(loaded.toJson()))
+    }
+
+    @Test fun legacyDualToneRetainsOldFallbackColours() {
+        val json = JSONObject().put("material_dual_tone", true)
+        val loaded = Preferences.fromJson(json)
+        assertEquals(Preferences.DEFAULT_ACCENT, loaded.materialDualSeed)
+        assertEquals(Rgba(33, 150, 243), loaded.materialSurfaceSeed)
+        val classicAccent = Preferences.fromJson(json.put("accent_color", "#123456"))
+        assertEquals(Rgba(18, 52, 86), classicAccent.materialDualSeed)
+        assertEquals(classicAccent, Preferences.fromJson(classicAccent.toJson()))
+    }
+
+    @Test fun customMaterialOptionsDefaultForgivingly() {
+        for (value in listOf<Any>(JSONObject.NULL, "unknown", "medium", "high", 123, JSONObject())) {
+            val p = Preferences.fromJson(JSONObject().put("material_style", value).put("material_contrast", value))
+            assertEquals(MaterialStyle.TONAL_SPOT, p.materialStyle)
+            assertFalse(p.toJson().has("material_contrast"))
+        }
+        val defaults = Preferences.fromJson(JSONObject())
+        assertEquals(MaterialStyle.TONAL_SPOT, defaults.materialStyle)
+        assertFalse(defaults.toJson().has("material_style"))
+        assertFalse(defaults.toJson().has("material_contrast"))
+    }
+
+    @Test fun materialOptionsDefaultForgivingly() {
+        for (value in listOf<Any>(JSONObject.NULL, "unknown", 123, JSONObject())) {
+            val loaded = Preferences.fromJson(JSONObject()
+                .put("material_mode", value).put("material_dual_tone", value)
+                .put("material_seed", value).put("material_single_seed", value)
+                .put("material_dual_seed", value).put("material_surface_seed", value))
+            assertEquals(MaterialColourMode.SYSTEM, loaded.materialMode)
+            assertEquals(Preferences.DEFAULT_MATERIAL_SINGLE, loaded.materialSingleSeed)
+            assertEquals(Preferences.DEFAULT_MATERIAL_DUAL, loaded.materialDualSeed)
+            assertEquals(Preferences.DEFAULT_MATERIAL_SURFACE, loaded.materialSurfaceSeed)
+        }
+    }
+
+    @Test fun materialModesKeepSeparateColoursAcrossSwitchesAndRestarts() {
+        fun reload(p: Preferences) = Preferences.fromJson(p.toJson())
+        val single = reload(Preferences(materialMode = MaterialColourMode.SINGLE)
+            .copy(materialSingleSeed = Rgba(4, 5, 6)))
+        val firstDual = reload(single.copy(materialMode = MaterialColourMode.DUAL))
+        assertEquals(Preferences.DEFAULT_MATERIAL_DUAL, firstDual.materialDualSeed)
+        assertEquals(Preferences.DEFAULT_MATERIAL_SURFACE, firstDual.materialSurfaceSeed)
+        val dual = reload(firstDual.copy(materialDualSeed = Rgba(7, 8, 9), materialSurfaceSeed = Rgba(10, 11, 12)))
+        val backToSingle = reload(dual.copy(materialMode = MaterialColourMode.SINGLE))
+        assertEquals(Rgba(4, 5, 6), backToSingle.materialSingleSeed)
+        val changedSingle = reload(backToSingle.copy(materialSingleSeed = Rgba(13, 14, 15)))
+        val system = reload(changedSingle.copy(materialMode = MaterialColourMode.SYSTEM))
+        assertFalse(system.toJson().has("material_seed"))
+        assertFalse(system.toJson().has("material_dual_tone"))
+        val backToDual = reload(system.copy(materialMode = MaterialColourMode.DUAL))
+        assertEquals(Rgba(7, 8, 9), backToDual.materialDualSeed)
+        assertEquals(Rgba(10, 11, 12), backToDual.materialSurfaceSeed)
+        assertEquals(Rgba(13, 14, 15), backToDual.materialSingleSeed)
+    }
+
+    @Test fun firstSingleToneDoesNotInheritDualToneOrClassicAccent() {
+        val dual = Preferences(accentColor = Rgba(1, 2, 3), materialMode = MaterialColourMode.DUAL,
+            materialDualSeed = Rgba(4, 5, 6), materialSurfaceSeed = Rgba(7, 8, 9))
+        val single = Preferences.fromJson(dual.copy(materialMode = MaterialColourMode.SINGLE).toJson())
+        assertEquals(Preferences.DEFAULT_MATERIAL_SINGLE, single.materialSingleSeed)
+        assertEquals(dual.materialDualSeed, single.materialDualSeed)
+        assertEquals(dual.materialSurfaceSeed, single.materialSurfaceSeed)
+    }
+
+    @Test fun materialColoursAndStylesSurviveAllModesAndAppearanceSwitches() {
+        for (style in MaterialStyle.entries) {
+            for (mode in MaterialColourMode.entries) {
+                val p = Preferences(materialMode = mode, materialSingleSeed = Rgba(128, 0, 0),
+                    materialDualSeed = Rgba(0, 128, 0), materialSurfaceSeed = Rgba(0, 0, 128), materialStyle = style)
+                assertEquals(p, Preferences.fromJson(p.toJson()))
+                for (appearance in listOf("light", "dark", "oled", "system")) {
+                    val changed = p.copy(uiAppearance = appearance).withPaletteStyle("classic")
+                    assertEquals(changed, Preferences.fromJson(changed.toJson()))
+                }
+            }
+        }
+    }
+
+    @Test fun defaultPresetsRoundTripInEveryMode() {
+        for (mode in MaterialColourMode.entries) {
+            val p = Preferences(materialMode = mode)
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
     }
 
     @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {

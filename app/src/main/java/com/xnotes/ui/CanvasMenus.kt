@@ -32,9 +32,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import com.xnotes.R
 import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.ui.icons.XnotesIcons
@@ -149,16 +151,16 @@ fun SelectionMenu(host: SelectionMenuHost) {
             .background(palette.menuBg.toComposeColor())
             .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
     ) {
-        ActionIcon(XnotesIcons.trash, "Delete") { host.deleteSelection() }
-        ActionIcon(XnotesIcons.cut, "Cut") { host.cutSelection() }
-        ActionIcon(XnotesIcons.copy, "Copy") { host.copySelection(); host.dismissSelectionMenu() }
-        ActionIcon(XnotesIcons.front, "Bring to front") { host.bringToFront(); host.dismissSelectionMenu() }
-        ActionIcon(XnotesIcons.duplicate, "Duplicate") { host.duplicateSelection() }
+        ActionIcon(XnotesIcons.trash, stringResource(R.string.delete)) { host.deleteSelection() }
+        ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
+        ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { host.copySelection(); host.dismissSelectionMenu() }
+        ActionIcon(XnotesIcons.front, stringResource(R.string.bring_to_front)) { host.bringToFront(); host.dismissSelectionMenu() }
+        ActionIcon(XnotesIcons.duplicate, stringResource(R.string.duplicate)) { host.duplicateSelection() }
         if (host.selectionIsTable) {
-            ActionIcon(XnotesIcons.table, "Edit table", active = host.tableEditing) { host.toggleTableEditMode() }
+            ActionIcon(XnotesIcons.table, stringResource(R.string.edit_table), active = host.tableEditing) { host.toggleTableEditMode() }
         }
         Box {
-            ActionIcon(XnotesIcons.more, "More") { overflowOpen = true }
+            ActionIcon(XnotesIcons.more, stringResource(R.string.more)) { overflowOpen = true }
             DropdownMenu(
                 expanded = overflowOpen,
                 onDismissRequest = { overflowOpen = false },
@@ -168,7 +170,7 @@ fun SelectionMenu(host: SelectionMenuHost) {
                 // colour-and-width pair to restyle.
                 val styles = host.selectionStyles()
                 DropdownMenuItem(
-                    text = { Text("Change style") },
+                    text = { Text(stringResource(R.string.change_style)) },
                     enabled = styles.isNotEmpty(),
                     onClick = { overflowOpen = false; styleOpen = true },
                 )
@@ -197,7 +199,7 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("Lock") },
+                    text = { Text(stringResource(R.string.lock)) },
                     onClick = { overflowOpen = false; host.lockSelection() },
                 )
             }
@@ -268,8 +270,8 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss, properties = PopupProperties(focusable = false)) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("CHANGE STYLE")
-            StyleCaption("COLOUR")
+            PopupTitle(stringResource(R.string.title_change_style))
+            StyleCaption(stringResource(R.string.caption_colour))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -297,7 +299,7 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
             Spacer(Modifier.size(8.dp))
             // The drag previews live and commits on release, so it is one undo step, not fifty.
             SliderRow(
-                "THICKNESS",
+                stringResource(R.string.caption_thickness),
                 width,
                 DrawStyle.MIN_WIDTH.toFloat()..DrawStyle.MAX_WIDTH.toFloat(),
                 onChangeFinished = { host.restyleSelection(null, null) },
@@ -306,7 +308,7 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
                 host.restyleSelection(null, w.toDouble(), preview = true)
             }
             Text(
-                "Applies to the selected strokes and shapes.",
+                stringResource(R.string.change_style_hint),
                 color = palette.textDim.toComposeColor(),
                 fontSize = 11.sp,
             )
@@ -371,12 +373,12 @@ fun ScreenshotMenu(editor: Editor) {
     ) {
         Icon(
             XnotesIcons.copy,
-            contentDescription = "Copy as image",
+            contentDescription = stringResource(R.string.copy_as_image),
             tint = palette.text.toComposeColor(),
             modifier = Modifier.size(20.dp),
         )
         Text(
-            "Copy as image",
+            stringResource(R.string.copy_as_image),
             color = palette.text.toComposeColor(),
             fontSize = 14.sp,
             modifier = Modifier.padding(start = 8.dp),
@@ -433,22 +435,22 @@ fun LongPressMenu(host: LongPressMenuHost, onInsertImageAt: (com.xnotes.core.geo
         DropdownMenu(expanded = true, onDismissRequest = { host.dismissContextMenu() }) {
             val locked = target.locked
             if (locked != null) {
-                DropdownMenuItem(text = { Text("Unlock") }, onClick = {
+                DropdownMenuItem(text = { Text(stringResource(R.string.unlock)) }, onClick = {
                     host.unlockItem(locked); host.dismissContextMenu()
                 })
                 return@DropdownMenu
             }
             if (host.hasClipboardItems) {
-                DropdownMenuItem(text = { Text("Paste here") }, onClick = {
+                DropdownMenuItem(text = { Text(stringResource(R.string.paste_here)) }, onClick = {
                     host.pasteItemsAt(target.content); host.dismissContextMenu()
                 })
             }
             if (host.clipboardHasImage) {
-                DropdownMenuItem(text = { Text("Paste image") }, onClick = {
+                DropdownMenuItem(text = { Text(stringResource(R.string.paste_image)) }, onClick = {
                     host.pasteClipboardImageAt(target.content); host.dismissContextMenu()
                 })
             }
-            DropdownMenuItem(text = { Text("Insert image…") }, onClick = {
+            DropdownMenuItem(text = { Text(stringResource(R.string.insert_image_ellipsis)) }, onClick = {
                 onInsertImageAt(target.content); host.dismissContextMenu()
             })
         }
@@ -491,31 +493,31 @@ fun FlowEditMenu(editor: Editor) {
             .background(palette.menuBg.toComposeColor())
             .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
     ) {
-        ActionIcon(XnotesIcons.cut, "Cut", enabled = hasSelection) {
+        ActionIcon(XnotesIcons.cut, stringResource(R.string.cut), enabled = hasSelection) {
             editor.flowCut(); editor.dismissFlowContextMenu()
         }
-        ActionIcon(XnotesIcons.copy, "Copy", enabled = hasSelection) {
+        ActionIcon(XnotesIcons.copy, stringResource(R.string.copy), enabled = hasSelection) {
             editor.flowCopy(); editor.dismissFlowContextMenu()
         }
         Box {
-            ActionIcon(XnotesIcons.paste, "Paste", enabled = hasClip) { pasteOpen = true }
+            ActionIcon(XnotesIcons.paste, stringResource(R.string.paste), enabled = hasClip) { pasteOpen = true }
             DropdownMenu(
                 expanded = pasteOpen,
                 onDismissRequest = { pasteOpen = false },
                 properties = PopupProperties(focusable = false),
             ) {
-                DropdownMenuItem(text = { Text("Paste") }, onClick = {
+                DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, onClick = {
                     pasteOpen = false; editor.pastePlainAtCaret(); editor.dismissFlowContextMenu()
                 })
-                DropdownMenuItem(text = { Text("Paste as Markdown") }, onClick = {
+                DropdownMenuItem(text = { Text(stringResource(R.string.paste_markdown)) }, onClick = {
                     pasteOpen = false; editor.pasteMarkdownAtCaret(); editor.dismissFlowContextMenu()
                 })
-                DropdownMenuItem(text = { Text("Paste as Code") }, onClick = {
+                DropdownMenuItem(text = { Text(stringResource(R.string.paste_code)) }, onClick = {
                     pasteOpen = false; editor.pasteAsCodeAtCaret(); editor.dismissFlowContextMenu()
                 })
             }
         }
-        ActionIcon(XnotesIcons.trash, "Delete", enabled = hasSelection) {
+        ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), enabled = hasSelection) {
             editor.flowDeleteSelection(); editor.dismissFlowContextMenu()
         }
     }

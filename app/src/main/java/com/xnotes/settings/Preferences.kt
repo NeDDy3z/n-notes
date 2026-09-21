@@ -13,13 +13,16 @@ import org.json.JSONObject
 data class Preferences(
     val uiAppearance: String = "system", // "system" (follows OS dark/light) | "dark" | "light" | "oled"
     val accentColor: Rgba = DEFAULT_ACCENT,
-    /** Chrome palette per appearance mode: "classic" (accent-derived) | "material" (Material You). */
+    /** Chrome palette per appearance mode: "classic" (accent-derived) | "material". */
     val systemPaletteStyle: String = "material",
     val darkPaletteStyle: String = "material",
     val lightPaletteStyle: String = "material",
     val oledPaletteStyle: String = "classic",
-    /** Material palette seed colour; null (default) follows the system dynamic colours. */
-    val materialSeed: Rgba? = null,
+    val materialMode: MaterialColourMode = MaterialColourMode.SYSTEM,
+    val materialSingleSeed: Rgba = DEFAULT_MATERIAL_SINGLE,
+    val materialDualSeed: Rgba = DEFAULT_MATERIAL_DUAL,
+    val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
+    val materialSurfaceSeed: Rgba = DEFAULT_MATERIAL_SURFACE,
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
     val pageTemplatePdf: String? = null,
@@ -73,6 +76,8 @@ data class Preferences(
     val canvasMaxZoomPercent: Int = 6400,
     /** Long-edge cap (px) for the on-screen page cache; higher holds more of the page ready at deep zoom. */
     val maxCacheResolution: Int = 2048,
+    /** Whether wet ink keeps off the front buffer, so every stroke takes the ordinary canvas path. */
+    val disableFrontBuffering: Boolean = false,
     /** Open in fullscreen; null ⇒ auto (on unless the display has a camera cutout). */
     val startFullscreen: Boolean? = null,
     /** An imported Helix code theme's file path, or null for the built-in colours. */
@@ -93,6 +98,25 @@ data class Preferences(
     val filenSyncOnNoteExit: Boolean = false,
     /** Which way notes flow: "both", "up" (local to Filen), "down" (Filen to local), "off". */
     val filenSyncDirection: String = "both",
+    /** Layouts the explorer header's switcher offers, in switcher order. */
+    val switcherLayouts: List<ExplorerLayout> = ExplorerLayout.entries,
+    val sidebarRecent: Boolean = true,
+    val sidebarPinned: Boolean = true,
+    val sidebarColours: Boolean = true,
+    val sidebarTrash: Boolean = true,
+    /** Where Home opens: "top" (the notes folder), "last" (the folder last shown) or "shelves" (the notes folder under Recent and Pinned). */
+    val homeOpensTo: String = "top",
+    /** How the explorer writes dates: "relative" (2 days ago), "day" (Wed 17:30) or "date" (16 Sep 2026). */
+    val dateStyle: String = "day",
+    /** Tapping a file previews it instead of opening it. */
+    val tapPreviews: Boolean = false,
+    /** Days a deleted item waits in Trash: 0 deletes at once, [TRASH_FOREVER] keeps it until Trash is emptied. */
+    val trashDays: Int = 30,
+    /** Each folder keeps its own view instead of every folder sharing one. */
+    val perFolderViews: Boolean = false,
+    val showCreateButton: Boolean = true,
+    val showFolderCounts: Boolean = true,
+    val showExtensions: Boolean = false,
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -160,8 +184,21 @@ data class Preferences(
         .put("canvas_min_zoom_percent", canvasMinZoomPercent)
         .put("canvas_max_zoom_percent", canvasMaxZoomPercent)
         .put("max_cache_resolution", maxCacheResolution)
+        .put("disable_front_buffering", disableFrontBuffering)
         .apply {
-            materialSeed?.let { put("material_seed", Rgba.toHex(it)) }
+            if (materialMode != MaterialColourMode.SYSTEM) put("material_mode", materialMode.id)
+            if (materialSingleSeed != DEFAULT_MATERIAL_SINGLE) put("material_single_seed", Rgba.toHex(materialSingleSeed))
+            if (materialDualSeed != DEFAULT_MATERIAL_DUAL) put("material_dual_seed", Rgba.toHex(materialDualSeed))
+            // Keep the active colours readable by versions with a shared accent seed.
+            when (materialMode) {
+                MaterialColourMode.SYSTEM -> Unit
+                MaterialColourMode.SINGLE -> put("material_seed", Rgba.toHex(materialSingleSeed))
+                MaterialColourMode.DUAL -> put("material_seed", Rgba.toHex(materialDualSeed)).put("material_dual_tone", true)
+            }
+            if (materialStyle != MaterialStyle.TONAL_SPOT) put("material_style", materialStyle.id)
+            if (materialMode == MaterialColourMode.DUAL || materialSurfaceSeed != DEFAULT_MATERIAL_SURFACE) {
+                put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
+            }
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
             codeThemeName?.let { put("code_theme_name", it) }
@@ -176,9 +213,28 @@ data class Preferences(
             put("filen_sync_on_note_exit", filenSyncOnNoteExit)
             put("filen_sync_direction", filenSyncDirection)
         }
+        .put("switcher_layouts", org.json.JSONArray().apply { switcherLayouts.forEach { put(it.id) } })
+        .put("sidebar_recent", sidebarRecent)
+        .put("sidebar_pinned", sidebarPinned)
+        .put("sidebar_colours", sidebarColours)
+        .put("sidebar_trash", sidebarTrash)
+        .put("home_opens_to", homeOpensTo)
+        .put("date_style", dateStyle)
+        .put("tap_previews", tapPreviews)
+        .put("trash_days", trashDays)
+        .put("per_folder_views", perFolderViews)
+        .put("show_create_button", showCreateButton)
+        .put("show_folder_counts", showFolderCounts)
+        .put("show_extensions", showExtensions)
 
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118, 255)
+        val DEFAULT_MATERIAL_SINGLE = Rgba(244, 67, 54, 255)
+        val DEFAULT_MATERIAL_DUAL = Rgba(154, 124, 66, 255)
+        val DEFAULT_MATERIAL_SURFACE = Rgba(61, 117, 230, 255)
+
+        /** [trashDays] for keeping deleted items until Trash is emptied by hand. */
+        const val TRASH_FOREVER = -1
 
         /** Settable range of a custom page's sides, in millimetres. */
         const val CUSTOM_PAGE_MIN_MM = 10.0
@@ -198,6 +254,14 @@ data class Preferences(
             fun tapAction(key: String) = o.optString(key, "none").let { if (it in tapActions) it else "none" }
             fun paletteStyle(key: String, default: String) =
                 o.optString(key, default).let { if (it == "classic" || it == "material") it else default }
+            val legacySeed = Rgba.fromHex(o.optString("material_seed"))
+            val legacyDual = o.optBoolean("material_dual_tone", false)
+            val materialMode = MaterialColourMode.fromId(o.optString("material_mode")) ?: when {
+                legacyDual -> MaterialColourMode.DUAL
+                legacySeed != null -> MaterialColourMode.SINGLE
+                else -> MaterialColourMode.SYSTEM
+            }
+            val legacyDualAccent = legacySeed ?: Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT
             return Preferences(
                 uiAppearance = appearance,
                 accentColor = Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT,
@@ -205,7 +269,14 @@ data class Preferences(
                 darkPaletteStyle = paletteStyle("dark_palette_style", "material"),
                 lightPaletteStyle = paletteStyle("light_palette_style", "material"),
                 oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
-                materialSeed = Rgba.fromHex(o.optString("material_seed")),
+                materialMode = materialMode,
+                materialSingleSeed = Rgba.fromHex(o.optString("material_single_seed"))
+                    ?: legacySeed?.takeIf { !legacyDual } ?: DEFAULT_MATERIAL_SINGLE,
+                materialDualSeed = Rgba.fromHex(o.optString("material_dual_seed"))
+                    ?: if (legacyDual) legacyDualAccent else DEFAULT_MATERIAL_DUAL,
+                materialStyle = MaterialStyle.fromId(o.optString("material_style")),
+                materialSurfaceSeed = Rgba.fromHex(o.optString("material_surface_seed"))
+                    ?: if (legacyDual && !o.has("material_mode")) Rgba(33, 150, 243, 255) else DEFAULT_MATERIAL_SURFACE,
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },
@@ -238,6 +309,7 @@ data class Preferences(
                 canvasMinZoomPercent = o.optInt("canvas_min_zoom_percent", 2).coerceIn(1, 100),
                 canvasMaxZoomPercent = o.optInt("canvas_max_zoom_percent", 6400).coerceIn(200, 100000),
                 maxCacheResolution = o.optInt("max_cache_resolution", 2048).coerceIn(1024, 4096),
+                disableFrontBuffering = o.optBoolean("disable_front_buffering", false),
                 startFullscreen = if (o.has("start_fullscreen")) o.getBoolean("start_fullscreen") else null,
                 codeThemePath = o.optString("code_theme_path").ifEmpty { null },
                 codeThemeName = o.optString("code_theme_name").ifEmpty { null },
@@ -253,6 +325,21 @@ data class Preferences(
                 filenSyncOnNoteExit = o.optBoolean("filen_sync_on_note_exit", false),
                 filenSyncDirection = o.optString("filen_sync_direction", "both")
                     .let { if (it == "up" || it == "down" || it == "off") it else "both" },
+                switcherLayouts = o.optJSONArray("switcher_layouts")?.let { a ->
+                    (0 until a.length()).mapNotNull { ExplorerLayout.fromId(a.optString(it)) }.distinct()
+                } ?: ExplorerLayout.entries,
+                sidebarRecent = o.optBoolean("sidebar_recent", true),
+                sidebarPinned = o.optBoolean("sidebar_pinned", true),
+                sidebarColours = o.optBoolean("sidebar_colours", true),
+                sidebarTrash = o.optBoolean("sidebar_trash", true),
+                homeOpensTo = o.optString("home_opens_to", "top").let { if (it == "last" || it == "shelves") it else "top" },
+                dateStyle = o.optString("date_style", "day").let { if (it == "relative" || it == "date") it else "day" },
+                tapPreviews = o.optBoolean("tap_previews", false),
+                trashDays = o.optInt("trash_days", 30).let { if (it == TRASH_FOREVER || it in 0..365) it else 30 },
+                perFolderViews = o.optBoolean("per_folder_views", false),
+                showCreateButton = o.optBoolean("show_create_button", true),
+                showFolderCounts = o.optBoolean("show_folder_counts", true),
+                showExtensions = o.optBoolean("show_extensions", false),
             )
         }
     }

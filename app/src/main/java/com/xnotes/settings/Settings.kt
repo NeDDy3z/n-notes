@@ -1,5 +1,6 @@
 package com.xnotes.settings
 
+import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
@@ -19,17 +20,21 @@ import org.json.JSONObject
 
 /**
  * How the in-app explorer orders entries. The chosen key sorts within each group (folders first,
- * then files); [Settings.explorerSortDescending] flips the direction.
+ * then files); [ExplorerView.descending] flips the direction.
  */
 enum class ExplorerSortKey(val id: String) {
     NAME("name"),
     MODIFIED("modified"),
+    CREATED("created"),
     SIZE("size");
 
     companion object {
         fun fromId(id: String): ExplorerSortKey = entries.firstOrNull { it.id == id } ?: MODIFIED
     }
 }
+
+/** A folder pinned to the home sidebar: its tree document uri and the name to show. */
+data class PinnedFolder(val uri: String, val name: String)
 
 /** All persistent non-document state (spec 09 §2). */
 data class Settings(
@@ -51,16 +56,25 @@ data class Settings(
     /** Whether the next launch opens the home screen (true) or the last-open note (false). */
     val startOnHome: Boolean = true,
     val sidebarVisible: Boolean = false,
-    /** Explorer grid sort: which field orders entries, and whether it's reversed. */
-    val explorerSortKey: ExplorerSortKey = ExplorerSortKey.MODIFIED,
-    val explorerSortDescending: Boolean = true,
-    /** Explorer display: false shows the tile grid, true a compact list. */
-    val explorerListView: Boolean = false,
+    /** On wide screens, whether the home sidebar is collapsed to its icon rail. */
+    val backstageRail: Boolean = false,
+    /** Folders pinned to the home sidebar on this device, in pin order. */
+    val pinnedFolders: List<PinnedFolder> = emptyList(),
+    /** How the explorer shows a folder, for every folder or for those without a view of their own. */
+    val explorerView: ExplorerView = ExplorerView(),
+    /** Views set in one folder only, keyed by the folder's document key; used when views are per folder. */
+    val folderViews: Map<String, ExplorerView> = emptyMap(),
+    /** Notes and canvases opened on this device, newest first. */
+    val recentDocs: List<RecentDoc> = emptyList(),
+    /** The explorer folder last shown, so Home can open there again. */
+    val lastFolder: String? = null,
     val renderScale: Double = 1.0,
     /** All Pages style stamped onto every newly created note; empty ⇒ none saved. */
     val newNoteStyle: PageStyle = PageStyle(),
     /** Flow (text tool) defaults stamped onto every newly created note; empty ⇒ none saved. */
     val newNoteFlow: FlowDefaults = FlowDefaults(),
+    /** Background stamped onto every newly created canvas; null ⇒ none saved. */
+    val newCanvasBackground: CanvasBackground? = null,
     val prefs: Preferences = Preferences(),
     /** One-shot flag: the first-run stylus check (which may auto-enable finger-draw) has run. */
     val fingerDrawAutoChecked: Boolean = false,
@@ -89,12 +103,16 @@ data class Settings(
             .apply { browseRoot?.let { put("browse_root", it) } }
             .put("start_on_home", startOnHome)
             .put("sidebar_visible", sidebarVisible)
-            .put("explorer_sort_key", explorerSortKey.id)
-            .put("explorer_sort_descending", explorerSortDescending)
-            .put("explorer_list_view", explorerListView)
+            .put("backstage_rail", backstageRail)
+            .put("pinned_folders", JSONArray().apply { pinnedFolders.forEach { put(JSONObject().put("uri", it.uri).put("name", it.name)) } })
+            .put("explorer_view", explorerView.toJson())
+            .put("folder_views", JSONObject().apply { folderViews.forEach { (k, v) -> put(k, v.toJson()) } })
+            .put("recent_docs", JSONArray().apply { recentDocs.forEach { put(JSONObject().put("uri", it.uri).put("name", it.name).put("opened", it.opened)) } })
+            .apply { lastFolder?.let { put("last_folder", it) } }
             .put("render_scale", renderScale)
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .apply { if (!newNoteFlow.isEmpty) put("new_note_flow", flowDefaultsJson(newNoteFlow)) }
+            .apply { newCanvasBackground?.let { put("new_canvas_background", canvasBackgroundJson(it)) } }
             .put("prefs", prefs.toJson())
             .put("view_defaults", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaults))
             .put("finger_draw_auto_checked", fingerDrawAutoChecked)
@@ -137,15 +155,40 @@ data class Settings(
                 browseRoot = o.optString("browse_root", "").ifEmpty { null },
                 startOnHome = o.optBoolean("start_on_home", true),
                 sidebarVisible = o.optBoolean("sidebar_visible", false),
-                explorerSortKey = ExplorerSortKey.fromId(o.optString("explorer_sort_key", "modified")),
-                explorerSortDescending = o.optBoolean("explorer_sort_descending", true),
-                explorerListView = o.optBoolean("explorer_list_view", false),
+                backstageRail = o.optBoolean("backstage_rail", false),
+                pinnedFolders = pinnedFolders(o.optJSONArray("pinned_folders")),
+                explorerView = o.optJSONObject("explorer_view")?.let { ExplorerView.fromJson(it) } ?: ExplorerView(
+                    sortKey = ExplorerSortKey.fromId(o.optString("explorer_sort_key", "modified")),
+                    descending = o.optBoolean("explorer_sort_descending", true),
+                ),
+                folderViews = o.optJSONObject("folder_views")?.let { v -> v.keys().asSequence().associateWith { ExplorerView.fromJson(v.optJSONObject(it)) } }.orEmpty(),
+                recentDocs = recentDocs(o.optJSONArray("recent_docs")),
+                lastFolder = o.optString("last_folder", "").ifEmpty { null },
                 renderScale = o.optDouble("render_scale", 1.0),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 newNoteFlow = flowDefaults(o.optJSONObject("new_note_flow")),
+                newCanvasBackground = canvasBackground(o.optJSONObject("new_canvas_background")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
                 fingerDrawAutoChecked = o.optBoolean("finger_draw_auto_checked", false),
             )
+        }
+
+        private fun recentDocs(a: JSONArray?): List<RecentDoc> {
+            if (a == null) return emptyList()
+            return (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                val uri = o.optString("uri", "").ifEmpty { return@mapNotNull null }
+                RecentDoc(uri, o.optString("name", ""), o.optLong("opened", 0L))
+            }
+        }
+
+        private fun pinnedFolders(a: JSONArray?): List<PinnedFolder> {
+            if (a == null) return emptyList()
+            return (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                val uri = o.optString("uri", "").ifEmpty { return@mapNotNull null }
+                PinnedFolder(uri, o.optString("name", ""))
+            }
         }
 
         /** Settings written before the View menu's Global tab: the old PDF dark-mode
@@ -176,6 +219,25 @@ data class Settings(
                 pattern = PagePattern.fromId(o.optString("pattern", "")),
                 patternColor = rgba(o.optJSONArray("pattern_color")),
                 spacing = if (o.has("spacing")) o.optDouble("spacing") else null,
+            )
+        }
+
+        /** Written in full, like the canvas file's own copy: a canvas has no level to inherit
+         *  from, so every field carries a real value. */
+        private fun canvasBackgroundJson(b: CanvasBackground) = JSONObject()
+            .put("pattern", b.pattern.id)
+            .put("pattern_color", rgbaArr(b.patternColor))
+            .put("spacing", b.spacing)
+            .apply { b.paperColor?.let { put("paper_color", rgbaArr(it)) } }
+
+        private fun canvasBackground(o: JSONObject?): CanvasBackground? {
+            if (o == null) return null
+            val d = CanvasBackground()
+            return CanvasBackground(
+                pattern = PagePattern.fromId(o.optString("pattern", "")) ?: d.pattern,
+                patternColor = rgba(o.optJSONArray("pattern_color")) ?: d.patternColor,
+                spacing = o.optDouble("spacing", d.spacing),
+                paperColor = rgba(o.optJSONArray("paper_color")),
             )
         }
 

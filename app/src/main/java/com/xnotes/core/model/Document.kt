@@ -31,6 +31,8 @@ class Document(
     var margins: PageMargins = PageMargins(),
     /** The document-wide flowing rich text (empty until typed into; persisted only when non-empty). */
     val flow: TextFlow = TextFlow(),
+    /** When the note was created (epoch ms), or null for files written before this was recorded. */
+    var created: Long? = null,
 ) {
     /** Transient: set by the codec when legacy ink was compacted at load (debug overlay readout). */
     var compactedOnLoad = false

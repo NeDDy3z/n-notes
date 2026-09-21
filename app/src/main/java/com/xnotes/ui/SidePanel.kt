@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,10 +54,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.core.model.Page
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -88,9 +91,9 @@ fun SidePanel(
             .background(palette.panel.toComposeColor()),
     ) {
         Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            SegIcon(XnotesIcons.thumbnails, "Pages", tab == 0) { tab = 0 }
-            SegIcon(XnotesIcons.contents, "Contents", tab == 1) { tab = 1 }
-            SegIcon(XnotesIcons.bookmark, "Bookmarks", tab == 2) { tab = 2 }
+            SegIcon(XnotesIcons.thumbnails, stringResource(R.string.pages), tab == 0) { tab = 0 }
+            SegIcon(XnotesIcons.contents, stringResource(R.string.contents), tab == 1) { tab = 1 }
+            SegIcon(XnotesIcons.bookmark, stringResource(R.string.bookmarks), tab == 2) { tab = 2 }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (tab) {
@@ -179,17 +182,19 @@ private fun PageThumb(
     val current = index == editor.pageIndex
     val selected = editor.isPageSelected(index)
     var menuOpen by remember { mutableStateOf(false) }
-    val bitmap by produceState<ImageBitmap?>(editor.cachedPageThumbnail(page), page, editor.contentVersion, editor.pdfThumbTick, settled) {
-        val cached = editor.cachedPageThumbnail(page)
-        if (cached != null) {
-            value = cached
-        } else if (settled) {
-            // Render only once the panel has stopped moving (see the panel-wide `settled` flag in
-            // PagesTab): a scroll keeps `settled` false, so rows swept past never render — the
-            // producer relaunches and renders this row when motion settles.
-            value = editor.pageThumbnail(page, 300)
+    val bitmap by key(editor.thumbnailVersion) {
+        produceState<ImageBitmap?>(editor.cachedPageThumbnail(page), page, editor.contentVersion, editor.pdfThumbTick, settled) {
+            val cached = editor.cachedPageThumbnail(page)
+            if (cached != null) {
+                value = cached
+            } else if (settled) {
+                // Render only once the panel has stopped moving (see the panel-wide `settled` flag in
+                // PagesTab): a scroll keeps `settled` false, so rows swept past never render — the
+                // producer relaunches and renders this row when motion settles.
+                value = editor.pageThumbnail(page, 300)
+            }
+            // not cached and not settled: leave value as-is (placeholder); relaunch on settle renders it.
         }
-        // not cached and not settled: leave value as-is (placeholder); relaunch on settle renders it.
     }
     // Reserve the row's height from the aspect ratio so it stays put before the bitmap loads.
     val aspect = editor.pageAspectRatio(page)
@@ -207,7 +212,7 @@ private fun PageThumb(
                     onLongClick = { editor.togglePageSelection(index) },
                 ),
         ) {
-            bitmap?.let { Image(it, contentDescription = "Page ${index + 1}", modifier = Modifier.fillMaxSize()) }
+            bitmap?.let { Image(it, contentDescription = stringResource(R.string.page_n, index + 1), modifier = Modifier.fillMaxSize()) }
 
             if (selected) {
                 Box(Modifier.matchParentSize().background(palette.accent.toComposeColor().copy(alpha = 0.18f)))
@@ -216,7 +221,7 @@ private fun PageThumb(
                         .clip(CircleShape).background(palette.accent.toComposeColor()),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(XnotesIcons.check, "Selected", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(13.dp))
+                    Icon(XnotesIcons.check, stringResource(R.string.selected), tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(13.dp))
                 }
             } else if (!selecting) {
                 // Three-dot menu, on a faint scrim so it reads over any thumbnail.
@@ -227,7 +232,7 @@ private fun PageThumb(
                             .clickable { menuOpen = true },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(XnotesIcons.more, "Page options", tint = palette.text.toComposeColor(), modifier = Modifier.size(16.dp))
+                        Icon(XnotesIcons.more, stringResource(R.string.page_options), tint = palette.text.toComposeColor(), modifier = Modifier.size(16.dp))
                     }
                     PageContextMenu(editor, index, menuOpen, { menuOpen = false }, onSharePages, onSavePagesAsPdf, onSavePagesAsImages)
                 }
@@ -265,26 +270,26 @@ private fun PageContextMenu(
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         when (sub) {
             MENU_SHARE -> {
-                DropdownMenuItem(text = { Text("‹  Share as") }, onClick = { sub = MENU_MAIN })
-                DropdownMenuItem(text = { Text("Image (PNG)") }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onSharePages(one, false); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.back_share_as)) }, onClick = { sub = MENU_MAIN })
+                DropdownMenuItem(text = { Text(stringResource(R.string.image_png)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onSharePages(one, false); onDismiss() })
                 DropdownMenuItem(text = { Text("PDF") }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { onSharePages(one, true); onDismiss() })
             }
             MENU_SAVE -> {
-                DropdownMenuItem(text = { Text("‹  Save as") }, onClick = { sub = MENU_MAIN })
-                DropdownMenuItem(text = { Text("Image (PNG)") }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onSavePagesAsImages(one); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.back_save_as)) }, onClick = { sub = MENU_MAIN })
+                DropdownMenuItem(text = { Text(stringResource(R.string.image_png)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onSavePagesAsImages(one); onDismiss() })
                 DropdownMenuItem(text = { Text("PDF") }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { onSavePagesAsPdf(one); onDismiss() })
             }
             else -> {
-                DropdownMenuItem(text = { Text("Add page") }, leadingIcon = menuIcon(XnotesIcons.plus), onClick = { editor.insertPageAfter(index); onDismiss() })
-                DropdownMenuItem(text = { Text("Copy") }, leadingIcon = menuIcon(XnotesIcons.copy), onClick = { editor.copyPages(one); onDismiss() })
-                DropdownMenuItem(text = { Text("Cut") }, leadingIcon = menuIcon(XnotesIcons.cut), onClick = { editor.cutPages(one); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.add_page)) }, leadingIcon = menuIcon(XnotesIcons.plus), onClick = { editor.insertPageAfter(index); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.copy)) }, leadingIcon = menuIcon(XnotesIcons.copy), onClick = { editor.copyPages(one); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, leadingIcon = menuIcon(XnotesIcons.cut), onClick = { editor.cutPages(one); onDismiss() })
                 if (editor.canPastePages) {
-                    DropdownMenuItem(text = { Text("Paste") }, leadingIcon = menuIcon(XnotesIcons.paste), onClick = { editor.pastePagesAfter(index); onDismiss() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, leadingIcon = menuIcon(XnotesIcons.paste), onClick = { editor.pastePagesAfter(index); onDismiss() })
                 }
-                DropdownMenuItem(text = { Text("Delete") }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { editor.deletePages(one); onDismiss() })
-                DropdownMenuItem(text = { Text("Erase page") }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePage(index); onDismiss() })
-                DropdownMenuItem(text = { Text("Share…") }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
-                DropdownMenuItem(text = { Text("Save as…") }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
+                DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { editor.deletePages(one); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.erase_page)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePage(index); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
+                DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
             }
         }
     }
@@ -304,15 +309,15 @@ private fun PageSelectionBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = { editor.clearPageSelection() }) {
-            Icon(XnotesIcons.close, "Clear selection", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp))
+            Icon(XnotesIcons.close, stringResource(R.string.clear_selection), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp))
         }
         Text("${editor.pageSelectionCount}", color = palette.text.toComposeColor(), fontSize = 13.sp, fontFamily = FontFamily.Monospace)
         Spacer(Modifier.weight(1f))
-        BarAction(XnotesIcons.copy, "Copy") { editor.copyPages(editor.selectedPageIndices()) }
-        BarAction(XnotesIcons.cut, "Cut") { editor.cutPages(editor.selectedPageIndices()) }
-        BarAction(XnotesIcons.trash, "Delete") { editor.deletePages(editor.selectedPageIndices()) }
-        FormatMenu(XnotesIcons.download, "Save as", { onSavePagesAsImages(editor.selectedPageIndices()) }, { onSavePagesAsPdf(editor.selectedPageIndices()) })
-        FormatMenu(XnotesIcons.share, "Share", { onSharePages(editor.selectedPageIndices(), false) }, { onSharePages(editor.selectedPageIndices(), true) })
+        BarAction(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyPages(editor.selectedPageIndices()) }
+        BarAction(XnotesIcons.cut, stringResource(R.string.cut)) { editor.cutPages(editor.selectedPageIndices()) }
+        BarAction(XnotesIcons.trash, stringResource(R.string.delete)) { editor.deletePages(editor.selectedPageIndices()) }
+        FormatMenu(XnotesIcons.download, stringResource(R.string.save_as), { onSavePagesAsImages(editor.selectedPageIndices()) }, { onSavePagesAsPdf(editor.selectedPageIndices()) })
+        FormatMenu(XnotesIcons.share, stringResource(R.string.share), { onSharePages(editor.selectedPageIndices(), false) }, { onSharePages(editor.selectedPageIndices(), true) })
     }
 }
 
@@ -332,7 +337,7 @@ private fun FormatMenu(icon: ImageVector, desc: String, onImage: () -> Unit, onP
     Box {
         BarAction(icon, desc) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(text = { Text("Image (PNG)") }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { open = false; onImage() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.image_png)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { open = false; onImage() })
             DropdownMenuItem(text = { Text("PDF") }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { open = false; onPdf() })
         }
     }
@@ -439,7 +444,7 @@ private fun ContentsTab(editor: Editor) {
     val version = editor.tocVersion
     val entries = remember(version) { editor.tableOfContents }
     if (entries.isEmpty()) {
-        EmptyHint("— no table of contents —")
+        EmptyHint(stringResource(R.string.no_contents))
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
@@ -481,11 +486,11 @@ private fun BookmarksTab(editor: Editor) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
             IconButton(onClick = { showAdd = true }) {
-                Icon(XnotesIcons.plus, "Add bookmark", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp))
+                Icon(XnotesIcons.plus, stringResource(R.string.add_bookmark), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp))
             }
         }
         if (bookmarks.isEmpty()) {
-            EmptyHint("— no bookmarks —")
+            EmptyHint(stringResource(R.string.no_bookmarks))
         } else {
             LazyColumn(Modifier.fillMaxWidth()) {
                 itemsIndexed(bookmarks) { i, bm ->
@@ -494,13 +499,13 @@ private fun BookmarksTab(editor: Editor) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "${bm.label} · p.${bm.page + 1}",
+                            stringResource(R.string.bookmark_entry, bm.label, bm.page + 1),
                             color = palette.text.toComposeColor(),
                             fontSize = 12.sp,
                             modifier = Modifier.weight(1f),
                         )
                         IconButton(onClick = { editor.removeBookmark(i) }) {
-                            Icon(XnotesIcons.trash, "Remove", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
+                            Icon(XnotesIcons.trash, stringResource(R.string.remove), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -509,15 +514,16 @@ private fun BookmarksTab(editor: Editor) {
     }
 
     if (showAdd) {
-        var label by remember { mutableStateOf("Page ${editor.pageIndex + 1}") }
+        val defaultLabel = stringResource(R.string.page_n, editor.pageIndex + 1)
+        var label by remember { mutableStateOf(defaultLabel) }
         AlertDialog(
             onDismissRequest = { showAdd = false },
-            title = { Text("Add bookmark") },
+            title = { Text(stringResource(R.string.add_bookmark)) },
             text = { OutlinedTextField(value = label, onValueChange = { label = it }, singleLine = true) },
             confirmButton = {
-                TextButton(onClick = { editor.addBookmark(label.ifBlank { "Page ${editor.pageIndex + 1}" }); showAdd = false }) { Text("Add") }
+                TextButton(onClick = { editor.addBookmark(label.ifBlank { defaultLabel }); showAdd = false }) { Text(stringResource(R.string.add)) }
             },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { showAdd = false }) { Text(stringResource(R.string.cancel)) } },
             containerColor = palette.menuBg.toComposeColor(),
         )
     }

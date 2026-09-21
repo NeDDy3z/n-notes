@@ -125,6 +125,24 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
     var showing = true
         private set
 
+    /**
+     * Whether this device uses the pad at all, from the preference of the same name.
+     *
+     * Off is not an idle pad but no pad: the view goes away, so the surface, its context and its
+     * thread go with it and the layer leaves the composite entirely. Every stroke then takes the
+     * ordinary path through the canvas, which is what a pad that refuses a stroke already gives.
+     * A panel that hands the single-buffered mode over and then does not honour it cannot be told
+     * apart from one that does, so this is the user's switch rather than a probe.
+     *
+     * Main thread only, like the visibility it sets; the pad's own thread never reads it.
+     */
+    var frontBuffering = true
+        set(on) {
+            if (field == on) return
+            field = on
+            visibility = if (on) VISIBLE else GONE
+        }
+
     init {
         // Above the window, for a canvas that draws into the window itself: a surface below it
         // punches a transparent hole through everything under it, which would take the page with
@@ -176,7 +194,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         samples: Int,
         clip: com.xnotes.core.infinite.PixelRect? = null,
     ): Boolean {
-        if (!ready) return false
+        if (!frontBuffering || !ready) return false
         // The buffer is the size it was made at, and a single buffered surface has no swap to pick
         // a resized window up on. Until [resize] has rebuilt it, ink drawn through the view as it
         // stands would land wherever the compositor stretched the layer, so this stroke takes the
@@ -217,7 +235,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
         zoom: Double,
         clip: com.xnotes.core.infinite.PixelRect? = null,
     ): Boolean {
-        if (!ready || covered) return false
+        if (!frontBuffering || !ready || covered) return false
         if (!ink.extend(scrollX, scrollY, zoom, width, height, clip)) return false
         // Cancels a handover still waiting to wipe the pad this stroke has just taken over.
         post { releaseGen++ }

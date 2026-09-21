@@ -718,6 +718,19 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Fired when a tool's style changed here, so the host can persist it. */
     var onToolStyleChanged: (() -> Unit)? = null
 
+    /** The saved background new canvases start with (null ⇒ app built-ins), fed by the host. */
+    var newCanvasBackground by mutableStateOf<CanvasBackground?>(null)
+
+    /** Fired when the styles popup saved (or cleared) that background, so the host can persist it. */
+    var onSaveNewCanvasBackground: ((CanvasBackground?) -> Unit)? = null
+
+    /** Save (or, passing null, forget) the background new canvases start with. */
+    fun saveNewCanvasBackground(background: CanvasBackground?) {
+        if (newCanvasBackground == background) return
+        newCanvasBackground = background
+        onSaveNewCanvasBackground?.invoke(background)
+    }
+
     /** Latch a stylus side button that arrived as a key event, so the pen behaves as on a note. */
     fun onStylusButtonKey(keyCode: Int, down: Boolean): Boolean =
         interaction.onStylusButtonKey(keyCode, down)
@@ -841,6 +854,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      */
     private fun decideFrontInk(stroke: Stroke, parts: List<MeshPart>) {
         frontDecided = true
+        // Turned off for this device, so there is no pad to consult and nothing to time against it.
+        if (!pad.frontBuffering) return
         if (parts.isEmpty() || parts.any { it.pass != InkPass.OPAQUE }) return
         if (joinFrontInk()) return
         // Nothing joined, so the pad has to be wiped for this stroke, and whatever it was showing

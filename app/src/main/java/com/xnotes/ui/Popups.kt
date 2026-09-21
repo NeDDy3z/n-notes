@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +41,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import com.xnotes.R
+import com.xnotes.canvas.PdfColorFilter
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
@@ -118,12 +121,12 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(tool.name)
+            PopupTitle(stringResource(tool.labelRes).uppercase())
             // COLOUR override: "Default" follows the toolbar's active ink colour; pick a hue to pin
             // this tool to it regardless of the toolbar selection.
-            StyleCaption("COLOUR")
+            StyleCaption(stringResource(R.string.caption_colour))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("Default", colorOverride == null) { colorOverride = null; emit() }
+                ModeChip(stringResource(R.string.default_choice), colorOverride == null) { colorOverride = null; emit() }
                 ColorPickerDot(
                     colorOverride,
                     custom = colorOverride != null,
@@ -141,45 +144,45 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
             Spacer(Modifier.size(12.dp))
             val hasPressure = tool == Tool.PEN || tool == Tool.CALLIGRAPHY || tool == Tool.SPEED || tool == Tool.TAPER
             if (hasPressure) {
-                ToggleRow("PRESSURE", pressure) { pressure = it; emit() }
-                SliderRow("SENSITIVITY", sensitivity, 0f..100f, enabled = pressure) { sensitivity = it; emit() }
+                ToggleRow(stringResource(R.string.caption_pressure), pressure) { pressure = it; emit() }
+                SliderRow(stringResource(R.string.caption_sensitivity), sensitivity, 0f..100f, enabled = pressure) { sensitivity = it; emit() }
             }
             if (tool == Tool.CALLIGRAPHY) {
-                SliderRow("MULTIPLIER", multiplier, 1f..5f) { multiplier = it; emit() }
+                SliderRow(stringResource(R.string.caption_multiplier), multiplier, 1f..5f) { multiplier = it; emit() }
             }
             if (tool == Tool.SPEED) {
-                SliderRow("SPEED", speed, 0f..100f) { speed = it; emit() }
+                SliderRow(stringResource(R.string.caption_speed), speed, 0f..100f) { speed = it; emit() }
             }
             if (tool == Tool.TAPER) {
-                SliderRow("TIP WIDTH PERCENTAGE", taperTip, 0f..100f) { taperTip = it; emit() }
+                SliderRow(stringResource(R.string.caption_tip_width), taperTip, 0f..100f) { taperTip = it; emit() }
             }
             val range = ToolConversions.widthRange(tool)
-            SliderRow("WIDTH", width, range.start.toFloat()..range.endInclusive.toFloat()) { width = it; emit() }
+            SliderRow(stringResource(R.string.caption_width), width, range.start.toFloat()..range.endInclusive.toFloat()) { width = it; emit() }
             // SCALE off: ink keeps a constant on-screen thickness whatever zoom you draw at.
-            ToggleRow("SCALE", scale) { scale = it; emit() }
+            ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
             // Global dwell shape detection (holding the pen still). Off for the highlighter, which never dwells.
             if (tool.isStroke && tool != Tool.HIGHLIGHTER) {
                 ToggleRow("SNAP TO SHAPES", snapShapes) { snapShapes = it; editor.snapHeldToShapes = it }
             }
             if (tool == Tool.DASHED) {
-                SliderRow("DASH", dashLen, 2f..40f) { dashLen = it; emit() }
-                SliderRow("GAP", gapLen, 2f..40f) { gapLen = it; emit() }
+                SliderRow(stringResource(R.string.caption_dash), dashLen, 2f..40f) { dashLen = it; emit() }
+                SliderRow(stringResource(R.string.caption_gap), gapLen, 2f..40f) { gapLen = it; emit() }
             }
             // The highlighter's strength (translucency) and an optional straight-segment lock
             // (for ruling/underlining).
             if (tool == Tool.HIGHLIGHTER) {
-                SliderRow("INTENSITY", intensity, 10f..90f) { intensity = it; emit() }
-                ToggleRow("STRAIGHT LINE", straight) { straight = it; emit() }
+                SliderRow(stringResource(R.string.caption_intensity), intensity, 10f..90f) { intensity = it; emit() }
+                ToggleRow(stringResource(R.string.caption_straight_line), straight) { straight = it; emit() }
                 // INVERSE swaps the multiply blend for a screen one, so the marker lightens the
                 // page instead of darkening it. A multiply has nothing to darken on a dark page.
-                ToggleRow("INVERSE", inverse) { inverse = it; emit() }
+                ToggleRow(stringResource(R.string.caption_inverse), inverse) { inverse = it; emit() }
             }
             // Glow is offered on every stroke tool except the highlighter (translucent) and the
             // dashed pen (it draws a line, not a fillable ribbon, so a halo has nothing to hug).
             if (tool.isStroke && tool != Tool.HIGHLIGHTER && tool != Tool.DASHED) {
-                ToggleRow("NEON", glow) { glow = it; emit() }
+                ToggleRow(stringResource(R.string.caption_neon), glow) { glow = it; emit() }
                 if (glow) {
-                    SliderRow("INTENSITY", glowIntensity, 0f..100f) { glowIntensity = it; emit() }
+                    SliderRow(stringResource(R.string.caption_glow_intensity), glowIntensity, 0f..100f) { glowIntensity = it; emit() }
                 }
             }
         }
@@ -216,10 +219,10 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("STYLES")
+            PopupTitle(stringResource(R.string.title_styles))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("All Pages", tab == 0) { tab = 0 }
-                ModeChip("Current Page", tab == 1) { tab = 1 }
+                ModeChip(stringResource(R.string.all_pages), tab == 0) { tab = 0 }
+                ModeChip(stringResource(R.string.current_page), tab == 1) { tab = 1 }
             }
 
             Spacer(Modifier.size(12.dp))
@@ -237,7 +240,7 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
                             },
                         )
                         Text(
-                            "Default for new notes",
+                            stringResource(R.string.default_for_new_notes),
                             color = LocalPalette.current.text.toComposeColor(),
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
@@ -246,7 +249,7 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
                     Spacer(Modifier.size(4.dp))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    ModeChip("Reset", false) { apply(PageStyle()) }
+                    ModeChip(stringResource(R.string.reset), false) { apply(PageStyle()) }
                 }
             }
         }
@@ -262,12 +265,12 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PageStyleControls(style: PageStyle, inheritFrom: PageStyle?, onChange: (PageStyle) -> Unit) {
-    StyleCaption("PAGE COLOUR")
+    StyleCaption(stringResource(R.string.caption_page_colour))
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ModeChip("Default", style.pageColor == null) { onChange(style.copy(pageColor = null)) }
+        ModeChip(stringResource(R.string.default_choice), style.pageColor == null) { onChange(style.copy(pageColor = null)) }
         pageColorPresets.forEach { c ->
             ColorDot(c.toComposeColor(), style.pageColor == c) { onChange(style.copy(pageColor = c)) }
         }
@@ -280,23 +283,23 @@ fun PageStyleControls(style: PageStyle, inheritFrom: PageStyle?, onChange: (Page
     }
 
     Spacer(Modifier.size(12.dp))
-    StyleCaption("PATTERN")
+    StyleCaption(stringResource(R.string.caption_pattern))
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        ModeChip("Default", style.pattern == null) { onChange(style.copy(pattern = null)) }
-        ModeChip("None", style.pattern == PagePattern.NONE) { onChange(style.copy(pattern = PagePattern.NONE)) }
-        ModeChip("Lines", style.pattern == PagePattern.LINES) { onChange(style.copy(pattern = PagePattern.LINES)) }
-        ModeChip("Dots", style.pattern == PagePattern.DOTS) { onChange(style.copy(pattern = PagePattern.DOTS)) }
-        ModeChip("Grid", style.pattern == PagePattern.GRID) { onChange(style.copy(pattern = PagePattern.GRID)) }
+        ModeChip(stringResource(R.string.default_choice), style.pattern == null) { onChange(style.copy(pattern = null)) }
+        ModeChip(stringResource(R.string.none), style.pattern == PagePattern.NONE) { onChange(style.copy(pattern = PagePattern.NONE)) }
+        ModeChip(stringResource(R.string.pattern_lines), style.pattern == PagePattern.LINES) { onChange(style.copy(pattern = PagePattern.LINES)) }
+        ModeChip(stringResource(R.string.pattern_dots), style.pattern == PagePattern.DOTS) { onChange(style.copy(pattern = PagePattern.DOTS)) }
+        ModeChip(stringResource(R.string.pattern_grid), style.pattern == PagePattern.GRID) { onChange(style.copy(pattern = PagePattern.GRID)) }
     }
 
     Spacer(Modifier.size(12.dp))
     val spacing = style.spacing ?: PageStyle.DEFAULT_SPACING
-    StyleCaption("SPACING  ${spacing.toInt()} px" + if (style.spacing == null) "  (default)" else "")
+    StyleCaption(stringResource(R.string.caption_spacing_px, spacing.toInt()) + if (style.spacing == null) stringResource(R.string.default_suffix) else "")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ModeChip("Default", style.spacing == null) { onChange(style.copy(spacing = null)) }
+        ModeChip(stringResource(R.string.default_choice), style.spacing == null) { onChange(style.copy(spacing = null)) }
         Slider(
             value = spacing.toFloat().coerceIn(PageStyle.MIN_SPACING.toFloat(), PageStyle.MAX_SPACING.toFloat()),
             onValueChange = { onChange(style.copy(spacing = it.toDouble())) },
@@ -308,9 +311,9 @@ fun PageStyleControls(style: PageStyle, inheritFrom: PageStyle?, onChange: (Page
     Spacer(Modifier.size(12.dp))
     // Effective pattern colour: this style's own, else the inherited fallback, else the built-in grey.
     val effPatternColor = style.patternColor ?: inheritFrom?.patternColor ?: PageStyle.DEFAULT_PATTERN_COLOR
-    StyleCaption("PATTERN COLOUR")
+    StyleCaption(stringResource(R.string.caption_pattern_colour))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ModeChip("Default", style.patternColor == null) { onChange(style.copy(patternColor = null)) }
+        ModeChip(stringResource(R.string.default_choice), style.patternColor == null) { onChange(style.copy(patternColor = null)) }
         ColorPickerDot(
             style.patternColor?.copy(a = 255), // show the hue at full strength; OPACITY sets the alpha
             custom = style.patternColor != null,
@@ -321,7 +324,7 @@ fun PageStyleControls(style: PageStyle, inheritFrom: PageStyle?, onChange: (Page
 
     Spacer(Modifier.size(12.dp))
     val opacityPct = effPatternColor.a * 100f / 255f
-    StyleCaption("OPACITY  ${opacityPct.roundToInt()}%")
+    StyleCaption(stringResource(R.string.caption_opacity_percent, opacityPct.roundToInt()))
     Slider(
         value = opacityPct,
         onValueChange = { pct ->
@@ -362,10 +365,10 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("MARGINS")
+            PopupTitle(stringResource(R.string.title_margins))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("All Pages", tab == 0) { tab = 0 }
-                ModeChip("Current Page", tab == 1) { tab = 1 }
+                ModeChip(stringResource(R.string.all_pages), tab == 0) { tab = 0 }
+                ModeChip(stringResource(R.string.current_page), tab == 1) { tab = 1 }
             }
 
             Spacer(Modifier.size(12.dp))
@@ -374,14 +377,14 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 PageEdge.entries.forEach { e ->
-                    ModeChip(e.label, edge == e) { edge = e }
+                    ModeChip(stringResource(e.labelRes), edge == e) { edge = e }
                 }
             }
 
             Spacer(Modifier.size(12.dp))
-            StyleCaption("${edge.label.uppercase()}  ${percent.roundToInt()}%" + if (own == null) "  (default)" else "")
+            StyleCaption(stringResource(R.string.caption_value_percent, stringResource(edge.labelRes).uppercase(), percent.roundToInt()) + if (own == null) stringResource(R.string.default_suffix) else "")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip("Default", own == null) { apply(margins.withEdge(edge, null)) }
+                ModeChip(stringResource(R.string.default_choice), own == null) { apply(margins.withEdge(edge, null)) }
                 Slider(
                     value = percent,
                     onValueChange = { apply(margins.withEdge(edge, it.toDouble() / 100.0)) },
@@ -392,7 +395,7 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
 
             Spacer(Modifier.size(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ModeChip("Reset", false) { apply(PageMargins()) }
+                ModeChip(stringResource(R.string.reset), false) { apply(PageMargins()) }
             }
         }
     }
@@ -434,33 +437,37 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     fun setInvert(v: Int) = apply(overrides.copy(invert = v))
     fun setBrightness(v: Int) = apply(overrides.copy(brightness = v))
     fun setSepia(v: Int) = apply(overrides.copy(sepia = v))
+    fun setMultiply(v: Rgba) = apply(overrides.copy(multiply = v))
+    fun setScreen(v: Rgba) = apply(overrides.copy(screen = v))
     fun setKeepImages(v: Boolean) = apply(overrides.copy(keepImages = v))
     fun setRotation(v: Int) = apply(overrides.copy(rotation = v))
     fun setScrollbar(v: Boolean) = apply(overrides.copy(scrollbar = v))
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(300.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("VIEW")
-            StyleCaption("VIEWING MODE")
+            PopupTitle(stringResource(R.string.title_view))
+            StyleCaption(stringResource(R.string.caption_viewing_mode))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("Single", vs.mode == ViewingMode.SINGLE) { setMode(ViewingMode.SINGLE) }
-                ModeChip("Double", vs.mode == ViewingMode.DOUBLE) { setMode(ViewingMode.DOUBLE) }
-                ModeChip("Cover", vs.mode == ViewingMode.COVER) { setMode(ViewingMode.COVER) }
+                ModeChip(stringResource(R.string.view_single), vs.mode == ViewingMode.SINGLE) { setMode(ViewingMode.SINGLE) }
+                ModeChip(stringResource(R.string.view_double), vs.mode == ViewingMode.DOUBLE) { setMode(ViewingMode.DOUBLE) }
+                ModeChip(stringResource(R.string.view_cover), vs.mode == ViewingMode.COVER) { setMode(ViewingMode.COVER) }
             }
 
             Spacer(Modifier.size(10.dp))
-            ToggleRow("VERTICAL SCROLLING", vs.verticalScroll) { setVerticalScroll(it) }
+            ToggleRow(stringResource(R.string.caption_vertical_scrolling), vs.verticalScroll) { setVerticalScroll(it) }
 
             Spacer(Modifier.size(10.dp))
-            StyleCaption("PDF COLOUR FILTERS")
-            FilterSpinRow("Contrast", vs.contrast, 0, 200) { setContrast(it) }
-            FilterSpinRow("Invert", vs.invert, 0, 100) { setInvert(it) }
-            FilterSpinRow("Brightness", vs.brightness, 0, 200) { setBrightness(it) }
-            FilterSpinRow("Sepia", vs.sepia, 0, 100) { setSepia(it) }
-            ToggleRow("DON'T FILTER IMAGES", vs.keepImages) { setKeepImages(it) }
+            StyleCaption(stringResource(R.string.caption_pdf_filters))
+            FilterSpinRow(stringResource(R.string.filter_contrast), vs.contrast, 0, 200) { setContrast(it) }
+            FilterSpinRow(stringResource(R.string.filter_invert), vs.invert, 0, 100) { setInvert(it) }
+            FilterSpinRow(stringResource(R.string.filter_brightness), vs.brightness, 0, 200) { setBrightness(it) }
+            FilterSpinRow(stringResource(R.string.filter_sepia), vs.sepia, 0, 200) { setSepia(it) }
+            FilterColorRow(stringResource(R.string.filter_multiply), vs.multiply, PdfColorFilter.MULTIPLY_OFF) { setMultiply(it) }
+            FilterColorRow(stringResource(R.string.filter_screen), vs.screen, PdfColorFilter.SCREEN_OFF) { setScreen(it) }
+            ToggleRow(stringResource(R.string.caption_keep_images), vs.keepImages) { setKeepImages(it) }
 
             Spacer(Modifier.size(10.dp))
-            StyleCaption("ROTATE  ${vs.rotation}°")
+            StyleCaption(stringResource(R.string.caption_rotate_degrees, vs.rotation))
             Slider(
                 value = vs.rotation.toFloat(),
                 onValueChange = { setRotation((it / 90f).roundToInt() * 90) },
@@ -468,7 +475,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                 steps = 2,
             )
 
-            ToggleRow("SCROLLBAR", vs.scrollbar) { setScrollbar(it) }
+            ToggleRow(stringResource(R.string.caption_scrollbar), vs.scrollbar) { setScrollbar(it) }
 
             Spacer(Modifier.size(8.dp))
             if (showDefaultRow && overrides != ViewOverrides()) {
@@ -481,7 +488,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                         },
                     )
                     Text(
-                        "Default for all notes",
+                        stringResource(R.string.default_for_all_notes),
                         color = LocalPalette.current.text.toComposeColor(),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
@@ -490,7 +497,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                 Spacer(Modifier.size(4.dp))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ModeChip("Reset", false) { apply(ViewOverrides()) }
+                ModeChip(stringResource(R.string.reset), false) { apply(ViewOverrides()) }
             }
         }
     }
@@ -519,6 +526,28 @@ private fun FilterSpinRow(label: String, value: Int, min: Int, max: Int, onChang
     }
 }
 
+/**
+ * A labelled colour row for the two blend filters: the shared picker dot plus an Off chip that
+ * writes the blend's identity colour (white for multiply, black for screen), so "no filter" and
+ * "blend with the no-op colour" are the same state and the row needs no separate enable flag.
+ */
+@Composable
+private fun FilterColorRow(label: String, value: Rgba, off: Rgba, onChange: (Rgba) -> Unit) {
+    val palette = LocalPalette.current
+    val on = value != off
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(84.dp))
+        ColorPickerDot(
+            current = value,
+            custom = on,
+            onPick = onChange,
+            dismissOnPick = false,
+        ) { d, p -> PageColorGridPopup(value, d, p) }
+        Spacer(Modifier.size(8.dp))
+        ModeChip(stringResource(R.string.off), !on) { onChange(off) }
+    }
+}
+
 /** Page-nav popup: type a page number (1-based) and jump to it; Done/GO both commit. */
 @Composable
 fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
@@ -530,7 +559,7 @@ fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
     }
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("GO TO PAGE")
+            PopupTitle(stringResource(R.string.title_go_to_page))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FieldFrame(Modifier.width(72.dp)) {
                     NativeField(
@@ -550,7 +579,7 @@ fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                 )
-                ModeChip("GO", selected = true) { go() }
+                ModeChip(stringResource(R.string.go), selected = true) { go() }
             }
         }
     }
@@ -575,9 +604,9 @@ fun ZoomMenuPopup(editor: Editor, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(280.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("ZOOM")
+            PopupTitle(stringResource(R.string.title_zoom))
             ZoomLimitRow(
-                "MIN ZOOM", minOn, minPct,
+                stringResource(R.string.caption_min_zoom), minOn, minPct,
                 onToggle = {
                     minOn = it
                     if (minOn && maxOn && minPct > maxPct) minPct = maxPct
@@ -590,7 +619,7 @@ fun ZoomMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                 },
             )
             ZoomLimitRow(
-                "MAX ZOOM", maxOn, maxPct,
+                stringResource(R.string.caption_max_zoom), maxOn, maxPct,
                 onToggle = {
                     maxOn = it
                     if (maxOn && minOn && maxPct < minPct) maxPct = minPct
@@ -653,18 +682,18 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("ERASER")
+            PopupTitle(stringResource(R.string.title_eraser))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip("STROKE", selected = !area) { area = false; emit() }
-                ModeChip("AREA", selected = area) { area = true; emit() }
+                ModeChip(stringResource(R.string.eraser_stroke), selected = !area) { area = false; emit() }
+                ModeChip(stringResource(R.string.eraser_area), selected = area) { area = true; emit() }
             }
             val r = ToolConversions.widthRange(Tool.ERASER)
-            SliderRow("SIZE", size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
+            SliderRow(stringResource(R.string.caption_size), size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
             // SCALE off: the eraser holds a constant on-screen size whatever zoom you are at.
-            ToggleRow("SCALE", scale) { scale = it; emit() }
+            ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
             // Re-arm the previous pen/highlighter once an erase lifts, so a quick fix doesn't strand
             // you in the eraser.
-            ToggleRow("SWITCH BACK", switchBack) { switchBack = it; emit() }
+            ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
         }
     }
 }
@@ -679,10 +708,10 @@ fun SelectConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("SELECT")
+            PopupTitle(stringResource(R.string.title_select))
             // Re-arm the previous pen/highlighter once a selection action (move, resize, delete,
             // cut, copy, duplicate) finishes, so a quick edit doesn't strand you in select.
-            ToggleRow("SWITCH BACK", switchBack) { switchBack = it; emit() }
+            ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
         }
     }
 }
@@ -716,7 +745,7 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(284.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle("SHAPE")
+            PopupTitle(stringResource(R.string.title_shape))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -725,20 +754,20 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
                     KindChip(shapeIcon(k), k.id, selected = kind == k) { kind = k; emit() }
                 }
             }
-            SliderRow("WIDTH", width, 1f..20f) { width = it; emit() }
-            ToggleRow("FILL", fill) { fill = it; emit() }
+            SliderRow(stringResource(R.string.caption_width), width, 1f..20f) { width = it; emit() }
+            ToggleRow(stringResource(R.string.caption_fill), fill) { fill = it; emit() }
             if (fill) {
                 val minPct = (ShapeConfig.FILL_ALPHA_MIN * 100).toFloat()
-                SliderRow("OPACITY", fillOpacity, minPct..100f) { fillOpacity = it; emit() }
+                SliderRow(stringResource(R.string.caption_opacity), fillOpacity, minPct..100f) { fillOpacity = it; emit() }
             }
-            ToggleRow("DASHED", dashed) { dashed = it; emit() }
+            ToggleRow(stringResource(R.string.caption_dashed), dashed) { dashed = it; emit() }
             if (dashed) {
-                SliderRow("DASH", dashLen, 2f..40f) { dashLen = it; emit() }
-                SliderRow("GAP", gapLen, 2f..40f) { gapLen = it; emit() }
+                SliderRow(stringResource(R.string.caption_dash), dashLen, 2f..40f) { dashLen = it; emit() }
+                SliderRow(stringResource(R.string.caption_gap), gapLen, 2f..40f) { gapLen = it; emit() }
             }
-            ToggleRow("NEON", glow) { glow = it; emit() }
+            ToggleRow(stringResource(R.string.caption_neon), glow) { glow = it; emit() }
             if (glow) {
-                SliderRow("INTENSITY", glowIntensity, 0f..100f) { glowIntensity = it; emit() }
+                SliderRow(stringResource(R.string.caption_glow_intensity), glowIntensity, 0f..100f) { glowIntensity = it; emit() }
             }
         }
     }
@@ -948,7 +977,7 @@ fun FontMenuItems(
         DropdownMenuItem(
             text = {
                 Text(
-                    "Default",
+                    stringResource(R.string.default_choice),
                     color = (if (current == null) palette.accent else palette.text).toComposeColor(),
                     fontSize = 14.sp,
                 )
@@ -961,7 +990,7 @@ fun FontMenuItems(
         DropdownMenuItem(
             text = {
                 Text(
-                    choice.label,
+                    fontLabel(choice.face),
                     color = (if (choice.face == current) palette.accent else palette.text).toComposeColor(),
                     style = TextStyle(fontFamily = choice.face.toComposeFamily(), fontSize = 14.sp),
                 )

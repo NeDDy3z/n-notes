@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Paint
 import android.graphics.Typeface
+import com.xnotes.R
 import com.xnotes.core.pal.FontFace
 import java.io.File
 import java.nio.ByteBuffer
@@ -135,13 +136,13 @@ object FontCatalog {
      * table (falling back to [sourceName]); monospace is detected by measuring.
      * Returns the new face, or a human-readable problem.
      */
-    fun importFont(bytes: ByteArray, sourceName: String?): Result<FontFace> {
-        val dir = customDir ?: return Result.failure(IllegalStateException("Fonts are unavailable."))
+    fun importFont(context: Context, bytes: ByteArray, sourceName: String?): Result<FontFace> {
+        val dir = customDir ?: return Result.failure(IllegalStateException(context.getString(R.string.font_err_unavailable)))
         val fallback = sourceName?.substringBeforeLast('.')?.trim().orEmpty()
         val name = sanitizeFamily(parseFamilyName(bytes) ?: fallback)
-            ?: return Result.failure(IllegalArgumentException("Could not name this font."))
+            ?: return Result.failure(IllegalArgumentException(context.getString(R.string.font_err_unnamed)))
         if (name.lowercase() in listOf("sans", "serif", "mono", "hand", "default") || byId.containsKey(name)) {
-            return Result.failure(IllegalArgumentException("“$name” is already built in."))
+            return Result.failure(IllegalArgumentException(context.getString(R.string.font_err_built_in, name)))
         }
         dir.mkdirs()
         val tmp = File(dir, ".import.tmp")
@@ -149,7 +150,7 @@ object FontCatalog {
         val tf = runCatching { Typeface.Builder(tmp).build() }.getOrNull()
         if (tf == null) {
             tmp.delete()
-            return Result.failure(IllegalArgumentException("Not a readable .ttf/.otf font."))
+            return Result.failure(IllegalArgumentException(context.getString(R.string.font_err_unreadable)))
         }
         val mono = looksMonospace(tf)
         custom[name]?.file?.delete() // re-import replaces (the mono marker may differ)

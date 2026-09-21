@@ -94,6 +94,24 @@ class DocumentCodecTest {
         assertTrue(back[4].locked)
     }
 
+    @Test fun createdTimeRoundTripsAsIsoUtc() {
+        val doc = Document(dpi = 150, created = 1_789_720_071_123L)
+        doc.pages.add(Page(100.0, 100.0))
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        assertTrue(manifestOf(out.toByteArray()).contains("2026-09-18T08:27:51.123Z"))
+        assertEquals(1_789_720_071_123L, codec.read(ByteArrayInputStream(out.toByteArray())).created)
+    }
+
+    @Test fun aNoteWithoutCreatedWritesNoCreatedField() {
+        val doc = Document(dpi = 150)
+        doc.pages.add(Page(100.0, 100.0))
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        assertFalse(manifestOf(out.toByteArray()).contains("\"created\""))
+        assertNull(roundTrip(doc).created)
+    }
+
     @Test fun anUnlockedNoteWritesNoLockField() {
         val doc = Document(dpi = 150)
         val page = Page(100.0, 100.0)
@@ -257,6 +275,40 @@ class DocumentCodecTest {
         } finally {
             srcDir.deleteRecursively(); outDir.deleteRecursively()
         }
+    }
+
+    @Test fun aPeekCountsPagesAndSeesThePdfWithoutReadingIt() {
+        val dir = java.nio.file.Files.createTempDirectory("xnote-peek").toFile()
+        try {
+            val pdf = File(dir, "in.pdf").apply { writeBytes(ByteArray(200_000) { (it % 251).toByte() }) }
+            val doc = Document.blank(count = 3)
+            doc.pdfFile = pdf
+            doc.created = 1_758_000_000_000L
+            val file = File(dir, "n.xnote")
+            file.outputStream().use { codec.write(doc, it) }
+            val viaChannel = java.io.RandomAccessFile(file, "r").use { codec.peek(it.channel) }!!
+            assertEquals(3, viaChannel.pages)
+            assertTrue(viaChannel.hasPdf)
+            assertEquals(1_758_000_000_000L, viaChannel.created)
+            val viaStream = file.inputStream().use { codec.peek(it) }!!
+            assertEquals(3, viaStream.pages)
+            assertTrue(viaStream.hasPdf)
+            val plain = File(dir, "p.xnote")
+            plain.outputStream().use { codec.write(Document.blank(count = 1), it) }
+            val one = java.io.RandomAccessFile(plain, "r").use { codec.peek(it.channel) }!!
+            assertEquals(1, one.pages)
+            assertFalse(one.hasPdf)
+            assertNull(one.created)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test fun aPeekAtSomethingElseComesBackEmpty() {
+        val junk = File.createTempFile("junk", ".xnote").apply { writeBytes(byteArrayOf(1, 2, 3)); deleteOnExit() }
+        assertNull(java.io.RandomAccessFile(junk, "r").use { codec.peek(it.channel) })
+        assertNull(codec.peek(ByteArrayInputStream(byteArrayOf(1, 2, 3))))
+        assertNull(codec.peekManifest(ByteArrayInputStream("""{"format":"xcanvas","items":[]}""".toByteArray())))
     }
 
     @Test fun speedStrokeTimestampsRoundTrip() {

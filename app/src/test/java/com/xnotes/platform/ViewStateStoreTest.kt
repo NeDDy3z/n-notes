@@ -3,6 +3,7 @@ package com.xnotes.platform
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
+import com.xnotes.core.model.Rgba
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -24,6 +25,8 @@ class ViewStateStoreTest {
             invert = 100,
             brightness = 60,
             sepia = 10,
+            multiply = Rgba(255, 240, 160),
+            screen = Rgba(20, 40, 80),
             keepImages = true,
             rotation = 90,
             scrollbar = true,

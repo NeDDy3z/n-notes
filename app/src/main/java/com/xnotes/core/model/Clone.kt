@@ -43,6 +43,7 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
     margins = margins,
     // The flow must be cloned too or the autosave snapshot would race live edits.
     flow = flow.deepCopy(),
+    created = created,
 )
 
 /**
@@ -72,4 +73,5 @@ fun Document.snapshot(): Document = Document(
     style = style,
     margins = margins,
     flow = flow.deepCopy(),
+    created = created,
 )

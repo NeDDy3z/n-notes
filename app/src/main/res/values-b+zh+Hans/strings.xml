@@ -1,0 +1,690 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Tools and toolbar items -->
+    <string name="tool_pen">钢笔</string>
+    <string name="tool_dashed">虚线笔</string>
+    <string name="tool_calligraphy">书法笔</string>
+    <string name="tool_speed">速度笔</string>
+    <string name="tool_taper">收尖笔</string>
+    <string name="tool_highlighter">荧光笔</string>
+    <string name="tool_eraser">橡皮擦</string>
+    <string name="tool_pan">平移</string>
+    <string name="tool_select">选择</string>
+    <string name="tool_lasso">套索</string>
+    <string name="tool_screenshot">截图</string>
+    <string name="tool_wand">消失墨迹</string>
+    <string name="tool_shape">形状</string>
+    <string name="tool_ruler">直尺</string>
+    <string name="tool_text">文本</string>
+    <string name="tool_text_box">文本框</string>
+    <string name="tool_image">图片</string>
+    <string name="toolbar_home">首页</string>
+    <string name="toolbar_title">标题</string>
+    <string name="toolbar_sidebar">侧边栏</string>
+    <string name="undo">撤销</string>
+    <string name="redo">重做</string>
+    <string name="toolbar_page_nav">页面导航</string>
+    <string name="toolbar_styles">样式</string>
+    <string name="toolbar_margins">页边距</string>
+    <string name="toolbar_view">视图</string>
+    <string name="toolbar_zoom">缩放</string>
+    <string name="toolbar_fit">适应</string>
+    <string name="toolbar_zoom_lock">缩放锁定</string>
+    <string name="toolbar_fullscreen">全屏</string>
+    <string name="toolbar_colours">颜色</string>
+    <string name="toolbar_waypoints">保存的视图</string>
+    <string name="toolbar_minimap">小地图</string>
+    <string name="edge_left">左侧</string>
+    <string name="edge_right">右侧</string>
+    <string name="edge_top">顶部</string>
+    <string name="edge_bottom">底部</string>
+    <string name="page_size_custom">自定义</string>
+    <string name="page_size_letter">Letter</string>
+    <string name="page_size_legal">Legal</string>
+    <string name="page_size_slide_16_9">幻灯片 16:9</string>
+    <string name="page_size_slide_4_3">幻灯片 4:3</string>
+    <string name="font_sans">无衬线</string>
+    <string name="font_serif">衬线</string>
+    <string name="font_mono">等宽</string>
+    <string name="font_hand">手写</string>
+
+    <!-- Tool, style, margin, view and zoom popups -->
+    <string name="caption_colour">颜色</string>
+    <string name="default_choice">默认</string>
+    <string name="caption_pressure">压感</string>
+    <string name="caption_sensitivity">压感灵敏度</string>
+    <string name="caption_multiplier">倍率</string>
+    <string name="caption_speed">速度笔</string>
+    <string name="caption_tip_width">笔尖宽度百分比</string>
+    <string name="caption_width">笔画宽度</string>
+    <string name="caption_scale">缩放比例</string>
+    <string name="caption_dash">虚线</string>
+    <string name="caption_gap">间隔</string>
+    <string name="caption_intensity">强度</string>
+    <string name="caption_straight_line">直线</string>
+    <string name="caption_inverse">反向</string>
+    <string name="caption_neon">发光效果</string>
+    <string name="title_styles">样式</string>
+    <string name="all_pages">所有页面</string>
+    <string name="current_page">当前页面</string>
+    <string name="caption_page_colour">页面颜色</string>
+    <string name="caption_pattern">纹理</string>
+    <string name="none">无</string>
+    <string name="pattern_lines">横线</string>
+    <string name="pattern_dots">点阵</string>
+    <string name="pattern_grid">网格</string>
+    <string name="caption_pattern_colour">纹理颜色</string>
+    <string name="default_for_new_notes">新笔记的默认值</string>
+    <string name="reset">重置</string>
+    <string name="title_margins">页边距</string>
+    <string name="title_view">视图</string>
+    <string name="caption_viewing_mode">查看模式</string>
+    <string name="view_single">单页</string>
+    <string name="view_double">双页</string>
+    <string name="view_cover">封面</string>
+    <string name="caption_vertical_scrolling">纵向滚动</string>
+    <string name="caption_pdf_filters">PDF 颜色滤镜</string>
+    <string name="filter_contrast">对比度</string>
+    <string name="filter_invert">反色</string>
+    <string name="filter_brightness">亮度</string>
+    <string name="filter_sepia">复古棕</string>
+    <string name="filter_multiply">正片叠底</string>
+    <string name="filter_screen">滤色</string>
+    <string name="caption_keep_images">不过滤图片</string>
+    <string name="caption_scrollbar">滚动条</string>
+    <string name="default_for_all_notes">所有笔记的默认值</string>
+    <string name="off">关闭</string>
+    <string name="title_go_to_page">跳转到页面</string>
+    <string name="go">跳转</string>
+    <string name="title_zoom">缩放</string>
+    <string name="caption_min_zoom">最小缩放</string>
+    <string name="caption_max_zoom">最大缩放</string>
+    <string name="title_eraser">橡皮擦</string>
+    <string name="eraser_stroke">笔迹</string>
+    <string name="eraser_area">范围</string>
+    <string name="caption_size">大小</string>
+    <string name="caption_switch_back">切换回去</string>
+    <string name="title_select">选择</string>
+    <string name="title_shape">形状</string>
+    <string name="caption_fill">填充</string>
+    <string name="caption_opacity">不透明度</string>
+    <string name="caption_dashed">虚线笔</string>
+    <string name="caption_spacing_px">"间距  %1$d px"</string>
+    <string name="default_suffix">"  (默认)"</string>
+    <string name="caption_opacity_percent">"不透明度  %1$d%%"</string>
+    <string name="caption_rotate_degrees">"旋转  %1$d°"</string>
+    <string name="caption_glow_intensity">发光强度</string>
+
+    <!-- Toolbar -->
+    <string name="side_panel">侧边栏</string>
+    <string name="previous_page">上一页</string>
+    <string name="next_page">下一页</string>
+    <string name="zoom_out">缩小</string>
+    <string name="zoom_in">放大</string>
+    <string name="rename_note">重命名笔记</string>
+    <string name="rename">重命名</string>
+    <string name="cancel">取消</string>
+    <string name="close_pane">关闭此窗格</string>
+    <string name="paste_image">粘贴图片</string>
+    <string name="insert_image_ellipsis">插入图片…</string>
+    <string name="stickers">贴纸</string>
+    <string name="add_stickers">添加贴纸…</string>
+    <string name="no_stickers">尚无贴纸。</string>
+    <string name="stickers_hint">点按插入，长按移除</string>
+    <string name="sticker">贴纸</string>
+    <string name="fit_page">显示完整页面</string>
+    <string name="fit_width">适应页面宽度</string>
+    <string name="fit_height">适应页面高度</string>
+    <string name="err_rename_note">无法重命名笔记。</string>
+    <string name="untitled">未命名</string>
+    <string name="insert_image">插入图片</string>
+    <string name="fit_all">显示全部</string>
+    <string name="gl_unavailable">GL 不可用</string>
+
+    <!-- Toolbar customizer -->
+    <string name="drop_here">放到此处</string>
+    <string name="delete_section">删除分组</string>
+    <string name="add_section">添加分组</string>
+
+    <!-- Preferences -->
+    <string name="back_to_home">返回首页</string>
+    <string name="show_sidebar">显示侧边栏</string>
+    <string name="preferences">偏好设置</string>
+    <string name="reset_to_defaults">恢复默认设置</string>
+    <string name="pref_general">常规</string>
+    <string name="pref_ui_theme">界面主题</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_oled">OLED</string>
+    <string name="pref_colour_palette">调色板</string>
+    <string name="palette_classic">经典</string>
+    <string name="palette_material">Material</string>
+    <string name="pref_accent_colour">强调色</string>
+    <string name="pref_start_fullscreen">启动时全屏</string>
+    <string name="pref_input">输入</string>
+    <string name="pref_finger_draws">用手指绘制（关闭时手指用于平移）</string>
+    <string name="pref_zoom_lock_pan">锁定缩放时的平移方式</string>
+    <string name="pan_single">单指平移</string>
+    <string name="pan_two">双指平移</string>
+    <string name="pan_none">不平移</string>
+    <string name="pref_detect_shapes">长按笔画后转换为形状（保持笔尖不动）</string>
+    <string name="pref_pen_button_hold">手写笔侧键（按住）</string>
+    <string name="pref_pen_button_hover">悬停时启用（无需触碰屏幕）</string>
+    <string name="pref_two_finger_tap">双指点按</string>
+    <string name="pref_three_finger_tap">三指点按</string>
+    <string name="pref_stylus_double_tap">手写笔双击</string>
+    <string name="pref_stylus_button_tap">手写笔侧键（点按）</string>
+    <string name="pref_redmi_buttons">Redmi Smart Pen 侧键（点按）</string>
+    <string name="pen_button_1">按键 1</string>
+    <string name="pen_button_2">按键 2</string>
+    <string name="pref_new_notes">新笔记</string>
+    <string name="pref_filename_template">文件名模板</string>
+    <string name="pref_page">页面</string>
+    <string name="pref_default_page_size">默认页面大小</string>
+    <string name="width_mm">宽度（毫米）</string>
+    <string name="height_mm">高度（毫米）</string>
+    <string name="pref_orientation">方向</string>
+    <string name="orientation_portrait">纵向</string>
+    <string name="orientation_landscape">横向</string>
+    <string name="pref_hide_page_borders">隐藏页面边框</string>
+    <string name="pref_page_colour">页面颜色</string>
+    <string name="pref_page_colour_follows_theme">页面颜色跟随主题</string>
+    <string name="pref_performance">性能</string>
+    <string name="pref_cache_help">设置越高，平移和缩放越流畅，但会使用更多内存。无论如何设置，墨迹和 PDF 都会保持清晰。</string>
+    <string name="pref_disable_front_buffering">禁用前缓冲绘制</string>
+    <string name="pref_front_buffering_help">前缓冲绘制可降低笔迹延迟。部分屏幕可能出现笔迹闪烁或跟笔延迟，遇到这些问题时可关闭此功能，使用常规画布绘制。</string>
+    <string name="pref_code_highlighting">代码高亮</string>
+    <string name="pref_default_code_language">默认代码语言</string>
+    <string name="pref_code_language_help">“粘贴为代码”会使用此语言高亮粘贴的代码块。</string>
+    <string name="code_plain">纯文本（无高亮）</string>
+    <string name="pref_code_theme">代码主题</string>
+    <string name="pref_code_theme_help">导入 Helix 编辑器主题（.toml）以更改代码颜色。</string>
+    <string name="custom_theme">自定义主题</string>
+    <string name="import_theme">导入主题…</string>
+    <string name="pref_fonts">字体</string>
+    <string name="pref_fonts_help">导入 .ttf 或 .otf 文件，以便在文本字体列表中使用。</string>
+    <string name="import_font">导入字体…</string>
+    <string name="mono_suffix">"  等宽"</string>
+    <string name="remove">移除</string>
+    <string name="pref_toolbar">工具栏</string>
+    <string name="pref_toolbar_help">点按工具以显示或隐藏。长按可在分组内或分组间拖动。长按分组顶部可移动整个分组。</string>
+    <string name="toggle_pan">切换平移</string>
+    <string name="toggle_eraser">切换橡皮擦</string>
+    <string name="toggle_previous">切换上一个工具</string>
+    <string name="pref_filename_template_help">YYYY YY MM DD HH mm ss 会展开为创建日期和时间。# 会变为序号以确保文件夹中的名称不重复。</string>
+    <string name="pref_next_note_named">下一个笔记将命名为 %1$s</string>
+    <string name="pref_side_margin_px">"侧边距  %1$d px"</string>
+    <string name="pref_max_cache_px">"最大缓存分辨率  %1$d px"</string>
+    <string name="pref_toolbar_colours_n">"工具栏颜色  %1$d"</string>
+
+    <!-- Home screen and explorer -->
+    <string name="collapse_sidebar">收起侧边栏</string>
+    <string name="home">首页</string>
+    <string name="new_note">新笔记</string>
+    <string name="new_canvas">新画布</string>
+    <string name="about">关于</string>
+    <string name="new_note_menu">新建笔记</string>
+    <string name="new_canvas_menu">新建画布</string>
+    <string name="import_pdf">导入 PDF</string>
+    <string name="create_new">新建</string>
+    <string name="choose_folder_hint">选择一个用于保存和浏览笔记的文件夹。</string>
+    <string name="choose_folder">选择文件夹</string>
+    <string name="use_app_storage">使用应用存储</string>
+    <string name="new_folder">新建文件夹</string>
+    <string name="paste">粘贴</string>
+    <string name="clear_clipboard">清空剪贴板</string>
+    <string name="more">更多</string>
+    <string name="sort_by">排序方式</string>
+    <string name="sort_name">名称</string>
+    <string name="sort_modified">修改日期</string>
+    <string name="sort_size">大小</string>
+    <string name="change_folder">更改文件夹</string>
+    <string name="forget_folder">忘记文件夹</string>
+    <string name="open_side_by_side">并排打开</string>
+    <string name="copy">复制</string>
+    <string name="cut">剪切</string>
+    <string name="delete">删除</string>
+    <string name="searching">正在搜索…</string>
+    <string name="loading">正在加载…</string>
+    <string name="folder_empty">此文件夹中没有笔记。</string>
+    <string name="import_title">导入</string>
+    <string name="folder_name">文件夹名称</string>
+    <string name="delete_confirm_title">删除？</string>
+    <string name="search_notes">搜索笔记</string>
+    <string name="clear_search">清除搜索</string>
+    <string name="share">分享</string>
+    <string name="save_copy_ellipsis">保存副本…</string>
+    <string name="export_pdf">导出为 PDF</string>
+    <string name="sort_descending">降序</string>
+    <string name="sort_ascending">升序</string>
+    <string name="folder">文件夹</string>
+    <string name="err_paste_some">无法在此处粘贴部分项目。</string>
+    <string name="err_move_some">无法移动部分项目。</string>
+    <string name="no_notes_match">没有与“%1$s”匹配的笔记。</string>
+    <string name="save">保存</string>
+    <string name="create">创建</string>
+    <string name="err_save_that_note">无法保存该笔记。</string>
+    <string name="err_create_folder">无法创建该文件夹。</string>
+    <string name="err_create_canvas">无法创建画布。</string>
+    <string name="err_create_note">无法创建笔记。</string>
+    <string name="rename_folder">重命名文件夹</string>
+    <string name="delete_one_confirm">删除“%1$s”？此操作无法撤销。</string>
+    <string name="err_delete_some">无法删除部分项目。</string>
+    <plurals name="delete_items_confirm">
+        <item quantity="other">删除 %d 个项目？此操作无法撤销。</item>
+    </plurals>
+    <string name="expand_sidebar">展开侧边栏</string>
+    <string name="unpin_from_sidebar">从侧边栏取消固定</string>
+    <string name="remove_name">移除名称</string>
+    <string name="name_this_colour">为此颜色命名</string>
+    <string name="colour_name_placeholder">例如：重要</string>
+    <string name="new_folder_menu">新建文件夹</string>
+    <string name="finding">正在查找…</string>
+    <string name="nothing_this_colour">没有项目使用此颜色。</string>
+    <string name="recent_empty">还没有打开过任何内容。你打开的笔记和画布会显示在这里。</string>
+    <string name="nothing_to_show">这里没有可显示的内容。</string>
+    <string name="no_pdf_notes_here">这里没有 PDF 笔记。</string>
+    <string name="include_subfolders">包括子文件夹</string>
+    <string name="opened_on_device">在此设备上打开过</string>
+    <string name="clear">清除</string>
+    <string name="in_every_folder">所有文件夹中</string>
+    <string name="clear_colour_filter">清除颜色筛选</string>
+    <string name="top_folder">顶层文件夹</string>
+    <string name="view_options">视图选项</string>
+    <string name="move_to_folder">移动到文件夹</string>
+    <string name="move_here">移到此处</string>
+    <string name="preview">预览</string>
+    <string name="move_to_folder_ellipsis">移动到文件夹…</string>
+    <string name="name_colour_ellipsis">为颜色命名…</string>
+    <string name="err_open_folder">无法打开该文件夹。</string>
+    <string name="moved_one_to_trash">已将“%1$s”移到回收站</string>
+    <string name="move_to_trash">移到回收站</string>
+    <string name="nothing_here_yet">这里还没有内容。</string>
+    <string name="kind_no_folders">这里没有文件夹。</string>
+    <string name="kind_no_notes">这里没有笔记。</string>
+    <string name="kind_no_canvases">这里没有画布。</string>
+    <string name="all_kinds">所有类型</string>
+    <string name="move_one_to">将“%1$s”移动到</string>
+    <string name="pin_to_sidebar">固定到侧边栏</string>
+    <plurals name="moved_items_to_trash">
+        <item quantity="other">已将 %d 个项目移到回收站</item>
+    </plurals>
+    <plurals name="err_move_items_to_trash">
+        <item quantity="other">无法将 %d 个项目移到回收站。</item>
+    </plurals>
+    <plurals name="paste_items">
+        <item quantity="other">粘贴 %d 个项目</item>
+    </plurals>
+    <plurals name="paste_items_here">
+        <item quantity="other">在此处粘贴 %d 个项目</item>
+    </plurals>
+    <plurals name="notes_created_in">
+        <item quantity="other">%2$s创建了 %1$d 篇笔记</item>
+    </plurals>
+    <plurals name="notes_saved_in">
+        <item quantity="other">%2$s保存了 %1$d 篇笔记</item>
+    </plurals>
+    <plurals name="move_items_to">
+        <item quantity="other">将 %d 个项目移动到</item>
+    </plurals>
+
+    <!-- Messages, sharing and export -->
+    <string name="exporting_pdf">正在导出 PDF…</string>
+    <string name="may_take_moment">这可能需要一点时间。</string>
+    <string name="saving_notes">正在保存笔记…</string>
+    <string name="opening_note">正在打开笔记…</string>
+    <string name="share_note">分享笔记</string>
+    <string name="unsaved_changes">未保存的更改</string>
+    <string name="discard">放弃</string>
+    <string name="err_save_note">无法保存笔记。</string>
+    <string name="exported_pdf">已导出为 PDF。</string>
+    <string name="err_export_pdf">无法导出为 PDF。</string>
+    <string name="err_save_copy">无法保存副本。</string>
+    <string name="err_save_image">无法保存图片。</string>
+    <string name="err_save_images">无法保存图片。</string>
+    <string name="err_read_image">无法读取图片。</string>
+    <string name="err_read_file">无法读取文件。</string>
+    <string name="err_open_second">无法打开第二个笔记。</string>
+    <string name="share_named">分享 %1$s</string>
+    <string name="err_share_note">无法分享笔记。</string>
+    <string name="err_share_pages">无法分享页面。</string>
+    <string name="share_as">将“%1$s”分享为：</string>
+    <string name="file_of_kind">%1$s 文件</string>
+    <string name="unsaved_changes_prompt">继续之前保存对“%1$s”的更改？</string>
+    <string name="writing_pdf">正在写入 PDF…</string>
+    <string name="preparing">正在准备…</string>
+    <string name="export_page_progress">第 %1$d / %2$d 页</string>
+    <string name="export_item_progress">对象 %1$d / %2$d</string>
+    <string name="importing_pdf">正在导入 PDF…</string>
+    <string name="refining_pdf_colours">正在优化 PDF 颜色 %1$d/%2$d 页…</string>
+    <string name="unlock_zoom">解锁缩放</string>
+    <string name="lock_zoom_fit_width">在适应宽度时锁定缩放</string>
+    <string name="lock_zoom">锁定缩放</string>
+    <plurals name="saved_images">
+        <item quantity="other">已保存 %d 张图片。</item>
+    </plurals>
+    <plurals name="export_writing_pages">
+        <item quantity="other">正在写入 %d 页…</item>
+    </plurals>
+    <plurals name="export_writing_items">
+        <item quantity="other">正在写入 %d 个对象…</item>
+    </plurals>
+    <string name="image_copied">图片已复制，可在任意位置粘贴。</string>
+    <string name="err_copy_image">无法复制图片。</string>
+    <string name="err_clipboard_no_image">剪贴板中没有可粘贴的图片。</string>
+    <string name="err_read_sticker">无法读取贴纸。</string>
+    <string name="err_open_that_note">无法打开该笔记。</string>
+    <string name="err_not_xnotes">该文件不是 xnotes 文档。</string>
+    <string name="err_open_note">无法打开笔记。</string>
+    <string name="note_forked">此笔记已在其他位置更改。你的编辑现已保存在“%1$s”中。</string>
+    <string name="canvas_forked">此画布已在其他位置更改。你的编辑现已保存在“%1$s”中。</string>
+    <string name="err_keep_one_page">笔记必须至少保留一页。</string>
+    <string name="page_already_empty">该页面已经为空。</string>
+    <string name="err_helix_theme">不是可用的 Helix 主题（需要独立的 .toml 文件）。</string>
+    <string name="err_store_theme">无法保存主题文件。</string>
+    <string name="code_theme_imported">已导入代码主题。</string>
+    <string name="font_imported">已导入字体“%1$s”。</string>
+    <string name="err_import_font">无法导入该字体。</string>
+    <string name="font_err_unavailable">字体不可用。</string>
+    <string name="font_err_unnamed">无法确定此字体的名称。</string>
+    <string name="font_err_built_in">“%1$s”已是内置字体。</string>
+    <string name="font_err_unreadable">不是可读取的 .ttf/.otf 字体。</string>
+    <string name="err_share_notes">无法分享这些笔记。</string>
+    <plurals name="share_n_notes">
+        <item quantity="other">分享 %d 篇笔记</item>
+    </plurals>
+
+    <!-- Side panel -->
+    <string name="pages">页面</string>
+    <string name="contents">目录</string>
+    <string name="bookmarks">书签</string>
+    <string name="selected">已选择</string>
+    <string name="page_options">页面选项</string>
+    <string name="back_share_as">"‹  分享为"</string>
+    <string name="image_png">图片（PNG）</string>
+    <string name="back_save_as">"‹  另存为"</string>
+    <string name="add_page">添加页面</string>
+    <string name="erase_page">清空页面</string>
+    <string name="share_ellipsis">分享…</string>
+    <string name="save_as_ellipsis">另存为…</string>
+    <string name="clear_selection">取消选择</string>
+    <string name="save_as">另存为</string>
+    <string name="no_contents">— 没有目录 —</string>
+    <string name="add_bookmark">添加书签</string>
+    <string name="no_bookmarks">— 没有书签 —</string>
+    <string name="add">添加</string>
+    <string name="page_n">第 %1$d 页</string>
+    <string name="bookmark_entry">%1$s · 第 %2$d 页</string>
+
+    <!-- Selection and long-press menus -->
+    <string name="bring_to_front">置于顶层</string>
+    <string name="duplicate">创建副本</string>
+    <string name="change_style">更改样式</string>
+    <string name="lock">锁定</string>
+    <string name="title_change_style">更改样式</string>
+    <string name="caption_thickness">粗细</string>
+    <string name="change_style_hint">应用于所选笔迹和形状。</string>
+    <string name="copy_as_image">复制为图片</string>
+    <string name="unlock">解锁</string>
+    <string name="paste_here">粘贴到此处</string>
+    <string name="paste_markdown">粘贴为 Markdown</string>
+    <string name="paste_code">粘贴为代码</string>
+
+    <!-- About -->
+    <string name="app_tagline">Android 手写笔记与素描应用</string>
+    <string name="copy_version">复制版本号</string>
+    <string name="help_make_better">帮助改进 xnotes</string>
+    <string name="report_bug">报告问题</string>
+    <string name="request_feature">功能建议</string>
+    <string name="sponsor">赞助</string>
+    <string name="enjoying_xnotes">喜欢 xnotes？</string>
+    <string name="star_on_github">在 GitHub 上加星</string>
+    <string name="mit_license">MIT 许可证</string>
+    <string name="version_n">版本 %1$s</string>
+    <string name="version_copied">版本号已复制</string>
+
+    <!-- Text formatting -->
+    <string name="checkbox_item">复选框项目</string>
+    <string name="bold">粗体</string>
+    <string name="italic">斜体</string>
+    <string name="underline">下划线</string>
+    <string name="strikethrough">删除线</string>
+    <string name="ordered_list">有序列表</string>
+    <string name="bullet_list">项目符号列表</string>
+    <string name="alignment">对齐</string>
+    <string name="indent">增加缩进</string>
+    <string name="outdent">减少缩进</string>
+    <string name="code_block">代码块</string>
+    <string name="smaller">缩小</string>
+    <string name="larger">放大</string>
+    <string name="font">字体</string>
+    <string name="mono_font">等宽字体</string>
+    <string name="size_pt">大小（磅）</string>
+    <string name="colour">颜色</string>
+    <string name="auto">自动</string>
+    <string name="margins_mm">页边距（毫米）</string>
+    <string name="done">完成</string>
+
+    <!-- Canvas styles and waypoints -->
+    <string name="caption_spacing">间距</string>
+    <string name="caption_paper">纸张</string>
+    <string name="paper_theme">主题</string>
+    <string name="default_for_new_canvases">设为新画布默认样式</string>
+    <string name="title_waypoints">保存的视图</string>
+    <string name="no_waypoints">尚无已保存视图。</string>
+    <string name="caption_save_view">保存此视图</string>
+
+    <!-- Colour picker -->
+    <string name="swatches">色板</string>
+    <string name="spectrum">光谱</string>
+    <string name="caption_recent">最近使用</string>
+
+    <!-- Canvas and storage -->
+    <string name="pull_to_add_page">拉动以添加页面</string>
+    <string name="release_to_add_page">松开以添加页面</string>
+    <string name="app_storage">应用存储</string>
+
+    <!-- Explorer: dates, counts and kinds -->
+    <string name="today">今天</string>
+    <string name="yesterday">昨天</string>
+    <string name="earlier_this_week">本周早些时候</string>
+    <string name="last_week">上周</string>
+    <string name="earlier_in">%1$s早些时候</string>
+    <string name="month_year">%2$d年%1$s</string>
+    <string name="just_now">刚刚</string>
+    <string name="minutes_ago">%1$d 分钟前</string>
+    <string name="hours_ago">%1$d 小时前</string>
+    <string name="day_month">%2$s%1$d日</string>
+    <string name="day_month_year">%3$d年%2$s%1$d日</string>
+    <string name="date_with_time">%1$s %2$s</string>
+    <string name="clock_12h">%3$s%1$d:%2$02d</string>
+    <string name="am">上午</string>
+    <string name="pm">下午</string>
+    <string name="opened_ago">%1$s打开</string>
+    <string name="kind_folders">文件夹</string>
+    <string name="kind_notes">笔记</string>
+    <string name="kind_pdf_notes">PDF 笔记</string>
+    <string name="kind_canvases">画布</string>
+    <string name="hue_black">黑色</string>
+    <string name="hue_white">白色</string>
+    <string name="hue_grey">灰色</string>
+    <string name="hue_red">红色</string>
+    <string name="hue_orange">橙色</string>
+    <string name="hue_yellow">黄色</string>
+    <string name="hue_green">绿色</string>
+    <string name="hue_teal">蓝绿色</string>
+    <string name="hue_blue">蓝色</string>
+    <string name="hue_purple">紫色</string>
+    <string name="hue_pink">粉色</string>
+    <string name="no_colour">无颜色</string>
+    <string name="layout_grid">网格</string>
+    <string name="layout_gallery">画廊</string>
+    <string name="layout_list">列表</string>
+    <string name="layout_columns">分栏</string>
+    <string name="layout_timeline">时间线</string>
+    <string name="group_date">日期</string>
+    <string name="group_kind">类型</string>
+    <string name="no_grouping">不分组</string>
+    <string name="grouped_by_date">按日期分组</string>
+    <string name="grouped_by_kind">按类型分组</string>
+    <string name="grouped_by_colour">按颜色分组</string>
+    <string name="folders_on_top">置顶</string>
+    <string name="folders_mixed">混排</string>
+    <string name="folders_hidden">隐藏</string>
+    <string-array name="months">
+        <item>1月</item>
+        <item>2月</item>
+        <item>3月</item>
+        <item>4月</item>
+        <item>5月</item>
+        <item>6月</item>
+        <item>7月</item>
+        <item>8月</item>
+        <item>9月</item>
+        <item>10月</item>
+        <item>11月</item>
+        <item>12月</item>
+    </string-array>
+    <string-array name="months_short">
+        <item>1月</item>
+        <item>2月</item>
+        <item>3月</item>
+        <item>4月</item>
+        <item>5月</item>
+        <item>6月</item>
+        <item>7月</item>
+        <item>8月</item>
+        <item>9月</item>
+        <item>10月</item>
+        <item>11月</item>
+        <item>12月</item>
+    </string-array>
+    <string-array name="weekdays_short">
+        <item>周一</item>
+        <item>周二</item>
+        <item>周三</item>
+        <item>周四</item>
+        <item>周五</item>
+        <item>周六</item>
+        <item>周日</item>
+    </string-array>
+    <plurals name="days_ago">
+        <item quantity="other">%d 天前</item>
+    </plurals>
+    <plurals name="folders_count">
+        <item quantity="other">%d 个文件夹</item>
+    </plurals>
+    <plurals name="files_count">
+        <item quantity="other">%d 个文件</item>
+    </plurals>
+    <plurals name="items_count">
+        <item quantity="other">%d 项</item>
+    </plurals>
+
+    <!-- Explorer -->
+    <string name="sort_created">创建日期</string>
+    <string name="select_all">全选</string>
+    <string name="close_view_options">关闭视图选项</string>
+    <string name="opt_layout">布局</string>
+    <string name="opt_rows">行</string>
+    <string name="rows_comfortable">宽松</string>
+    <string name="rows_compact">紧凑</string>
+    <string name="opt_tile_size">图块大小</string>
+    <string name="pinch_hint">也可以双指缩放网格来调整图块大小</string>
+    <string name="opt_place_by">文件放置依据</string>
+    <string name="opt_thumbnail">缩略图</string>
+    <string name="thumb_top">页面顶部</string>
+    <string name="thumb_page">整页</string>
+    <string name="opt_show_on_tiles">图块上显示</string>
+    <string name="show_page_count">页数</string>
+    <string name="show_time">时间</string>
+    <string name="colour_code">颜色标记</string>
+    <string name="opt_group_by">分组方式</string>
+    <string name="view_every_folder">在所有文件夹中使用此视图</string>
+    <string name="view_every_folder_hint">关闭时：每个文件夹记住自己的视图</string>
+    <string name="sort_z_to_a">Z 到 A</string>
+    <string name="sort_a_to_z">A 到 Z</string>
+    <string name="largest_first">从大到小</string>
+    <string name="smallest_first">从小到大</string>
+    <string name="newest_first">最新优先</string>
+    <string name="oldest_first">最旧优先</string>
+    <string name="n_selected">已选择 %1$d 项</string>
+    <string name="modified">修改时间</string>
+    <string name="created">创建时间</string>
+    <string name="kind_note">笔记</string>
+    <string name="kind_pdf_note">PDF 笔记</string>
+    <string name="kind_canvas">画布</string>
+    <string name="more_for">“%1$s”的更多选项</string>
+    <string name="pinned_to_sidebar">已固定到侧边栏</string>
+    <string name="recent">最近</string>
+    <string name="see_all">查看全部</string>
+    <string name="pinned">已固定</string>
+    <string name="in_folder">%1$s 中</string>
+    <plurals name="pages_count">
+        <item quantity="other">%d 页</item>
+    </plurals>
+    <string name="pick_note_hint">选择一篇笔记以在此处查看</string>
+    <string name="previous_month">上个月</string>
+    <string name="next_month">下个月</string>
+    <string name="nothing_created_in">%1$s没有创建任何内容。</string>
+    <string name="nothing_saved_in">%1$s没有保存任何内容。</string>
+    <string name="open">打开</string>
+    <string name="close_preview">关闭预览</string>
+    <string name="where_label">位置</string>
+    <string name="no_folders_here">这里没有文件夹。</string>
+
+    <!-- Trash -->
+    <string name="trash">回收站</string>
+    <string name="empty_trash">清空回收站</string>
+    <string name="trash_off_hint">回收站已关闭，删除将是永久性的。已在此处的项目会保留，直到你清空回收站。</string>
+    <string name="trash_forever_hint">项目会一直保留在这里，直到你清空回收站。</string>
+    <string name="change">更改</string>
+    <string name="trash_no_root">请先选择一个用于保存笔记的文件夹。</string>
+    <string name="trash_empty">回收站是空的。</string>
+    <string name="trash_was_in">原位置</string>
+    <string name="trash_deleted">删除时间</string>
+    <string name="trash_removed_in">剩余时间</string>
+    <string name="empty_trash_confirm">清空回收站？</string>
+    <string name="empty_trash_body">回收站中的所有内容都将被永久删除。此操作无法撤销。</string>
+    <string name="delete_permanently_confirm">永久删除？</string>
+    <string name="restore">恢复</string>
+    <string name="delete_permanently">永久删除</string>
+    <string name="trash_no_match">回收站中没有与“%1$s”匹配的内容。</string>
+    <string name="the_top_folder">顶层文件夹</string>
+    <string name="restored_item">已恢复“%1$s”</string>
+    <string name="err_restore_item">无法恢复“%1$s”</string>
+    <string name="restore_hint">恢复会将项目放回它原来所在的文件夹；如果该文件夹已不存在，则放回%1$s。</string>
+    <string name="delete_permanently_body">“%1$s”将被永久删除。此操作无法撤销。</string>
+    <string name="trash_row_sub">%1$s · 来自 %2$s · %3$s</string>
+    <string name="never">永不</string>
+    <plurals name="trash_deleted_after">
+        <item quantity="other">项目将在 %d 天后被永久删除。</item>
+    </plurals>
+    <plurals name="days_count">
+        <item quantity="other">%d 天</item>
+    </plurals>
+
+    <!-- Preferences: home and explorer -->
+    <string name="pref_home_explorer">首页与文件浏览器</string>
+    <string name="pref_home_explorer_help">首页和文件浏览器的外观与行为。仍可在文件浏览器中为每个文件夹单独切换布局。</string>
+    <string name="pref_default_layout">默认布局</string>
+    <string name="pref_switcher_layouts">切换器中的布局</string>
+    <string name="pref_sidebar_sections">侧边栏分区</string>
+    <string name="pref_home_opens_to">首页打开位置</string>
+    <string name="last_folder">上次的文件夹</string>
+    <string name="recent_and_pinned">最近与已固定</string>
+    <string name="pref_tapping_file">点按文件时</string>
+    <string name="tap_opens">直接打开</string>
+    <string name="tap_previews">显示预览</string>
+    <string name="pref_keep_deleted">保留已删除项目</string>
+    <string name="until_emptied">直到清空</string>
+    <string name="pref_colour_names">颜色名称</string>
+    <string name="name_a_colour">为颜色命名</string>
+    <string name="pref_per_folder_views">为每个文件夹记住视图</string>
+    <string name="pref_show_create_button">显示快速创建按钮</string>
+    <string name="pref_show_folder_counts">在文件夹上显示项目数</string>
+    <string name="pref_show_extensions">显示文件扩展名（.xnote、.xcanvas）</string>
+    <string name="pref_dates">日期</string>
+</resources>

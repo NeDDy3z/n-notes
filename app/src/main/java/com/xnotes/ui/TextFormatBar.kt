@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.R
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.ListKind
@@ -98,7 +100,7 @@ fun TextFormatBar(editor: Editor) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BarIcon(Icons.Outlined.CheckBox, "Checkbox item", active = para?.list == ListKind.CHECK) {
+        BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK) {
             editor.flowToggleList(ListKind.CHECK)
         }
         BarDivider()
@@ -108,25 +110,26 @@ fun TextFormatBar(editor: Editor) {
         FontFaceButton(editor, style.face)
         SizeStepper(style.sizePt ?: editor.flowDefaultSizePt()) { editor.flowAdjustSize(it) }
         BarDivider()
-        BarIcon(Icons.Filled.FormatBold, "Bold", active = style.bold) { editor.flowToggleBold() }
-        BarIcon(Icons.Filled.FormatItalic, "Italic", active = style.italic) { editor.flowToggleItalic() }
-        BarIcon(Icons.Filled.FormatUnderlined, "Underline", active = style.underline) { editor.flowToggleUnderline() }
-        BarIcon(Icons.Filled.FormatStrikethrough, "Strikethrough", active = style.strike) { editor.flowToggleStrike() }
+        BarIcon(Icons.Filled.FormatBold, stringResource(R.string.bold), active = style.bold) { editor.flowToggleBold() }
+        BarIcon(Icons.Filled.FormatItalic, stringResource(R.string.italic), active = style.italic) { editor.flowToggleItalic() }
+        BarIcon(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), active = style.underline) { editor.flowToggleUnderline() }
+        BarIcon(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), active = style.strike) { editor.flowToggleStrike() }
         LinkButton(editor, style.link)
+
         BarDivider()
-        BarIcon(Icons.Filled.FormatListNumbered, "Ordered list", active = para?.list == ListKind.ORDERED) {
+        BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED) {
             editor.flowToggleList(ListKind.ORDERED)
         }
-        BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, "Bullet list", active = para?.list == ListKind.BULLET) {
+        BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET) {
             editor.flowToggleList(ListKind.BULLET)
         }
         CodeBlockButton(editor, para?.codeLang)
         BarDivider()
-        BarIcon(alignIcon(para?.align ?: ParaAlign.LEFT), "Alignment", active = para != null && para.align != ParaAlign.LEFT) {
+        BarIcon(alignIcon(para?.align ?: ParaAlign.LEFT), stringResource(R.string.alignment), active = para != null && para.align != ParaAlign.LEFT) {
             editor.flowCycleAlign()
         }
-        BarIcon(Icons.AutoMirrored.Filled.FormatIndentIncrease, "Indent") { editor.flowIndent(1) }
-        BarIcon(Icons.AutoMirrored.Filled.FormatIndentDecrease, "Outdent", enabled = (para?.indent ?: 0) > 0) {
+        BarIcon(Icons.AutoMirrored.Filled.FormatIndentIncrease, stringResource(R.string.indent)) { editor.flowIndent(1) }
+        BarIcon(Icons.AutoMirrored.Filled.FormatIndentDecrease, stringResource(R.string.outdent), enabled = (para?.indent ?: 0) > 0) {
             editor.flowIndent(-1)
         }
     }
@@ -178,7 +181,7 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
             } else {
                 Icon(
                     Icons.Filled.Code,
-                    contentDescription = "Code block",
+                    contentDescription = stringResource(R.string.code_block),
                     tint = palette.textDim.toComposeColor(),
                     modifier = Modifier.size(22.dp),
                 )
@@ -194,7 +197,7 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
                 DropdownMenuItem(
                     text = {
                         Text(
-                            if (token == "plain") "plain (no highlighting)" else token,
+                            if (token == "plain") stringResource(R.string.code_plain) else token,
                             color = (if (token == current) palette.accent else palette.text).toComposeColor(),
                             fontSize = 14.sp,
                         )
@@ -371,7 +374,7 @@ private fun FontFaceButton(editor: Editor, current: FontFace?) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                FontCatalog.label(shown),
+                fontLabel(shown),
                 color = palette.text.toComposeColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -393,7 +396,7 @@ private fun SizeStepper(size: Double, onDelta: (Double) -> Unit) {
     val palette = LocalPalette.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(36.dp).clip(CircleShape).clickable { onDelta(-1.0) }, contentAlignment = Alignment.Center) {
-            Icon(XnotesIcons.minus, "Smaller", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
+            Icon(XnotesIcons.minus, stringResource(R.string.smaller), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
         }
         Text(
             size.roundToInt().toString(),
@@ -404,7 +407,7 @@ private fun SizeStepper(size: Double, onDelta: (Double) -> Unit) {
             style = TextStyle(fontFamily = FontFamily.Monospace),
         )
         Box(Modifier.size(36.dp).clip(CircleShape).clickable { onDelta(1.0) }, contentAlignment = Alignment.Center) {
-            Icon(XnotesIcons.plus, "Larger", tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
+            Icon(XnotesIcons.plus, stringResource(R.string.larger), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
         }
     }
 }
