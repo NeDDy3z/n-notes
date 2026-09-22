@@ -34,6 +34,9 @@ data class Palette(
     val selectionBackground: Rgba get() = materialColors?.primaryContainer ?: accentAlpha(48)
     val selectionForeground: Rgba get() = materialColors?.onPrimaryContainer ?: accent
 
+    /** The destructive tint, for delete actions sat among ordinary ones. */
+    val danger: Rgba get() = materialColors?.error ?: if (isDark) Rgba(229, 83, 75) else Rgba(183, 58, 50)
+
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118) // #00e676
         val DISABLED_ICON = Rgba(58, 58, 58)    // #3a3a3a

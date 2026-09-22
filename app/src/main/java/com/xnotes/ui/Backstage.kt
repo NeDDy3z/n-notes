@@ -1657,25 +1657,27 @@ private fun ExplorerSection(
             if (selection.isNotEmpty()) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 SelectionBar(selection.size, onClear = { selection.clear() }, onSelectAll = { selection.clear(); selection.addAll(arranged.orEmpty()) }) {
                     val files = selection.filterNot { it.isDir }
-                    if (selection.size == 1) ExplorerIcon(XnotesIcons.edit, stringResource(R.string.rename), palette.accent.toComposeColor()) { renaming = selection.first(); selection.clear() }
+                    val fg = palette.selectionForeground.toComposeColor()
+                    if (selection.size == 1) ExplorerIcon(XnotesIcons.edit, stringResource(R.string.rename), fg) { renaming = selection.first(); selection.clear() }
                     val pair = files.map { it.documentUri }.distinct().takeIf { it.size == 2 && files.size == selection.size }
-                    if (pair != null) ExplorerIcon(XnotesIcons.split, stringResource(R.string.open_side_by_side), palette.accent.toComposeColor()) { selection.clear(); calls.openSplit(pair[0], pair[1]) }
-                    ExplorerIcon(XnotesIcons.moveToFolder, stringResource(R.string.move_to_folder), palette.accent.toComposeColor()) { moving = selection.toList() }
-                    ExplorerIcon(XnotesIcons.copy, stringResource(R.string.copy), palette.accent.toComposeColor()) { clipboard = ClipItem(selection.toList(), false); selection.clear() }
-                    ExplorerIcon(XnotesIcons.cut, stringResource(R.string.cut), palette.accent.toComposeColor()) { clipboard = ClipItem(selection.toList(), true); selection.clear() }
+                    if (pair != null) ExplorerIcon(XnotesIcons.split, stringResource(R.string.open_side_by_side), fg) { selection.clear(); calls.openSplit(pair[0], pair[1]) }
+                    ExplorerIcon(XnotesIcons.moveToFolder, stringResource(R.string.move_to_folder), fg) { moving = selection.toList() }
+                    ExplorerIcon(XnotesIcons.copy, stringResource(R.string.copy), fg) { clipboard = ClipItem(selection.toList(), false); selection.clear() }
+                    ExplorerIcon(XnotesIcons.cut, stringResource(R.string.cut), fg) { clipboard = ClipItem(selection.toList(), true); selection.clear() }
                     var colorsOpen by remember { mutableStateOf(false) }
                     Box {
-                        ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), palette.accent.toComposeColor()) { colorsOpen = true }
+                        ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), fg) { colorsOpen = true }
                         DropdownMenu(expanded = colorsOpen, onDismissRequest = { colorsOpen = false }) {
                             ColorCodeMenuContent { c -> colorsOpen = false; recolor(selection.toList(), c); selection.clear() }
                         }
                     }
-                    ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.accent.toComposeColor(), enabled = files.size == selection.size) {
+                    ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), fg, enabled = files.size == selection.size) {
                         val uris = files.map { it.documentUri }
                         selection.clear()
                         if (uris.size == 1) calls.shareFile(uris[0]) else calls.shareFiles(uris)
                     }
-                    ExplorerIcon(XnotesIcons.trash, if (prefs.trashDays == 0) stringResource(R.string.delete) else stringResource(R.string.move_to_trash), palette.accent.toComposeColor()) { remove(selection.toList()) }
+                    SelectionDivider()
+                    ExplorerIcon(XnotesIcons.trash, if (prefs.trashDays == 0) stringResource(R.string.delete) else stringResource(R.string.move_to_trash), palette.danger.toComposeColor()) { remove(selection.toList()) }
                 }
             }
         }

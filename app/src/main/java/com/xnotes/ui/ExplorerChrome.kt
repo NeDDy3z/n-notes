@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -244,23 +245,28 @@ internal fun SelectionBar(
 ) {
     val palette = LocalPalette.current
     val shape = roundedIf(palette, 12)
+    val fg = palette.selectionForeground.toComposeColor()
     Row(
-        // Opaque under its tint, since it stays put while files scroll beneath it.
-        Modifier.fillMaxWidth().height(40.dp).clip(shape).background(palette.bg.toComposeColor())
-            .background(palette.accentAlpha(38).toComposeColor()).then(BlockPointer).padding(start = 4.dp, end = 6.dp),
+        // Opaque under its fill, since it stays put while files scroll beneath it, and edged so the
+        // pinned bar reads as a surface rather than a tint over the ones sliding past.
+        Modifier.fillMaxWidth().height(44.dp).shadow(if (palette.isMaterial) 3.dp else 0.dp, shape)
+            .clip(shape).background(palette.bg.toComposeColor())
+            .background(palette.selectionBackground.toComposeColor())
+            .border(1.dp, fg.copy(alpha = 0.25f), shape)
+            .then(BlockPointer).padding(start = 4.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ExplorerIcon(XnotesIcons.close, stringResource(R.string.clear_selection), palette.accent.toComposeColor(), onClick = onClear)
+        ExplorerIcon(XnotesIcons.close, stringResource(R.string.clear_selection), fg, onClick = onClear)
         val scroll = rememberScrollState()
         SubcomposeLayout(Modifier.weight(1f)) { c ->
             val loose = Constraints(maxHeight = c.maxHeight)
             val counted = subcompose("count") {
-                Text(stringResource(R.string.n_selected, count), color = palette.text.toComposeColor(), fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, end = 10.dp))
+                Text(stringResource(R.string.n_selected, count), color = fg.copy(alpha = 0.75f), fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, end = 10.dp))
             }.first().measure(loose)
             val all = subcompose("all") {
                 if (onSelectAll != null) Text(
                     stringResource(R.string.select_all),
-                    color = palette.accent.toComposeColor(),
+                    color = fg,
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onSelectAll).padding(horizontal = 8.dp, vertical = 6.dp),
@@ -281,6 +287,16 @@ internal fun SelectionBar(
             }
         }
     }
+}
+
+/** A hairline in the selection bar, setting the destructive action apart from the rest. */
+@Composable
+internal fun SelectionDivider() {
+    val palette = LocalPalette.current
+    Box(
+        Modifier.padding(horizontal = 4.dp).width(1.dp).height(20.dp)
+            .background(palette.selectionForeground.toComposeColor().copy(alpha = 0.25f)),
+    )
 }
 
 /** A small label pinned over a thumbnail: the kind of note, or its page count. */
