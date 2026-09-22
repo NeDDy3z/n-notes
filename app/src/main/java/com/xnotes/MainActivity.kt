@@ -280,6 +280,9 @@ private fun EditorScreen(
     val resolver = context.contentResolver
     val rwFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
+    // Read-only files open over everything; following a [[link]] stacks another, Back pops one.
+    val readerStack = remember { androidx.compose.runtime.mutableStateListOf<com.xnotes.ui.ReaderFile>() }
+
     // Which pane a "Save as" writes: the focused one at the moment the picker opened.
     var savePane by remember { mutableStateOf(editor) }
     val createLauncher = rememberLauncherForActivityResult(
@@ -767,7 +770,11 @@ private fun EditorScreen(
                 onImportCodeTheme = { importCodeThemeLauncher.launch(arrayOf("*/*")) },
                 onImportFont = { importFontLauncher.launch(arrayOf("*/*")) },
                 onImportPdf = { importPdfLauncher.launch(importMimeTypes) },
-                onOpenFile = { uri -> guarded(editor) { openTreeFile(uri) } },
+                onOpenFile = { uri ->
+                    val name = displayNameOf(resolver, Uri.parse(uri)).orEmpty()
+                    if (com.xnotes.core.util.ReaderKind.isReadable(name)) readerStack.add(com.xnotes.ui.ReaderFile(uri, name))
+                    else guarded(editor) { openTreeFile(uri) }
+                },
                 onPickRoot = { pickRootLauncher.launch(null) },
                 onShareFile = { uri -> pendingShareUri = uri; showShareChooser = true },
                 onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}${kindOf(uri).suffix}") },
@@ -819,6 +826,27 @@ private fun EditorScreen(
                 onSavePagesAsImages = { pane, pages -> savePagesAsImages(pane, pages) },
             )
             SplitHost(editor, actions)
+
+            readerStack.lastOrNull()?.let { file ->
+                androidx.compose.runtime.key(file.uri) {
+                    com.xnotes.ui.ReaderScreen(
+                        editor = editor,
+                        file = file,
+                        onClose = { readerStack.removeLastOrNull() },
+                        onWikiLink = { target ->
+                            scope.launch {
+                                val root = editor.browseRoot
+                                val hit = root?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { editor.findLinkedFile(it, target) } }
+                                when {
+                                    hit == null -> editor.say(context.getString(R.string.reader_link_missing, target))
+                                    com.xnotes.core.util.ReaderKind.isReadable(hit.name) -> readerStack.add(com.xnotes.ui.ReaderFile(hit.documentUri, hit.name))
+                                    else -> { readerStack.clear(); guarded(editor) { openTreeFile(hit.documentUri) } }
+                                }
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
     if (showShareChooser) {

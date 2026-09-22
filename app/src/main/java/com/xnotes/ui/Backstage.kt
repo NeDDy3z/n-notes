@@ -143,6 +143,7 @@ import com.xnotes.settings.FolderPlacement
 import com.xnotes.settings.GroupBy
 import com.xnotes.settings.TileSize
 import com.xnotes.core.util.DocumentKind
+import com.xnotes.core.util.ReaderKind
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.layout.widthIn
@@ -1190,7 +1191,7 @@ private fun ExplorerSection(
                 when {
                     selection.isNotEmpty() -> toggleSelect(e)
                     e.isDir -> openFolder(e)
-                    prefsNow.value.tapPreviews -> previewing = e
+                    prefsNow.value.tapPreviews && !ReaderKind.isReadable(e.name) -> previewing = e
                     else -> callsNow.value.openFile(e.documentUri)
                 }
             },
@@ -1288,6 +1289,7 @@ private fun ExplorerSection(
             EntryKind.FOLDER -> stringResource(R.string.kind_no_folders)
             EntryKind.NOTE -> stringResource(R.string.kind_no_notes)
             EntryKind.CANVAS -> stringResource(R.string.kind_no_canvases)
+            EntryKind.FILE -> stringResource(R.string.kind_no_read_only_files)
         }
         else -> null
     }
@@ -1350,7 +1352,7 @@ private fun ExplorerSection(
                             val k = kindFilter
                             ExplorerChip(k?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), k != null, icon = XnotesIcons.filter, trailing = XnotesIcons.chevronDown, labelled = labelled) { kindOpen = true }
                             DropdownMenu(expanded = kindOpen, onDismissRequest = { kindOpen = false }) {
-                                (listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS)).forEach { option ->
+                                (listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS, EntryKind.FILE)).forEach { option ->
                                     val on = option == kindFilter
                                     DropdownMenuItem(
                                         text = { Text(option?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), color = (if (on) palette.accent else palette.text).toComposeColor()) },
@@ -1639,10 +1641,12 @@ private fun ExplorerSection(
                                 view = view.copy(layout = layout),
                                 layouts = ExplorerLayout.entries.filter { !(compactScreen && it == ExplorerLayout.COLUMNS) },
                                 everyFolder = !prefs.perFolderViews,
+                                hideDotItems = prefs.hideDotItems,
                                 // Results shown in the grid for now leave the folder's own layout alone unless another is picked.
                                 onChange = { v -> setView(if (v.layout == layout) v.copy(layout = view.layout) else v); if (v.layout != layout) columnsPick = null },
                                 onReset = { editor.setView(folderKey, null) },
                                 onEveryFolder = { every -> editor.applyHomePreferences(editor.preferences.copy(perFolderViews = !every)) },
+                                onHideDotItems = { editor.setHideDotItems(it) },
                                 onClose = { optionsOpen = false },
                             )
                         }
@@ -1681,7 +1685,7 @@ private fun ExplorerSection(
                             ColorCodeMenuContent { c -> colorsOpen = false; recolor(selection.toList(), c); selection.clear() }
                         }
                     }
-                    ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.accent.toComposeColor(), enabled = files.size == selection.size) {
+                    ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.accent.toComposeColor(), enabled = files.size == selection.size && files.none { ReaderKind.isReadable(it.name) }) {
                         val uris = files.map { it.documentUri }
                         selection.clear()
                         if (uris.size == 1) calls.shareFile(uris[0]) else calls.shareFiles(uris)
@@ -1758,7 +1762,13 @@ private fun ExplorerSection(
             allowEmpty = false,
             onConfirm = { raw ->
                 val kind = DocumentKind.ofName(entry.name)
-                val newName = if (entry.isDir || kind == null) raw else DocumentKind.withSuffix(DocumentKind.stripSuffix(raw), kind)
+                val newName = when {
+                    entry.isDir -> raw
+                    kind != null -> DocumentKind.withSuffix(DocumentKind.stripSuffix(raw), kind)
+                    // A reader file that lost its extension would drop out of the explorer, so keep the old one.
+                    !ReaderKind.isReadable(raw) -> "$raw.${entry.name.substringAfterLast('.')}"
+                    else -> raw
+                }
                 // Renames touch the open-note binding (Compose state) so run on the main thread.
                 val ok = editor.renameDocument(entry.documentUri, newName)
                 renaming = null

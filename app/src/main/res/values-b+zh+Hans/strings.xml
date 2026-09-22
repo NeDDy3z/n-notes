@@ -687,4 +687,22 @@
     <string name="pref_show_folder_counts">在文件夹上显示项目数</string>
     <string name="pref_show_extensions">显示文件扩展名（.xnote、.xcanvas）</string>
     <string name="pref_dates">日期</string>
+    <string name="kind_read_only_file">只读文件</string>
+    <string name="kind_read_only_files">只读文件</string>
+    <string name="kind_no_read_only_files">这里没有只读文件。</string>
+    <string name="pref_hide_dot_items">隐藏以点开头的文件和文件夹（.obsidian、.git）</string>
+    <string name="view_hide_dot_items">隐藏以点开头的文件和文件夹</string>
+    <string name="view_hide_dot_items_hint">名称以点开头的项目，例如 .obsidian。对所有文件夹生效。</string>
+    <string name="reader_read_only">只读</string>
+    <string name="reader_open_failed">无法打开此文件。</string>
+    <string name="reader_link_missing">在此文件夹中找不到 \"%1$s\"。</string>
+    <string name="reader_slide">第 %1$d 张，共 %2$d 张</string>
+    <string name="reader_notes">备注</string>
+    <string name="reader_rows_truncated">仅显示前 %1$d 行。</string>
+    <string name="reader_image">图片</string>
+    <string name="reader_empty">此文件为空。</string>
+    <string name="reader_close">关闭阅读器</string>
+    <string name="reader_switch_to_light">切换到浅色</string>
+    <string name="reader_switch_to_dark">切换到深色</string>
+    <string name="reader_truncated_cells">仅显示此工作表的前 %1$d 行和 %2$d 列。</string>
 </resources>

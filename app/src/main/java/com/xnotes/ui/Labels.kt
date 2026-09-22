@@ -180,6 +180,7 @@ internal class ResourceWords(private val res: Resources) : ExplorerWords {
             EntryKind.NOTE -> R.string.kind_notes
             EntryKind.PDF -> R.string.kind_pdf_notes
             EntryKind.CANVAS -> R.string.kind_canvases
+            EntryKind.FILE -> R.string.kind_read_only_files
         },
     )
     override fun hue(h: Hue): String = res.getString(

@@ -117,6 +117,10 @@ data class Preferences(
     val showCreateButton: Boolean = true,
     val showFolderCounts: Boolean = true,
     val showExtensions: Boolean = false,
+    /** Hides files and folders whose name starts with a dot (.obsidian, .git) from the explorer. */
+    val hideDotItems: Boolean = true,
+    /** The reader's light/dark choice; null follows the app theme. Never written to the file. */
+    val readerDark: Boolean? = null,
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -226,6 +230,8 @@ data class Preferences(
         .put("show_create_button", showCreateButton)
         .put("show_folder_counts", showFolderCounts)
         .put("show_extensions", showExtensions)
+        .put("hide_dot_items", hideDotItems)
+        .apply { readerDark?.let { put("reader_dark", it) } }
 
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118, 255)
@@ -340,6 +346,8 @@ data class Preferences(
                 showCreateButton = o.optBoolean("show_create_button", true),
                 showFolderCounts = o.optBoolean("show_folder_counts", true),
                 showExtensions = o.optBoolean("show_extensions", false),
+                hideDotItems = o.optBoolean("hide_dot_items", true),
+                readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
             )
         }
     }

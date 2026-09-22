@@ -750,4 +750,22 @@
     <string name="tool_table">Table</string>
     <string name="edit_table">Edit table</string>
     <string name="import_file">Import file</string>
+    <string name="kind_read_only_file">Read-only file</string>
+    <string name="kind_read_only_files">Read-only files</string>
+    <string name="kind_no_read_only_files">No read-only files here.</string>
+    <string name="pref_hide_dot_items">Hide dot files and folders (.obsidian, .git)</string>
+    <string name="view_hide_dot_items">Hide dot files and folders</string>
+    <string name="view_hide_dot_items_hint">Names starting with a dot, like .obsidian. Applies to every folder.</string>
+    <string name="reader_read_only">Read only</string>
+    <string name="reader_open_failed">Couldn\'t open this file.</string>
+    <string name="reader_link_missing">Couldn\'t find \"%1$s\" in this folder.</string>
+    <string name="reader_slide">Slide %1$d of %2$d</string>
+    <string name="reader_notes">Notes</string>
+    <string name="reader_rows_truncated">Showing the first %1$d rows.</string>
+    <string name="reader_image">image</string>
+    <string name="reader_empty">This file is empty.</string>
+    <string name="reader_close">Close reader</string>
+    <string name="reader_switch_to_light">Switch to light</string>
+    <string name="reader_switch_to_dark">Switch to dark</string>
+    <string name="reader_truncated_cells">Showing the first %1$d rows and %2$d columns of this sheet.</string>
 </resources>

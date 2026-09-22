@@ -124,6 +124,8 @@ class FilenClient(private val api: FilenApi, private val session: FilenSession) 
 
     fun trashFile(uuid: String) = api.trashFile(uuid)
 
+    fun trashFolder(uuid: String) = api.trashDir(uuid)
+
     private fun decryptName(encrypted: String): String? {
         val plain = FilenCrypto.decryptMetadata(encrypted, allKeys) ?: return null
         return try {

@@ -3,6 +3,7 @@ package com.xnotes.sync.filen
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.xnotes.core.util.ReaderKind
 
 /**
  * Reads and writes the note files under the explorer browse root (a SAF tree uri, which
@@ -21,12 +22,21 @@ object FilenLocalStore {
 
     data class LocalEntry(val relativePath: String, val documentUri: String, val size: Long, val modified: Long)
 
+    /** The synced files and every synced folder (relative paths), from one walk of the tree. */
+    class LocalTree(val files: List<LocalEntry>, val folders: Set<String>)
+
     fun isNote(name: String) = NOTE_EXTENSIONS.any { name.endsWith(it, ignoreCase = true) }
 
-    fun listNotes(context: Context, treeUri: String): List<LocalEntry> {
+    /** Notes and canvases, plus the read-only kinds (Markdown, Office, CSV, PDF) the reader opens. */
+    fun isSynced(name: String) = isNote(name) || ReaderKind.isReadable(name)
+
+    fun listNotes(context: Context, treeUri: String): List<LocalEntry> = listTree(context, treeUri).files
+
+    fun listTree(context: Context, treeUri: String): LocalTree {
         val tree = Uri.parse(treeUri)
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         val out = ArrayList<LocalEntry>()
+        val folders = HashSet<String>()
         val seen = HashSet<String>()
         val stack = ArrayDeque<Pair<String, String>>().apply { addLast(rootId to "") }
         while (stack.isNotEmpty()) {
@@ -37,14 +47,39 @@ object FilenLocalStore {
                     // Skip hidden folders (colour sidecar, config) but descend into .trash so the
                     // recycle bin replicates across devices like any other synced folder.
                     if (child.name.startsWith(".") && child.name != TRASH_DIR) continue
-                    stack.addLast(child.docId to (if (prefix.isEmpty()) child.name else "$prefix/${child.name}"))
-                } else if (isNote(child.name)) {
+                    val rel = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+                    folders.add(rel)
+                    stack.addLast(child.docId to rel)
+                } else if (isSynced(child.name)) {
                     val rel = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
                     out.add(LocalEntry(rel, child.uri, child.size, child.modified))
                 }
             }
         }
-        return out
+        return LocalTree(out, folders)
+    }
+
+    /** Resolves (creating as needed) the folder at [relativePath]; returns its document id, or null. */
+    fun ensureDir(context: Context, treeUri: String, relativePath: String): String? {
+        val tree = Uri.parse(treeUri)
+        var parentId = DocumentsContract.getTreeDocumentId(tree)
+        for (seg in relativePath.split("/")) {
+            parentId = findChild(context, tree, parentId, seg, dir = true) ?: createDir(context, tree, parentId, seg) ?: return null
+        }
+        return parentId
+    }
+
+    /**
+     * Deletes the folder at [relativePath] when nothing is left in it but the app's hidden colour sidecar.
+     * True when the folder is gone afterwards; false when it still holds something (kept, never emptied here).
+     */
+    fun deleteDirIfEmpty(context: Context, treeUri: String, relativePath: String): Boolean {
+        val tree = Uri.parse(treeUri)
+        var id = DocumentsContract.getTreeDocumentId(tree)
+        for (seg in relativePath.split("/")) id = findChild(context, tree, id, seg, dir = true) ?: return true
+        if (children(context, tree, id).any { !(it.isDir && it.name == SIDECAR_DIR) }) return false
+        return runCatching { DocumentsContract.deleteDocument(context.contentResolver, DocumentsContract.buildDocumentUriUsingTree(tree, id)) }
+            .getOrDefault(false)
     }
 
     fun readBytes(context: Context, documentUri: String): ByteArray? =

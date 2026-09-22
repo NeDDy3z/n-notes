@@ -125,7 +125,7 @@ object FilenSyncManager {
                 val summary = FilenSyncEngine(context, treeUri, client, folderUuid, up, down).sync(state)
                 runCatching { FilenSettingsSync.sync(context, client, folderUuid, state) }
                 state.save(context)
-                summary to state.paths().count { !it.startsWith(".") }
+                summary to state.filePaths().count { !it.startsWith(".") }
             }
             val newConflicts = result.getOrNull()?.first?.conflictNotes
                 ?.map { "${it.path.substringAfterLast('/')}: ${it.message}" } ?: emptyList()

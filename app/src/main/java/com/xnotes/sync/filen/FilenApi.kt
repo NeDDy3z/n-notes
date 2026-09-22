@@ -75,6 +75,10 @@ class FilenApi(@Volatile var apiKey: String? = null) {
         post(gateway, "/v3/file/trash", JSONObject().put("uuid", uuid))
     }
 
+    fun trashDir(uuid: String) {
+        post(gateway, "/v3/dir/trash", JSONObject().put("uuid", uuid))
+    }
+
     /** Upload one encrypted chunk. Returns the assigned (bucket, region). */
     fun uploadChunk(uuid: String, index: Int, parent: String, uploadKey: String, encrypted: ByteArray): Pair<String, String> {
         val bufferHash = FilenCrypto.sha512Hex(encrypted)

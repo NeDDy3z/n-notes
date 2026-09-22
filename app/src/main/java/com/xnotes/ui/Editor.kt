@@ -2797,11 +2797,28 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** The square tile for the document at [uri], whichever kind it is. */
     suspend fun tileThumbnail(uri: String, name: String): ImageBitmap? =
-        if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
+        if (com.xnotes.core.util.ReaderKind.isReadable(name)) {
+            readerThumbnail(uri, name)
+        } else if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
             canvasTileThumbnail(uri)
         } else {
             noteTileThumbnail(uri)
         }
+
+    /** A read-only PDF's first page (memory-cached only); null for the other reader kinds, which tile as text. */
+    private suspend fun readerThumbnail(uri: String, name: String): ImageBitmap? {
+        if (com.xnotes.core.util.ReaderKind.ofName(name) != com.xnotes.core.util.ReaderKind.PDF) return null
+        val key = "reader|$uri"
+        synchronized(noteThumbs) { noteThumbs.get(key)?.let { return it } }
+        return withContext(thumbDispatcher) {
+            delay(150)
+            if (!isActive) return@withContext null
+            val bmp = com.xnotes.platform.ReaderPdf.renderFirstPage(appContext, android.net.Uri.parse(uri), pageThumbPx)
+                ?.asImageBitmap() ?: return@withContext null
+            synchronized(noteThumbs) { noteThumbs.put(key, bmp) }
+            bmp
+        }
+    }
 
     /** The square side (px) explorer tiles render at — fixed so rotation/column changes don't re-render. */
     private val tilePx = 600
@@ -2855,6 +2872,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * with them when the document changes.
      */
     suspend fun pageThumbnail(uri: String, name: String): ImageBitmap? {
+        if (com.xnotes.core.util.ReaderKind.isReadable(name)) return readerThumbnail(uri, name)
         val generation = thumbnailGeneration
         val key = pageThumbKey(uri)
         synchronized(noteThumbs) { noteThumbs.get(key)?.let { return it } }
@@ -4236,7 +4254,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun browseDocId(documentUri: String): String =
         android.provider.DocumentsContract.getDocumentId(android.net.Uri.parse(documentUri))
 
-    /** Lists folders and `.xnote` files under [parentDocId] within tree [treeUri]; IO, call off-thread. */
+    private fun hiddenByDot(name: String): Boolean = name.startsWith(".") && preferences.hideDotItems
+
+    /** Flips the dot-item filter and re-lists every open folder. */
+    fun setHideDotItems(hide: Boolean) {
+        if (hide == preferences.hideDotItems) return
+        applyHomePreferences(preferences.copy(hideDotItems = hide))
+        browseCache.clear()
+        folderCounts.clear()
+        treeVersion++
+    }
+
+    /** Lists folders, documents and reader files under [parentDocId] within tree [treeUri]; IO, call off-thread. */
     fun browseChildren(treeUri: String, parentDocId: String): List<BrowseEntry> {
         val tree = android.net.Uri.parse(treeUri)
         val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentDocId)
@@ -4259,11 +4288,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     val id = c.getString(1) ?: continue
                     val isDir = c.getString(2) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR
                     if (isDir) {
-                        // The colour sidecar is captured (read below) but never listed; other
-                        // dot-folders stay hidden from the explorer too.
+                        // The colour sidecar is captured (read below) but never listed, whatever the dot setting.
                         if (name == SIDECAR_DIR) { sidecarDocId = id; continue }
-                        if (name.startsWith(".")) continue
-                    } else if (!com.xnotes.core.util.DocumentKind.isDocument(name)) {
+                        if (hiddenByDot(name)) continue
+                    } else if (!com.xnotes.core.util.ReaderKind.isListed(name) || hiddenByDot(name)) {
                         continue
                     }
                     val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id).toString()
@@ -4509,7 +4537,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 while (c.moveToNext()) {
                     val name = c.getString(0) ?: continue
                     val isDir = c.getString(1) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR
-                    if (if (isDir) !name.startsWith(".") else DocumentKind.isDocument(name)) n++
+                    if (name != SIDECAR_DIR && !hiddenByDot(name) && (isDir || com.xnotes.core.util.ReaderKind.isListed(name))) n++
                 }
             }
         }
@@ -4780,6 +4808,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
         }
         return TreeFiles(files, names)
+    }
+
+    /**
+     * The file an Obsidian [[link]] points at: [target] by name (a bare name also matches "name.md"), nearest the
+     * top folder first, since links name files, not paths. Null when nothing matches. IO.
+     */
+    fun findLinkedFile(treeUri: String, target: String): BrowseEntry? {
+        val base = target.substringAfterLast('/').trim().lowercase()
+        if (base.isEmpty()) return null
+        val wanted = setOf(base, "$base.md")
+        val seen = HashSet<String>()
+        val queue = ArrayDeque<String>().apply { addLast(browseRootDocId(treeUri)) }
+        while (queue.isNotEmpty()) {
+            val docId = queue.removeFirst()
+            if (!seen.add(docId)) continue
+            val children = browseChildren(treeUri, docId)
+            children.firstOrNull { !it.isDir && it.name.lowercase() in wanted }?.let { return it }
+            children.filter { it.isDir }.forEach { queue.addLast(browseDocId(it.documentUri)) }
+        }
+        return null
     }
 
     /** Whether two uris name the same document, however each was reached. */

@@ -19,6 +19,9 @@ import java.util.Locale
  * normal synced folder, so a soft delete, a restore, and a permanent delete are all just
  * ordinary moves/deletes this same logic replicates. A run that finds one whole side empty
  * while the baseline is not is treated as a transient read failure and propagates no deletes.
+ *
+ * Folders are mirrored too, empty ones included, with their own baseline. A folder deleted on one
+ * side is removed on the other only once nothing is left in it there (never unsynced files).
  */
 class FilenSyncEngine(
     private val context: Context,
@@ -46,19 +49,31 @@ class FilenSyncEngine(
 
     private data class RemoteInfo(val file: FilenApi.RemoteFile, val meta: FilenClient.FileMetadata)
 
+    /** Everything one walk of the remote tree found; [foreign] names folders holding things sync leaves alone. */
+    private class RemoteTree {
+        val files = HashMap<String, RemoteInfo>()
+        val folders = HashMap<String, String>()
+        val foreign = HashSet<String>()
+    }
+
+    /** Remote paths this run moved to the Filen trash, so a folder emptied by them counts as empty. */
+    private val trashedRemote = HashSet<String>()
+
     fun sync(state: FilenSyncState): Summary {
         val summary = Summary()
-        val local = FilenLocalStore.listNotes(context, treeUri).associateBy { it.relativePath }
-        val remote = HashMap<String, RemoteInfo>()
-        walkRemote(remoteRootUuid, "", remote, HashSet())
+        val localTree = FilenLocalStore.listTree(context, treeUri)
+        val local = localTree.files.associateBy { it.relativePath }
+        val remoteTree = RemoteTree()
+        walkRemote(remoteRootUuid, "", remoteTree, HashSet())
+        val remote = remoteTree.files
 
         // Guard: if one whole side comes back empty while the baseline is not, the enumeration
         // almost certainly failed transiently (root permission lost, folder unmounted, offline).
         // Propagating deletes then would wipe everything, so suppress them for this run.
-        val hadBaseline = state.paths().any { !it.startsWith(".") || FilenLocalStore.isTrashPath(it) }
+        val hadBaseline = state.filePaths().any { !it.startsWith(".") || FilenLocalStore.isTrashPath(it) }
         val suppressDeletes = hadBaseline && (local.isEmpty() || remote.isEmpty())
 
-        val allPaths = LinkedHashSet<String>().apply { addAll(local.keys); addAll(remote.keys); addAll(state.paths()) }
+        val allPaths = LinkedHashSet<String>().apply { addAll(local.keys); addAll(remote.keys); addAll(state.filePaths()) }
         for (path in allPaths) {
             try {
                 reconcile(path, local[path], remote[path], state, summary, suppressDeletes)
@@ -66,7 +81,54 @@ class FilenSyncEngine(
                 summary.errors.add("$path: ${e.message}")
             }
         }
+        reconcileFolders(localTree.folders, remoteTree, state, summary, suppressDeletes)
         return summary
+    }
+
+    /**
+     * Mirrors folders both ways, matched case-insensitively. Deepest first, so a parent is judged only after
+     * its subfolders were settled: a deleted folder goes on the other side only when it is empty there.
+     */
+    private fun reconcileFolders(localFolders: Set<String>, remote: RemoteTree, state: FilenSyncState, summary: Summary, suppressDeletes: Boolean) {
+        val local = localFolders.associateBy { it.lowercase() }
+        val remoteByKey = remote.folders.keys.associateBy { it.lowercase() }
+        val baseline = state.folderPaths()
+        val trashedFolders = HashSet<String>()
+        fun under(path: String, key: String) = path.lowercase().let { it == key || it.startsWith("$key/") }
+        val keys = (local.keys + remoteByKey.keys + baseline).sortedByDescending { it.count { c -> c == '/' } }
+        for (key in keys) {
+            val loc = local[key]
+            val rem = remoteByKey[key]
+            try {
+                when {
+                    loc != null && rem != null -> state.putFolder(key, remote.folders.getValue(rem))
+                    loc != null -> when {
+                        key !in baseline -> if (up) state.putFolder(key, client.ensureFolderPath(remoteRootUuid, loc.split("/"))) else summary.skipped++
+                        suppressDeletes -> summary.skipped++
+                        // Gone remotely: drop it here if emptied, else it still holds something and goes back up.
+                        down && FilenLocalStore.deleteDirIfEmpty(context, treeUri, loc) -> { state.removeFolder(key); summary.deleted++ }
+                        up -> state.putFolder(key, client.ensureFolderPath(remoteRootUuid, loc.split("/")))
+                        else -> summary.skipped++
+                    }
+                    rem != null -> {
+                        val emptied = remote.files.keys.none { under(it, key) && it !in trashedRemote } &&
+                            remote.foreign.none { under(it, key) } &&
+                            remote.folders.keys.none { under(it, key) && it.lowercase() != key && it.lowercase() !in trashedFolders }
+                        when {
+                            key !in baseline -> if (down && FilenLocalStore.ensureDir(context, treeUri, rem) != null) state.putFolder(key, remote.folders.getValue(rem)) else summary.skipped++
+                            suppressDeletes -> summary.skipped++
+                            // Deleted here: trash it on Filen only when nothing of it is left there.
+                            up && emptied -> { client.trashFolder(remote.folders.getValue(rem)); trashedFolders.add(key); state.removeFolder(key); summary.deleted++ }
+                            down && FilenLocalStore.ensureDir(context, treeUri, rem) != null -> state.putFolder(key, remote.folders.getValue(rem))
+                            else -> summary.skipped++
+                        }
+                    }
+                    else -> state.removeFolder(key)
+                }
+            } catch (e: Exception) {
+                summary.errors.add("${loc ?: rem ?: key}/: ${e.message}")
+            }
+        }
     }
 
     private fun reconcile(
@@ -76,6 +138,8 @@ class FilenSyncEngine(
         // Dot-prefixed paths that are not notes (the .xnote-config settings baseline, colour
         // sidecars) are left alone; the .trash recycle bin, however, is a normal synced folder.
         if (path.startsWith(".") && !FilenLocalStore.isTrashPath(path)) return
+        // Read-only files are held whole in memory to transfer, so very large ones are left out.
+        if (!FilenLocalStore.isNote(path) && maxOf(loc?.size ?: 0L, rem?.meta?.size ?: 0L) > MAX_READER_BYTES) { summary.skipped++; return }
         val st = state.get(path)
         when {
             loc != null && rem != null -> {
@@ -130,6 +194,7 @@ class FilenSyncEngine(
                 // Unchanged remotely and deleted here: trashing it on Filen is an upload-side change.
                 up -> {
                     runCatching { client.trashFile(rem.file.uuid) }
+                    trashedRemote.add(path)
                     state.remove(path)
                     summary.deleted++
                 }
@@ -193,17 +258,23 @@ class FilenSyncEngine(
         else path.substring(0, dot) + " (filen conflict $ts)" + path.substring(dot)
     }
 
-    private fun walkRemote(uuid: String, prefix: String, out: HashMap<String, RemoteInfo>, visited: HashSet<String>) {
+    private fun walkRemote(uuid: String, prefix: String, out: RemoteTree, visited: HashSet<String>) {
         if (!visited.add(uuid)) return
         val content = client.listDecrypted(uuid)
         for ((name, file, meta) in content.files) {
-            if (FilenLocalStore.isNote(name)) out[join(prefix, name)] = RemoteInfo(file, meta)
+            if (FilenLocalStore.isSynced(name)) out.files[join(prefix, name)] = RemoteInfo(file, meta) else out.foreign.add(prefix)
         }
         for ((name, folder) in content.folders) {
-            // Descend into .trash (the synced recycle bin), skip other hidden folders (config, sidecars).
-            if (name.startsWith(".") && name != FilenLocalStore.TRASH_DIR) continue
-            walkRemote(folder.uuid, join(prefix, name), out, visited)
+            // Descend into .trash (the synced recycle bin), skip other hidden folders (config, sidecars, .obsidian).
+            if (name.startsWith(".") && name != FilenLocalStore.TRASH_DIR) { out.foreign.add(prefix); continue }
+            val path = join(prefix, name)
+            out.folders[path] = folder.uuid
+            walkRemote(folder.uuid, path, out, visited)
         }
+    }
+
+    private companion object {
+        const val MAX_READER_BYTES = 64L * 1024 * 1024
     }
 
     private fun join(prefix: String, name: String) = if (prefix.isEmpty()) name else "$prefix/$name"

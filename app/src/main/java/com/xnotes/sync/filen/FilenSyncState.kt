@@ -17,6 +17,13 @@ class FilenSyncState(private val map: MutableMap<String, Entry> = HashMap()) {
     fun remove(path: String) { map.remove(path) }
     fun paths(): Set<String> = map.keys.toSet()
 
+    /** File baselines; folder baselines are kept under their path plus a trailing slash. */
+    fun filePaths(): Set<String> = map.keys.filterTo(HashSet()) { !it.endsWith("/") }
+    fun folderPaths(): Set<String> = map.keys.filter { it.endsWith("/") }.mapTo(HashSet()) { it.removeSuffix("/") }
+    fun hasFolder(path: String): Boolean = "$path/" in map
+    fun putFolder(path: String, uuid: String) { map["$path/"] = Entry(uuid, 0, 0, 0) }
+    fun removeFolder(path: String) { map.remove("$path/") }
+
     fun save(context: Context) {
         val root = JSONObject()
         for ((path, e) in map) {

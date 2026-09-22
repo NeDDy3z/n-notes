@@ -25,9 +25,9 @@ android {
         applicationId = "com.neddy.nnotes"
         minSdk = 26
         targetSdk = 36
-        versionCode = 75
+        versionCode = 76
         // <upstream xnotes version>-<n-notes fork version>
-        versionName = "0.8.19-0.22"
+        versionName = "0.8.19-0.23"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
@@ -131,8 +131,14 @@ dependencies {
     implementation(libs.argon2kt)
     implementation(libs.androidx.work.runtime)
     implementation(libs.mlkit.digital.ink)
+    implementation(libs.commonmark)
+    implementation(libs.commonmark.gfm.tables)
+    implementation(libs.commonmark.gfm.strikethrough)
+    implementation(libs.commonmark.task.list.items)
+    implementation(libs.commonmark.autolink)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
     testImplementation(libs.json)
+    testImplementation(libs.kxml2)
 }
