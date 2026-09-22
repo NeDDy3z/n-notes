@@ -51,6 +51,7 @@ import com.xnotes.core.model.resolvedPatternColor
 import com.xnotes.core.model.resolvedSpacing
 import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.CharStyle
+import com.xnotes.core.text.DeadKeyLatch
 import com.xnotes.core.text.FlowDefaults
 import com.xnotes.core.text.FlowEditor
 import com.xnotes.core.text.FlowFrame
@@ -802,6 +803,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onHaptic = { runCatching { view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } },
     )
 
+    /**
+     * Accents from a physical keyboard's dead keys, composed through the layout the user
+     * selected. Declared ahead of [flowText] because its caret callback clears the latch.
+     */
+    private val deadKeys = DeadKeyLatch { accent, ch ->
+        android.view.KeyCharacterMap.getDeadChar(accent, ch)
+    }
+
     val flowText: FlowTextController = FlowTextController(
         state,
         history,
@@ -821,6 +830,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         ctrl.onCaretChanged = {
             flowSelTick++
             flowContextMenu = null
+            deadKeys.clear()
         }
         ctrl.onContextMenu = { viewport -> flowContextMenu = flowMenuAnchor(viewport) }
         ctrl.gated = { tableEditLive() }
@@ -1012,6 +1022,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun onFlowSessionChanged(active: Boolean) {
         flowEditingActive = active
+        deadKeys.clear()
         if (active) {
             flowInput.startSession()
         } else {
@@ -5165,7 +5176,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             else -> {
                 val ch = e.unicodeChar
                 if (ch == 0 || e.isAltPressed) return false
-                flowText.applyReplace(flowText.selection, String(Character.toChars(ch)))
+                val typed = deadKeys.accept(ch) ?: return true // a dead key waiting for its letter
+                flowText.applyReplace(flowText.selection, typed)
             }
         }
         return true
