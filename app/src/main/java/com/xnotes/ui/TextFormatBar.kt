@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
-import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.DropdownMenuItem
@@ -52,6 +51,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -158,35 +159,39 @@ private fun shortLangLabel(lang: String): String = when (lang) {
 }
 
 /**
- * Heading level: the icon gives way to H1..H6 while on, and a tap opens the level
- * menu rather than toggling, since no one level is the obvious default. Each entry
- * trails its markdown marker, so the bar also teaches the shortcut it duplicates.
+ * Heading level: a bare H, gaining its number while one is on, so the button reads
+ * the same either way. Material has no H glyph (only Title, a T), and a letter that
+ * turns into H2 beats an icon that does. A tap opens the level menu rather than
+ * toggling, since no one level is the obvious default, and each entry trails its
+ * markdown marker so the bar also teaches the shortcut it duplicates.
  */
 @Composable
 private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
     val palette = LocalPalette.current
     var menuOpen by remember { mutableStateOf(false) }
+    // The letter carries no meaning for a screen reader, so name the control instead.
+    val label = stringResource(R.string.heading)
     Box {
         Box(
-            Modifier.size(44.dp).clip(CircleShape).clickable(enabled = enabled) { menuOpen = true },
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .clickable(enabled = enabled) { menuOpen = true }
+                .semantics { contentDescription = label },
             contentAlignment = Alignment.Center,
         ) {
-            if (level > 0) {
-                Text(
-                    "H$level",
-                    color = palette.accent.toComposeColor(),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    style = TextStyle(fontFamily = FontFamily.Monospace),
-                )
-            } else {
-                Icon(
-                    Icons.Filled.Title,
-                    contentDescription = stringResource(R.string.heading),
-                    tint = if (enabled) palette.textDim.toComposeColor() else com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor(),
-                    modifier = Modifier.size(22.dp),
-                )
+            val tint = when {
+                !enabled -> com.xnotes.ui.theme.Palette.DISABLED_ICON
+                level > 0 -> palette.accent
+                else -> palette.textDim
             }
+            Text(
+                if (level > 0) "H$level" else "H",
+                color = tint.toComposeColor(),
+                fontSize = if (level > 0) 12.sp else 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                style = TextStyle(fontFamily = FontFamily.Monospace),
+            )
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             for (n in 0..Paragraph.MAX_HEADING) {

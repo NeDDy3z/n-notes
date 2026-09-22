@@ -14,7 +14,9 @@ class MarkdownParserTest {
         val p = parse("## Section")[0]
         assertEquals("Section", p.plainText())
         assertTrue(p.runs[0].style.bold)
-        assertEquals(18.0, p.runs[0].style.sizePt!!, 1e-9)
+        // The shared scale owns the numbers (see TextFlowTest); this pins the wiring.
+        assertEquals(Paragraph.headingStyle(2, 12.0).sizePt!!, p.runs[0].style.sizePt!!, 1e-9)
+        assertTrue(p.runs[0].style.sizePt!! > 12.0)
     }
 
     @Test

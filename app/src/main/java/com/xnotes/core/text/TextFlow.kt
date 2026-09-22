@@ -100,7 +100,10 @@ class Paragraph(
         const val MAX_INDENT = 6
         const val MAX_HEADING = 6
 
-        private val HEADING_SCALE = doubleArrayOf(2.0, 1.5, 1.25, 1.1, 1.0, 1.0)
+        // A geometric run at about 1.125 a step, so every level is visibly its own and
+        // h1 lands on twice the body size. The tail has to stay above 1.0: a heading
+        // that measures the same as body text is only bold, which is not a level.
+        private val HEADING_SCALE = doubleArrayOf(2.0, 1.75, 1.55, 1.4, 1.25, 1.1)
 
         /** The character style heading [level] renders in over [baseSizePt]. */
         fun headingStyle(level: Int, baseSizePt: Double): CharStyle =

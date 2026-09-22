@@ -93,4 +93,24 @@ class TextFlowTest {
         assertTrue(FlowRange.caret(a).collapsed)
         assertTrue(a < b)
     }
+
+    @Test
+    fun everyHeadingLevelIsBiggerThanTheNextAndBiggerThanBody() {
+        // h5 and h6 both sat at body size once, which made three levels look alike.
+        val body = TextFlow.DEFAULT_SIZE_PT
+        val sizes = (1..Paragraph.MAX_HEADING).map { Paragraph.headingStyle(it, body).sizePt!! }
+        for (i in 0 until sizes.size - 1) {
+            assertTrue("h${i + 1} vs h${i + 2}", sizes[i] > sizes[i + 1])
+        }
+        assertTrue(sizes.last() > body)
+        assertEquals(2.0 * body, sizes.first(), 1e-9)
+    }
+
+    @Test
+    fun headingsAreBoldAndScaleWithTheFlowsBaseSize() {
+        val small = Paragraph.headingStyle(3, 10.0).sizePt!!
+        val large = Paragraph.headingStyle(3, 20.0).sizePt!!
+        assertEquals(2.0, large / small, 1e-9)
+        assertTrue(Paragraph.headingStyle(6, 12.0).bold)
+    }
 }
