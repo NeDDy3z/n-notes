@@ -449,4 +449,18 @@ class SettingsTest {
         assertFalse(Settings.fromJson(off.toJson()).prefs.markdownInput)
     }
 
+    @Test fun slashCommandsDefaultsOnAndRoundTrips() {
+        assertTrue(Preferences().slashCommands)
+        assertTrue(Settings.fromJson(JSONObject()).prefs.slashCommands)
+        val off = Settings(prefs = Preferences(slashCommands = false))
+        assertFalse(Settings.fromJson(off.toJson()).prefs.slashCommands)
+    }
+
+    @Test fun theTwoTypingPreferencesAreIndependent() {
+        val s = Settings(prefs = Preferences(markdownInput = false, slashCommands = true))
+        val back = Settings.fromJson(s.toJson()).prefs
+        assertFalse(back.markdownInput)
+        assertTrue(back.slashCommands)
+    }
+
 }

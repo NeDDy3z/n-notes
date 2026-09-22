@@ -483,6 +483,9 @@
     <string name="auto">Auto</string>
     <string name="margins_mm">Margins (mm)</string>
     <string name="markdown_shortcuts">Markdown shortcuts</string>
+    <string name="slash_commands">Slash commands</string>
+    <string name="insert_date">Date</string>
+    <string name="insert_time">Time</string>
     <string name="done">Done</string>
 
     <!-- Tables -->

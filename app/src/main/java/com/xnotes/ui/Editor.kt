@@ -65,6 +65,7 @@ import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.text.ParaAlign
 import com.xnotes.core.text.Paragraph
+import com.xnotes.core.text.SlashCommands
 import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.TableDefaults
 import com.xnotes.core.text.TableEditor
@@ -80,6 +81,7 @@ import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.DocumentKind
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.format.DocumentCodec
+import com.xnotes.format.SvgColors
 import com.xnotes.format.XNoteFormatException
 import com.xnotes.platform.AndroidImageCodec
 import com.xnotes.platform.AndroidSurfaceFactory
@@ -832,7 +834,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             flowSelTick++
             flowContextMenu = null
             deadKeys.clear()
+            // A dismissal only covers the slash it was made against: stepping back onto
+            // or before it means the user is starting over, so the menu may open again.
+            slashDismissed = slashDismissed?.takeIf { d ->
+                val at = ctrl.selection.normalized().start
+                at.para == d.para && at.offset > d.offset
+            }
+            // Typing re-filters the menu, so any arrowed-to row stops meaning anything.
+            slashSelected = -1
         }
+        ctrl.onSlashEnter = { commitSlashMenu() }
         ctrl.onContextMenu = { viewport -> flowContextMenu = flowMenuAnchor(viewport) }
         ctrl.gated = { tableEditLive() }
         ctrl.onTableHold = { table ->
@@ -1769,6 +1780,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.zoomLockPan = p.zoomLockPan
         controller.detectShapes = p.detectShapes
         flowText.markdownInput = p.markdownInput
+        flowText.slashCommands = p.slashCommands
         controller.penButtonTool = if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER)
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
@@ -1792,6 +1804,21 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         for (editor in listOfNotNull(this, sibling)) {
             editor.markdownInput = on
             editor.flowText.markdownInput = on
+        }
+    }
+
+    /** Whether "/" opens the command menu; the text tool's config popup toggles it. */
+    var slashCommands by mutableStateOf(settings.prefs.slashCommands)
+        private set
+
+    /** Set the Slash commands preference, applying it to both panes and persisting it. */
+    fun setSlashCommandsPref(on: Boolean) {
+        settings = settings.copy(prefs = settings.prefs.copy(slashCommands = on))
+        settingsRepo.save(settings)
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.slashCommands = on
+            editor.flowText.slashCommands = on
+            if (!on) editor.slashDismissed = null
         }
     }
 
@@ -5156,7 +5183,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val ctrl = e.isCtrlPressed
         val shift = e.isShiftPressed
         when {
-            e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE -> flowText.endSession()
+            // Escape backs out of the slash menu first; a second one ends the session.
+            e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE ->
+                if (slashQuery() != null) dismissSlashMenu() else flowText.endSession()
             ctrl && shift && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> redo()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> undo()
             ctrl && shift && e.keyCode == android.view.KeyEvent.KEYCODE_X ->
@@ -5187,8 +5216,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 }
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT -> flowMoveHorizontal(-1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> flowMoveHorizontal(1, shift)
-            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> flowMoveVertical(-1, shift)
-            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> flowMoveVertical(1, shift)
+            // With the menu open the arrows walk it; Shift still means select text.
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ->
+                if (shift || !moveSlashSelection(-1)) flowMoveVertical(-1, shift)
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ->
+                if (shift || !moveSlashSelection(1)) flowMoveVertical(1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_MOVE_HOME -> flowLineEdge(start = true, extend = shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_MOVE_END -> flowLineEdge(start = false, extend = shift)
             else -> {
@@ -5275,8 +5307,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /** Toggle the paragraph(s) into [kind], or back to plain text when already that kind. */
-    fun flowToggleList(kind: ListKind) {
-        val target = if (flowCaretParagraph()?.list == kind) ListKind.NONE else kind
+    fun flowToggleList(kind: ListKind) =
+        flowSetList(if (flowCaretParagraph()?.list == kind) ListKind.NONE else kind)
+
+    /** Put the paragraph(s) into [target] outright; the slash menu asks, it does not toggle. */
+    fun flowSetList(target: ListKind) {
         flowParaOp {
             it.list = target
             if (target != ListKind.CHECK) it.checked = false
@@ -5315,6 +5350,149 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowText.commitEdit(ed.combined(cmds), null)
         if (sel.collapsed) flowText.pendingStyle = style ?: CharStyle.DEFAULT
         flowSelTick++
+    }
+
+    // --- the slash command menu ---
+
+    /** The slash whose menu the user dismissed, so it stays shut until they move off it. */
+    internal var slashDismissed: FlowPos? = null
+
+    /** Row the arrow keys have picked, or -1 while the highlight is still implicit. */
+    var slashSelected by mutableStateOf(-1)
+        private set
+
+    /**
+     * The open slash query, or null. Read straight off the flow during composition,
+     * so the menu tracks the caret with no state to keep in step; [flowSelTick] and
+     * [contentVersion] are what make the read happen again.
+     */
+    fun slashQuery(): SlashCommands.Query? {
+        if (!slashCommands || !flowText.active) return null
+        val sel = flowText.selection
+        if (!sel.collapsed) return null
+        val q = SlashCommands.queryAt(state.document.flow, sel.start) ?: return null
+        val d = slashDismissed
+        if (d != null && d.para == q.para && d.offset == q.slash) return null
+        return q
+    }
+
+    /** The caret's viewport rect, which the menu hangs under. */
+    fun slashAnchor(): Rect? = flowText.caretViewportRect()
+
+    /** The canvas viewport in px, so chrome anchored to a point can keep itself on screen. */
+    fun viewportSize(): Pt = Pt(state.viewportW.toDouble(), state.viewportH.toDouble())
+
+    /** Shut the menu for the slash it is on, leaving the typed text alone. */
+    fun dismissSlashMenu() {
+        val q = slashQuery() ?: return
+        slashDismissed = FlowPos(q.para, q.slash)
+        slashSelected = -1
+        flowSelTick++
+    }
+
+    /**
+     * The entry Enter would commit. Arrowing to a row arms it outright; until then
+     * the top ready row is armed, but only once a keyword is under way, so a bare
+     * "/" still breaks the line rather than running whatever happens to be first.
+     */
+    fun slashArmed(query: SlashCommands.Query, entries: List<SlashCommands.Entry>): SlashCommands.Entry? {
+        entries.getOrNull(slashSelected)?.let { return it }
+        if (query.text.isEmpty()) return null
+        return entries.firstOrNull { SlashCommands.ready(query, it) }
+    }
+
+    /** Arrow the menu's highlight by [delta], wrapping; false when no menu is open. */
+    private fun moveSlashSelection(delta: Int): Boolean {
+        val query = slashQuery() ?: return false
+        val count = SlashCommands.candidates(query).size
+        if (count == 0) return false
+        val from = if (slashSelected in 0 until count) slashSelected else if (delta > 0) -1 else 0
+        slashSelected = ((from + delta) % count + count) % count
+        flowSelTick++
+        return true
+    }
+
+    /**
+     * Enter while the menu is open commits its first ready entry; true when it did.
+     * A bare "/" commits nothing, so ending a line on a slash still just breaks it.
+     */
+    private fun commitSlashMenu(): Boolean {
+        val q = slashQuery() ?: return false
+        val entry = slashArmed(q, SlashCommands.candidates(q)) ?: return false
+        return runSlash(q, entry)
+    }
+
+    /**
+     * Run [entry] against [q]: the query text is deleted first, as its own undo step,
+     * then the command applies to the clean paragraph. Arguments are validated before
+     * anything is deleted, so a bad one leaves the typed text where the user can fix it.
+     */
+    fun runSlash(q: SlashCommands.Query, entry: SlashCommands.Entry): Boolean {
+        if (!flowText.active || !SlashCommands.ready(q, entry)) return false
+        val arg = q.arg
+        val size = if (entry.kind == SlashCommands.Kind.SIZE) arg.toDoubleOrNull() ?: return false else 0.0
+        val color = if (entry.kind == SlashCommands.Kind.COLOR) SvgColors.parse(arg) ?: return false else null
+        val stamp = when (entry.kind) {
+            SlashCommands.Kind.DATE -> dateStamp(java.time.format.FormatStyle.MEDIUM, time = false)
+            SlashCommands.Kind.TIME -> dateStamp(java.time.format.FormatStyle.SHORT, time = true)
+            else -> null
+        }
+        flowText.flushBurst()
+        // The IME still holds the query text the strip is about to remove.
+        flowText.mirrorStale = true
+        val flow = state.document.flow
+        val (cmd, caret) = if (stamp != null) {
+            SlashCommands.replace(flow, q, stamp)
+        } else {
+            SlashCommands.strip(flow, q)
+        }
+        // The strip rides along with whatever the command does next, so the pair is a
+        // single undo: one step puts the whole query back as the text that was typed.
+        flowText.placeCaret(caret)
+        flowText.pendingPrefix = cmd
+        slashDismissed = null
+        when (entry.kind) {
+            SlashCommands.Kind.HEADING -> flowSetHeading(entry.level)
+            SlashCommands.Kind.BODY -> flowSetHeading(0)
+            SlashCommands.Kind.BULLET -> flowSetList(ListKind.BULLET)
+            SlashCommands.Kind.ORDERED -> flowSetList(ListKind.ORDERED)
+            SlashCommands.Kind.TODO -> flowSetList(ListKind.CHECK)
+            SlashCommands.Kind.CODE -> flowSetCodeLanguage(slashCodeLanguage(arg))
+            SlashCommands.Kind.TABLE -> slashInsertTable(arg)
+            SlashCommands.Kind.SIZE -> flowSetChar { it.copy(sizePt = size.coerceIn(6.0, 96.0)) }
+            SlashCommands.Kind.COLOR -> flowSetCharColor(color)
+            SlashCommands.Kind.DATE, SlashCommands.Kind.TIME -> Unit
+        }
+        // A command that changed nothing (already a bullet, say) leaves the strip
+        // unpushed, so push it alone rather than lose the undo for it.
+        flowText.pendingPrefix?.let { leftover ->
+            flowText.pendingPrefix = null
+            flowText.commitEdit(leftover, null)
+        }
+        flowSelTick++
+        return true
+    }
+
+    /** Today's date or the time, in the reader's locale. */
+    private fun dateStamp(style: java.time.format.FormatStyle, time: Boolean): String {
+        val fmt = if (time) {
+            java.time.format.DateTimeFormatter.ofLocalizedTime(style)
+        } else {
+            java.time.format.DateTimeFormatter.ofLocalizedDate(style)
+        }
+        return java.time.LocalDateTime.now().format(fmt)
+    }
+
+    /** The language "/code xyz" means: a known token, else whatever the bar last used. */
+    private fun slashCodeLanguage(arg: String): String =
+        codeLanguageChoices().firstOrNull { it.equals(arg, ignoreCase = true) } ?: lastCodeLanguage()
+
+    /** "/table 3x4" sizes the grid; anything unparsed falls back to the saved default. */
+    private fun slashInsertTable(arg: String) {
+        val m = Regex("^(\\d{1,2})\\s*[x×*]\\s*(\\d{1,2})$").find(arg.trim())
+        val rows = m?.groupValues?.get(1)?.toIntOrNull() ?: newTableDefaults.rows
+        val cols = m?.groupValues?.get(2)?.toIntOrNull() ?: newTableDefaults.cols
+        flowInsertTable(rows, cols, newTableDefaults.style)
     }
 
     /** Toggle the paragraph(s) into code lines in the last-used language, or back to plain. */

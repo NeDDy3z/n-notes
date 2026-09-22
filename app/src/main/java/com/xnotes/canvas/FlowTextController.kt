@@ -21,6 +21,7 @@ import com.xnotes.core.text.FlowRange
 import com.xnotes.core.text.InputRules
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.SelShape
+import com.xnotes.core.text.SlashCommands
 import com.xnotes.core.text.TextFlow
 import com.xnotes.core.text.wordRangeAt
 import kotlin.math.abs
@@ -63,6 +64,20 @@ class FlowTextController(
 
     /** Whether typed markdown markers convert (the text tool's Markdown shortcuts toggle). */
     var markdownInput = true
+
+    /** Whether "/" opens the command menu (the text tool's Slash commands toggle). */
+    var slashCommands = true
+
+    /** Claims Enter while the slash menu is open, so the host commits its top entry. */
+    var onSlashEnter: () -> Boolean = { false }
+
+    /**
+     * An applied edit waiting to be folded into the next commit, so a two-part change
+     * is one undo step. The slash menu uses it: deleting the query and running the
+     * command it named are separate edits, but undoing them separately would leave
+     * the user looking at half a command.
+     */
+    var pendingPrefix: Command? = null
 
     /** Installed by the input layer to mirror caret/selection moves to the IME. */
     var imeSync: () -> Unit = {}
@@ -440,6 +455,7 @@ class FlowTextController(
         }
         val para = flow().paragraphs.getOrNull(r.start.para)
         if (text == "\n" && r.collapsed) {
+            if (slashCommands && onSlashEnter()) return selection.end
             InputRules.forEnter(flow(), r.start, markdownInput)?.let { return applyRule(it, r.start) }
         }
         // The armed style is only spent on text that actually lands; a deletion keeps it.
@@ -455,6 +471,9 @@ class FlowTextController(
             burstExtras += autoAppendPages()
             selection = FlowRange.caret(caret)
             if (markdownInput) InputRules.forTyped(flow(), caret, text)?.let { return applyRule(it, caret) }
+            if (slashCommands && text == "/") {
+                SlashCommands.escapeAt(flow(), caret)?.let { return dropSlash(caret.para, it) }
+            }
             handler.removeCallbacks(idleFlush)
             handler.postDelayed(idleFlush, BURST_IDLE_MS)
             ensureCaretVisible()
@@ -474,6 +493,20 @@ class FlowTextController(
         val (cmd, caret) = FlowEditor(flow()).replaceRange(r, text, effStyle)
         commitEdit(cmd, caret)
         if (carry != null && carry != CharStyle.DEFAULT) pendingStyle = carry
+        return caret
+    }
+
+    /**
+     * Collapse a just-typed "//" to one literal slash. Flushing first makes it its
+     * own undo step, so one undo brings the second slash back, and the mirror is
+     * stale because the IME still believes it sent two.
+     */
+    private fun dropSlash(para: Int, offset: Int): FlowPos {
+        flushBurst()
+        val caret = FlowPos(para, offset)
+        val cmd = FlowEditor(flow()).deleteRange(FlowRange(caret, FlowPos(para, offset + 1))).first
+        mirrorStale = true
+        commitEdit(cmd, caret)
         return caret
     }
 
@@ -504,13 +537,19 @@ class FlowTextController(
 
     /** Apply an already-built (and applied) command from the format bar / menus. */
     fun commitEdit(cmd: Command?, caretTo: FlowPos?) {
-        if (cmd == null) {
+        val prefix = pendingPrefix?.also { pendingPrefix = null }
+        val head = when {
+            prefix == null -> cmd
+            cmd == null -> prefix
+            else -> CompositeCommand(listOf(prefix, cmd))
+        }
+        if (head == null) {
             caretTo?.let { placeCaret(it) }
             return
         }
         onChanged(active)
         val extras = autoAppendPages()
-        history.push(if (extras.isEmpty()) cmd else CompositeCommand(listOf(cmd) + extras))
+        history.push(if (extras.isEmpty()) head else CompositeCommand(listOf(head) + extras))
         caretTo?.let { selection = FlowRange.caret(it) }
         onEdited()
         onFlushed()

@@ -1131,6 +1131,7 @@ private fun EditorPane(
                     com.xnotes.ui.TextStyleBar(editor)
                     com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
                     com.xnotes.ui.FlowEditMenu(editor)
+                    com.xnotes.ui.SlashMenu(editor)
                     com.xnotes.ui.FlowTableMenu(editor)
                     com.xnotes.ui.TableChrome(editor)
                     ZoomLockHint(editor)
