@@ -2,14 +2,21 @@ package com.xnotes.format
 
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
+import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.CharStyle
 import com.xnotes.core.text.FlowMargins
+import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.Run
+import com.xnotes.core.text.TableBlock
+import com.xnotes.core.text.TableBorders
+import com.xnotes.core.text.TableStyle
 import com.xnotes.core.text.TextFlow
+import com.xnotes.core.text.normalizeTables
 import java.io.ByteArrayInputStream
+import kotlin.math.roundToInt
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.w3c.dom.Node
@@ -25,6 +32,9 @@ import org.w3c.dom.Node
  * malformed XML loads as an empty flow). Colours serialize as #rrggbb (the flow
  * only holds opaque colours). Spaces and tabs are ODF-encoded (text:s /
  * text:tab) so code indentation survives whitespace-collapsing readers.
+ * Tables are ODF tables (table:table-column widths as rel-column-width
+ * styles, a table:table-header-rows row when the header is on, text:p cells);
+ * their look rides xnotes:* attributes on table:table.
  */
 object FlowXml {
     const val ENTRY_NAME = "flow.xml"
@@ -45,10 +55,13 @@ object FlowXml {
             }
         }
 
+        val tables = CellIndex(flow.paragraphs).tables
+
         append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
         append("<office:document-content")
         append(" xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"")
         append(" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"")
+        if (tables.isNotEmpty()) append(" xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"")
         append(" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"")
         append(" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"")
         append(" xmlns:xnotes=\"urn:xnotes:flow:1.0\"")
@@ -66,12 +79,21 @@ object FlowXml {
         append(" <office:automatic-styles>\n")
         for ((style, name) in charStyles) appendTextStyle(name, style)
         for ((key, name) in paraStyles) appendParaStyle(name, key.first, key.second)
+        for (b in tables) appendTableStyles(b)
         append(" </office:automatic-styles>\n")
 
         append(" <office:body>\n  <office:text>\n")
         var i = 0
         val paras = flow.paragraphs
+        var nextTable = 0
         while (i < paras.size) {
+            val block = tables.getOrNull(nextTable)?.takeIf { it.first == i }
+            if (block != null) {
+                appendTable(block, paras, paraStyles, charStyles)
+                nextTable++
+                i = block.last + 1
+                continue
+            }
             val kind = paras[i].list
             if (kind == ListKind.NONE) {
                 appendParagraph(paras[i], paraStyles, charStyles, "   ")
@@ -109,6 +131,71 @@ object FlowXml {
         if (align != ParaAlign.LEFT) append(" fo:text-align=\"${align.id}\"")
         if (indent != 0) append(" fo:margin-left=\"${indent * INDENT_MM_PER_LEVEL}mm\" xnotes:indent=\"$indent\"")
         append("/>\n  </style:style>\n")
+    }
+
+    private fun tableName(b: TableBlock) = "Table${b.ordinal + 1}"
+
+    private fun StringBuilder.appendTableStyles(b: TableBlock) {
+        val name = tableName(b)
+        if (b.table.width < FlowTable.FULL_WIDTH) {
+            append("  <style:style style:name=\"$name\" style:family=\"table\">\n")
+            append("   <style:table-properties style:rel-width=\"${relWidth(b.table.width)}%\" table:align=\"left\"/>\n")
+            append("  </style:style>\n")
+        }
+        for ((c, w) in b.table.widths.withIndex()) {
+            append("  <style:style style:name=\"$name.C${c + 1}\" style:family=\"table-column\">\n")
+            append("   <style:table-column-properties style:rel-column-width=\"${(w * REL_WIDTH_SCALE).roundToInt()}*\"/>\n")
+            append("  </style:style>\n")
+        }
+        for (r in 0 until b.rows) {
+            val h = b.table.minHeightPt(r)
+            if (h <= 0.0) continue
+            append("  <style:style style:name=\"$name.R${r + 1}\" style:family=\"table-row\">\n")
+            append("   <style:table-row-properties style:min-row-height=\"${h}pt\"/>\n")
+            append("  </style:style>\n")
+        }
+    }
+
+    private fun StringBuilder.appendTable(
+        b: TableBlock,
+        paras: List<Paragraph>,
+        paraStyles: Map<Pair<ParaAlign, Int>, String>,
+        charStyles: Map<CharStyle, String>,
+    ) {
+        val name = tableName(b)
+        val st = b.table.style
+        append("   <table:table table:name=\"$name\"")
+        if (b.table.width < FlowTable.FULL_WIDTH) append(" table:style-name=\"$name\"")
+        append(" xnotes:padding-pt=\"${st.paddingPt}\"")
+        append(" xnotes:line-width-pt=\"${st.lineWidthPt}\"")
+        append(" xnotes:borders=\"${st.borders.id}\"")
+        st.lineColor?.let { append(" xnotes:line-color=\"${hex(it)}\"") }
+        if (st.headerRow) append(" xnotes:header=\"true\"")
+        if (st.banded) append(" xnotes:banded=\"true\"")
+        st.tint?.let { append(" xnotes:tint=\"${hex(it)}\"") }
+        append(">\n")
+        for (c in 0 until b.cols) append("    <table:table-column table:style-name=\"$name.C${c + 1}\"/>\n")
+        for (r in 0 until b.rows) {
+            val header = st.headerRow && r == 0
+            if (header) append("    <table:table-header-rows>\n")
+            append("    <table:table-row")
+            if (b.table.minHeightPt(r) > 0.0) append(" table:style-name=\"$name.R${r + 1}\"")
+            append(">\n")
+            for (c in 0 until b.cols) {
+                append("     <table:table-cell office:value-type=\"string\">\n")
+                if (b.hasCell(r, c)) {
+                    for (p in b.cellFirstPara(r, c)..b.cellLastPara(r, c)) {
+                        appendParagraph(paras[p], paraStyles, charStyles, "      ")
+                    }
+                } else {
+                    append("      <text:p></text:p>\n")
+                }
+                append("     </table:table-cell>\n")
+            }
+            append("    </table:table-row>\n")
+            if (header) append("    </table:table-header-rows>\n")
+        }
+        append("   </table:table>\n")
     }
 
     private fun StringBuilder.appendParagraph(
@@ -193,23 +280,147 @@ object FlowXml {
         flow.defaultColor = parseHex(attr(root, "default-color"))?.takeUnless { it == TextFlow.DEFAULT_COLOR }
         attr(root, "mono-face")?.let { flow.monoFace = FontFace.fromId(it) }
 
-        val charStyles = HashMap<String, CharStyle>()
-        val paraStyles = HashMap<String, Pair<ParaAlign, Int>>()
+        val styles = Styles()
         for (styleEl in descendants(root, "style")) {
             val name = attr(styleEl, "name") ?: continue
             when (attr(styleEl, "family")) {
                 "text" -> descendants(styleEl, "text-properties").firstOrNull()
-                    ?.let { charStyles[name] = parseCharStyle(it) }
+                    ?.let { styles.chars[name] = parseCharStyle(it) }
                 "paragraph" -> descendants(styleEl, "paragraph-properties").firstOrNull()
-                    ?.let { paraStyles[name] = parseParaProps(it) }
+                    ?.let { styles.paras[name] = parseParaProps(it) }
+                "table" -> descendants(styleEl, "table-properties").firstOrNull()
+                    ?.let { parsePercent(attr(it, "rel-width")) }
+                    ?.let { styles.tableWidths[name] = it }
+                "table-column" -> descendants(styleEl, "table-column-properties").firstOrNull()
+                    ?.let { attr(it, "rel-column-width")?.removeSuffix("*")?.toDoubleOrNull() }
+                    ?.let { styles.colWidths[name] = it }
+                "table-row" -> descendants(styleEl, "table-row-properties").firstOrNull()
+                    ?.let { parseLengthPt(attr(it, "min-row-height")) }
+                    ?.let { styles.rowHeights[name] = it }
             }
         }
 
         val body = descendants(root, "body").firstOrNull() ?: root
-        for (p in descendants(body, "p")) {
-            flow.paragraphs.add(parseParagraph(p, charStyles, paraStyles))
-        }
+        readBlocks(body, styles, flow.paragraphs)
+        normalizeTables(flow)
         flow.touch()
+    }
+
+    private class Styles {
+        val chars = HashMap<String, CharStyle>()
+        val paras = HashMap<String, Pair<ParaAlign, Int>>()
+        val tableWidths = HashMap<String, Double>()
+        val colWidths = HashMap<String, Double>()
+        val rowHeights = HashMap<String, Double>()
+    }
+
+    /** Paragraphs in document order (nested ones after their parent, as ever); tables become grids. */
+    private fun readBlocks(parent: Element, styles: Styles, out: MutableList<Paragraph>) {
+        var child = parent.firstChild
+        while (child != null) {
+            if (child is Element) {
+                when (child.localName ?: child.nodeName) {
+                    "p" -> {
+                        out.add(parseParagraph(child, styles.chars, styles.paras))
+                        readBlocks(child, styles, out)
+                    }
+                    "table" -> readTable(child, styles, out)
+                    else -> readBlocks(child, styles, out)
+                }
+            }
+            child = child.nextSibling
+        }
+    }
+
+    private fun readTable(el: Element, styles: Styles, out: MutableList<Paragraph>) {
+        val widths = mutableListOf<Double>()
+        val rows = mutableListOf<List<List<Paragraph>>>()
+        val heights = mutableListOf<Double>()
+        fun repeats(e: Element, name: String, cap: Int) = (attr(e, name)?.toIntOrNull() ?: 1).coerceIn(1, cap)
+        fun collect(parent: Element) {
+            var node = parent.firstChild
+            while (node != null) {
+                val child = node
+                if (child is Element) {
+                    when (child.localName ?: child.nodeName) {
+                        "table-column" -> {
+                            val w = styles.colWidths[attr(child, "style-name")] ?: 0.0
+                            repeat(repeats(child, "number-columns-repeated", MAX_REPEAT)) { widths.add(w) }
+                        }
+                        "table-row" -> {
+                            val cells = mutableListOf<List<Paragraph>>()
+                            var cellNode = child.firstChild
+                            while (cellNode != null) {
+                                val cell = cellNode
+                                val kind = if (cell is Element) cell.localName ?: cell.nodeName else null
+                                if (cell is Element && (kind == "table-cell" || kind == "covered-table-cell")) {
+                                    val paras = cellParagraphs(cell, styles)
+                                    repeat(repeats(cell, "number-columns-repeated", MAX_REPEAT)) { cells.add(paras) }
+                                }
+                                cellNode = cell.nextSibling
+                            }
+                            val h = styles.rowHeights[attr(child, "style-name")] ?: 0.0
+                            repeat(repeats(child, "number-rows-repeated", MAX_REPEAT)) {
+                                rows.add(cells.map { c -> c.map { it.deepCopy() } })
+                                heights.add(h)
+                            }
+                        }
+                        else -> collect(child)
+                    }
+                }
+                node = child.nextSibling
+            }
+        }
+        collect(el)
+        if (rows.isEmpty()) return
+        val cols = maxOf(widths.size, rows.maxOf { it.size }, 1)
+        val header = attr(el, "header")?.let { it == "true" } ?: descendants(el, "table-header-rows").isNotEmpty()
+        val d = TableStyle()
+        val table = FlowTable(
+            widths = if (widths.size == cols && widths.all { it > 0.0 }) FlowTable.normalized(widths) else FlowTable.even(cols),
+            minHeights = heights,
+            style = TableStyle(
+                paddingPt = attr(el, "padding-pt")?.toDoubleOrNull() ?: d.paddingPt,
+                lineColor = parseHex(attr(el, "line-color")),
+                lineWidthPt = attr(el, "line-width-pt")?.toDoubleOrNull() ?: d.lineWidthPt,
+                borders = TableBorders.fromId(attr(el, "borders")),
+                headerRow = header,
+                banded = attr(el, "banded") == "true",
+                tint = parseHex(attr(el, "tint")),
+            ).clamped(),
+            width = FlowTable.clampWidth(styles.tableWidths[attr(el, "style-name")] ?: FlowTable.FULL_WIDTH),
+        )
+        for (row in rows) {
+            for (c in 0 until cols) {
+                val paras = row.getOrNull(c) ?: listOf(Paragraph())
+                paras.forEachIndexed { i, p ->
+                    p.table = table
+                    p.cellStart = i == 0
+                    out.add(p)
+                }
+            }
+        }
+    }
+
+    /** A cell's paragraphs, a nested table's text flattened in; never empty. */
+    private fun cellParagraphs(cell: Element, styles: Styles): List<Paragraph> {
+        val out = descendants(cell, "p").map { parseParagraph(it, styles.chars, styles.paras) }
+        return out.ifEmpty { listOf(Paragraph()) }
+    }
+
+    /** An ODF length ("12pt", "4.2mm", "0.5in", "1cm") in points, or null. */
+    private fun parseLengthPt(s: String?): Double? {
+        if (s == null) return null
+        val unit = s.takeLastWhile { it.isLetter() }
+        val v = s.dropLast(unit.length).toDoubleOrNull() ?: return null
+        return when (unit) {
+            "pt", "" -> v
+            "mm" -> v * 72.0 / 25.4
+            "cm" -> v * 72.0 / 2.54
+            "in" -> v * 72.0
+            "px" -> v * 0.75
+            else -> null
+        }
     }
 
     private fun parseCharStyle(props: Element): CharStyle = CharStyle(
@@ -340,4 +551,17 @@ object FlowXml {
 
     /** Indent level to fo:margin-left millimetres, for ODF readers only. */
     private const val INDENT_MM_PER_LEVEL = 10.0
+
+    /** A table's own width as an ODF percentage of the text column, to two decimals. */
+    private fun relWidth(width: Double): Double = (width * 100.0 * 100.0).roundToInt() / 100.0
+
+    /** An ODF percentage ("80%") as a fraction, or null. */
+    private fun parsePercent(s: String?): Double? =
+        s?.trim()?.removeSuffix("%")?.toDoubleOrNull()?.let { it / 100.0 }
+
+    /** Relative column widths are written as integer shares of this. */
+    private const val REL_WIDTH_SCALE = 10000.0
+
+    /** Repeated rows/columns in a foreign file are expanded at most this many times. */
+    private const val MAX_REPEAT = 64
 }
