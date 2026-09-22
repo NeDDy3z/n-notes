@@ -53,6 +53,12 @@ class FlowLayout(private val measurer: TextMeasurer) {
     /** Theme-derived colour for text when the flow sets no explicit default, read at layout time. */
     var autoColor: () -> Rgba? = { null }
 
+    /** The theme accent, which tints a table's header and bands unless the table picks a colour. */
+    var accentColor: () -> Rgba? = { null }
+
+    /** The grey a table's rules take unless the table picks a colour (it depends on the paper). */
+    var ruleColor: () -> Rgba? = { null }
+
     // --- per-paragraph measurement (cached) ---
 
     /** Advances and per-run fonts/metrics for one paragraph at given flow defaults. */
@@ -65,8 +71,14 @@ class FlowLayout(private val measurer: TextMeasurer) {
         val emptyMetrics: LineMetrics,
     )
 
-    private class ShapeEntry(val rev: Int, val defaultsKey: Long, val shape: ParaShape)
-    private class BreakEntry(val rev: Int, val defaultsKey: Long, val width: Double, val lines: List<BrokenLine>)
+    private class ShapeEntry(val rev: Int, val defaultsKey: Long, val bold: Boolean, val shape: ParaShape)
+    private class BreakEntry(
+        val rev: Int,
+        val defaultsKey: Long,
+        val bold: Boolean,
+        val width: Double,
+        val lines: List<BrokenLine>,
+    )
 
     private val shapes = HashMap<Paragraph, ShapeEntry>()
     private val breaks = HashMap<Paragraph, BreakEntry>()
@@ -76,9 +88,10 @@ class FlowLayout(private val measurer: TextMeasurer) {
             (flow.monoFace.id.hashCode().toLong() shl 16) xor
             flow.defaultSizePt.toRawBits()
 
-    private fun shapeOf(flow: TextFlow, para: Paragraph): ParaShape {
+    /** [bold] forces bold on every run (a table's header row). */
+    private fun shapeOf(flow: TextFlow, para: Paragraph, bold: Boolean = false): ParaShape {
         val key = defaultsKey(flow)
-        shapes[para]?.let { if (it.rev == para.rev && it.defaultsKey == key) return it.shape }
+        shapes[para]?.let { if (it.rev == para.rev && it.defaultsKey == key && it.bold == bold) return it.shape }
         val text = para.plainText()
         val adv = DoubleArray(text.length)
         val runEnds = IntArray(para.runs.size)
@@ -86,7 +99,7 @@ class FlowLayout(private val measurer: TextMeasurer) {
         val runFonts = arrayOfNulls<FontSpec>(para.runs.size)
         var offset = 0
         for ((i, run) in para.runs.withIndex()) {
-            val font = resolveFont(flow, para, run.style)
+            val font = resolveFont(flow, para, if (bold) run.style.copy(bold = true) else run.style)
             val a = measurer.advances(run.text, font)
             a.copyInto(adv, offset)
             offset += run.text.length
@@ -94,14 +107,14 @@ class FlowLayout(private val measurer: TextMeasurer) {
             runFonts[i] = font
             runMetrics[i] = measurer.metrics(font)
         }
-        val emptyFont = resolveFont(flow, para, CharStyle.DEFAULT)
+        val emptyFont = resolveFont(flow, para, if (bold) CharStyle(bold = true) else CharStyle.DEFAULT)
         val shape = ParaShape(
             text, adv, runEnds,
             @Suppress("UNCHECKED_CAST") (runMetrics as Array<LineMetrics>),
             @Suppress("UNCHECKED_CAST") (runFonts as Array<FontSpec>),
             measurer.metrics(emptyFont),
         )
-        shapes[para] = ShapeEntry(para.rev, key, shape)
+        shapes[para] = ShapeEntry(para.rev, key, bold, shape)
         return shape
     }
 
@@ -113,16 +126,24 @@ class FlowLayout(private val measurer: TextMeasurer) {
      * placing at least one char so layout progresses). [fromChar] re-breaks a
      * paragraph remainder when it continues onto a page of different width.
      */
-    fun breakLines(flow: TextFlow, para: Paragraph, availWidth: Double, fromChar: Int = 0): List<BrokenLine> {
+    fun breakLines(
+        flow: TextFlow,
+        para: Paragraph,
+        availWidth: Double,
+        fromChar: Int = 0,
+        bold: Boolean = false,
+    ): List<BrokenLine> {
         val key = defaultsKey(flow)
         if (fromChar == 0) {
             breaks[para]?.let {
-                if (it.rev == para.rev && it.defaultsKey == key && it.width == availWidth) return it.lines
+                if (it.rev == para.rev && it.defaultsKey == key && it.bold == bold && it.width == availWidth) {
+                    return it.lines
+                }
             }
         }
-        val shape = shapeOf(flow, para)
+        val shape = shapeOf(flow, para, bold)
         val lines = breakShape(shape, availWidth.coerceAtLeast(MIN_LINE_WIDTH), fromChar)
-        if (fromChar == 0) breaks[para] = BreakEntry(para.rev, key, availWidth, lines)
+        if (fromChar == 0) breaks[para] = BreakEntry(para.rev, key, bold, availWidth, lines)
         return lines
     }
 
@@ -217,6 +238,106 @@ class FlowLayout(private val measurer: TextMeasurer) {
         return BrokenLine(start, end, width, ascent, descent, spaceCount, hardBroken)
     }
 
+    // --- the magic wand ---
+
+    /**
+     * Column fractions for [table] at [tableWidth] content px that make it as short
+     * as possible, which evens out the cells across each row: a column of long text
+     * widens, a column of short headings narrows. See the grid overload.
+     */
+    fun fitColumns(flow: TextFlow, table: FlowTable, tableWidth: Double): List<Double> {
+        val block = CellIndex(flow.paragraphs).blockOf(table) ?: return table.widths
+        return fitColumns(flow, block.grid(flow.paragraphs), table.style, tableWidth)
+    }
+
+    /**
+     * Greedy fit over a grid of cell paragraphs: every column starts at its widest
+     * word; each step gives the column whose extra width removes the most table
+     * height per px (trying doubling increments, since a line only drops at a
+     * threshold); width no column can turn into height is shared by how much
+     * each could still unwrap. Fits that need no wrapping keep the natural widths'
+     * proportions.
+     */
+    fun fitColumns(flow: TextFlow, grid: List<List<List<Paragraph>>>, style: TableStyle, tableWidth: Double): List<Double> {
+        val rows = grid.size
+        val cols = grid.maxOfOrNull { it.size } ?: 0
+        if (rows == 0 || cols == 0) return emptyList()
+        val pad = style.paddingPt * TableStyle.PX_PER_PT
+        val shapes = List(rows) { r ->
+            List(cols) { c -> grid[r].getOrNull(c).orEmpty().map { shapeOf(flow, it, style.headerRow && r == 0) } }
+        }
+        val floor = MIN_LINE_WIDTH + 2 * pad
+        val minW = DoubleArray(cols) { c ->
+            maxOf(floor, shapes.maxOf { row -> row[c].maxOfOrNull { longestWord(it) } ?: 0.0 } + 2 * pad)
+        }
+        val maxW = DoubleArray(cols) { c ->
+            maxOf(minW[c], shapes.maxOf { row -> row[c].maxOfOrNull { it.adv.sum() } ?: 0.0 } + 2 * pad)
+        }
+        if (maxW.sum() <= tableWidth) return FlowTable.normalized(maxW.map { it / maxW.sum() })
+        if (minW.sum() >= tableWidth) return FlowTable.normalized(minW.map { it / minW.sum() })
+
+        val cache = HashMap<Pair<Int, Double>, DoubleArray>()
+        fun heights(c: Int, w: Double): DoubleArray = cache.getOrPut(c to w) {
+            val inner = (w - 2 * pad).coerceAtLeast(MIN_LINE_WIDTH)
+            DoubleArray(rows) { r -> shapes[r][c].sumOf { sh -> breakShape(sh, inner, 0).sumOf { it.height } } }
+        }
+        val w = minW.copyOf()
+        fun tableHeight(): Double = (0 until rows).sumOf { r -> (0 until cols).maxOf { c -> heights(c, w[c])[r] } }
+        var left = tableWidth - w.sum()
+        val step = maxOf(1.0, left / FIT_STEPS)
+        var h = tableHeight()
+        while (left >= step) {
+            var bestC = -1
+            var bestD = 0.0
+            var bestRatio = 0.0
+            var bestH = h
+            for (c in 0 until cols) {
+                var d = step
+                while (d <= left + EPS) {
+                    val old = w[c]
+                    w[c] = old + d
+                    val nh = tableHeight()
+                    w[c] = old
+                    val ratio = (h - nh) / d
+                    if (ratio > bestRatio + 1e-12) {
+                        bestRatio = ratio
+                        bestC = c
+                        bestD = d
+                        bestH = nh
+                    }
+                    d *= 2
+                }
+            }
+            if (bestC < 0) break
+            w[bestC] += bestD
+            left -= bestD
+            h = bestH
+        }
+        if (left > 0.0) {
+            val want = DoubleArray(cols) { (maxW[it] - w[it]).coerceAtLeast(0.0) }
+            val sumWant = want.sum()
+            val sumW = w.sum()
+            for (c in 0 until cols) w[c] += left * if (sumWant > 0.0) want[c] / sumWant else w[c] / sumW
+        }
+        val sum = w.sum()
+        return FlowTable.normalized(w.map { it / sum })
+    }
+
+    /** The widest run of non-space characters in [shape]. */
+    private fun longestWord(shape: ParaShape): Double {
+        var best = 0.0
+        var cur = 0.0
+        for (i in shape.text.indices) {
+            if (shape.text[i] == ' ') {
+                cur = 0.0
+            } else {
+                cur += shape.adv[i]
+                if (cur > best) best = cur
+            }
+        }
+        return best
+    }
+
     /** Drop cached measurements for paragraphs no longer in [flow] (call after big splices). */
     fun pruneCaches(flow: TextFlow) {
         val live = HashSet<Paragraph>(flow.paragraphs)
@@ -238,14 +359,28 @@ class FlowLayout(private val measurer: TextMeasurer) {
      */
     fun layout(flow: TextFlow, pageBoxes: List<PageBox>, dpi: Int): FlowFrame {
         val defColor = flow.defaultColor ?: autoColor() ?: TextFlow.DEFAULT_COLOR
-        if (pageBoxes.isEmpty()) return FlowFrame(emptyList(), flow.rev, 0, defColor, codeBackground())
+        val cells = CellIndex(flow.paragraphs)
+        if (pageBoxes.isEmpty()) return FlowFrame(emptyList(), flow.rev, 0, defColor, codeBackground(), cells)
         pruneCaches(flow)
         val contentRects = pageBoxes.map { contentRectOf(it, flow.margins, dpi) }
         val pageLines = List(pageBoxes.size) { mutableListOf<PlacedLine>() }
+        val pageTables = List(pageBoxes.size) { mutableListOf<TableFrag>() }
         var page = 0
         var y = contentRects[0].top
         var ordinal = 0
+        var skipTo = 0
         for ((paraIndex, para) in flow.paragraphs.withIndex()) {
+            if (paraIndex < skipTo) continue
+            val block = cells.blockAt(paraIndex)
+            if (block != null) {
+                val cur = Cursor(page, y)
+                layoutTable(flow, block, contentRects, cur, pageLines, pageTables)
+                page = cur.page
+                y = cur.y
+                ordinal = 0
+                skipTo = block.last + 1
+                continue
+            }
             ordinal = if (para.list == ListKind.ORDERED) ordinal + 1 else 0
             val indentPx = para.indent * INDENT_STEP_PX +
                 if (para.list != ListKind.NONE) MARKER_GUTTER_PX else 0.0
@@ -281,8 +416,173 @@ class FlowLayout(private val measurer: TextMeasurer) {
             }
         }
         val extra = (page - (pageBoxes.size - 1)).coerceAtLeast(0)
-        val pages = pageBoxes.indices.map { PageFlow(contentRects[it], pageLines[it]) }
-        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground())
+        val pages = pageBoxes.indices.map { PageFlow(contentRects[it], pageLines[it], pageTables[it]) }
+        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells)
+    }
+
+    private class Cursor(var page: Int, var y: Double)
+
+    /** One wrapped line of a cell: [bl] of paragraph [para]. */
+    private class CellLine(val para: Int, val bl: BrokenLine, val firstOfPara: Boolean, val lastOfPara: Boolean)
+
+    /**
+     * Lay [block] out as a grid from the cursor: rows stack down the page and move
+     * whole to the next page when they don't fit; only a row taller than a whole
+     * page splits, each cell continuing line by line. The table takes its own
+     * fraction of each page's content width from the left edge, and the columns
+     * their fractions of that.
+     */
+    private fun layoutTable(
+        flow: TextFlow,
+        block: TableBlock,
+        contentRects: List<Rect>,
+        cur: Cursor,
+        pageLines: List<MutableList<PlacedLine>>,
+        pageTables: List<MutableList<TableFrag>>,
+    ) {
+        val table = block.table
+        val style = table.style
+        val pad = style.paddingPt * TableStyle.PX_PER_PT
+        val lineW = style.lineWidthPt * TableStyle.PX_PER_PT
+        val cols = block.cols
+        val widths = FlowTable.normalized(table.widths).takeIf { it.size == cols } ?: FlowTable.even(cols)
+        val frac = FlowTable.clampWidth(table.width)
+        val tint = style.tint ?: accentColor() ?: DEFAULT_TINT
+        fun rectAt(p: Int) = contentRects.getOrElse(p) { contentRects.last() }
+        var rect = rectAt(cur.page)
+        var colXs = colEdges(rect, widths, frac)
+        val rowsHere = mutableListOf<RowFrag>()
+
+        fun flush() {
+            if (rowsHere.isEmpty()) return
+            pageTables.getOrNull(cur.page)?.add(
+                TableFrag(
+                    table, block.ordinal, colXs, rowsHere.toList(),
+                    lineColor = style.lineColor ?: ruleColor() ?: DEFAULT_RULE,
+                    lineWidth = lineW,
+                    borders = style.borders,
+                    headerFill = if (style.headerRow) tint.withAlpha(HEADER_ALPHA) else null,
+                    bandFill = if (style.banded) tint.withAlpha(BAND_ALPHA) else null,
+                ),
+            )
+            rowsHere.clear()
+        }
+
+        fun newPage() {
+            flush()
+            cur.page++
+            rect = rectAt(cur.page)
+            cur.y = rect.top
+            colXs = colEdges(rect, widths, frac)
+        }
+
+        fun innerW(c: Int) = (colXs[c + 1] - colXs[c] - 2 * pad).coerceAtLeast(MIN_LINE_WIDTH)
+
+        fun cellLines(row: Int, col: Int, bold: Boolean, fromPara: Int, fromChar: Int): List<CellLine> {
+            if (!block.hasCell(row, col)) return emptyList()
+            val out = mutableListOf<CellLine>()
+            for (p in maxOf(fromPara, block.cellFirstPara(row, col))..block.cellLastPara(row, col)) {
+                val para = flow.paragraphs[p]
+                val from = if (p == fromPara) fromChar else 0
+                val broken = breakLines(flow, para, innerW(col), from, bold)
+                for ((k, bl) in broken.withIndex()) {
+                    out.add(CellLine(p, bl, k == 0 && bl.startChar == 0, k == broken.lastIndex))
+                }
+            }
+            return out
+        }
+
+        fun place(line: CellLine, col: Int, y: Double, bold: Boolean) {
+            val para = flow.paragraphs[line.para]
+            val box = Rect(colXs[col] + pad, y, innerW(col), line.bl.height)
+            pageLines.getOrNull(cur.page)?.add(
+                placeLine(
+                    flow, para, line.para, shapeOf(flow, para, bold), line.bl, box, 0.0, box.w, y,
+                    lastLineOfPara = line.lastOfPara, firstLineOfPara = line.firstOfPara, ordinal = 0,
+                ),
+            )
+        }
+
+        // Half the rule above and below keeps the border off the neighbouring lines.
+        cur.y += lineW / 2.0
+        for (row in 0 until block.rows) {
+            val bold = style.headerRow && row == 0
+            val minH = table.minHeightPt(row) * TableStyle.PX_PER_PT
+            fun contents() = List(cols) { c -> cellLines(row, c, bold, -1, 0) }
+            fun heightOf(content: List<List<CellLine>>) =
+                maxOf(minH, content.maxOf { cell -> cell.sumOf { it.bl.height } } + 2 * pad)
+            var content = contents()
+            var rowH = heightOf(content)
+            if (cur.y + rowH > rect.bottom + EPS && cur.y > rect.top + lineW + EPS) {
+                val oldW = rect.w
+                newPage()
+                if (rect.w != oldW) {
+                    content = contents()
+                    rowH = heightOf(content)
+                }
+            }
+            if (cur.y + rowH <= rect.bottom + EPS) {
+                for (c in 0 until cols) {
+                    var y = cur.y + pad
+                    for (line in content[c]) {
+                        place(line, c, y, bold)
+                        y += line.bl.height
+                    }
+                }
+                rowsHere.add(RowFrag(row, cur.y, cur.y + rowH))
+                cur.y += rowH
+                continue
+            }
+            // Taller than a whole page: split it, every cell continuing where it stopped.
+            val next = IntArray(cols)
+            while (true) {
+                var used = 0.0
+                for (c in 0 until cols) {
+                    var y = cur.y + pad
+                    val lines = content[c]
+                    while (next[c] < lines.size) {
+                        val h = lines[next[c]].bl.height
+                        if (y + h > rect.bottom - pad + EPS && y > cur.y + pad + EPS) break
+                        place(lines[next[c]], c, y, bold)
+                        y += h
+                        next[c]++
+                    }
+                    used = maxOf(used, y - cur.y + pad)
+                }
+                val done = (0 until cols).all { next[it] >= content[it].size }
+                if (done) {
+                    val bottom = cur.y + maxOf(used, minOf(minH, rect.bottom - cur.y))
+                    rowsHere.add(RowFrag(row, cur.y, bottom))
+                    cur.y = bottom
+                    break
+                }
+                rowsHere.add(RowFrag(row, cur.y, rect.bottom))
+                val oldW = rect.w
+                newPage()
+                if (rect.w != oldW) {
+                    content = List(cols) { c ->
+                        val rest = content[c].getOrNull(next[c])
+                        if (rest == null) emptyList() else cellLines(row, c, bold, rest.para, rest.bl.startChar)
+                    }
+                    next.fill(0)
+                }
+            }
+        }
+        flush()
+        cur.y += lineW / 2.0
+    }
+
+    private fun colEdges(rect: Rect, widths: List<Double>, frac: Double): DoubleArray {
+        val tableW = rect.w * frac
+        val xs = DoubleArray(widths.size + 1)
+        xs[0] = rect.left
+        var acc = 0.0
+        for (i in widths.indices) {
+            acc += widths[i]
+            xs[i + 1] = rect.left + tableW * acc
+        }
+        xs[widths.size] = rect.left + tableW
+        return xs
     }
 
     private fun placeLine(
@@ -440,6 +740,18 @@ class FlowLayout(private val measurer: TextMeasurer) {
         /** A content rect is never shorter than this, however extreme the margins. */
         const val MIN_CONTENT_HEIGHT = 16.0
 
+        const val HEADER_ALPHA = 64
+        const val BAND_ALPHA = 26
+
+        /** Tint when neither the table nor the theme names one. */
+        val DEFAULT_TINT = Rgba(90, 140, 255, 255)
+
+        /** Rule colour when neither the table nor the host names one. */
+        val DEFAULT_RULE = Rgba(128, 128, 128, 255)
+
         private const val EPS = 0.01
+
+        /** The wand hands out the spare width in steps of about this fraction of it. */
+        private const val FIT_STEPS = 200.0
     }
 }

@@ -76,4 +76,27 @@ class MarkdownParserTest {
         val img = parse("![alt text](pic.png)")[0]
         assertEquals("alt text", img.plainText())
     }
+
+    @Test
+    fun pipeTablesBecomeTablesWithHeaderAndAlignment() {
+        val paras = parse("intro\n| Name | Score |\n|:-----|------:|\n| **Ada** | 10 |\n| Bob \\| Co |\n\nafter")
+        val cells = CellIndex(paras)
+        val b = cells.tables.single()
+        assertEquals(2, b.cols)
+        assertEquals(3, b.rows)
+        assertTrue(b.table.style.headerRow)
+        assertEquals("intro", paras[0].plainText())
+        assertEquals("Score", paras[b.cellFirstPara(0, 1)].plainText())
+        assertEquals(ParaAlign.RIGHT, paras[b.cellFirstPara(1, 1)].align)
+        assertTrue(paras[b.cellFirstPara(1, 0)].runs.single().style.bold)
+        assertEquals("Bob | Co", paras[b.cellFirstPara(2, 0)].plainText())
+        assertEquals("", paras[b.cellFirstPara(2, 1)].plainText())
+        assertEquals("after", paras.last().plainText())
+    }
+
+    @Test
+    fun aLoneDashLineIsNotATable() {
+        val paras = parse("a | b\n---\nc")
+        assertTrue(CellIndex(paras).isEmpty)
+    }
 }

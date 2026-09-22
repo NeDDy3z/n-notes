@@ -67,6 +67,10 @@ class Paragraph(
     var checked: Boolean = false,
     /** Non-null marks a code line; "" means plain/unhighlighted code. */
     var codeLang: String? = null,
+    /** Non-null makes this paragraph cell text of that table (see [FlowTable]). */
+    var table: FlowTable? = null,
+    /** True on the first paragraph of each table cell. */
+    var cellStart: Boolean = false,
 ) {
     /** Bumped on any content or style mutation; layout caches key on it. */
     var rev: Int = 0
@@ -82,10 +86,12 @@ class Paragraph(
 
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
-        align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null
+        align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
+            table == null
 
+    /** A copy sharing [table]; [TextFlow.deepCopy] remaps it onto copied tables. */
     fun deepCopy(): Paragraph =
-        Paragraph(runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang)
+        Paragraph(runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart)
             .also { it.rev = rev }
 
     companion object {
@@ -194,7 +200,10 @@ class TextFlow {
 
     fun deepCopy(): TextFlow {
         val copy = TextFlow()
-        paragraphs.mapTo(copy.paragraphs) { it.deepCopy() }
+        val tables = java.util.IdentityHashMap<FlowTable, FlowTable>()
+        paragraphs.mapTo(copy.paragraphs) { p ->
+            p.deepCopy().also { c -> c.table = p.table?.let { t -> tables.getOrPut(t) { t.copy() } } }
+        }
         copy.margins = margins
         copy.defaultFace = defaultFace
         copy.defaultSizePt = defaultSizePt

@@ -19,6 +19,11 @@ object FlowPainter {
 
     fun paintPage(r: Renderer, frame: FlowFrame, pageIndex: Int, region: Rect) {
         val page = frame.pages.getOrNull(pageIndex) ?: return
+        for (table in page.tables) {
+            if (table.bottom < region.top || table.top > region.bottom) continue
+            paintTableFills(r, table)
+            paintTableRules(r, table)
+        }
         paintCodeChips(r, frame, page.lines, region)
         for (line in page.lines) {
             if (line.bottom < region.top || line.top > region.bottom) continue
@@ -54,6 +59,53 @@ object FlowPainter {
                 )
             }
             i++
+        }
+    }
+
+    /** Header row and banded rows (bands count from the first body row). */
+    private fun paintTableFills(r: Renderer, t: TableFrag) {
+        val header = t.headerFill != null
+        for (row in t.rows) {
+            val body = row.row - if (header) 1 else 0
+            val fill = when {
+                header && row.row == 0 -> t.headerFill
+                body >= 0 && body % 2 == 1 -> t.bandFill
+                else -> null
+            } ?: continue
+            r.fillRect(Rect(t.left, row.top, t.right - t.left, row.bottom - row.top), fill)
+        }
+    }
+
+    /**
+     * Rules as filled rects centred on the grid edges. Horizontals run the full
+     * width; verticals stop short of them, so a translucent rule never doubles up
+     * at a crossing.
+     */
+    private fun paintTableRules(r: Renderer, t: TableFrag) {
+        if (t.borders == TableBorders.NONE) return
+        val w = t.lineWidth
+        val half = w / 2.0
+        fun h(y: Double) = r.fillRect(Rect(t.left - half, y - half, t.right - t.left + w, w), t.lineColor)
+        fun v(x: Double) {
+            var y = t.top + half
+            for (row in t.rows) {
+                val end = row.bottom - half
+                if (end > y) r.fillRect(Rect(x - half, y, w, end - y), t.lineColor)
+                y = row.bottom + half
+            }
+        }
+        h(t.top)
+        when (t.borders) {
+            TableBorders.OUTER -> {
+                h(t.bottom)
+                v(t.left)
+                v(t.right)
+            }
+            TableBorders.HORIZONTAL -> for (row in t.rows) h(row.bottom)
+            else -> {
+                for (row in t.rows) h(row.bottom)
+                for (x in t.colXs) v(x)
+            }
         }
     }
 
