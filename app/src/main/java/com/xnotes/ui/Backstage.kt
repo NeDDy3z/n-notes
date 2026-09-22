@@ -1682,6 +1682,18 @@ private fun ExplorerSection(
         }
     }
 
+    // A multi-file pick gets no name prompt: it imports straight into the folder on screen, one file
+    // at a time, taking each note's name from its source. This runs here because the explorer is
+    // where the target folder is known. Cancelling keeps whatever already landed.
+    val pendingImports = editor.pendingImports
+    LaunchedEffect(pendingImports) {
+        if (pendingImports.isNotEmpty()) {
+            val n = editor.commitImportsAsync(root, currentDocId)
+            refreshKey++
+            if (n > 0) editor.message = context.resources.getQuantityString(R.plurals.imported_pdfs, n, n)
+        }
+    }
+
     val pendingImport = editor.pendingImport
     // Clear any stale error when a fresh name dialog opens for a new operation.
     LaunchedEffect(createMode, pendingImport) { fieldError = null }

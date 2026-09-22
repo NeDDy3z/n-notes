@@ -368,6 +368,12 @@
     <string name="export_page_progress">page %1$d / %2$d</string>
     <string name="export_item_progress">item %1$d / %2$d</string>
     <string name="importing_pdf">Importing PDF…</string>
+    <string name="importing_pdfs">Importing PDFs…</string>
+    <string name="import_progress">%1$d of %2$d imported</string>
+    <plurals name="imported_pdfs">
+        <item quantity="one">Imported %d PDF</item>
+        <item quantity="other">Imported %d PDFs</item>
+    </plurals>
     <string name="refining_pdf_colours">Refining PDF colours %1$d/%2$d pages…</string>
     <string name="unlock_zoom">Unlock zoom</string>
     <string name="lock_zoom_fit_width">Lock zoom at fit width</string>

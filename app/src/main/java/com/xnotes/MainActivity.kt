@@ -291,14 +291,20 @@ private fun EditorScreen(
         }
     }
 
-    // "Import PDF" remembers the picked PDF and shows the name dialog at once; the (possibly large) copy
-    // into the .xnote happens at Save, under the "Importing PDF…" loader, so the dialog isn't delayed.
-    val importPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { u ->
-            val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Document")
-            editor.requestImport(stem, u.toString())
+    // "Import PDF" takes one file or many. One keeps the old flow: remember the pick and show the name
+    // dialog at once, with the (possibly large) copy happening at Save under the "Importing PDF…" loader.
+    // Many skips naming altogether (each note takes its source file's name) and the explorer imports
+    // them one at a time, so the picked list never becomes a list of open PDFs.
+    val importPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        fun stemOf(u: android.net.Uri) = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, u) ?: "Document")
+        when {
+            uris.isEmpty() -> Unit
+            uris.size == 1 -> editor.requestImport(stemOf(uris[0]), uris[0].toString())
+            else -> editor.requestImports(uris.map { com.xnotes.ui.PendingImport(stemOf(it), it.toString()) })
+        }
+        if (uris.isNotEmpty()) {
             backstageView = com.xnotes.ui.BackstageView.HOME
-            editor.goHomeAll() // land on backstage to name/place the pending import
+            editor.goHomeAll() // land on backstage to name the single pick, or to run the batch
         }
     }
     // A PDF "Save as" destination. The note is already rendered into [pendingExportTemp]
@@ -863,7 +869,10 @@ private fun EditorScreen(
         })
     }
     if (editor.importing) {
-        PdfImportDialog(onCancel = { editor.cancelImportInProgress() }) // the stream-copy stops at its next buffer
+        // A batch counts files, so it gets a determinate ring; a single import has nothing to count.
+        val batch = editor.importProgress
+        if (batch != null) PdfImportBatchDialog(batch.done, batch.total) { editor.cancelImportInProgress() }
+        else PdfImportDialog(onCancel = { editor.cancelImportInProgress() }) // the stream-copy stops at its next buffer
     }
     // Tapping a note reads it off-thread (editor.opening). Only show the spinner once the read has run
     // long enough to matter, so opening a small note never flashes a dialog; a big PDF gets the loader.
@@ -1374,6 +1383,50 @@ private fun SavingDialog() {
  */
 @Composable
 private fun PdfImportDialog(onCancel: () -> Unit) = SpinnerDialog(stringResource(R.string.importing_pdf), onCancel)
+
+/**
+ * Determinate "Importing PDFs…" dialog for a multi-file import: a ring filled by files finished plus
+ * a running "%d of %d imported" line, so the count stays visible for the whole batch. Cancel stops
+ * after the file in flight and keeps the ones already imported. Styled to match [PdfExportDialog].
+ */
+@Composable
+private fun PdfImportBatchDialog(done: Int, total: Int, onCancel: () -> Unit) {
+    val palette = LocalPalette.current
+    val fraction = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else 0f
+    androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
+        Column(
+            modifier = Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(palette.surface.toComposeColor())
+                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .padding(horizontal = 32.dp, vertical = 26.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    progress = { fraction },
+                    modifier = Modifier.fillMaxSize(),
+                    color = palette.accent.toComposeColor(),
+                    trackColor = palette.border.toComposeColor(),
+                    strokeWidth = 4.dp,
+                )
+                Text("$done/$total", color = palette.text.toComposeColor(), fontSize = 15.sp)
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.importing_pdfs), color = palette.text.toComposeColor(), fontSize = 15.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.import_progress, done, total),
+                color = palette.textDim.toComposeColor(),
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(14.dp))
+            androidx.compose.material3.TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.cancel), color = palette.accent.toComposeColor())
+            }
+        }
+    }
+}
 
 /**
  * Subtle, non-blocking hint shown bottom-right while a dark-mode PDF's embedded-image colours are

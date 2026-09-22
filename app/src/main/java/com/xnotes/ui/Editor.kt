@@ -154,6 +154,9 @@ class RecentEntry(val entry: BrowseEntry, val opened: Long, val where: String?)
 /** A picked PDF awaiting a name before it's imported into the explorer's current folder. */
 data class PendingImport(val defaultName: String, val uri: String)
 
+/** How far a multi-file PDF import has got; drives the count in the import dialog. */
+data class ImportProgress(val done: Int, val total: Int)
+
 /** Per-folder colour sidecar: a hidden ".xnote" dir holding "colors.json" (item name -> hex). */
 private const val SIDECAR_DIR = ".xnote"
 private const val SIDECAR_FILE = "colors.json"
@@ -456,6 +459,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         private set
     /** True while a committed import is being written off-thread; drives the "Importing…" dialog. */
     var importing by mutableStateOf(false)
+        private set
+    /** PDFs picked together, awaiting a batch import into the current folder; each keeps its own name. */
+    var pendingImports by mutableStateOf<List<PendingImport>>(emptyList())
+        private set
+    /** Files finished so far in a batch import; null for a single-file import. */
+    var importProgress by mutableStateOf<ImportProgress?>(null)
         private set
     /** Flipped by the import dialog's Cancel so the in-flight stream-copy aborts at its next buffer. */
     private val importCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -3213,6 +3222,48 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 commitImport(treeUri, parentDocId, rawName)
             }
         } finally {
+            importing = false
+        }
+    }
+
+    /** Queues a multi-file PDF pick; the explorer commits it into whichever folder it is showing. */
+    fun requestImports(items: List<PendingImport>) {
+        pendingImports = items
+    }
+
+    /** Imports every queued PDF into [parentDocId] one at a time; returns how many landed. Each file
+     *  is staged to its own temp, written into its `.xnote`, then dropped before the next is opened,
+     *  so a batch costs the same memory as a single import however long the list is. Names come from
+     *  the source files. Cancel stops after the file in flight, discarding only that one; whatever
+     *  already landed stays. [importProgress] drives the dialog's count. IO — runs off-thread. */
+    suspend fun commitImportsAsync(treeUri: String, parentDocId: String): Int {
+        val items = pendingImports
+        if (items.isEmpty()) return 0
+        importCancelled.set(false)
+        importing = true
+        importProgress = ImportProgress(0, items.size)
+        return try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                var done = 0
+                for (item in items) {
+                    if (importCancelled.get()) break
+                    val staged = runCatching {
+                        appContext.contentResolver.openInputStream(android.net.Uri.parse(item.uri))?.let { stageImport(it) }
+                    }.getOrNull()
+                    if (staged != null) {
+                        try {
+                            if (createPdfNoteFile(treeUri, parentDocId, item.defaultName, staged) != null) done++
+                        } finally {
+                            staged.delete()
+                        }
+                    }
+                    importProgress = ImportProgress(done, items.size)
+                }
+                done
+            }
+        } finally {
+            pendingImports = emptyList()
+            importProgress = null
             importing = false
         }
     }
