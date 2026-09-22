@@ -1,9 +1,11 @@
 package com.xnotes.canvas
 
 import com.xnotes.core.FakeSurfaceFactory
+import com.xnotes.core.geometry.Pt
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Rgba
 import com.xnotes.ui.theme.Palette
+import kotlin.math.min
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -120,6 +122,48 @@ class FitWidthSnapTest {
         st.reflowFitWidthForResize()
 
         assertEquals(st.fitWidthZoom(), st.zoom, 1e-9)
+    }
+
+    @Test fun heightMagnetFollowsTheMarginPreference() {
+        val st = state()
+        st.verticalScroll = false
+        st.sideMargin = 0.0
+        st.relayout()
+        val h = st.document.pages[0].height
+        assertEquals(st.viewportH / h, st.fitHeightZoom(), 1e-9) // no margin: the page fills the height
+
+        st.sideMargin = 20.0
+        st.relayout()
+        assertEquals(st.viewportH / (h + 40.0), st.fitHeightZoom(), 1e-9)
+    }
+
+    @Test fun zeroMarginFitHeightLeavesNoVerticalGap() {
+        val st = state()
+        st.verticalScroll = false
+        st.sideMargin = 0.0
+        st.relayout()
+        st.zoom = st.fitHeightZoom()
+        st.clampScroll()
+
+        val page = st.pageRects[0]
+        assertEquals(0.0, st.contentToViewport(Pt(0.0, page.top)).y, 1e-6)
+        assertEquals(st.viewportH.toDouble(), st.contentToViewport(Pt(0.0, page.bottom)).y, 1e-6)
+    }
+
+    @Test fun fitPageFollowsTheMarginPreference() {
+        val st = state()
+        st.verticalScroll = false
+        val page = st.document.pages[0]
+
+        st.sideMargin = 0.0
+        st.relayout()
+        st.fitPage()
+        assertEquals(min(st.viewportW / page.width, st.viewportH / page.height), st.zoom, 1e-9)
+
+        st.sideMargin = 20.0
+        st.relayout()
+        st.fitPage()
+        assertEquals(min(st.viewportW / (page.width + 40.0), st.viewportH / (page.height + 40.0)), st.zoom, 1e-9)
     }
 
     @Test fun resizeIsNoOpWhenNotFitToWidth() {

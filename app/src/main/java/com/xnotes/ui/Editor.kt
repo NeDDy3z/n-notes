@@ -1713,7 +1713,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             editor.applyPagePrefsToState(p)
             editor.republishFlow(invalidate = true)
             editor.state.invalidateAllCaches()
-            if (marginChanged) editor.state.fitWidth()
+            if (marginChanged) {
+                if (editor.state.fitHeightActive) editor.state.fitHeight() else editor.state.fitWidth()
+            }
             editor.refreshView()
             editor.prefsVersion++
             editor.view.requestRender()

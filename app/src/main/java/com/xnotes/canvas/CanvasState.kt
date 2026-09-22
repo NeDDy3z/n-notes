@@ -124,6 +124,11 @@ class CanvasState(
      *  rows alike — equal to [sideMargin] so spacing always matches the margin preference. */
     val pageGap: Double get() = sideMargin
 
+    /** Margin (content px) above and below the content. Paginated it follows [sideMargin], so a
+     *  0 px preference lets the fit-height magnet fill the viewport; vertical scrolling keeps the
+     *  fixed [MARGIN] that holds the first page clear of the toolbar. */
+    val vertMargin: Double get() = if (verticalScroll) MARGIN else sideMargin
+
     /** How pages group into layout rows (Single / Double / Cover); see [rowRanges]. */
     var viewingMode: ViewingMode = ViewingMode.SINGLE
 
@@ -483,7 +488,7 @@ class CanvasState(
         if (pages.isEmpty()) {
             pageRects = emptyList()
             contentW = 2 * sideMargin
-            contentH = 2 * MARGIN
+            contentH = 2 * vertMargin
             currentRow = 0
             return
         }
@@ -496,7 +501,7 @@ class CanvasState(
         if (verticalScroll) {
             // Rows stack top-down, centred against the widest row.
             val maxW = rowWidths.max()
-            var y = MARGIN // vertical top margin (keeps the page below the toolbar)
+            var y = vertMargin // vertical top margin (keeps the page below the toolbar)
             for ((ri, row) in rows.withIndex()) {
                 var x = sideMargin + (maxW - rowWidths[ri]) / 2.0
                 for (i in row) {
@@ -506,7 +511,7 @@ class CanvasState(
                 y += rowHeights[ri] + pageGap
             }
             contentW = maxW + 2 * sideMargin
-            contentH = (y - pageGap) + MARGIN
+            contentH = (y - pageGap) + vertMargin
         } else {
             // Paginated: rows run left-to-right in one strip, each top-aligned below the margin.
             val maxH = rowHeights.max()
@@ -514,13 +519,13 @@ class CanvasState(
             for ((ri, row) in rows.withIndex()) {
                 var rx = x
                 for (i in row) {
-                    rects[i] = Rect(rx, MARGIN + (rowHeights[ri] - displayH(pages[i])) / 2.0, displayW(pages[i]), displayH(pages[i]))
+                    rects[i] = Rect(rx, vertMargin + (rowHeights[ri] - displayH(pages[i])) / 2.0, displayW(pages[i]), displayH(pages[i]))
                     rx += displayW(pages[i]) + pageGap
                 }
                 x += rowWidths[ri] + pageGap
             }
             contentW = (x - pageGap) + sideMargin
-            contentH = maxH + 2 * MARGIN
+            contentH = maxH + 2 * vertMargin
         }
         pageRects = rects.map { it!! }
         currentRow = currentRow.coerceIn(0, rows.lastIndex)
@@ -633,7 +638,7 @@ class CanvasState(
         val minX = (rb.left - sideMargin) * zoom
         val maxX = (rb.right + sideMargin) * zoom - viewportW
         val cx = if (maxX < minX) (minX + maxX) / 2.0 else sx.coerceIn(minX, maxX)
-        val maxY = ((rb.bottom + MARGIN) * zoom - viewportH).coerceAtLeast(0.0)
+        val maxY = ((rb.bottom + vertMargin) * zoom - viewportH).coerceAtLeast(0.0)
         return Pt(cx, sy.coerceIn(0.0, maxY))
     }
 
@@ -709,8 +714,8 @@ class CanvasState(
      */
     fun isDocumentEndVisible(): Boolean {
         if (pageRects.isEmpty()) return false
-        // The last row's lowest edge is contentH - MARGIN whatever the viewing mode.
-        return contentToViewport(Pt(0.0, contentH - MARGIN)).y <= viewportH + 1.0
+        // The last row's lowest edge is contentH - vertMargin whatever the viewing mode.
+        return contentToViewport(Pt(0.0, contentH - vertMargin)).y <= viewportH + 1.0
     }
 
     /** The first page of the row after the one containing [from] (page-nav stepping). */
@@ -798,9 +803,10 @@ class CanvasState(
         val pages = document.pages
         if (zoomLocked || pages.isEmpty() || viewportH == 0) return
         val cur = currentPageIndex()
-        zoom = ((viewportH - 60.0) / displayH(pages[cur])).coerceIn(minZoom, maxZoom)
+        val magnet = fitHeightZoom() // paginated: land exactly where a pinch's height magnet does
+        zoom = if (magnet > 0.0) magnet else ((viewportH - 60.0) / displayH(pages[cur])).coerceIn(minZoom, maxZoom)
         fitWidthActive = false
-        fitHeightActive = false
+        fitHeightActive = magnet > 0.0
         invalidateCachesForZoom()
         goToPage(cur)
     }
@@ -810,7 +816,10 @@ class CanvasState(
         if (zoomLocked || pages.isEmpty() || viewportW == 0 || viewportH == 0) return
         val cur = currentPageIndex()
         val page = pages[cur]
-        zoom = min((viewportW - 60.0) / displayW(page), (viewportH - 60.0) / displayH(page)).coerceIn(minZoom, maxZoom)
+        val w = displayW(page) + 2 * sideMargin
+        val h = displayH(page) + 2 * vertMargin
+        if (w <= 0.0 || h <= 0.0) return
+        zoom = min(viewportW / w, viewportH / h).coerceIn(minZoom, maxZoom)
         fitWidthActive = false
         fitHeightActive = false
         invalidateCachesForZoom()
@@ -839,7 +848,7 @@ class CanvasState(
         if (verticalScroll || viewportH == 0) return 0.0
         val rows = rowRanges()
         if (rows.isEmpty()) return 0.0
-        val h = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).h + 2 * MARGIN
+        val h = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).h + 2 * vertMargin
         return if (h <= 0.0) 0.0 else (viewportH / h).coerceIn(minZoom, maxZoom)
     }
 
