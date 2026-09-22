@@ -32,6 +32,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -868,6 +870,35 @@ internal fun DropdownMenu(
         containerColor = palette.menuBg.toComposeColor(),
         border = BorderStroke(1.dp, palette.border.toComposeColor()),
         content = content,
+    )
+}
+
+/**
+ * The app's dialog: material's, pinned to the palette menu surface and given the same hairline
+ * border and 14dp corners the hand-rolled progress dialogs use, so a dialog reads against
+ * same-tone surfaces (the backstage, OLED black) and matches the menus. Shadows material3's
+ * composable for every same-package caller that doesn't import material's directly.
+ */
+@Composable
+internal fun AlertDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: (@Composable () -> Unit)? = null,
+    title: (@Composable () -> Unit)? = null,
+    text: (@Composable () -> Unit)? = null,
+    shape: Shape = RoundedCornerShape(14.dp),
+    containerColor: Color = LocalPalette.current.menuBg.toComposeColor(),
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = confirmButton,
+        modifier = modifier.border(1.dp, LocalPalette.current.border.toComposeColor(), shape),
+        dismissButton = dismissButton,
+        title = title,
+        text = text,
+        shape = shape,
+        containerColor = containerColor,
     )
 }
 

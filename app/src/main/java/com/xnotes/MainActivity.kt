@@ -803,7 +803,7 @@ private fun EditorScreen(
         val shareSuffix = remember(shareUri) {
             shareUri?.let { kindOf(it).suffix } ?: com.xnotes.core.util.DocumentKind.NOTE.suffix
         }
-        androidx.compose.material3.AlertDialog(
+        com.xnotes.ui.AlertDialog(
             onDismissRequest = { showShareChooser = false; pendingShareUri = null },
             title = { androidx.compose.material3.Text(stringResource(R.string.share_note)) },
             text = { androidx.compose.material3.Text(stringResource(R.string.share_as, shareUri?.let { stemOf(it) } ?: "")) },
@@ -827,7 +827,7 @@ private fun EditorScreen(
     guardAction?.let { request ->
         val guarded = request.editor
         val action = request.action
-        androidx.compose.material3.AlertDialog(
+        com.xnotes.ui.AlertDialog(
             onDismissRequest = { guardAction = null },
             title = { androidx.compose.material3.Text(stringResource(R.string.unsaved_changes)) },
             text = { androidx.compose.material3.Text(stringResource(R.string.unsaved_changes_prompt, guarded.title)) },
