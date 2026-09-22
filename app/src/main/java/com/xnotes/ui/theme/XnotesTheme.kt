@@ -90,6 +90,9 @@ internal fun Palette.composeColorScheme(): ColorScheme {
         onError = m.onError.toComposeColor(),
         errorContainer = m.errorContainer.toComposeColor(),
         onErrorContainer = m.onErrorContainer.toComposeColor(),
+        // The scheme's own outline, not palette.border: Material draws switch thumbs and
+        // unfocused text-field borders with it, and the muted hairline makes them invisible.
+        outline = m.outline.toComposeColor(),
         outlineVariant = m.outlineVariant.toComposeColor(),
         scrim = m.scrim.toComposeColor(),
         primaryFixed = m.primaryFixed.toComposeColor(),
