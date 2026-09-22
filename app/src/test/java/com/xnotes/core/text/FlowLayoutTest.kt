@@ -2,6 +2,7 @@ package com.xnotes.core.text
 
 import com.xnotes.core.FakeTextMeasurer
 import com.xnotes.core.pal.FontFace
+import com.xnotes.core.pal.LineMetrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -158,4 +159,39 @@ class FlowLayoutTest {
         assertEquals(after.ascent, before.ascent, 1e-9)
     }
 
+    // --- the caret's pending-style preview ---
+
+    @Test
+    fun aTallerPendingStyleNeverLiftsTheCaretAboveItsLine() {
+        // "/size 18" on a 12pt line: the baseline moves down when the first character
+        // lands, so measuring up from today's baseline drew the caret too high and it
+        // dropped after a keystroke or two.
+        val lineTop = 100.0
+        val baseline = lineTop + 12.0
+        val (top, height) = caretPreviewSpan(lineTop, baseline, LineMetrics(ascent = 24.0, descent = 7.2))
+        assertEquals(lineTop, top, 1e-9)
+        assertEquals(31.2, height, 1e-9)
+    }
+
+    @Test
+    fun aTallerPendingStyleLandsWhereTheTypedCharacterWill() {
+        // Once the bigger glyph is in, the line's ascent is the pending one and the
+        // caret sits at the line top: the preview has to already be there.
+        val lineTop = 40.0
+        val pending = LineMetrics(ascent = 24.0, descent = 7.2)
+        val (preview, _) = caretPreviewSpan(lineTop, lineTop + 12.0, pending)
+        val (settled, _) = caretPreviewSpan(lineTop, lineTop + pending.ascent, pending)
+        assertEquals(settled, preview, 1e-9)
+    }
+
+    @Test
+    fun aShorterPendingStyleStillSitsOnTheBaseline() {
+        // The line does not shrink around it, so a smaller caret hangs off the baseline
+        // rather than floating at the top of a line it no longer fills.
+        val lineTop = 10.0
+        val baseline = lineTop + 24.0
+        val (top, height) = caretPreviewSpan(lineTop, baseline, LineMetrics(ascent = 12.0, descent = 3.6))
+        assertEquals(baseline - 12.0, top, 1e-9)
+        assertEquals(15.6, height, 1e-9)
+    }
 }

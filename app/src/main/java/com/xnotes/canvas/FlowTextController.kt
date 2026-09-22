@@ -12,6 +12,7 @@ import com.xnotes.core.history.History
 import com.xnotes.core.history.ParaSnapshot
 import com.xnotes.core.model.Page
 import com.xnotes.core.text.CellIndex
+import com.xnotes.core.text.caretPreviewSpan
 import com.xnotes.core.text.CharStyle
 import com.xnotes.core.text.FlowEditor
 import com.xnotes.core.text.FlowFrame
@@ -653,8 +654,9 @@ class FlowTextController(
             pendingStyle?.let { pending ->
                 caretMetricsFor?.invoke(pending)?.let { m ->
                     val baseline = f.placedLineFor(selection.end)?.second?.baseline ?: (cr.top + cr.h)
-                    top = baseline - m.ascent
-                    height = m.height
+                    val span = caretPreviewSpan(cr.top, baseline, m)
+                    top = span.first
+                    height = span.second
                 }
             }
             val w = (FlowFrame.CARET_WIDTH / state.zoom).coerceAtLeast(0.75)
