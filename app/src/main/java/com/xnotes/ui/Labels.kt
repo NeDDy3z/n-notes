@@ -11,6 +11,7 @@ import com.xnotes.R
 import com.xnotes.core.model.PageEdge
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.pal.FontFace
+import com.xnotes.core.text.TableBorders
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.platform.FontCatalog
@@ -87,6 +88,15 @@ val PageEdge.labelRes: Int
         PageEdge.RIGHT -> R.string.edge_right
         PageEdge.TOP -> R.string.edge_top
         PageEdge.BOTTOM -> R.string.edge_bottom
+    }
+
+@get:StringRes
+val TableBorders.labelRes: Int
+    get() = when (this) {
+        TableBorders.ALL -> R.string.table_borders_all
+        TableBorders.OUTER -> R.string.table_borders_outer
+        TableBorders.HORIZONTAL -> R.string.table_borders_rows
+        TableBorders.NONE -> R.string.table_borders_none
     }
 
 @Composable

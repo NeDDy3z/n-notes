@@ -7,6 +7,9 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.FlowDefaults
 import com.xnotes.core.text.FlowMargins
+import com.xnotes.core.text.TableBorders
+import com.xnotes.core.text.TableDefaults
+import com.xnotes.core.text.TableStyle
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
@@ -75,6 +78,8 @@ data class Settings(
     val newNoteFlow: FlowDefaults = FlowDefaults(),
     /** Background stamped onto every newly created canvas; null ⇒ none saved. */
     val newCanvasBackground: CanvasBackground? = null,
+    /** Size and look the insert-table dialog starts from ("Default for new tables"). */
+    val newTable: TableDefaults = TableDefaults(),
     val prefs: Preferences = Preferences(),
     /** One-shot flag: the first-run stylus check (which may auto-enable finger-draw) has run. */
     val fingerDrawAutoChecked: Boolean = false,
@@ -113,6 +118,7 @@ data class Settings(
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .apply { if (!newNoteFlow.isEmpty) put("new_note_flow", flowDefaultsJson(newNoteFlow)) }
             .apply { newCanvasBackground?.let { put("new_canvas_background", canvasBackgroundJson(it)) } }
+            .apply { if (!newTable.isFactory) put("new_table", tableDefaultsJson(newTable)) }
             .put("prefs", prefs.toJson())
             .put("view_defaults", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaults))
             .put("finger_draw_auto_checked", fingerDrawAutoChecked)
@@ -168,6 +174,7 @@ data class Settings(
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 newNoteFlow = flowDefaults(o.optJSONObject("new_note_flow")),
                 newCanvasBackground = canvasBackground(o.optJSONObject("new_canvas_background")),
+                newTable = tableDefaults(o.optJSONObject("new_table")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
                 fingerDrawAutoChecked = o.optBoolean("finger_draw_auto_checked", false),
             )
@@ -265,6 +272,35 @@ data class Settings(
                     rightMm = o.optDouble("margin_right_mm", FlowMargins.DEFAULT_MM),
                     bottomMm = o.optDouble("margin_bottom_mm", FlowMargins.DEFAULT_MM),
                 ),
+            )
+        }
+
+        private fun tableDefaultsJson(d: TableDefaults) = JSONObject()
+            .put("rows", d.rows)
+            .put("cols", d.cols)
+            .put("padding_pt", d.style.paddingPt)
+            .put("line_width_pt", d.style.lineWidthPt)
+            .put("borders", d.style.borders.id)
+            .put("header_row", d.style.headerRow)
+            .put("banded", d.style.banded)
+            .apply { d.style.lineColor?.let { put("line_color", rgbaArr(it)) } }
+            .apply { d.style.tint?.let { put("tint", rgbaArr(it)) } }
+
+        private fun tableDefaults(o: JSONObject?): TableDefaults {
+            if (o == null) return TableDefaults()
+            val d = TableDefaults()
+            return TableDefaults(
+                rows = o.optInt("rows", d.rows).coerceIn(1, TableDefaults.MAX_ROWS),
+                cols = o.optInt("cols", d.cols).coerceIn(1, TableDefaults.MAX_COLS),
+                style = TableStyle(
+                    paddingPt = o.optDouble("padding_pt", d.style.paddingPt),
+                    lineColor = rgba(o.optJSONArray("line_color")),
+                    lineWidthPt = o.optDouble("line_width_pt", d.style.lineWidthPt),
+                    borders = TableBorders.fromId(o.optString("borders", "")),
+                    headerRow = o.optBoolean("header_row", false),
+                    banded = o.optBoolean("banded", false),
+                    tint = rgba(o.optJSONArray("tint")),
+                ).clamped(),
             )
         }
 

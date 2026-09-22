@@ -83,8 +83,16 @@ class FlowInput(
                     flow().posAtGlobal(start + old.length - suf),
                 )
                 applyingFromMirror = true
+                session.mirrorStale = false
                 session.applyReplace(range, insert)
                 applyingFromMirror = false
+            }
+            if (session.mirrorStale) {
+                // A table boundary made the model diverge: keep its caret, rebuild the mirror
+                // once the connection is done with this change.
+                session.mirrorStale = false
+                view.post { resync() }
+                return
             }
             // The connection has already placed the mirror's selection; adopt it as truth.
             val selS = Selection.getSelectionStart(mirror).coerceAtLeast(0)
@@ -135,10 +143,22 @@ class FlowInput(
      */
     fun reconcile() {
         if (!session.active) return
+        if (session.mirrorStale && !applyingFromMirror) {
+            session.mirrorStale = false
+            resync()
+            return
+        }
         if (applyingFromMirror || mirror.toString() == flow().plainText()) {
             onCaretMovedExternally(finishComposing = false)
             return
         }
+        rebuildMirror()
+        imm()?.restartInput(view)
+    }
+
+    /** Rebuild the mirror from the model unconditionally and restart input. */
+    private fun resync() {
+        if (!session.active) return
         rebuildMirror()
         imm()?.restartInput(view)
     }

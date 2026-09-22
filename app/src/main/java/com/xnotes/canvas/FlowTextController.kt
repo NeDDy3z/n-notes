@@ -11,6 +11,7 @@ import com.xnotes.core.history.FlowEditParagraph
 import com.xnotes.core.history.History
 import com.xnotes.core.history.ParaSnapshot
 import com.xnotes.core.model.Page
+import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.CharStyle
 import com.xnotes.core.text.FlowEditor
 import com.xnotes.core.text.FlowFrame
@@ -18,6 +19,7 @@ import com.xnotes.core.text.FlowHit
 import com.xnotes.core.text.FlowPos
 import com.xnotes.core.text.FlowRange
 import com.xnotes.core.text.Paragraph
+import com.xnotes.core.text.SelShape
 import com.xnotes.core.text.TextFlow
 import com.xnotes.core.text.wordRangeAt
 import kotlin.math.abs
@@ -72,6 +74,22 @@ class FlowTextController(
 
     /** A long-press gesture finished: open the editing context menu at this viewport point. */
     var onContextMenu: (Pt) -> Unit = {}
+
+    /** A long press held a table itself (fired while the finger is still down): open its menu. */
+    var onTableHold: (com.xnotes.core.text.FlowTable) -> Unit = {}
+
+    // a long press that held the table itself (a rule, padding, empty cell space): no text selection
+    private var tableHold = false
+
+    /** While true (a table in structure-edit mode) presses skip the text: a tap calls [onGatedTap], a drag pans. */
+    var gated: () -> Boolean = { false }
+
+    var onGatedTap: () -> Unit = {}
+
+    private var pressGated = false
+
+    /** Set when an edit landed differently from the plain-text replace the IME mirror assumed. */
+    var mirrorStale = false
 
     /** Metrics of the font [pendingStyle] resolves to, so the caret previews it before typing. */
     var caretMetricsFor: ((CharStyle) -> com.xnotes.core.pal.LineMetrics)? = null
@@ -157,6 +175,9 @@ class FlowTextController(
     fun pressAt(content: Pt, viewport: Pt) {
         pressViewport = viewport
         pressContent = content
+        pressGated = gated()
+        tableHold = false
+        if (pressGated) return
         selectionArmed = false
         armedAnchor = null
         // Grabbing a selection handle resizes the selection from its other end.
@@ -183,9 +204,23 @@ class FlowTextController(
         handler.postDelayed(longPressRun, LONG_PRESS_MS)
     }
 
-    /** Long press while still: arm selection on the word under the finger (the release opens the menu). */
+    /**
+     * Long press while still: arm selection on the word under the finger (the
+     * release opens the menu). A press on a table itself rather than its text
+     * selects nothing and opens the table's menu right away.
+     */
     private fun onLongPressFired() {
         val anchor = pressAnchor ?: return
+        val held = pagePointAt(pressContent)?.let { (pi, local) ->
+            frame()?.tablePressAt(pi, local, TABLE_RULE_SLOP_DP * state.devicePxPerDp / state.zoom)
+        }
+        if (held != null && !held.second) {
+            tableHold = true
+            onHaptic()
+            onTableHold(held.first)
+            requestRender()
+            return
+        }
         if (!active) startSession(FlowRange.caret(anchor))
         if (pressHit == FlowHit.BeyondEnd) {
             // Below the text: place the caret on the pressed line (empty-line fill) instead.
@@ -210,6 +245,8 @@ class FlowTextController(
      * rest of the gesture to its pan mode.
      */
     fun dragTo(content: Pt, viewport: Pt): Boolean {
+        if (pressGated) return viewport.distanceTo(pressViewport) > DRAG_SLOP
+        if (tableHold) return false
         if (draggingHandle != null || selectionArmed) {
             lastDragViewport = viewport
             updateDragSelection(viewport)
@@ -268,6 +305,18 @@ class FlowTextController(
     fun release(content: Pt, viewport: Pt, timeMs: Long) {
         handler.removeCallbacks(longPressRun)
         stopAutoscroll()
+        if (pressGated) {
+            pressGated = false
+            onGatedTap()
+            requestRender()
+            return
+        }
+        if (tableHold) {
+            tableHold = false
+            pressHit = null
+            pressAnchor = null
+            return
+        }
         val hit = pressHit
         pressHit = null
         pressAnchor = null
@@ -375,6 +424,16 @@ class FlowTextController(
      */
     fun applyReplace(range: FlowRange, text: String, style: CharStyle? = null): FlowPos {
         val r = range.normalized()
+        if (r.start.para != r.end.para) {
+            val cells = CellIndex(flow().paragraphs)
+            if (cells.shapeOf(r) != SelShape.Text) {
+                // The model will not do what the mirror just did: resync it afterwards.
+                mirrorStale = true
+                // Only a selection the user made may cross cells; a caret's backspace or
+                // delete eating a cell or table boundary is refused.
+                if (r != selection.normalized()) return selection.end
+            }
+        }
         val para = flow().paragraphs.getOrNull(r.start.para)
         // The armed style is only spent on text that actually lands; a deletion keeps it.
         val effStyle = style ?: (if (text.isNotEmpty()) pendingStyle?.also { pendingStyle = null } else null)
@@ -626,6 +685,9 @@ class FlowTextController(
         val LONG_PRESS_MS = android.view.ViewConfiguration.getLongPressTimeout().toLong()
 
         const val HANDLE_RADIUS_DP = 8.0
+
+        /** A long press this close to a table rule holds the table, even over text. */
+        const val TABLE_RULE_SLOP_DP = 6.0
         const val HANDLE_HIT_DP = 26.0
         const val AUTOSCROLL_ZONE_DP = 56.0
         const val AUTOSCROLL_MAX_DP = 14.0

@@ -481,6 +481,29 @@
     <string name="margins_mm">Margins (mm)</string>
     <string name="done">Done</string>
 
+    <!-- Tables -->
+    <string name="insert_table">Insert table</string>
+    <string name="table_style">Table style</string>
+    <string name="edit_table">Edit table</string>
+    <string name="fit_columns">Fit columns</string>
+    <string name="delete_table">Delete table</string>
+    <string name="table_rows">Rows</string>
+    <string name="table_columns">Columns</string>
+    <string name="table_padding">Padding</string>
+    <string name="table_lines">Lines</string>
+    <string name="table_line_colour">Line colour</string>
+    <string name="table_header_row">Header row</string>
+    <string name="table_banded_rows">Banded rows</string>
+    <string name="table_tint">Tint</string>
+    <string name="default_for_new_tables">Default for new tables</string>
+    <string name="table_borders_all">All</string>
+    <string name="table_borders_outer">Outer</string>
+    <string name="table_borders_rows">Rows</string>
+    <string name="table_borders_none">None</string>
+    <string name="table_pt_value">%1$s pt</string>
+    <string name="insert">Insert</string>
+    <string name="move">Move</string>
+
     <!-- Canvas styles and waypoints -->
     <string name="caption_spacing">SPACING</string>
     <string name="caption_paper">PAPER</string>

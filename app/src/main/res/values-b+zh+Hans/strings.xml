@@ -467,6 +467,29 @@
     <string name="margins_mm">页边距（毫米）</string>
     <string name="done">完成</string>
 
+    <!-- Tables -->
+    <string name="insert_table">插入表格</string>
+    <string name="table_style">表格样式</string>
+    <string name="edit_table">编辑表格</string>
+    <string name="fit_columns">自适应列宽</string>
+    <string name="delete_table">删除表格</string>
+    <string name="table_rows">行数</string>
+    <string name="table_columns">列数</string>
+    <string name="table_padding">内边距</string>
+    <string name="table_lines">线宽</string>
+    <string name="table_line_colour">线条颜色</string>
+    <string name="table_header_row">标题行</string>
+    <string name="table_banded_rows">隔行底色</string>
+    <string name="table_tint">色调</string>
+    <string name="default_for_new_tables">设为新表格默认样式</string>
+    <string name="table_borders_all">全部</string>
+    <string name="table_borders_outer">外框</string>
+    <string name="table_borders_rows">横线</string>
+    <string name="table_borders_none">无</string>
+    <string name="table_pt_value">%1$s 磅</string>
+    <string name="insert">插入</string>
+    <string name="move">移动</string>
+
     <!-- Canvas styles and waypoints -->
     <string name="caption_spacing">间距</string>
     <string name="caption_paper">纸张</string>

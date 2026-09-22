@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.GridOff
+import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -384,5 +387,53 @@ fun FlowEditMenu(editor: Editor) {
         ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), enabled = hasSelection) {
             editor.flowDeleteSelection(); editor.dismissFlowContextMenu()
         }
+    }
+}
+
+private const val TABLE_BAR_ICONS = 4
+
+/**
+ * Where the table bar sits in viewport px: centred over the top of the table's
+ * first slice and kept on screen (it overlaps the table rather than leave the
+ * top of the view). Null when the table is not laid out.
+ */
+private fun tableBarRect(editor: Editor, table: com.xnotes.core.text.FlowTable, density: androidx.compose.ui.unit.Density): androidx.compose.ui.geometry.Rect? {
+    editor.tableChromeTick
+    val (pi, frag) = editor.tableFrags(table).firstOrNull() ?: return null
+    val t = editor.pageRectToViewport(pi, frag.rect) ?: return null
+    val w = with(density) { (TABLE_BAR_ICONS * 46).dp.toPx() }
+    val h = with(density) { 48.dp.toPx() }
+    val margin = with(density) { 8.dp.toPx() }
+    val gap = with(density) { 10.dp.toPx() }
+    val x = (((t.left + t.right) / 2.0).toFloat() - w / 2f).coerceAtLeast(margin)
+    val y = (t.top.toFloat() - h - gap).coerceAtLeast(margin)
+    return androidx.compose.ui.geometry.Rect(x, y, x + w, y + h)
+}
+
+/**
+ * The table's action bar: edit its structure, fit its columns (the magic wand),
+ * restyle it, delete it. Opens the moment a long press holds the table itself
+ * (a rule, padding, empty cell space), above the table whatever part was
+ * pressed. Like the text bar it never takes focus; the next canvas touch
+ * retires it.
+ */
+@Composable
+fun FlowTableMenu(editor: Editor) {
+    val table = editor.tableMenu ?: return
+    if (editor.editingTable != null) return
+    val palette = LocalPalette.current
+    val density = LocalDensity.current
+    val bar = tableBarRect(editor, table, density) ?: return
+    Row(
+        modifier = Modifier
+            .offset(with(density) { bar.left.toDp() }, with(density) { bar.top.toDp() })
+            .clip(RoundedCornerShape(10.dp))
+            .background(palette.menuBg.toComposeColor())
+            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
+    ) {
+        ActionIcon(XnotesIcons.tableEdit, stringResource(R.string.edit_table)) { editor.startTableEdit(table) }
+        ActionIcon(XnotesIcons.magicWand, stringResource(R.string.fit_columns)) { editor.tableAutoFit(table) }
+        ActionIcon(Icons.Outlined.TableChart, stringResource(R.string.table_style)) { editor.openTableStyle(table) }
+        ActionIcon(Icons.Outlined.GridOff, stringResource(R.string.delete_table)) { editor.tableDelete(table) }
     }
 }

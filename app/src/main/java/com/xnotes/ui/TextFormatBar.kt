@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.outlined.CheckBox
+import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -75,7 +76,8 @@ import kotlin.math.roundToInt
  * adjustResize window floats it directly above the soft keyboard. Controls, in
  * order: checkbox item, font colour, highlight, font face, size, bold/italic/
  * underline/strikethrough, ordered and unordered lists, code block (tap toggles,
- * long-press picks the language), alignment (cycles), indent, outdent. Centred
+ * long-press picks the language), table, alignment (cycles), indent, outdent.
+ * Inside a table cell the list, code, table and indent controls disable. Centred
  * when it fits, scrollable when it does not.
  */
 @Composable
@@ -86,6 +88,8 @@ fun TextFormatBar(editor: Editor) {
     editor.contentVersion
     val style = editor.flowCaretStyle()
     val para = editor.flowCaretParagraph()
+    val inCell = para?.table != null
+    var tableDialog by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -96,7 +100,7 @@ fun TextFormatBar(editor: Editor) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK) {
+        BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK, enabled = !inCell) {
             editor.flowToggleList(ListKind.CHECK)
         }
         BarDivider()
@@ -111,22 +115,26 @@ fun TextFormatBar(editor: Editor) {
         BarIcon(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), active = style.underline) { editor.flowToggleUnderline() }
         BarIcon(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), active = style.strike) { editor.flowToggleStrike() }
         BarDivider()
-        BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED) {
+        BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED, enabled = !inCell) {
             editor.flowToggleList(ListKind.ORDERED)
         }
-        BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET) {
+        BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET, enabled = !inCell) {
             editor.flowToggleList(ListKind.BULLET)
         }
-        CodeBlockButton(editor, para?.codeLang)
+        CodeBlockButton(editor, para?.codeLang, enabled = !inCell)
+        BarIcon(Icons.Outlined.TableChart, stringResource(R.string.insert_table), enabled = editor.flowEditingActive && !inCell) {
+            tableDialog = true
+        }
         BarDivider()
         BarIcon(alignIcon(para?.align ?: ParaAlign.LEFT), stringResource(R.string.alignment), active = para != null && para.align != ParaAlign.LEFT) {
             editor.flowCycleAlign()
         }
-        BarIcon(Icons.AutoMirrored.Filled.FormatIndentIncrease, stringResource(R.string.indent)) { editor.flowIndent(1) }
+        BarIcon(Icons.AutoMirrored.Filled.FormatIndentIncrease, stringResource(R.string.indent), enabled = !inCell) { editor.flowIndent(1) }
         BarIcon(Icons.AutoMirrored.Filled.FormatIndentDecrease, stringResource(R.string.outdent), enabled = (para?.indent ?: 0) > 0) {
             editor.flowIndent(-1)
         }
     }
+    if (tableDialog) TableDialog(editor, null) { tableDialog = false }
 }
 
 private fun alignIcon(align: ParaAlign): ImageVector = when (align) {
@@ -150,7 +158,7 @@ private fun shortLangLabel(lang: String): String = when (lang) {
  *  While on, the icon gives way to the active language's short form. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CodeBlockButton(editor: Editor, lang: String?) {
+private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
     val palette = LocalPalette.current
     var menuOpen by remember { mutableStateOf(false) }
     Box {
@@ -159,6 +167,7 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
                 .size(44.dp)
                 .clip(CircleShape)
                 .combinedClickable(
+                    enabled = enabled,
                     onClick = { editor.flowToggleCode() },
                     onLongClick = { menuOpen = true },
                 ),
@@ -176,7 +185,7 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
                 Icon(
                     Icons.Filled.Code,
                     contentDescription = stringResource(R.string.code_block),
-                    tint = palette.textDim.toComposeColor(),
+                    tint = if (enabled) palette.textDim.toComposeColor() else com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor(),
                     modifier = Modifier.size(22.dp),
                 )
             }

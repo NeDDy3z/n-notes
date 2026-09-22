@@ -49,6 +49,7 @@ import com.xnotes.core.model.resolvedPageColor
 import com.xnotes.core.model.resolvedPattern
 import com.xnotes.core.model.resolvedPatternColor
 import com.xnotes.core.model.resolvedSpacing
+import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.CharStyle
 import com.xnotes.core.text.FlowDefaults
 import com.xnotes.core.text.FlowEditor
@@ -62,6 +63,12 @@ import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.text.ParaAlign
 import com.xnotes.core.text.Paragraph
+import com.xnotes.core.text.FlowTable
+import com.xnotes.core.text.TableDefaults
+import com.xnotes.core.text.TableEditor
+import com.xnotes.core.text.TableSnapshot
+import com.xnotes.core.text.TableStyle
+import com.xnotes.core.text.withTableSeparators
 import com.xnotes.core.text.wordBoundary
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
@@ -298,6 +305,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private var highlightJob: kotlinx.coroutines.Job? = null
 
     @Volatile private var publishedFlow: PublishedFlow? = null
+
+    // Declared this early because the constructor already republishes the flow, which reads them.
+
+    /** The table in structure-edit mode (handles and row/column chrome over it), or null. */
+    var editingTable by mutableStateOf<FlowTable?>(null)
+        private set
+
+    /** Bumped whenever the table chrome must re-place itself (layout or view moved). */
+    var tableChromeTick by mutableStateOf(0)
+        private set
+
+    /** The table whose action bar is up (a long press landed in it), or null. */
+    var tableMenu by mutableStateOf<FlowTable?>(null)
+        private set
     private var publishedFlowStamp = -1L
     private var publishedPageList: List<Page> = emptyList()
     /** Each pane keeps its working session in its own slot, so two open notes never overwrite
@@ -765,7 +786,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onFitWidthSnapped = { showZoomLockHint() },
         onFitWidthReleased = { hideZoomLockHint() },
         onSelectionChanged = { selected -> hasSelection = selected; refreshTextBar() },
-        onToolChanged = { t -> tool = t },
+        onToolChanged = { t ->
+            tool = t
+            if (t != Tool.TEXT) {
+                endTableEdit()
+                tableMenu = null
+            }
+        },
         onTextEditStart = { field -> editingField = field; refreshTextBar() },
         onTextEditEnd = { editingField = null; refreshTextBar() },
         onSelectionMenu = { rect -> selectionMenu = rect },
@@ -796,6 +823,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             flowContextMenu = null
         }
         ctrl.onContextMenu = { viewport -> flowContextMenu = flowMenuAnchor(viewport) }
+        ctrl.gated = { tableEditLive() }
+        ctrl.onTableHold = { table ->
+            tableMenu = table
+            tableChromeTick++
+        }
+        ctrl.onGatedTap = { endTableEdit() }
         ctrl.caretMetricsFor = { style ->
             val flow = state.document.flow
             val para = flow.paragraphs.getOrNull(ctrl.selection.normalized().start.para) ?: Paragraph()
@@ -864,12 +897,21 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!flowText.active) return
         val text = clipboardText() ?: return
         val caretSize = flowCaretStyle().sizePt
-        val paras = com.xnotes.core.text.MarkdownParser.parse(text, caretSize ?: flowDefaultSizePt())
+        val paras = com.xnotes.core.text.MarkdownParser.parse(text, caretSize ?: flowDefaultSizePt(), newTableDefaults.style)
         if (caretSize != null) {
             for (p in paras) {
                 for (run in p.runs) {
                     if (run.style.sizePt == null) run.style = run.style.copy(sizePt = caretSize)
                 }
+            }
+        }
+        // Pasted tables arrive with their text, so their columns can be fitted up front.
+        val frame = publishedFlow?.frame
+        val page = frame?.caretRect(flowText.selection.end)?.first ?: 0
+        frame?.pages?.getOrNull(page)?.contentRect?.w?.let { width ->
+            val cells = CellIndex(paras)
+            for (b in cells.tables) {
+                b.table.widths = flowLayout.fitColumns(state.document.flow, b.grid(paras), b.table.style, width)
             }
         }
         insertFlowParagraphs(paras)
@@ -891,9 +933,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         )
     }
 
-    /** Splice ready-made paragraphs at the caret as one undo step (rich paste). */
-    private fun insertFlowParagraphs(paras: List<Paragraph>) {
-        if (paras.isEmpty()) return
+    /**
+     * Splice ready-made paragraphs at the caret as one undo step (rich paste). Inside a
+     * table cell they join the cell as plain rich text (a pasted table flattens); in body
+     * text any pasted table gets the empty lines it needs around it.
+     */
+    private fun insertFlowParagraphs(input: List<Paragraph>) {
+        if (input.isEmpty()) return
         flowText.flushBurst()
         val flow = state.document.flow
         val ed = FlowEditor(flow)
@@ -906,20 +952,37 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             p = np
         }
         val caretPara = flow.paragraphs.getOrNull(p.para)
+        val cellTable = caretPara?.table
+        var paras: List<Paragraph> = if (cellTable == null) input else input.onEach {
+            it.table = cellTable
+            it.cellStart = false
+            it.list = ListKind.NONE
+            it.checked = false
+            it.codeLang = null
+            it.indent = 0
+        }
         val lastIndex: Int
         when {
             caretPara == null -> {
+                paras = withTableSeparators(paras, null, null)
                 cmds.add(ed.insertParagraphs(0, paras))
                 lastIndex = paras.size - 1
             }
+            cellTable != null && caretPara.length == 0 -> {
+                paras.first().cellStart = caretPara.cellStart
+                cmds.add(ed.replaceParagraphs(p.para, 1, paras))
+                lastIndex = p.para + paras.size - 1
+            }
             caretPara.length == 0 && caretPara.isDefaultStyle() -> {
                 // Pasting on an empty plain line replaces it, so no stray blank stays above.
+                paras = withTableSeparators(paras, flow.paragraphs.getOrNull(p.para - 1), flow.paragraphs.getOrNull(p.para + 1))
                 cmds.add(ed.replaceParagraphs(p.para, 1, paras))
                 lastIndex = p.para + paras.size - 1
             }
             else -> {
                 val (c2, _) = ed.replaceRange(FlowRange.caret(p), "\n")
                 c2?.let(cmds::add)
+                paras = withTableSeparators(paras, flow.paragraphs.getOrNull(p.para), flow.paragraphs.getOrNull(p.para + 1))
                 cmds.add(ed.insertParagraphs(p.para + 1, paras))
                 lastIndex = p.para + paras.size
             }
@@ -936,6 +999,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * refresh path so the baked layer and chrome follow.
      */
     private fun onFlowChanged(live: Boolean) {
+        tableMenu = null
         state.document.dirty = true
         republishFlow(invalidate = !live)
         if (live) onRender() else refreshContent()
@@ -970,7 +1034,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     init {
         view.input = { ev ->
             // Any fresh canvas touch quietly retires the flow action bar and still does its job.
-            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) flowContextMenu = null
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                flowContextMenu = null
+                tableMenu = null
+            }
             controller.onTouch(ev)
         }
         view.onTwoFingerTap = { dispatchTapGesture(preferences.twoFingerTap) }
@@ -1261,6 +1328,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         flowLayout.codeBackground = { activeCodeTheme().background }
         flowLayout.autoColor = { defaultTextColor() }
+        flowLayout.accentColor = { palette.accent }
+        flowLayout.ruleColor = { tableRuleColor() }
     }
 
     /**
@@ -1344,6 +1413,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         doc.pages.forEachIndexed { i, p -> index[p] = i }
         publishedFlow = PublishedFlow(frame, index)
         publishedFlowStamp = flowStamp()
+        if (editingTable != null || tableMenu != null) tableChromeTick++
         publishedPageList = doc.pages.toList()
         scheduleHighlight()
         if (invalidate) {
@@ -1507,6 +1577,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val theme = activeCodeTheme()
         layout.codeBackground = { theme.background }
         layout.autoColor = { defaultTextColor() }
+        val accent = palette.accent
+        layout.accentColor = { accent }
+        val rule = tableRuleColor()
+        layout.ruleColor = { rule }
         val hl = highlighter ?: return layout
         val spans = HashMap<Paragraph, List<com.xnotes.core.text.CodeSpan>>()
         var i = 0
@@ -1885,6 +1959,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun refreshView() {
+        if (editingTable != null || tableMenu != null) tableChromeTick++
         zoomPercent = (state.zoom * 100).roundToInt()
         pageIndex = state.currentPageIndex()
         warmVisibleLinks(pageIndex)
@@ -4979,7 +5054,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!preview) color?.let { settings = settings.rememberColor(it) }
     }
 
-    fun escape() = controller.escape()
+    fun escape() {
+        if (editingTable != null) endTableEdit() else controller.escape()
+    }
 
     fun toggleSidebar() {
         sidebarVisible = !sidebarVisible
@@ -5077,7 +5154,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 flowText.applyReplace(flowText.selection, "\n")
             e.keyCode == android.view.KeyEvent.KEYCODE_DEL -> flowDeleteKey(forward = false)
             e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> flowDeleteKey(forward = true)
-            e.keyCode == android.view.KeyEvent.KEYCODE_TAB -> flowText.applyReplace(flowText.selection, "\t")
+            e.keyCode == android.view.KeyEvent.KEYCODE_TAB ->
+                if (!flowTabCell(back = shift)) flowText.applyReplace(flowText.selection, "\t")
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT -> flowMoveHorizontal(-1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> flowMoveHorizontal(1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> flowMoveVertical(-1, shift)
@@ -5241,6 +5319,171 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun flowIndent(delta: Int) = flowParaOp { it.indent += delta }
 
+    // --- flow tables ---
+
+    /** The size and look new tables start from (factory values = nothing saved). */
+    var newTableDefaults by mutableStateOf(settings.newTable)
+        private set
+
+    /** Save (or, passing factory values, forget) what the insert dialog starts from. */
+    fun saveNewTableDefaults(d: TableDefaults) {
+        if (newTableDefaults == d) return
+        newTableDefaults = d
+        settings = settings.copy(newTable = d)
+        settingsRepo.save(settings)
+    }
+
+    /** A table's Auto rule colour: a grey, lighter on dark paper and darker on light paper. */
+    fun tableRuleColor(): Rgba = if (palette.isDark) Rgba(140, 140, 140) else Rgba(100, 100, 100)
+
+    /** The table the caret or selection start sits in, or null. */
+    fun flowCaretTable(): FlowTable? = flowCaretParagraph()?.table
+
+    /** Insert an empty table at the caret (never inside another table) as one undo step. */
+    fun flowInsertTable(rows: Int, cols: Int, style: TableStyle) {
+        if (!flowText.active) return
+        flowText.flushBurst()
+        val (cmd, caret) = TableEditor(state.document.flow).insertTable(
+            flowText.selection.normalized().end,
+            rows.coerceIn(1, TableDefaults.MAX_ROWS),
+            cols.coerceIn(1, TableDefaults.MAX_COLS),
+            style.clamped(),
+        ) ?: return
+        flowText.commitEdit(cmd, caret)
+        flowText.requestIme() // the dialog took the keyboard; the new first cell wants it back
+        flowSelTick++
+    }
+
+    /** The table whose style dialog is open (from its long-press menu), or null. */
+    var tableStyling by mutableStateOf<FlowTable?>(null)
+        private set
+
+    fun openTableStyle(table: FlowTable) {
+        dismissTableMenus()
+        tableStyling = table
+    }
+
+    fun dismissTableMenu() {
+        tableMenu = null
+    }
+
+    /** Both action bars go when a table action runs. */
+    private fun dismissTableMenus() {
+        flowContextMenu = null
+        tableMenu = null
+    }
+
+    fun closeTableStyle() {
+        tableStyling = null
+        flowReshowIme()
+    }
+
+    /** A dialog took the keyboard from a live caret: give it back. */
+    fun flowReshowIme() {
+        if (flowText.active) flowText.requestIme()
+    }
+
+    /**
+     * Enter structure-edit mode on [table]. The caret session ends (keyboard away,
+     * cells not writable) but the flow stays lifted out of the page caches, so the
+     * live previews of width and height drags repaint without re-baking a page.
+     */
+    fun startTableEdit(table: FlowTable) {
+        dismissTableMenus()
+        flowText.endSession()
+        editingTable = table
+        setFlowLifted(true)
+        tableChromeTick++
+    }
+
+    fun endTableEdit() {
+        if (editingTable == null) return
+        editingTable = null
+        if (!flowText.active) setFlowLifted(false)
+    }
+
+    private fun setFlowLifted(lifted: Boolean) {
+        if (state.flowLifted == lifted) return
+        state.flowLifted = lifted
+        publishedFlow?.frame?.pagesWithLines()?.forEach { i ->
+            state.document.pages.getOrNull(i)?.let(state::invalidatePage)
+        }
+        onRender()
+    }
+
+    /** True while [editingTable] is still in the document (undo can take it away). */
+    private fun tableEditLive(): Boolean {
+        val t = editingTable ?: return false
+        if (CellIndex(state.document.flow.paragraphs).blockOf(t) != null) return true
+        endTableEdit()
+        return false
+    }
+
+    /** [table]'s page slices in the published layout (page index attached). */
+    fun tableFrags(table: FlowTable): List<Pair<Int, com.xnotes.core.text.TableFrag>> =
+        publishedFlow?.frame?.fragsOf(table).orEmpty()
+
+    /** A page-local rect on page [pageIndex] in viewport px, or null when that page is not laid out. */
+    fun pageRectToViewport(pageIndex: Int, r: Rect): Rect? {
+        if (state.pageRects.getOrNull(pageIndex) == null) return null
+        val c = state.fromPageSpaceRect(pageIndex, r)
+        val tl = state.contentToViewport(Pt(c.left, c.top))
+        val br = state.contentToViewport(Pt(c.right, c.bottom))
+        return Rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y)
+    }
+
+    /** Viewport px per content px. */
+    val viewZoom: Double get() = state.zoom
+
+    /** Apply one table edit as its own undo step; edit mode ends if the table went away. */
+    private fun tableEdit(build: (TableEditor) -> Pair<Command, FlowPos?>?) {
+        flowText.flushBurst()
+        val (cmd, caret) = build(TableEditor(state.document.flow)) ?: return
+        flowText.commitEdit(cmd, caret)
+        tableEditLive()
+        tableChromeTick++
+        flowSelTick++
+    }
+
+    fun tableInsertRow(table: FlowTable, at: Int) = tableEdit { it.insertRow(table, at) }
+    fun tableInsertCol(table: FlowTable, at: Int) = tableEdit { it.insertCol(table, at) }
+    fun tableDeleteRow(table: FlowTable, row: Int) = tableEdit { it.deleteRow(table, row) }
+    fun tableDeleteCol(table: FlowTable, col: Int) = tableEdit { it.deleteCol(table, col) }
+    fun tableMoveRow(table: FlowTable, from: Int, to: Int) = tableEdit { ed -> ed.moveRow(table, from, to)?.let { it to null } }
+    fun tableMoveCol(table: FlowTable, from: Int, to: Int) = tableEdit { ed -> ed.moveCol(table, from, to)?.let { it to null } }
+
+    fun tableDelete(table: FlowTable) {
+        dismissTableMenus()
+        tableEdit { it.deleteTable(table) }
+        endTableEdit()
+    }
+
+    /** Show [snapshot] on [table] without an undo step (a drag or the style popup in progress). */
+    fun tablePreview(table: FlowTable, snapshot: TableSnapshot) {
+        if (table.snapshot() == snapshot) return
+        snapshot.applyTo(table)
+        state.document.flow.touch()
+        state.document.dirty = true
+        republishFlow(invalidate = !state.flowLifted)
+        onRender()
+    }
+
+    /** Close a preview begun at [before]: the table's current state lands as one undo step. */
+    fun tableCommitPreview(table: FlowTable, before: TableSnapshot) {
+        val after = table.snapshot()
+        if (after == before) return
+        before.applyTo(table)
+        tableEdit { ed -> ed.setSnapshot(table, after)?.let { it to null } }
+    }
+
+    /** The magic wand: column widths that even out the cell heights across each row. */
+    fun tableAutoFit(table: FlowTable) {
+        dismissTableMenus()
+        val frag = tableFrags(table).firstOrNull()?.second ?: return
+        val widths = flowLayout.fitColumns(state.document.flow, table, frag.right - frag.left)
+        tableEdit { ed -> ed.setSnapshot(table, table.snapshot().copy(widths = widths))?.let { it to null } }
+    }
+
     // --- flow document config (the text tool's popup: margins + defaults; not undoable) ---
 
     /** The document's flow defaults as one value, for the text tool's config popup. */
@@ -5356,7 +5599,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val sel = flowText.selection.normalized()
         if (sel.collapsed) return
         val flow = state.document.flow
-        val text = flow.plainText().substring(flow.globalOffset(sel.start), flow.globalOffset(sel.end))
+        val text = CellIndex(flow.paragraphs).textOf(flow.paragraphs, sel)
         val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager ?: return
         cm.setPrimaryClip(android.content.ClipData.newPlainText("xnotes text", text))
@@ -5367,7 +5610,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * Backspace at the start of an EMPTY code line strips the code property (the
      * line becomes plain text) instead of deleting anything. Also the only way out
      * for an empty code line at the very start of the document, where there is no
-     * preceding character to merge into. Returns true when it applied.
+     * preceding character to merge into. At a table edge it never merges across:
+     * a cell's first line stays put, and the line after a table steps into its last
+     * cell. Returns true when it applied.
      */
     fun flowBackspaceSpecial(): Boolean {
         if (!flowText.active) return false
@@ -5375,7 +5620,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!sel.collapsed || sel.start.offset != 0) return false
         val flow = state.document.flow
         val para = flow.paragraphs.getOrNull(sel.start.para) ?: return false
-        if (para.codeLang == null || para.length != 0) return false
+        if (para.codeLang == null || para.length != 0) return flowTableEdge(sel.start.para, forward = false)
         flowText.flushBurst()
         flowText.commitEdit(
             FlowEditor(flow).setParaStyle(FlowRange.caret(sel.start)) { it.codeLang = null },
@@ -5398,6 +5643,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val flow = state.document.flow
         val para = flow.paragraphs.getOrNull(sel.start.para) ?: return false
         if (sel.start.offset < para.length) return false
+        if (flowTableEdge(sel.start.para, forward = true)) return true
         if (para.list != ListKind.NONE || para.codeLang != null) return false
         val next = flow.paragraphs.getOrNull(sel.start.para + 1) ?: return false
         if (next.list == ListKind.NONE && next.codeLang == null) return false
@@ -5405,6 +5651,48 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val range = FlowRange(FlowPos(sel.start.para, para.length), FlowPos(sel.start.para + 1, 0))
         val (cmd, caret) = FlowEditor(flow).replaceRange(range, "", adoptEndProps = true)
         flowText.commitEdit(cmd, caret)
+        return true
+    }
+
+    /**
+     * A delete at the edge of paragraph [p] that would merge across a table boundary:
+     * refused at a cell's own edge, turned into a step into the table from the body
+     * line beside it. Returns true when the key is spent.
+     */
+    private fun flowTableEdge(p: Int, forward: Boolean): Boolean {
+        val flow = state.document.flow
+        val cells = CellIndex(flow.paragraphs)
+        val block = cells.blockAt(p)
+        if (block != null) {
+            val cell = cells.cellAt(p)
+            return p == if (forward) block.cellLastPara(cell) else block.cellFirstPara(cell)
+        }
+        val neighbour = if (forward) p + 1 else p - 1
+        if (!cells.inTable(neighbour)) return false
+        flowText.placeCaret(FlowPos(neighbour, if (forward) 0 else flow.paragraphs[neighbour].length))
+        return true
+    }
+
+    /**
+     * Tab / Shift+Tab in a table: select the next / previous cell's text; Tab in the
+     * last cell appends a row. False outside tables (the key types a tab).
+     */
+    private fun flowTabCell(back: Boolean): Boolean {
+        val flow = state.document.flow
+        val cells = CellIndex(flow.paragraphs)
+        val p = flowText.selection.end.para
+        val block = cells.blockAt(p) ?: return false
+        val target = cells.cellAt(p) + if (back) -1 else 1
+        if (target < 0) return true
+        flowText.flushBurst()
+        if (target >= block.cellCount) {
+            val (cmd, caret) = TableEditor(flow).insertRow(block.table, block.rows) ?: return true
+            flowText.commitEdit(cmd, caret)
+            return true
+        }
+        val last = block.cellLastPara(target)
+        flowText.setSelection(FlowRange(FlowPos(block.cellFirstPara(target), 0), FlowPos(last, flow.paragraphs[last].length)))
+        flowText.ensureCaretVisible()
         return true
     }
 
