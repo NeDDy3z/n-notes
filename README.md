@@ -28,15 +28,15 @@
 </p>
 
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/sevenInchScreenshots/1.png" width="90%" alt="xnotes editor: a PDF open with the ink toolbar and page thumbnails" />
+  <img src="docs/screenshots/editor.png" width="90%" alt="The xnotes editor with a PDF open in dark mode, annotated by hand with a note, an arrow, a highlight and an underline, and page thumbnails down the left" />
   <br />
-  <em>Annotating a PDF in dark mode with pages inverted</em>
+  <em>Annotating a PDF in dark mode, with the pages inverted</em>
 </p>
 
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/sevenInchScreenshots/2.png" width="90%" alt="xnotes home screen: the file browser showing imported notes" />
+  <img src="docs/screenshots/explorer.png" width="90%" alt="The xnotes file explorer in gallery view, showing a grid of imported book covers with page counts" />
   <br />
-  <em>Browsing your notes and imported PDFs</em>
+  <em>Browsing imported PDFs in the gallery view</em>
 </p>
 
 ---
