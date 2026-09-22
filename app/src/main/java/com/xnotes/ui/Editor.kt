@@ -1866,8 +1866,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** The chrome palette for [p]: Material You (system scheme, accent-seeded below Android 12)
      *  when the active appearance mode picked the material style, else the classic accent chrome. */
-    private fun buildPalette(p: Preferences): Palette {
-        val appearance = resolvedAppearance(p)
+    private fun buildPalette(p: Preferences, appearance: String = resolvedAppearance(p)): Palette {
         val dark = appearance != "light"
         if (p.paletteStyle == "material") {
             val m = when (p.materialMode) {
@@ -1879,6 +1878,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             return Palette.material(appearance, m)
         }
         return Palette.forAppearance(appearance, p.accentColor)
+    }
+
+    /** The app's theme in its light or dark variant, for the reader; the current mode (OLED included) when it already matches. */
+    fun readerPalette(dark: Boolean): Palette {
+        val p = settings.prefs
+        val appearance = resolvedAppearance(p)
+        if ((appearance != "light") == dark) return buildPalette(p, appearance)
+        return buildPalette(p, if (dark) "dark" else "light")
     }
 
     /** The OS dark/light state flipped (uiMode arrives via onConfigurationChanged, no activity

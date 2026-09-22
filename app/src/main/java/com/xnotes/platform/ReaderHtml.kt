@@ -30,7 +30,8 @@ object ReaderHtml {
         val empty: String = "This file is empty.",
     )
 
-    class Colors(val background: String, val text: String)
+    /** The app theme's colours as CSS hex: page, body text, secondary text, links/accents, raised surfaces and rules. */
+    class Colors(val background: String, val text: String, val muted: String, val accent: String, val surface: String, val border: String)
 
     private const val MAX_CSV_ROWS = 10_000
     private const val MAX_IMAGE_BYTES = 6 * 1024 * 1024
@@ -38,48 +39,43 @@ object ReaderHtml {
 
     // --- page shell ---
 
-    /** Wraps [body] in a full page styled for [colors]; [wide] drops the reading-width cap (tables, slides). */
-    fun page(body: String, colors: Colors, wide: Boolean = false): String {
-        val bg = parseHex(colors.background) ?: intArrayOf(255, 255, 255)
-        val fg = parseHex(colors.text) ?: intArrayOf(20, 20, 20)
-        fun mix(t: Double) = hex(IntArray(3) { (bg[it] + (fg[it] - bg[it]) * t).toInt() })
-        val dark = (bg[0] * 299 + bg[1] * 587 + bg[2] * 114) / 1000 < 128
-        val link = if (dark) "#8ab4f8" else "#1a5fb4"
+    /** Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides). */
+    fun page(body: String, c: Colors, wide: Boolean = false): String {
         val css = """
             html{-webkit-text-size-adjust:100%}
-            body{background:${hex(bg)};color:${hex(fg)};font-family:sans-serif;font-size:17px;line-height:1.6;margin:0 auto;padding:18px 18px 72px;${if (wide) "" else "max-width:820px;"}overflow-wrap:break-word;word-wrap:break-word}
-            a{color:$link}
+            body{background:${c.background};color:${c.text};font-family:sans-serif;font-size:17px;line-height:1.6;margin:0 auto;padding:18px 18px 72px;${if (wide) "" else "max-width:820px;"}overflow-wrap:break-word;word-wrap:break-word}
+            a{color:${c.accent}}
             h1,h2,h3,h4,h5,h6{line-height:1.25;margin:1.2em 0 .5em}
             h1{font-size:1.8em}h2{font-size:1.45em}h3{font-size:1.2em}
             p{margin:.6em 0}
             p.gap{margin:0;height:.6em}
-            p.subtitle{font-size:1.15em;color:${mix(0.65)}}
+            p.subtitle{font-size:1.15em;color:${c.muted}}
             img{max-width:100%;height:auto}
-            hr{border:0;border-top:1px solid ${mix(0.2)}}
-            code{background:${mix(0.08)};border-radius:4px;padding:.1em .3em;font-size:.9em}
-            pre{background:${mix(0.08)};border-radius:6px;padding:10px 12px;overflow-x:auto;line-height:1.4}
+            hr{border:0;border-top:1px solid ${c.border}}
+            code{background:${c.surface};border-radius:4px;padding:.1em .3em;font-size:.9em}
+            pre{background:${c.surface};border-radius:6px;padding:10px 12px;overflow-x:auto;line-height:1.4}
             pre code{background:none;padding:0}
-            blockquote{margin:.8em 0;padding:.2em 0 .2em 14px;border-left:3px solid ${mix(0.3)};color:${mix(0.8)}}
-            .callout{border-left-color:$link;background:${mix(0.05)};border-radius:0 6px 6px 0;padding:8px 12px;color:inherit}
-            .callout-title{font-weight:600;margin:.2em 0}
+            blockquote{margin:.8em 0;padding:.2em 0 .2em 14px;border-left:3px solid ${c.border};color:${c.muted}}
+            .callout{border-left-color:${c.accent};background:${c.surface};border-radius:0 6px 6px 0;padding:8px 12px;color:inherit}
+            .callout-title{font-weight:600;margin:.2em 0;color:${c.accent}}
             mark{background:rgba(255,208,0,.4);color:inherit;border-radius:2px}
             table{border-collapse:collapse;display:block;overflow-x:auto;margin:.8em 0;max-width:100%}
-            th,td{border:1px solid ${mix(0.22)};padding:5px 9px;vertical-align:top}
+            th,td{border:1px solid ${c.border};padding:5px 9px;vertical-align:top}
             th:not([align]){text-align:left}
-            th{background:${mix(0.07)}}
+            th{background:${c.surface}}
             td.num{text-align:right;font-variant-numeric:tabular-nums}
             table.csv{font-size:14px;line-height:1.35}
             table.csv th{position:sticky;top:0}
             li:has(> input[type=checkbox]){list-style:none}
-            li > input[type=checkbox]{margin:0 .4em 0 -1.3em}
-            .props{border:1px solid ${mix(0.2)};border-radius:6px;padding:6px 10px;margin:0 0 1em;font-size:.88em;color:${mix(0.75)}}
-            .props b{color:${hex(fg)};font-weight:600}
-            .missing{color:${mix(0.55)};font-style:italic}
-            .slide{border:1px solid ${mix(0.22)};border-radius:10px;padding:10px 18px 14px;margin:0 0 18px}
-            .slide-no{font-size:12px;color:${mix(0.55)};margin-bottom:4px}
+            li > input[type=checkbox]{margin:0 .4em 0 -1.3em;accent-color:${c.accent}}
+            .props{border:1px solid ${c.border};border-radius:6px;padding:6px 10px;margin:0 0 1em;font-size:.88em;color:${c.muted}}
+            .props b{color:${c.text};font-weight:600}
+            .missing{color:${c.muted};font-style:italic}
+            .slide{border:1px solid ${c.border};border-radius:10px;padding:10px 18px 14px;margin:0 0 18px}
+            .slide-no{font-size:12px;color:${c.muted};margin-bottom:4px}
             .slide h2:first-of-type{margin-top:.3em}
-            .notes{border-top:1px dashed ${mix(0.25)};margin-top:12px;padding-top:6px;font-size:.88em;color:${mix(0.75)}}
-            .note{font-size:13px;color:${mix(0.55)};margin:.6em 0}
+            .notes{border-top:1px dashed ${c.border};margin-top:12px;padding-top:6px;font-size:.88em;color:${c.muted}}
+            .note{font-size:13px;color:${c.muted};margin:.6em 0}
         """.trimIndent()
         return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
             "<style>$css</style></head><body>$body</body></html>"
@@ -823,12 +819,4 @@ object ReaderHtml {
         }
         return sb.toString()
     }
-
-    private fun parseHex(s: String): IntArray? {
-        val h = s.removePrefix("#")
-        if (h.length != 6) return null
-        return runCatching { intArrayOf(h.substring(0, 2).toInt(16), h.substring(2, 4).toInt(16), h.substring(4, 6).toInt(16)) }.getOrNull()
-    }
-
-    private fun hex(c: IntArray) = "#%02x%02x%02x".format(c[0].coerceIn(0, 255), c[1].coerceIn(0, 255), c[2].coerceIn(0, 255))
 }

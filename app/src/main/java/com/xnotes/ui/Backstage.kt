@@ -295,7 +295,7 @@ private fun BackstageContent(
     LaunchedEffect(editor.browseRoot) { editor.browseRoot?.let { r -> withContext(Dispatchers.IO) { editor.purgeExpiredTrash(r, prefs.trashDays) } } }
     // Kept while its inputs hold, so folding the sidebar never recomposes the rail or the sidebar.
     val showRecent = prefs.sidebarRecent && editor.browseRoot != null
-    val nav = remember(view, shownColors, activeColor, pins, activePin, trashCount, showRecent, recentActive) {
+    val nav = remember(view, shownColors, activeColor, pins, activePin, trashCount, showRecent, recentActive, compact) {
         SidebarNav(
             view = view,
             homeSelected = view == BackstageView.HOME && activePin < 0 && activeColor == null && !recentActive,
@@ -313,6 +313,8 @@ private fun BackstageContent(
             onForgetColor = { c -> scope.launch { withContext(Dispatchers.IO) { editor.setColorName(c, null) } } },
             onOpenPin = { selectView(BackstageView.HOME); explorerNav = ExplorerNav(it.uri) },
             onUnpin = { editor.unpinFolder(it.uri) },
+            onOpenFile = { e -> if (compact) dismissDrawer(); calls.openFile(e.documentUri) },
+            onOpenFolder = { e -> selectView(BackstageView.HOME); explorerNav = ExplorerNav(e.documentUri) },
         )
     }
     renamingColor?.let { c -> ColorNameDialog(editor, c) { renamingColor = null } }
@@ -352,7 +354,7 @@ private fun BackstageContent(
                 enter = slideInHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), initialOffsetX = { -it }),
                 exit = if (animateClose) slideOutHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), targetOffsetX = { -it }) else ExitTransition.None,
             ) {
-                BackstageSidebar(Modifier.width(DRAWER_WIDTH), nav, dismissDrawer)
+                BackstageSidebar(Modifier.width(DRAWER_WIDTH), editor, nav, dismissDrawer)
             }
         }
     } else {
@@ -376,7 +378,7 @@ private fun BackstageContent(
             Layout(
                 content = {
                     BackstageRail(Modifier.width(RAIL_WIDTH), nav) { setRailed(false) }
-                    BackstageSidebar(Modifier.width(SIDEBAR_WIDTH), nav) { setRailed(true) }
+                    BackstageSidebar(Modifier.width(SIDEBAR_WIDTH), editor, nav) { setRailed(true) }
                 },
                 modifier = Modifier
                     .fillMaxHeight()
@@ -427,11 +429,13 @@ private class SidebarNav(
     val onForgetColor: (Rgba) -> Unit,
     val onOpenPin: (PinnedFolder) -> Unit,
     val onUnpin: (PinnedFolder) -> Unit,
+    val onOpenFile: (BrowseEntry) -> Unit,
+    val onOpenFolder: (BrowseEntry) -> Unit,
 )
 
 /** The full sidebar: a pane on wide screens, a slide-over drawer on phones. */
 @Composable
-private fun BackstageSidebar(modifier: Modifier, nav: SidebarNav, onCollapse: () -> Unit) {
+private fun BackstageSidebar(modifier: Modifier, editor: Editor, nav: SidebarNav, onCollapse: () -> Unit) {
     val palette = LocalPalette.current
     Column(modifier.fillMaxHeight().background(palette.panel.toComposeColor()).padding(vertical = 12.dp)) {
         Row(
@@ -445,9 +449,11 @@ private fun BackstageSidebar(modifier: Modifier, nav: SidebarNav, onCollapse: ()
             }
         }
         Spacer(Modifier.height(6.dp))
+        Command(XnotesIcons.home, stringResource(R.string.home), selected = nav.homeSelected) { nav.onHome() }
+        nav.recent?.let { on -> Command(XnotesIcons.clock, stringResource(R.string.recent), selected = on) { nav.onRecent() } }
+        if (editor.browseRoot != null) RailDivider()
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            Command(XnotesIcons.home, stringResource(R.string.home), selected = nav.homeSelected) { nav.onHome() }
-            nav.recent?.let { on -> Command(XnotesIcons.clock, stringResource(R.string.recent), selected = on) { nav.onRecent() } }
+            SidebarFileTree(editor, nav.onOpenFile, nav.onOpenFolder)
             if (nav.colors.isNotEmpty()) {
                 SidebarLabel(stringResource(R.string.toolbar_colours))
                 nav.colors.forEach { (color, name) ->
@@ -1701,7 +1707,20 @@ private fun ExplorerSection(
     LaunchedEffect(createMode, pendingImport) { fieldError = null }
     // Name entry for a new note, new folder, or a pending PDF import. Hidden while an import is
     // actually being written, so only the "Importing…" dialog shows.
-    if ((createMode != CreateMode.NONE || pendingImport != null) && !editor.importing) {
+    if (createMode == CreateMode.FILE && pendingImport == null && !editor.importing) {
+        NewNoteDialog(
+            editor = editor,
+            initial = nextUntitled(editor, editor.cachedChildren(root, currentDocId)),
+            error = fieldError,
+            onConfirm = { n, style ->
+                scope.launch {
+                    val uri = withContext(Dispatchers.IO) { editor.createBlankNoteFile(root, currentDocId, n, style) }
+                    if (uri != null) { onCreateMode(CreateMode.NONE); refreshKey++; calls.openFile(uri) } else fieldError = context.getString(R.string.err_create_note)
+                }
+            },
+            onDismiss = { fieldError = null; onCreateMode(CreateMode.NONE) },
+        )
+    } else if ((createMode != CreateMode.NONE || pendingImport != null) && !editor.importing) {
         val isFolder = pendingImport == null && createMode == CreateMode.FOLDER
         val default = when {
             pendingImport != null -> pendingImport.defaultName // import names default to the source file
@@ -1739,12 +1758,7 @@ private fun ExplorerSection(
                     }
                     createMode == CreateMode.CANVAS -> scope.launch {
                         val uri = withContext(Dispatchers.IO) { editor.createBlankCanvasFile(root, currentDocId, n) }
-                        if (uri != null) { onCreateMode(CreateMode.NONE); refreshKey++ } else fieldError = context.getString(R.string.err_create_canvas)
-                    }
-                    else -> scope.launch {
-                        // Just create the note in the explorer — it opens only when the user taps it.
-                        val uri = withContext(Dispatchers.IO) { editor.createBlankNoteFile(root, currentDocId, n) }
-                        if (uri != null) { onCreateMode(CreateMode.NONE); refreshKey++ } else fieldError = context.getString(R.string.err_create_note)
+                        if (uri != null) { onCreateMode(CreateMode.NONE); refreshKey++; calls.openFile(uri) } else fieldError = context.getString(R.string.err_create_canvas)
                     }
                 }
             },
@@ -2085,6 +2099,57 @@ private fun StackedNoteCard(editor: Editor, entry: BrowseEntry, modifier: Modifi
 }
 
 // --- shared bits ---
+
+/** The new-note prompt: its name plus the toolbar's page-style controls (template, page colour), preset from the new-note default. */
+@Composable
+private fun NewNoteDialog(
+    editor: Editor,
+    initial: String,
+    error: String?,
+    onConfirm: (String, com.xnotes.core.model.PageStyle) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    var text by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length))) }
+    var style by remember { mutableStateOf(editor.newNoteStyle) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val confirm = { onConfirm(text.text.trim(), style) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.new_note)) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    isError = error != null,
+                    supportingText = error?.let { { Text(it, color = Color(0xFFE5534B)) } },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { confirm() }),
+                    modifier = Modifier
+                        .focusRequester(focus)
+                        .onPreviewKeyEvent { ev ->
+                            when {
+                                ev.type != KeyEventType.KeyDown -> false
+                                ev.key == Key.Enter || ev.key == Key.NumPadEnter -> { confirm(); true }
+                                ev.key == Key.Escape -> { onDismiss(); true }
+                                else -> false
+                            }
+                        },
+                )
+                PageStyleControls(style, inheritFrom = null) { style = it }
+            }
+        },
+        confirmButton = { TextButton(onClick = { confirm() }) { Text(stringResource(R.string.create)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        containerColor = palette.menuBg.toComposeColor(),
+    )
+}
 
 /**
  * A small modal that asks for a single name, used for new notes, new folders, renames, and

@@ -27,25 +27,30 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -60,8 +65,6 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -72,6 +75,7 @@ import com.xnotes.platform.ReaderHtml
 import com.xnotes.platform.ReaderPdf
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
+import com.xnotes.ui.theme.Palette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +90,7 @@ import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.util.Locale
 import java.util.zip.ZipFile
+import kotlin.math.abs
 
 /** A file open in the read-only reader. */
 data class ReaderFile(val uri: String, val name: String)
@@ -105,11 +110,6 @@ private class PdfDoc(val pdf: ReaderPdf, val ratios: List<Float>) {
     }
 }
 
-private val LIGHT_BG = Rgba(255, 255, 255)
-private val LIGHT_TEXT = Rgba(31, 31, 31)
-private val DARK_BG = Rgba(18, 18, 18)
-private val DARK_TEXT = Rgba(224, 224, 224)
-
 /**
  * The read-only reader over the explorer: Markdown, Word, PowerPoint and CSV as HTML in a script-less,
  * offline WebView, PDFs as rendered pages. The light/dark choice is an app preference and never touches the file.
@@ -117,11 +117,13 @@ private val DARK_TEXT = Rgba(224, 224, 224)
 @Composable
 internal fun ReaderScreen(editor: Editor, file: ReaderFile, onClose: () -> Unit, onWikiLink: (String) -> Unit) {
     val context = LocalContext.current
-    val palette = LocalPalette.current
+    val appPalette = LocalPalette.current
     val prefs = remember(editor.prefsVersion) { editor.preferences }
-    val dark = prefs.readerDark ?: palette.isDark
-    val background = if (dark) DARK_BG else LIGHT_BG
-    val text = if (dark) DARK_TEXT else LIGHT_TEXT
+    val dark = prefs.readerDark ?: appPalette.isDark
+    // The app theme itself, or its other light/dark variant when the reader is switched.
+    val palette = remember(appPalette, dark) { if (dark == appPalette.isDark) appPalette else editor.readerPalette(dark) }
+    val background = palette.paper
+    val text = palette.text
     val labels = ReaderHtml.Labels(
         slide = { n, total -> context.getString(R.string.reader_slide, n, total) },
         notes = stringResource(R.string.reader_notes),
@@ -141,48 +143,79 @@ internal fun ReaderScreen(editor: Editor, file: ReaderFile, onClose: () -> Unit,
         }
     }
 
+    val pdfList = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val pages = (content as? ReaderContent.Pdf)?.doc?.ratios?.size ?: 0
     Column(Modifier.fillMaxSize().background(background.toComposeColor())) {
-        ReaderBar(file, dark, onToggleDark = { editor.applyHomePreferences(editor.preferences.copy(readerDark = !dark)) }, onClose)
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (val c = content) {
-                null -> ReaderMessage(stringResource(R.string.loading), text)
-                ReaderContent.Failed -> ReaderMessage(stringResource(R.string.reader_open_failed), text)
-                is ReaderContent.Html -> {
-                    val colors = ReaderHtml.Colors(Rgba.toHex(background), Rgba.toHex(text))
-                    val html = remember(c, background, text) { ReaderHtml.page(c.body, colors, c.wide) }
-                    ReaderWebView(html, background.toComposeColor()) { url -> openLink(context, url, onWikiLink) }
+        // The bar is app chrome like the note toolbar; only the page below follows the reader's light/dark.
+        ReaderBar(
+            file, dark,
+            page = if (pages > 0) (pdfList.firstVisibleItemIndex + 1) to pages else null,
+            onPage = { i -> scope.launch { pdfList.animateScrollToItem(i.coerceIn(0, pages - 1)) } },
+            onToggleDark = { editor.applyHomePreferences(editor.preferences.copy(readerDark = !dark)) },
+            onClose = onClose,
+        )
+        CompositionLocalProvider(LocalPalette provides palette) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (val c = content) {
+                    null -> ReaderMessage(stringResource(R.string.loading), text)
+                    ReaderContent.Failed -> ReaderMessage(stringResource(R.string.reader_open_failed), text)
+                    is ReaderContent.Html -> {
+                        val html = remember(c, palette) {
+                            val colors = ReaderHtml.Colors(
+                                Rgba.toHex(background), Rgba.toHex(text), Rgba.toHex(palette.textDim),
+                                Rgba.toHex(palette.accent), Rgba.toHex(raisedOnPaper(palette)), Rgba.toHex(palette.border),
+                            )
+                            ReaderHtml.page(c.body, colors, c.wide)
+                        }
+                        ReaderWebView(html, background.toComposeColor()) { url -> openLink(context, url, onWikiLink) }
+                    }
+                    // Light shows PDF pages as they are; dark inverts them to the reader colours.
+                    is ReaderContent.Pdf -> PdfPages(c.doc, pdfList, background.toComposeColor(), if (dark) duotone(background, text) else null)
                 }
-                // Light shows PDF pages as they are; dark inverts them to the reader colours.
-                is ReaderContent.Pdf -> PdfPages(c.doc, background.toComposeColor(), if (dark) duotone(background, text) else null)
             }
         }
     }
 }
 
+/** Built from the note toolbar's own pieces (icons, monospace labels, separators) so the two bars match. */
 @Composable
-private fun ReaderBar(file: ReaderFile, dark: Boolean, onToggleDark: () -> Unit, onClose: () -> Unit) {
+private fun ReaderBar(
+    file: ReaderFile,
+    dark: Boolean,
+    page: Pair<Int, Int>?,
+    onPage: (Int) -> Unit,
+    onToggleDark: () -> Unit,
+    onClose: () -> Unit,
+) {
     val palette = LocalPalette.current
-    Column(Modifier.fillMaxWidth().background(palette.bg.toComposeColor())) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onClose) {
-                Icon(XnotesIcons.prev, stringResource(R.string.reader_close), tint = palette.text.toComposeColor())
-            }
-            Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                Text(file.name, color = palette.text.toComposeColor(), fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(XnotesIcons.lock, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))
-                    Text(stringResource(R.string.reader_read_only), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                }
-            }
-            IconButton(onClick = onToggleDark) {
-                Icon(
-                    if (dark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
-                    stringResource(if (dark) R.string.reader_switch_to_light else R.string.reader_switch_to_dark),
-                    tint = palette.text.toComposeColor(),
-                )
+    Row(
+        Modifier.fillMaxWidth().height(50.dp).background(palette.panel.toComposeColor()),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ToolbarIcon(XnotesIcons.prev, stringResource(R.string.reader_close), onClick = onClose)
+            Label(file.name, Modifier.widthIn(max = 160.dp))
+            Separator()
+            Icon(XnotesIcons.lock, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.padding(start = 4.dp).size(16.dp))
+            Label(stringResource(R.string.reader_read_only))
+            if (page != null) {
+                val (current, total) = page
+                Separator()
+                ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page), enabled = current > 1) { onPage(current - 2) }
+                Label("$current / $total")
+                ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page), enabled = current < total) { onPage(current) }
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(palette.border.toComposeColor()))
+        ToolbarIcon(
+            if (dark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
+            stringResource(if (dark) R.string.reader_switch_to_light else R.string.reader_switch_to_dark),
+            onClick = onToggleDark,
+        )
+        Spacer(Modifier.width(4.dp))
     }
 }
 
@@ -236,6 +269,13 @@ private fun ReaderWebView(html: String, background: Color, onLink: (String) -> U
     )
 }
 
+/** The theme surface that stands out from the page enough to show code blocks and table headers. */
+private fun raisedOnPaper(p: Palette): Rgba {
+    fun luma(c: Rgba) = (c.r * 299 + c.g * 587 + c.b * 114) / 1000
+    val gaps = listOf(p.panel, p.bg, p.surface, p.surfaceHi).map { it to abs(luma(it) - luma(p.paper)) }
+    return (gaps.filter { it.second >= 14 }.minByOrNull { it.second } ?: gaps.maxBy { it.second }).first
+}
+
 private fun openLink(context: Context, url: String, onWikiLink: (String) -> Unit) {
     val uri = Uri.parse(url)
     when (uri.scheme?.lowercase()) {
@@ -258,9 +298,8 @@ private fun duotone(background: Rgba, text: Rgba): ColorFilter {
 
 /** PDF pages in a column; pinch zooms (and pans sideways), and zoomed-in pages re-render sharper. */
 @Composable
-private fun PdfPages(doc: PdfDoc, background: Color, filter: ColorFilter?) {
+private fun PdfPages(doc: PdfDoc, listState: LazyListState, background: Color, filter: ColorFilter?) {
     val palette = LocalPalette.current
-    val listState = rememberLazyListState()
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     BoxWithConstraints(Modifier.fillMaxSize().background(background)) {
@@ -308,15 +347,6 @@ private fun PdfPages(doc: PdfDoc, background: Color, filter: ColorFilter?) {
                     }
                 }
             }
-        }
-        if (doc.ratios.size > 1) {
-            Text(
-                "${listState.firstVisibleItemIndex + 1} / ${doc.ratios.size}",
-                color = palette.text.toComposeColor(),
-                fontSize = 12.sp,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)
-                    .clip(RoundedCornerShape(10.dp)).background(palette.surface.toComposeColor()).padding(horizontal = 10.dp, vertical = 4.dp),
-            )
         }
     }
 }
