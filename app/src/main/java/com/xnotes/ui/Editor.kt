@@ -60,6 +60,7 @@ import com.xnotes.core.text.FlowMargins
 import com.xnotes.core.text.FlowPainter
 import com.xnotes.core.text.FlowPos
 import com.xnotes.core.text.FlowRange
+import com.xnotes.core.text.InputRules
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.text.ParaAlign
@@ -1767,6 +1768,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
         controller.detectShapes = p.detectShapes
+        flowText.markdownInput = p.markdownInput
         controller.penButtonTool = if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER)
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
@@ -1777,6 +1779,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .coerceAtLeast(state.minZoom)
         state.clampZoomToLimits()
         state.relayout()
+    }
+
+    /** Whether typed markdown markers convert; the text tool's config popup toggles it. */
+    var markdownInput by mutableStateOf(settings.prefs.markdownInput)
+        private set
+
+    /** Set the Markdown shortcuts preference, applying it to both panes and persisting it. */
+    fun setMarkdownInputPref(on: Boolean) {
+        settings = settings.copy(prefs = settings.prefs.copy(markdownInput = on))
+        settingsRepo.save(settings)
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.markdownInput = on
+            editor.flowText.markdownInput = on
+        }
     }
 
     /** Set fullscreen and persist it as an explicit choice (used by the toolbar, F11, and the
@@ -5166,7 +5182,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             e.keyCode == android.view.KeyEvent.KEYCODE_DEL -> flowDeleteKey(forward = false)
             e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> flowDeleteKey(forward = true)
             e.keyCode == android.view.KeyEvent.KEYCODE_TAB ->
-                if (!flowTabCell(back = shift)) flowText.applyReplace(flowText.selection, "\t")
+                if (!flowTabCell(back = shift) && !flowTabIndent(back = shift)) {
+                    flowText.applyReplace(flowText.selection, "\t")
+                }
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT -> flowMoveHorizontal(-1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> flowMoveHorizontal(1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> flowMoveVertical(-1, shift)
@@ -5266,6 +5284,39 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
+    /**
+     * Make the selected paragraph(s) heading [level], or body text at 0. The runs
+     * carry the size, so they are restyled alongside the paragraph flag; this is
+     * also the path that keeps headings reachable with markdown shortcuts off.
+     */
+    fun flowSetHeading(level: Int) {
+        if (!flowText.active) return
+        val flow = state.document.flow
+        val sel = flowText.selection.normalized()
+        val last = sel.end.para.coerceAtMost(flow.paragraphs.size - 1)
+        if (sel.start.para > last) return
+        // Read before the flag moves: only a paragraph that *was* a heading gets its
+        // runs reset, so choosing Body never strips hand-applied bold from body text.
+        val were = (sel.start.para..last).map { flow.paragraphs[it].headingLevel > 0 }
+        if (level == 0 && were.none { it }) return
+        flowText.flushBurst()
+        val ed = FlowEditor(flow)
+        val cmds = mutableListOf<Command>()
+        val style = if (level > 0) Paragraph.headingStyle(level, flow.defaultSizePt) else null
+        ed.setParaStyle(sel) { it.headingLevel = level }?.let { cmds += it }
+        for (i in sel.start.para..last) {
+            val para = flow.paragraphs[i]
+            if (para.length == 0 || para.table != null) continue
+            if (style == null && !were[i - sel.start.para]) continue
+            ed.setCharStyle(FlowRange(FlowPos(i, 0), FlowPos(i, para.length))) {
+                it.copy(bold = style != null, sizePt = style?.sizePt)
+            }?.let { cmds += it }
+        }
+        flowText.commitEdit(ed.combined(cmds), null)
+        if (sel.collapsed) flowText.pendingStyle = style ?: CharStyle.DEFAULT
+        flowSelTick++
+    }
+
     /** Toggle the paragraph(s) into code lines in the last-used language, or back to plain. */
     fun flowToggleCode() {
         if (flowCaretParagraph()?.codeLang != null) {
@@ -5330,6 +5381,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     fun flowIndent(delta: Int) = flowParaOp { it.indent += delta }
+
+    /** Tab inside a list item nests it (Shift un-nests) rather than typing a tab. */
+    private fun flowTabIndent(back: Boolean): Boolean {
+        val para = flowCaretParagraph() ?: return false
+        if (para.list == ListKind.NONE) return false
+        if (back && para.indent == 0) return true
+        flowIndent(if (back) -1 else 1)
+        return true
+    }
 
     // --- flow tables ---
 
@@ -5619,25 +5679,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * Backspace at the start of an EMPTY code line strips the code property (the
-     * line becomes plain text) instead of deleting anything. Also the only way out
-     * for an empty code line at the very start of the document, where there is no
-     * preceding character to merge into. At a table edge it never merges across:
-     * a cell's first line stays put, and the line after a table steps into its last
-     * cell. Returns true when it applied.
+     * Backspace at the start of a paragraph strips one block property (an empty
+     * code line, a list marker, a heading, then an indent) instead of deleting
+     * anything: see [InputRules.forBackspace]. Also the only way out for an empty
+     * code line at the very start of the document, where there is no preceding
+     * character to merge into. At a table edge it never merges across: a cell's
+     * first line stays put, and the line after a table steps into its last cell.
+     * Returns true when it applied.
      */
     fun flowBackspaceSpecial(): Boolean {
         if (!flowText.active) return false
         val sel = flowText.selection.normalized()
         if (!sel.collapsed || sel.start.offset != 0) return false
         val flow = state.document.flow
-        val para = flow.paragraphs.getOrNull(sel.start.para) ?: return false
-        if (para.codeLang == null || para.length != 0) return flowTableEdge(sel.start.para, forward = false)
+        if (sel.start.para !in flow.paragraphs.indices) return false
+        val rule = InputRules.forBackspace(flow, sel.start)
+            ?: return flowTableEdge(sel.start.para, forward = false)
         flowText.flushBurst()
-        flowText.commitEdit(
-            FlowEditor(flow).setParaStyle(FlowRange.caret(sel.start)) { it.codeLang = null },
-            sel.start,
-        )
+        val result = InputRules.apply(flow, sel.start, rule)
+        flowText.commitEdit(result.command, result.caret)
+        flowText.pendingStyle = result.pending
         return true
     }
 

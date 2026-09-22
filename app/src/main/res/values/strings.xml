@@ -471,6 +471,9 @@
     <string name="indent">Indent</string>
     <string name="outdent">Outdent</string>
     <string name="code_block">Code block</string>
+    <string name="heading">Heading</string>
+    <string name="body_text">Body text</string>
+    <string name="heading_n">Heading %1$d</string>
     <string name="smaller">Smaller</string>
     <string name="larger">Larger</string>
     <string name="font">Font</string>
@@ -479,6 +482,7 @@
     <string name="colour">Colour</string>
     <string name="auto">Auto</string>
     <string name="margins_mm">Margins (mm)</string>
+    <string name="markdown_shortcuts">Markdown shortcuts</string>
     <string name="done">Done</string>
 
     <!-- Tables -->

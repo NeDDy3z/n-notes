@@ -441,4 +441,12 @@ class SettingsTest {
         assertEquals(false, Preferences.fromJson(Preferences(startFullscreen = false).toJson()).startFullscreen)
         assertEquals(true, Preferences.fromJson(Preferences(startFullscreen = true).toJson()).startFullscreen)
     }
+
+    @Test fun markdownInputDefaultsOnAndRoundTrips() {
+        assertTrue(Preferences().markdownInput)
+        assertTrue(Settings.fromJson(JSONObject()).prefs.markdownInput)
+        val off = Settings(prefs = Preferences(markdownInput = false))
+        assertFalse(Settings.fromJson(off.toJson()).prefs.markdownInput)
+    }
+
 }

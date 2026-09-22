@@ -71,6 +71,8 @@ class Paragraph(
     var table: FlowTable? = null,
     /** True on the first paragraph of each table cell. */
     var cellStart: Boolean = false,
+    /** 1..[MAX_HEADING] marks a heading, whose runs carry its size; 0 is body text. */
+    var headingLevel: Int = 0,
 ) {
     /** Bumped on any content or style mutation; layout caches key on it. */
     var rev: Int = 0
@@ -87,15 +89,22 @@ class Paragraph(
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
         align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
-            table == null
+            table == null && headingLevel == 0
 
     /** A copy sharing [table]; [TextFlow.deepCopy] remaps it onto copied tables. */
     fun deepCopy(): Paragraph =
-        Paragraph(runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart)
+        Paragraph(runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart, headingLevel)
             .also { it.rev = rev }
 
     companion object {
         const val MAX_INDENT = 6
+        const val MAX_HEADING = 6
+
+        private val HEADING_SCALE = doubleArrayOf(2.0, 1.5, 1.25, 1.1, 1.0, 1.0)
+
+        /** The character style heading [level] renders in over [baseSizePt]. */
+        fun headingStyle(level: Int, baseSizePt: Double): CharStyle =
+            CharStyle(bold = true, sizePt = baseSizePt * HEADING_SCALE[(level - 1).coerceIn(HEADING_SCALE.indices)])
     }
 }
 

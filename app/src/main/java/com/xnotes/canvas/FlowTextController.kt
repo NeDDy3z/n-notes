@@ -18,6 +18,7 @@ import com.xnotes.core.text.FlowFrame
 import com.xnotes.core.text.FlowHit
 import com.xnotes.core.text.FlowPos
 import com.xnotes.core.text.FlowRange
+import com.xnotes.core.text.InputRules
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.SelShape
 import com.xnotes.core.text.TextFlow
@@ -59,6 +60,9 @@ class FlowTextController(
 
     /** Style for the next typed run (set by the format bar on a collapsed caret). */
     var pendingStyle: CharStyle? = null
+
+    /** Whether typed markdown markers convert (the text tool's Markdown shortcuts toggle). */
+    var markdownInput = true
 
     /** Installed by the input layer to mirror caret/selection moves to the IME. */
     var imeSync: () -> Unit = {}
@@ -435,6 +439,9 @@ class FlowTextController(
             }
         }
         val para = flow().paragraphs.getOrNull(r.start.para)
+        if (text == "\n" && r.collapsed) {
+            InputRules.forEnter(flow(), r.start, markdownInput)?.let { return applyRule(it, r.start) }
+        }
         // The armed style is only spent on text that actually lands; a deletion keeps it.
         val effStyle = style ?: (if (text.isNotEmpty()) pendingStyle?.also { pendingStyle = null } else null)
         if (r.start.para == r.end.para && '\n' !in text && para != null) {
@@ -447,6 +454,7 @@ class FlowTextController(
             onChanged(active)
             burstExtras += autoAppendPages()
             selection = FlowRange.caret(caret)
+            if (markdownInput) InputRules.forTyped(flow(), caret, text)?.let { return applyRule(it, caret) }
             handler.removeCallbacks(idleFlush)
             handler.postDelayed(idleFlush, BURST_IDLE_MS)
             ensureCaretVisible()
@@ -457,11 +465,30 @@ class FlowTextController(
         // A typed paragraph break lands the caret on a fresh line with no left
         // neighbour to inherit from, so carry the typing style over as pending
         // (commitEdit -> placeCaret clears it, hence re-armed after).
-        val carry = if (text.endsWith("\n")) effStyle ?: FlowEditor(flow()).charStyleAt(r.start) else null
+        val leavingHeading = para != null && para.headingLevel > 0 && r.start.offset >= para.length
+        val carry = if (text.endsWith("\n") && !leavingHeading) {
+            effStyle ?: FlowEditor(flow()).charStyleAt(r.start)
+        } else {
+            null
+        }
         val (cmd, caret) = FlowEditor(flow()).replaceRange(r, text, effStyle)
         commitEdit(cmd, caret)
         if (carry != null && carry != CharStyle.DEFAULT) pendingStyle = carry
         return caret
+    }
+
+    /**
+     * Commit an input rule detected at [at]. The typed markers flush as their own
+     * undo step first, so one undo puts them back as plain text, and the mirror is
+     * marked stale because the model is about to diverge from what the IME sent.
+     */
+    private fun applyRule(rule: InputRules.Rule, at: FlowPos): FlowPos {
+        flushBurst()
+        val result = InputRules.apply(flow(), at, rule)
+        mirrorStale = true
+        commitEdit(result.command, result.caret)
+        pendingStyle = result.pending
+        return result.caret
     }
 
     /**

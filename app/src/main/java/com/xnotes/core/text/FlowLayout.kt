@@ -107,7 +107,14 @@ class FlowLayout(private val measurer: TextMeasurer) {
             runFonts[i] = font
             runMetrics[i] = measurer.metrics(font)
         }
-        val emptyFont = resolveFont(flow, para, if (bold) CharStyle(bold = true) else CharStyle.DEFAULT)
+        // An empty heading still stands as tall as the text it is waiting for, so the
+        // caret previews at the right height and the line does not jump on the first key.
+        val emptyStyle = if (para.headingLevel > 0) {
+            Paragraph.headingStyle(para.headingLevel, flow.defaultSizePt)
+        } else {
+            CharStyle.DEFAULT
+        }
+        val emptyFont = resolveFont(flow, para, if (bold) emptyStyle.copy(bold = true) else emptyStyle)
         val shape = ParaShape(
             text, adv, runEnds,
             @Suppress("UNCHECKED_CAST") (runMetrics as Array<LineMetrics>),

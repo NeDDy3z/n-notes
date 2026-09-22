@@ -25,7 +25,8 @@ class FlowEditor(private val flow: TextFlow) {
      * Replace [range] with [text] in one undo step. New text takes [style] when
      * given, else the style at the range start (what a caret there would type).
      * New paragraphs from '\n' splits inherit the first paragraph's properties,
-     * with [Paragraph.checked] cleared on continuations. [adoptEndProps] makes a
+     * with [Paragraph.checked] cleared and [Paragraph.headingLevel] dropped on
+     * continuations that start empty (Enter at the end of a heading leaves it). [adoptEndProps] makes a
      * cross-paragraph merge keep the END paragraph's properties instead (the
      * forward-delete-into-a-block rule).
      */
@@ -82,6 +83,8 @@ class FlowEditor(private val flow: TextFlow) {
                 codeLang = props.codeLang,
                 table = props.table,
                 cellStart = i == 0 && props.cellStart,
+                // A heading continues only into the remainder it was split into.
+                headingLevel = if (i == 0 || (i == lines.lastIndex && tail.isNotEmpty())) props.headingLevel else 0,
             ).also { normalize(it) }
         }
         val removed = flow.paragraphs.subList(start.para, end.para + 1).toList()
@@ -119,12 +122,14 @@ class FlowEditor(private val flow: TextFlow) {
             val before = ParaSnapshot.of(para)
             mutate(para)
             para.indent = para.indent.coerceIn(0, Paragraph.MAX_INDENT)
+            para.headingLevel = para.headingLevel.coerceIn(0, Paragraph.MAX_HEADING)
             if (para.table != null) {
-                // Cells hold rich text only: no lists, code lines or indents.
+                // Cells hold rich text only: no lists, code lines, headings or indents.
                 para.list = ListKind.NONE
                 para.checked = false
                 para.codeLang = null
                 para.indent = 0
+                para.headingLevel = 0
             }
             if (!before.matches(para)) {
                 para.touch()

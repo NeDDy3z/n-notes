@@ -208,6 +208,7 @@ object FlowXml {
         paraStyles[para.align to para.indent]?.let { append(" text:style-name=\"$it\"") }
         if (para.list != ListKind.NONE) append(" xnotes:list=\"${para.list.id}\"")
         if (para.checked) append(" xnotes:checked=\"true\"")
+        if (para.headingLevel > 0) append(" xnotes:heading=\"${para.headingLevel}\"")
         para.codeLang?.let { append(" xnotes:code-lang=\"${escapeAttr(it)}\"") }
         append(">")
         for (run in para.runs) {
@@ -461,6 +462,7 @@ object FlowXml {
             list = ListKind.fromId(attr(p, "list")),
             checked = attr(p, "checked") == "true",
             codeLang = attr(p, "code-lang"),
+            headingLevel = attr(p, "heading")?.toIntOrNull()?.coerceIn(0, Paragraph.MAX_HEADING) ?: 0,
         )
         collectRuns(p, CharStyle.DEFAULT, charStyles, para.runs)
         mergeAdjacent(para.runs)

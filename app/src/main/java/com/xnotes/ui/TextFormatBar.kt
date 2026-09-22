@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.DropdownMenuItem
@@ -63,6 +64,7 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.Paragraph
 import com.xnotes.core.tools.Tool
 import com.xnotes.platform.FontCatalog
 import com.xnotes.ui.icons.XnotesIcons
@@ -75,10 +77,10 @@ import kotlin.math.roundToInt
  * legacy box edit is open). Sits as the last child of the editor column, so the
  * adjustResize window floats it directly above the soft keyboard. Controls, in
  * order: checkbox item, font colour, highlight, font face, size, bold/italic/
- * underline/strikethrough, ordered and unordered lists, code block (tap toggles,
- * long-press picks the language), table, alignment (cycles), indent, outdent.
- * Inside a table cell the list, code, table and indent controls disable. Centred
- * when it fits, scrollable when it does not.
+ * underline/strikethrough, heading level, ordered and unordered lists, code block
+ * (tap toggles, long-press picks the language), table, alignment (cycles), indent,
+ * outdent. Inside a table cell the heading, list, code, table and indent controls
+ * disable. Centred when it fits, scrollable when it does not.
  */
 @Composable
 fun TextFormatBar(editor: Editor) {
@@ -115,6 +117,7 @@ fun TextFormatBar(editor: Editor) {
         BarIcon(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), active = style.underline) { editor.flowToggleUnderline() }
         BarIcon(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), active = style.strike) { editor.flowToggleStrike() }
         BarDivider()
+        HeadingButton(editor, para?.headingLevel ?: 0, enabled = !inCell)
         BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED, enabled = !inCell) {
             editor.flowToggleList(ListKind.ORDERED)
         }
@@ -152,6 +155,70 @@ private fun shortLangLabel(lang: String): String = when (lang) {
     "kotlin" -> "kt"
     "python" -> "py"
     else -> lang.take(4)
+}
+
+/**
+ * Heading level: the icon gives way to H1..H6 while on, and a tap opens the level
+ * menu rather than toggling, since no one level is the obvious default. Each entry
+ * trails its markdown marker, so the bar also teaches the shortcut it duplicates.
+ */
+@Composable
+private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
+    val palette = LocalPalette.current
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).clickable(enabled = enabled) { menuOpen = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (level > 0) {
+                Text(
+                    "H$level",
+                    color = palette.accent.toComposeColor(),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    style = TextStyle(fontFamily = FontFamily.Monospace),
+                )
+            } else {
+                Icon(
+                    Icons.Filled.Title,
+                    contentDescription = stringResource(R.string.heading),
+                    tint = if (enabled) palette.textDim.toComposeColor() else com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor(),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            for (n in 0..Paragraph.MAX_HEADING) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (n == 0) stringResource(R.string.body_text) else stringResource(R.string.heading_n, n),
+                            color = (if (n == level) palette.accent else palette.text).toComposeColor(),
+                            fontSize = 14.sp,
+                            fontWeight = if (n > 0) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    trailingIcon = if (n > 0 && editor.markdownInput) {
+                        {
+                            Text(
+                                "#".repeat(n),
+                                color = palette.textDim.toComposeColor(),
+                                fontSize = 12.sp,
+                                style = TextStyle(fontFamily = FontFamily.Monospace),
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        editor.flowSetHeading(n)
+                        menuOpen = false
+                    },
+                )
+            }
+        }
+    }
 }
 
 /** Code block: tap toggles it like a list, long-press picks the block's language.

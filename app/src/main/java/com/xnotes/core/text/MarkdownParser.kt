@@ -27,8 +27,6 @@ object MarkdownParser {
     /** Inert link styling: the text keeps a link look, the URL is dropped. */
     val LINK_COLOR = Rgba(100, 160, 255, 255)
 
-    private val HEADING_SCALE = doubleArrayOf(2.0, 1.5, 1.25, 1.1, 1.0, 1.0)
-
     private val LANG_ALIASES = mapOf(
         "js" to "javascript", "jsx" to "javascript", "ts" to "javascript",
         "py" to "python", "kt" to "kotlin", "kts" to "kotlin",
@@ -145,8 +143,7 @@ object MarkdownParser {
     private fun parseLine(line: String, baseSizePt: Double): Paragraph {
         HEADING.matchEntire(line)?.let { m ->
             val level = m.groupValues[1].length
-            val style = CharStyle(bold = true, sizePt = baseSizePt * HEADING_SCALE[level - 1])
-            return Paragraph(inline(m.groupValues[2], style))
+            return Paragraph(inline(m.groupValues[2], Paragraph.headingStyle(level, baseSizePt)), headingLevel = level)
         }
         TASK.matchEntire(line)?.let { m ->
             return Paragraph(

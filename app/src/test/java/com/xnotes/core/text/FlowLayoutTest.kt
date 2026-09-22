@@ -131,4 +131,31 @@ class FlowLayoutTest {
         FlowEditor(flow).insertText(FlowPos(0, 5), " plus much more text here")
         assertTrue(layout.breakLines(flow, p, 60.0).size > 1)
     }
+
+    @Test
+    fun anEmptyHeadingLineStandsAsTallAsItsText() {
+        val p = para("").apply { headingLevel = 1 }
+        val line = layout.breakLines(flowWith(p), p, 200.0).single()
+        assertEquals(24.0, line.ascent, 1e-9)
+        assertEquals(31.2, line.height, 1e-9)
+    }
+
+    @Test
+    fun anEmptyBodyLineKeepsTheDefaultHeight() {
+        val p = para("")
+        assertEquals(15.6, layout.breakLines(flowWith(p), p, 200.0).single().height, 1e-9)
+    }
+
+    @Test
+    fun aHeadingDoesNotChangeHeightWhenItsFirstCharacterLands() {
+        // The caret previews at the heading size, so the empty line has to be that
+        // tall already or the caret sits high until something is typed.
+        val empty = para("").apply { headingLevel = 2 }
+        val typed = para("T", Paragraph.headingStyle(2, TextFlow.DEFAULT_SIZE_PT)).apply { headingLevel = 2 }
+        val before = layout.breakLines(flowWith(empty), empty, 200.0).single()
+        val after = layout.breakLines(flowWith(typed), typed, 200.0).single()
+        assertEquals(after.height, before.height, 1e-9)
+        assertEquals(after.ascent, before.ascent, 1e-9)
+    }
+
 }

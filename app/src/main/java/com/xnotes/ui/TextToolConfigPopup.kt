@@ -39,6 +39,8 @@ import kotlin.math.roundToInt
  * colour (Auto = follow the theme). Changes apply immediately (live reflow) and
  * are not undoable, matching the page-style precedent. Like the styles popup,
  * the config can be saved as the default stamped onto new notes, or Reset.
+ * Markdown shortcuts sits apart from all that: it is an app preference, so
+ * neither Reset nor the new-note default touches it.
  */
 @Composable
 internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
@@ -92,6 +94,15 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
             SpinField(stringResource(R.string.edge_bottom), m.bottomMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(bottomMm = it))) }
 
             Spacer(Modifier.size(8.dp))
+            // An app preference, not a document default: Reset and the new-note row skip it.
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
+                Checkbox(checked = editor.markdownInput, onCheckedChange = { editor.setMarkdownInputPref(it) })
+                Text(
+                    stringResource(R.string.markdown_shortcuts),
+                    color = palette.text.toComposeColor(),
+                    fontSize = 13.sp,
+                )
+            }
             if (showNewNoteRow && !config.isEmpty) {
                 // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
