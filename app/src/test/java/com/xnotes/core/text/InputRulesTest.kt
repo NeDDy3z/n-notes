@@ -495,4 +495,40 @@ class InputRulesTest {
         assertEquals("\$\$\$\$", typed("\$\$\$\$").plainText())
     }
 
+    @Test
+    fun spacesInsideTheDollarsAreAllowedAndGoWithTheMarkers() {
+        val p = typed("\$ x^2 \$")
+        assertEquals("x^2", p.plainText())
+        assertTrue(p.runs.single().style.math)
+    }
+
+    @Test
+    fun paddedDisplayDollarsWorkTheSameWay() {
+        val p = typed("\$\$ x^2 \$\$")
+        assertEquals("x^2", p.runs.single().text)
+        assertTrue(p.runs.single().style.mathDisplay)
+    }
+
+    @Test
+    fun paddingHasToMatchOnBothSides() {
+        // Money pads only where it closes, which is the whole difference.
+        assertEquals("it cost \$5 and \$10", typed("it cost \$5 and \$10").plainText())
+        assertEquals("\$x^2 \$", typed("\$x^2 \$").plainText())
+        assertEquals("\$ x^2\$", typed("\$ x^2\$").plainText())
+    }
+
+    @Test
+    fun dollarsAroundNothingButSpacesSetNothing() {
+        assertEquals("\$   \$", typed("\$   \$").plainText())
+    }
+
+    @Test
+    fun aPaddedFormulaNeverStartsItsRunWithASpace() {
+        // The breaker reads a leading space as somewhere to wrap, and a formula
+        // carries its whole width on its first character.
+        val run = typed("\$   x^2   \$").runs.single()
+        assertEquals("x^2", run.text)
+        assertFalse(run.text.first().isWhitespace())
+    }
+
 }

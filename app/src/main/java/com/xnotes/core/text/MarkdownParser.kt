@@ -22,6 +22,7 @@ object MarkdownParser {
     private val BLOCKQUOTE = Regex("^(>+)\\s?(.*)$")
     private val LINK = Regex("^\\[([^\\]]*)\\]\\(([^)]*)\\)")
     private val IMAGE = Regex("^!\\[([^\\]]*)\\]\\(([^)]*)\\)")
+    private val MATH_FENCE = Regex("^\\s{0,3}\\\$\\\$\\s*$")
     private val TABLE_DELIM = Regex("^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-+:?\\s*)*\\|?\\s*$")
 
     /** Inert link styling: the text keeps a link look, the URL is dropped. */
@@ -51,6 +52,21 @@ object MarkdownParser {
             if (tableEnd > i) {
                 out.addAll(table(lines.subList(i, tableEnd), tableStyle))
                 i = tableEnd
+                continue
+            }
+            // "$$" on a line of its own opens a display equation, closed the same
+            // way, the shape a code fence has. Everything between is one formula,
+            // so its lines join rather than becoming paragraphs of their own.
+            if (MATH_FENCE.matches(line)) {
+                val body = mutableListOf<String>()
+                i++
+                while (i < lines.size && !MATH_FENCE.matches(lines[i])) {
+                    body.add(lines[i])
+                    i++
+                }
+                if (i < lines.size) i++ // swallow the closing fence
+                val latex = body.joinToString(" ") { it.trim() }.trim()
+                out.add(displayParagraph(latex))
                 continue
             }
             val fence = FENCE.matchEntire(line)
@@ -173,8 +189,23 @@ object MarkdownParser {
                 indent = m.groupValues[1].length.coerceAtMost(Paragraph.MAX_INDENT),
             )
         }
-        return Paragraph(inline(line, CharStyle.DEFAULT))
+        val runs = inline(line, CharStyle.DEFAULT)
+        // A display equation with nothing beside it is centred, the same way the
+        // one the user types into an empty paragraph is.
+        if (runs.size == 1 && runs[0].style.mathDisplay) return displayParagraph(runs[0].text)
+        return Paragraph(runs)
     }
+
+    /** One display equation on a line of its own, centred. */
+    private fun displayParagraph(latex: String): Paragraph =
+        if (latex.isEmpty()) {
+            Paragraph()
+        } else {
+            Paragraph(
+                mutableListOf(Run(latex, CharStyle(math = true, mathDisplay = true))),
+                align = ParaAlign.CENTER,
+            )
+        }
 
     private fun indentOf(leading: String): Int =
         (leading.replace("\t", "  ").length / 2).coerceAtMost(Paragraph.MAX_INDENT)
@@ -211,6 +242,25 @@ object MarkdownParser {
                         i++
                     }
                 }
+                // Maths is literal like inline code: its LaTeX is full of markers
+                // that mean something else there, and none of them are emphasis.
+                c == '$' -> {
+                    val span = mathSpan(text, i)
+                    if (span == null) {
+                        literal.append(c)
+                        i++
+                    } else {
+                        flush()
+                        val n = if (span.second) 2 else 1
+                        // The padding belongs to the markers, not the formula.
+                        appendRun(
+                            out,
+                            text.substring(i + n, span.first).trim(),
+                            base.copy(math = true, mathDisplay = span.second),
+                        )
+                        i = span.first + n
+                    }
+                }
                 text.startsWith("**", i) -> i = emphasis(text, i, "**", base.copy(bold = true), base, out, literal) { flush() }
                 text.startsWith("__", i) -> i = emphasis(text, i, "__", base.copy(bold = true), base, out, literal) { flush() }
                 text.startsWith("~~", i) -> i = emphasis(text, i, "~~", base.copy(strike = true), base, out, literal) { flush() }
@@ -237,6 +287,27 @@ object MarkdownParser {
             }
         }
         flush()
+    }
+
+    /**
+     * The "$" span opening at [at], as its closing offset and whether it is the
+     * doubled display form, or null. Mirrors what typing the same text converts,
+     * so pasting and typing land the same paragraph.
+     */
+    private fun mathSpan(text: String, at: Int): Pair<Int, Boolean>? {
+        val display = text.startsWith("$$", at)
+        val marker = if (display) "$$" else "$"
+        val from = at + marker.length
+        if (from >= text.length) return null
+        val close = text.indexOf(marker, from)
+        if (close < from + 1) return null
+        // Padded the same on both sides, or not padded at all: "$x$" and "$ x $"
+        // are maths, while "$5 and $10" pads only where it closes and is money.
+        if (text[from].isWhitespace() != text[close - 1].isWhitespace()) return null
+        if (text.substring(from, close).isBlank()) return null
+        // A single "$" must not close on the first half of a doubled one.
+        if (!display && close + 1 < text.length && text[close + 1] == '$') return null
+        return close to display
     }
 
     /** Consume a [marker]-delimited span (recursing with [styled]); unmatched emits literally. */

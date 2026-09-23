@@ -101,4 +101,96 @@ class MarkdownParserTest {
         val paras = parse("a | b\n---\nc")
         assertTrue(CellIndex(paras).isEmpty)
     }
+    // --- maths ---
+
+    @Test
+    fun dollarsPasteAsAFormula() {
+        val p = parse("mass is \$E=mc^2\$ roughly")[0]
+        assertEquals("mass is E=mc^2 roughly", p.plainText())
+        val f = p.runs.first { it.style.math }
+        assertEquals("E=mc^2", f.text)
+        assertFalse(f.style.mathDisplay)
+    }
+
+    @Test
+    fun aFormulasLatexIsTakenLiterally() {
+        // Stars and underscores inside maths are LaTeX, not emphasis.
+        val p = parse("\$a_1 * b^{2} \\times c_2\$")[0]
+        val f = p.runs.single()
+        assertEquals("a_1 * b^{2} \\times c_2", f.text)
+        assertTrue(f.style.math)
+        assertFalse(f.style.italic)
+    }
+
+    @Test
+    fun doubledDollarsPasteAsADisplayFormulaAndCentre() {
+        val p = parse("\$\$\\sum_{i=1}^n i\$\$")[0]
+        val f = p.runs.single()
+        assertEquals("\\sum_{i=1}^n i", f.text)
+        assertTrue(f.style.mathDisplay)
+        assertEquals(ParaAlign.CENTER, p.align)
+    }
+
+    @Test
+    fun aDisplayFormulaMidSentenceIsNotCentred() {
+        val p = parse("see \$\$x^2\$\$ there")[0]
+        assertEquals("see x^2 there", p.plainText())
+        assertTrue(p.runs.first { it.style.math }.style.mathDisplay)
+        assertEquals(ParaAlign.LEFT, p.align)
+    }
+
+    @Test
+    fun aFencedDollarBlockIsOneFormulaNotAParagraphPerLine() {
+        val paras = parse("before\n\$\$\n\\frac{a}{b}\n= c\n\$\$\nafter")
+        assertEquals(3, paras.size)
+        assertEquals("before", paras[0].plainText())
+        assertEquals("\\frac{a}{b} = c", paras[1].runs.single().text)
+        assertTrue(paras[1].runs.single().style.mathDisplay)
+        assertEquals(ParaAlign.CENTER, paras[1].align)
+        assertEquals("after", paras[2].plainText())
+    }
+
+    @Test
+    fun moneyPastesAsMoney() {
+        val p = parse("it cost \$5 and \$10")[0]
+        assertEquals("it cost \$5 and \$10", p.plainText())
+        assertTrue(p.runs.none { it.style.math })
+    }
+
+    @Test
+    fun anUnclosedDollarIsJustADollar() {
+        assertEquals("half \$x of it", parse("half \$x of it")[0].plainText())
+        assertTrue(parse("half \$x of it")[0].runs.none { it.style.math })
+    }
+
+    @Test
+    fun pastedAndTypedMathsAgree() {
+        // The parser and the input rules are meant to land the same paragraph.
+        val pasted = parse("\$x^2\$")[0]
+        val flow = TextFlow()
+        var pos = FlowPos.START
+        for (ch in "\$x^2\$") {
+            val (_, caret) = FlowEditor(flow).replaceRange(FlowRange.caret(pos), ch.toString())
+            pos = caret
+            InputRules.forTyped(flow, pos, ch.toString())?.let { pos = InputRules.apply(flow, pos, it).caret }
+        }
+        val typed = flow.paragraphs[0]
+        assertEquals(typed.plainText(), pasted.plainText())
+        assertEquals(typed.runs.single().style.math, pasted.runs.single().style.math)
+    }
+
+    @Test
+    fun paddedDollarsPasteAsAFormulaToo() {
+        val p = parse("see \$ x^2 \$ here")[0]
+        assertEquals("see x^2 here", p.plainText())
+        assertEquals("x^2", p.runs.first { it.style.math }.text)
+    }
+
+    @Test
+    fun pastedPaddingHasToMatchOnBothSidesAsWell() {
+        assertTrue(parse("\$x^2 \$")[0].runs.none { it.style.math })
+        assertTrue(parse("\$ x^2\$")[0].runs.none { it.style.math })
+        assertTrue(parse("\$   \$")[0].runs.none { it.style.math })
+    }
+
 }

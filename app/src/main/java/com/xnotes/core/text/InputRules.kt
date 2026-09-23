@@ -149,29 +149,35 @@ object InputRules {
     }
 
     /**
-     * The "$...$" that just closed, or null. Like emphasis it will not open or
-     * close on a space, which is what leaves "$5 and $10" alone, and it ignores a
-     * doubled marker so the display form gets to match it instead.
+     * The "$...$" that just closed, or null. Doubled markers are tried first, so
+     * "$$x$$" is one display equation and never the inline one hiding inside it.
      */
     private fun mathRule(before: String): Rule? {
         if (!before.endsWith("$")) return null
-        // Doubled markers first, so "$$x$$" is one display equation and never the
-        // inline one hiding inside it.
         if (before.endsWith("$$")) {
             val close = before.length - 2
-            if (close <= 1 || before[close - 1].isWhitespace()) return null
             val open = before.lastIndexOf("$$", close - 1)
             if (open < 0 || close - open < 3) return null
-            if (before[open + 2].isWhitespace()) return null
-            return Math(open, display = true)
+            return if (pads(before, open + 2, close)) Math(open, display = true) else null
         }
         val close = before.length - 1
-        if (close <= 0 || before[close - 1].isWhitespace()) return null
         val open = before.lastIndexOf('$', close - 1)
         if (open < 0 || close - open < 2) return null
-        if (before[open + 1].isWhitespace()) return null
         if (open > 0 && before[open - 1] == '$') return null
-        return Math(open)
+        return if (pads(before, open + 1, close)) Math(open) else null
+    }
+
+    /**
+     * Whether the markers around [from], [close) are padded the same on both
+     * sides, which is what tells a formula from a price. "$x$" and "$ x $" are
+     * both somebody writing maths; "$5 and $10" pads only where it closes, which
+     * is somebody writing about money, and the asymmetry is the whole signal.
+     * A span of nothing but spaces is neither.
+     */
+    private fun pads(s: String, from: Int, close: Int): Boolean {
+        if (from >= close) return false
+        if (s[from].isWhitespace() != s[close - 1].isWhitespace()) return false
+        return s.substring(from, close).isNotBlank()
     }
 
     /**
@@ -262,8 +268,14 @@ object InputRules {
         val marker = if (r.display) 2 else 1
         val ed = FlowEditor(flow)
         val outside = ed.charStyleAt(FlowPos(p, r.open))
-        val close = pos.offset - marker
-        val content = r.open + marker
+        val text = flow.paragraphs[p].plainText()
+        // The padding goes with the markers. A run may not begin with a space:
+        // the breaker reads one as somewhere to wrap, and the formula carries its
+        // whole width on its first character, so the line would hang on nothing.
+        var close = pos.offset - marker
+        var content = r.open + marker
+        while (content < close && text[content].isWhitespace()) content++
+        while (close > content && text[close - 1].isWhitespace()) close--
         val cmds = mutableListOf<Command>()
         ed.deleteRange(FlowRange(FlowPos(p, close), FlowPos(p, pos.offset))).first?.let { cmds += it }
         ed.deleteRange(FlowRange(FlowPos(p, r.open), FlowPos(p, content))).first?.let { cmds += it }
