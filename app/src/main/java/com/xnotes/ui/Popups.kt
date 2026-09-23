@@ -599,6 +599,8 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     val vs = editor.viewSettings
     // Same session-sticky rule as the styles popup's "Default for new notes" row.
     var showDefaultRow by remember { mutableStateOf(editor.viewSettings != editor.viewDefaults) }
+    // Unchecking "Default for all notes" goes back to the defaults this popup opened with.
+    val openedDefaults = remember { editor.viewDefaults }
 
     fun apply(new: ViewOverrides) {
         editor.updateViewOverrides(new)
@@ -655,9 +657,9 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                 // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
                     Checkbox(
-                        checked = defaults != ViewSettings() && vs == defaults,
+                        checked = vs == defaults,
                         onCheckedChange = { on ->
-                            editor.updateViewDefaults(if (on) vs else ViewSettings())
+                            editor.updateViewDefaults(if (on) vs else openedDefaults.takeIf { it != vs } ?: ViewSettings())
                         },
                     )
                     Text(
