@@ -889,9 +889,8 @@ class DocumentCodec(
             rgba = c?.rgba ?: def.rgba,
             speedStrength = c?.speedStrength ?: def.speedStrength,
             taperEnabled = c?.let { it.taperEnabled ?: ((it.taperLength ?: 0.0) > 0.0) } ?: def.taperEnabled,
-            // Absent on legacy taper strokes -> the current default tip, so old tapers reload
-            // tapered rather than as a sharp point.
-            taperMinFactor = c?.taperMinFactor ?: ToolDefaults.DEFAULT_TAPER_TIP,
+            // Absent on legacy taper strokes -> the legacy tip, so old tapers reload tapered.
+            taperMinFactor = c?.taperMinFactor ?: ToolDefaults.LEGACY_TAPER_TIP,
             neon = c?.neon ?: def.neon,
             neonStrength = c?.neonStrength ?: def.neonStrength,
             dashLength = c?.dashLength ?: def.dashLength,

@@ -364,7 +364,7 @@ class DocumentCodecTest {
         }
         val stroke = codec.read(ByteArrayInputStream(out.toByteArray())).pages[0].items[0] as Stroke
         assertTrue(stroke.config.taperEnabled)
-        assertEquals(0.30, stroke.config.taperMinFactor, 1e-9)   // legacy taper assumes the default tip
+        assertEquals(0.30, stroke.config.taperMinFactor, 1e-9)   // legacy taper assumes the legacy tip
     }
 
     @Test fun taperZeroTipWidthRoundTripsAsZero() {

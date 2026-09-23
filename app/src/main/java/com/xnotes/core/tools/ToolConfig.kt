@@ -75,9 +75,12 @@ data class ToolConfig(
 
 /** Factory defaults per tool (spec 04 §3). */
 object ToolDefaults {
-    /** Tip width the taper pen eases down to, and the value assumed for legacy taper strokes that
-     *  predate the setting, so they reload tapered rather than as a sharp point. */
-    const val DEFAULT_TAPER_TIP = 0.30
+    /** Tip width the taper pen eases down to. */
+    const val DEFAULT_TAPER_TIP = 0.50
+
+    /** Tip assumed for legacy taper strokes that predate the setting, so they reload tapered
+     *  rather than as a sharp point. Pinned: it must not follow [DEFAULT_TAPER_TIP]. */
+    const val LEGACY_TAPER_TIP = 0.30
 
     fun configFor(tool: Tool): ToolConfig = when (tool) {
         Tool.PEN -> ToolConfig(baseWidth = 3.0, pressureEnabled = true, pressureMinFactor = 0.35, directionStrength = 0.0)
