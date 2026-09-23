@@ -42,11 +42,35 @@ object MathRendering : MathTypesetter {
     // not re-rastering every one of them on every pinch.
     private const val OVERSAMPLE = 3f
 
+    // No bitmap side may pass this. A page-wide formula at full oversample runs
+    // to thousands of pixels a side and tens of megabytes; the exporter answers
+    // that with null and the page then draws nothing at all, which loses the
+    // whole equation rather than softening it.
+    private const val MAX_BITMAP_PX = 2048.0
+
+    // Below this a formula would raster smaller than it is drawn, which is worse
+    // than a large bitmap.
+    private const val MIN_OVERSAMPLE = 1.0
+
     private const val CACHE_BYTES = 8 shl 20
+
+    private const val BOX_CACHE = 512
+
+    /** Stands in for LaTeX the typesetter refused, so it is only ever asked once. */
+    private val REFUSED = MathBox(-1.0, -1.0, -1.0)
 
     private val bitmaps = object : LruCache<String, Bitmap>(CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
+
+    /**
+     * Sizes already worked out. Measuring is the slow half, hundreds of
+     * milliseconds for a long formula, and the painter asks after every visible
+     * one on every frame; the warm path has to answer without reaching the
+     * library at all, whose own caches sit behind a lock this would otherwise
+     * share with whatever is laying out in the background.
+     */
+    private val boxes = LruCache<String, MathBox>(BOX_CACHE)
 
     private val blit = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
@@ -59,6 +83,7 @@ object MathRendering : MathTypesetter {
         synchronized(this) {
             engine = Engine(measurer, exporter, spPx)
             bitmaps.evictAll()
+            boxes.evictAll()
         }
     }
 
@@ -67,16 +92,26 @@ object MathRendering : MathTypesetter {
     override fun measure(latex: String, sizePt: Double, display: Boolean): MathBox? {
         val e = engine ?: return null
         if (latex.isBlank() || e.spPx <= 0f) return null
+        val key = key(latex, sizePt, display)
+        boxes.get(key)?.let { return if (it === REFUSED) null else it }
         // The library caches in plain maps, and page caches are built off the main
         // thread, so every call into it is serialized here rather than there.
-        val src = source(latex, display)
-        val d = synchronized(this) { e.measurer.measure(src, config(e, sizePt, null)) } ?: return null
-        return MathBox(
-            width = d.widthPx.toDouble(),
-            ascent = d.baselinePx.toDouble(),
-            descent = (d.heightPx - d.baselinePx).toDouble(),
-        )
+        val d = synchronized(this) { e.measurer.measure(source(latex, display), config(e, sizePt, null)) }
+        val box = if (d == null) {
+            REFUSED
+        } else {
+            MathBox(
+                width = d.widthPx.toDouble(),
+                ascent = d.baselinePx.toDouble(),
+                descent = (d.heightPx - d.baselinePx).toDouble(),
+            )
+        }
+        boxes.put(key, box)
+        return if (box === REFUSED) null else box
     }
+
+    private fun key(latex: String, sizePt: Double, display: Boolean): String =
+        "$latex|$sizePt|$display"
 
     /** Draw [latex] with its left edge at [x], sitting on [baseline], in [color]. */
     fun draw(
@@ -90,7 +125,7 @@ object MathRendering : MathTypesetter {
     ) {
         val e = engine ?: return
         val box = measure(latex, sizePt, display) ?: return
-        val bmp = raster(e, source(latex, display), sizePt, color) ?: return
+        val bmp = raster(e, source(latex, display), sizePt, color, box) ?: return
         canvas.drawBitmap(
             bmp,
             null,
@@ -112,17 +147,29 @@ object MathRendering : MathTypesetter {
     private fun source(latex: String, display: Boolean): String =
         if (display) "\\displaystyle $latex" else latex
 
-    private fun raster(e: Engine, latex: String, sizePt: Double, color: Rgba): Bitmap? {
+    private fun raster(e: Engine, latex: String, sizePt: Double, color: Rgba, box: MathBox): Bitmap? {
         val key = "$latex|$sizePt|${color.toArgb()}"
         bitmaps.get(key)?.let { return it }
-        val bmp = synchronized(this) {
+        return synchronized(this) {
             bitmaps.get(key) ?: e.exporter.export(
                 latex = latex,
                 config = config(e, sizePt, color),
-                exportConfig = ExportConfig(scale = OVERSAMPLE, transparentBackground = true),
+                exportConfig = ExportConfig(scale = oversampleFor(box), transparentBackground = true),
             )?.imageBitmap?.asAndroidBitmap()?.also { bitmaps.put(key, it) }
         }
-        return bmp
+    }
+
+    /**
+     * How far to oversample [box] before the bitmap grows unreasonable. A long
+     * formula across a page is already a thousand points wide, and three times
+     * that is a bitmap of tens of megabytes: the exporter answers a request that
+     * size with null, and a null bitmap is an equation that does not appear at
+     * all. Sharpness gives way before the equation does.
+     */
+    private fun oversampleFor(box: MathBox): Float {
+        val longest = maxOf(box.width, box.height)
+        if (longest <= 0.0) return OVERSAMPLE
+        return (MAX_BITMAP_PX / longest).coerceIn(MIN_OVERSAMPLE, OVERSAMPLE.toDouble()).toFloat()
     }
 
     /**
