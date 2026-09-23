@@ -288,7 +288,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** One flow layout + snapshot: repainted from cache threads, so only the published frame is read. */
     private class PublishedFlow(val frame: FlowFrame, val indexOf: Map<Page, Int>)
-    private val flowLayout = FlowLayout(textMeasurer)
+    private val flowLayout = FlowLayout(textMeasurer, com.xnotes.platform.MathRendering)
 
     private val treeSitter = com.xnotes.platform.TreeSitterHighlighter(appContext)
     private val highlighter: com.xnotes.core.text.CodeHighlighter? =
@@ -851,6 +851,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
             // Typing re-filters the menu, so any arrowed-to row stops meaning anything.
             slashSelected = -1
+            // Moving off a just-set formula is what lets it open as source again.
+            flowText.mathSettled = flowText.mathSettled?.takeIf { it == ctrl.selection.normalized().start }
         }
         ctrl.onSlashEnter = { commitSlashMenu() }
         ctrl.onContextMenu = { viewport -> flowContextMenu = flowMenuAnchor(viewport) }
@@ -1362,6 +1364,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowLayout.autoColor = { defaultTextColor() }
         flowLayout.accentColor = { palette.accent }
         flowLayout.ruleColor = { tableRuleColor() }
+        flowLayout.revealedMath = { revealedMathIn(it) }
     }
 
     /**
@@ -1605,7 +1608,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * small) and safe off-thread (the highlighter is stateless per call).
      */
     private fun themedFlowLayout(flow: com.xnotes.core.text.TextFlow): FlowLayout {
-        val layout = FlowLayout(textMeasurer)
+        val layout = FlowLayout(textMeasurer, com.xnotes.platform.MathRendering)
         val theme = activeCodeTheme()
         layout.codeBackground = { theme.background }
         layout.autoColor = { defaultTextColor() }
@@ -5871,6 +5874,38 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun removeCustomFont(face: FontFace) {
         com.xnotes.platform.FontCatalog.removeCustomFont(face)
         fontsChanged()
+    }
+
+    /**
+     * The math run the caret is in, as its char offset into [para], or -1. A
+     * formula shows its source while the caret is anywhere in it, edges included,
+     * so tapping just past one is enough to get at the LaTeX behind it.
+     */
+    private fun revealedMathIn(para: Paragraph): Int {
+        if (!flowText.active) return -1
+        val sel = flowText.selection.normalized()
+        if (state.document.flow.paragraphs.getOrNull(sel.start.para) !== para) return -1
+        // A formula just typed draws as one, though the caret is against its edge.
+        flowText.mathSettled?.let { if (it == sel.start) return -1 }
+        var offset = 0
+        for (run in para.runs) {
+            val end = offset + run.text.length
+            if (run.style.math && sel.start.offset in offset..end) return offset
+            offset = end
+        }
+        return -1
+    }
+
+    /**
+     * The maths renderer arrived. Until it does every formula measures as its own
+     * source, so anything already on screen has to re-shape now that it will set.
+     */
+    fun refreshFlowMath() {
+        if (state.document.flow.paragraphs.none { p -> p.runs.any { it.style.math } }) return
+        state.document.flow.reshapeAll()
+        republishFlow(invalidate = true)
+        state.invalidateAllCaches()
+        onRender()
     }
 
     /** Font resolution moved under open content: re-shape, re-bake, re-list. */

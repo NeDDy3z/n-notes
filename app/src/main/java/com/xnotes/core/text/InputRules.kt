@@ -15,8 +15,17 @@ object InputRules {
     /** A rule that matched. Opaque to callers, who only pass it back to [apply]. */
     sealed interface Rule
 
-    /** An applied rule: its command, the caret after it, and the next typing style. */
-    class Result(val command: Command?, val caret: FlowPos, val pending: CharStyle? = null)
+    /**
+     * An applied rule: its command, the caret after it, and the next typing style.
+     * [math] marks the one that just set a formula, which the host keeps showing
+     * as a formula until the caret leaves, rather than reopening what was typed.
+     */
+    class Result(
+        val command: Command?,
+        val caret: FlowPos,
+        val pending: CharStyle? = null,
+        val math: Boolean = false,
+    )
 
     // Block markers match the whole text before the caret, so they only fire on a
     // prefix the user just completed with the trigger space.
@@ -53,6 +62,8 @@ object InputRules {
     ) : Rule
 
     private class Inline(val open: Int, val marker: String, val emph: Emph) : Rule
+
+    private class Math(val open: Int, val display: Boolean = false) : Rule
 
     private class Fence(val lang: String) : Rule
 
@@ -132,6 +143,7 @@ object InputRules {
         if (leading.isEmpty()) null else (leading.replace("\t", "  ").length / 2).coerceAtMost(Paragraph.MAX_INDENT)
 
     private fun inlineRule(before: String): Rule? {
+        mathRule(before)?.let { return it }
         if (before.endsWith("`")) {
             val close = before.length - 1
             val open = before.lastIndexOf('`', close - 1)
@@ -143,6 +155,32 @@ object InputRules {
             return Inline(open, marker, emph)
         }
         return null
+    }
+
+    /**
+     * The "$...$" that just closed, or null. Like emphasis it will not open or
+     * close on a space, which is what leaves "$5 and $10" alone, and it ignores a
+     * doubled marker so the display form gets to match it instead.
+     */
+    private fun mathRule(before: String): Rule? {
+        if (!before.endsWith("$")) return null
+        // Doubled markers first, so "$$x$$" is one display equation and never the
+        // inline one hiding inside it.
+        if (before.endsWith("$$")) {
+            val close = before.length - 2
+            if (close <= 1 || before[close - 1].isWhitespace()) return null
+            val open = before.lastIndexOf("$$", close - 1)
+            if (open < 0 || close - open < 3) return null
+            if (before[open + 2].isWhitespace()) return null
+            return Math(open, display = true)
+        }
+        val close = before.length - 1
+        if (close <= 0 || before[close - 1].isWhitespace()) return null
+        val open = before.lastIndexOf('$', close - 1)
+        if (open < 0 || close - open < 2) return null
+        if (before[open + 1].isWhitespace()) return null
+        if (open > 0 && before[open - 1] == '$') return null
+        return Math(open)
     }
 
     /**
@@ -175,6 +213,7 @@ object InputRules {
     fun apply(flow: TextFlow, pos: FlowPos, rule: Rule): Result = when (rule) {
         is Block -> applyBlock(flow, pos, rule)
         is Inline -> applyInline(flow, pos, rule)
+        is Math -> applyMath(flow, pos, rule)
         is Fence -> applyFence(flow, pos, rule)
         is Strip -> applyStrip(flow, pos, rule)
     }
@@ -220,6 +259,31 @@ object InputRules {
         val end = r.open + (close - content)
         ed.setCharStyle(FlowRange(FlowPos(p, r.open), FlowPos(p, end))) { r.emph.apply(it) }?.let { cmds += it }
         return Result(ed.combined(cmds), FlowPos(p, end), outside)
+    }
+
+    /**
+     * Drop both markers and set what was between them. A display equation that
+     * ends up alone on its line is centred, which is where one belongs; one
+     * written mid-sentence is left where it was put.
+     */
+    private fun applyMath(flow: TextFlow, pos: FlowPos, r: Math): Result {
+        val p = pos.para
+        val marker = if (r.display) 2 else 1
+        val ed = FlowEditor(flow)
+        val outside = ed.charStyleAt(FlowPos(p, r.open))
+        val close = pos.offset - marker
+        val content = r.open + marker
+        val cmds = mutableListOf<Command>()
+        ed.deleteRange(FlowRange(FlowPos(p, close), FlowPos(p, pos.offset))).first?.let { cmds += it }
+        ed.deleteRange(FlowRange(FlowPos(p, r.open), FlowPos(p, content))).first?.let { cmds += it }
+        val end = r.open + (close - content)
+        ed.setCharStyle(FlowRange(FlowPos(p, r.open), FlowPos(p, end))) {
+            it.copy(math = true, mathDisplay = r.display)
+        }?.let { cmds += it }
+        if (r.display && r.open == 0 && flow.paragraphs[p].length == end) {
+            ed.setParaStyle(FlowRange.caret(FlowPos(p, 0))) { it.align = ParaAlign.CENTER }?.let { cmds += it }
+        }
+        return Result(ed.combined(cmds), FlowPos(p, end), outside.copy(math = false, mathDisplay = false), math = true)
     }
 
     private fun applyFence(flow: TextFlow, pos: FlowPos, r: Fence): Result {

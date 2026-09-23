@@ -23,6 +23,10 @@ data class MathBox(val width: Double, val ascent: Double, val descent: Double) {
  * text wrapped around a box that is not there.
  */
 interface MathTypesetter {
-    /** [latex] set at [sizePt] in content px, or null when it will not parse. */
-    fun measure(latex: String, sizePt: Double): MathBox?
+    /**
+     * [latex] set at [sizePt] in content px, or null when it will not parse.
+     * [display] is the form an equation on its own line takes: sums and integrals
+     * grow and put their limits above and below rather than beside.
+     */
+    fun measure(latex: String, sizePt: Double, display: Boolean = false): MathBox?
 }

@@ -129,4 +129,21 @@ class FlowMathLayoutTest {
         val lines = FlowLayout(FakeTextMeasurer()).breakLines(flowWith(p), p, 1000.0)
         assertEquals(21.6, lines[0].width, 1e-9)
     }
+    @Test
+    fun aDisplayEquationIsSetLargerThanTheInlineOne() {
+        val inline = mathPara("x^2")
+        val display = Paragraph(mutableListOf(Run("x^2", CharStyle(math = true, mathDisplay = true))))
+        val a = layout().breakLines(flowWith(inline), inline, 1000.0)[0]
+        val b = layout().breakLines(flowWith(display), display, 1000.0)[0]
+        assertTrue(b.width > a.width)
+        assertTrue(b.ascent > a.ascent)
+    }
+
+    @Test
+    fun thePainterIsToldWhichFormItIs() {
+        val display = Paragraph(mutableListOf(Run("x^2", CharStyle(math = true, mathDisplay = true))))
+        val ops = paint(flowWith(display), layout())
+        assertTrue(ops.any { it.startsWith("drawMathDisplay:x^2@") })
+    }
+
 }

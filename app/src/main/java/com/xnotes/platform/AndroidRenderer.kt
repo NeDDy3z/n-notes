@@ -376,6 +376,17 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         canvas.drawText(text, x.toFloat(), baseline.toFloat(), paint)
     }
 
+    override fun drawMath(
+        latex: String,
+        x: Double,
+        baseline: Double,
+        sizePt: Double,
+        color: Rgba,
+        display: Boolean,
+    ) {
+        MathRendering.draw(canvas, latex, x, baseline, sizePt, color, display)
+    }
+
     private fun applyPen(pen: Pen) {
         strokePaint.color = pen.color.toArgb()
         val width = if (pen.cosmetic) (pen.width / avgScale) else pen.width

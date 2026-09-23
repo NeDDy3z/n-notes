@@ -92,6 +92,8 @@ import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.hrm.latex.renderer.export.rememberLatexExporter
+import com.hrm.latex.renderer.measure.rememberLatexMeasurer
 
 /** Minimum time the launch loader stays up, so its animation is briefly seen even
  *  when the session restores instantly. */
@@ -250,6 +252,15 @@ private fun EditorScreen(
 ) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
+    // The LaTeX renderer resolves its fonts through the composition, so this is the
+    // only place it can be built; the flow reaches it through MathRendering after.
+    val mathMeasurer = rememberLatexMeasurer()
+    val mathExporter = rememberLatexExporter()
+    val mathDensity = LocalDensity.current
+    LaunchedEffect(mathMeasurer, mathExporter, mathDensity) {
+        com.xnotes.platform.MathRendering.install(mathMeasurer, mathExporter, mathDensity)
+        editor.refreshFlowMath()
+    }
     // Backstage is the root of the stack; the editor is pushed on top only when a note is open
     // (editor.noteOpen). Every launch starts on backstage.
     var backstageView by remember { mutableStateOf(com.xnotes.ui.BackstageView.HOME) }

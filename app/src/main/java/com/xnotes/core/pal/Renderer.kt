@@ -198,7 +198,14 @@ interface Renderer {
      * the same string, or the text will wrap around a box that is not there.
      * Default is a no-op, like [drawTextRun], for backends that never see maths.
      */
-    fun drawMath(latex: String, x: Double, baseline: Double, sizePt: Double, color: Rgba) {}
+    fun drawMath(
+        latex: String,
+        x: Double,
+        baseline: Double,
+        sizePt: Double,
+        color: Rgba,
+        display: Boolean = false,
+    ) {}
 
     /** Run [block] between matching [save]/[restore] calls. */
     fun withSave(block: () -> Unit) {

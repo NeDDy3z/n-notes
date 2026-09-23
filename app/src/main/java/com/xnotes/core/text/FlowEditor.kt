@@ -199,8 +199,24 @@ class FlowEditor(private val flow: TextFlow) {
     private fun runsOf(text: String, style: CharStyle): MutableList<Run> =
         if (text.isEmpty()) mutableListOf() else mutableListOf(Run(text, style))
 
-    private fun styleForInsert(para: Paragraph, offset: Int): CharStyle =
-        styleOfCharAt(para, if (offset > 0) offset - 1 else 0) ?: CharStyle.DEFAULT
+    /**
+     * The style new text takes at [offset]: whatever the character before it has,
+     * except that a formula carries over only from within, its closing edge
+     * included, which is the same reach over which the caret shows its source.
+     * Typing at its opening edge writes in front of the equation instead, and
+     * carrying on past one is the caret's pending style, set when it was made.
+     */
+    private fun styleForInsert(para: Paragraph, offset: Int): CharStyle {
+        val base = styleOfCharAt(para, if (offset > 0) offset - 1 else 0) ?: CharStyle.DEFAULT
+        if (!base.math) return base
+        var seen = 0
+        for (run in para.runs) {
+            val end = seen + run.text.length
+            if (run.style.math && offset > seen && offset <= end) return base
+            seen = end
+        }
+        return base.copy(math = false)
+    }
 
     private fun styleOfCharAt(para: Paragraph, index: Int): CharStyle? {
         var seen = 0

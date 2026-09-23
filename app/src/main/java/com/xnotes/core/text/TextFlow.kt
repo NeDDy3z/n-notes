@@ -45,6 +45,8 @@ data class CharStyle(
     val face: FontFace? = null,
     /** Marks a run whose text is LaTeX, drawn as the formula it sets. */
     val math: Boolean = false,
+    /** A [math] run set as display rather than inline: bigger operators, its own line. */
+    val mathDisplay: Boolean = false,
 ) {
     companion object {
         val DEFAULT = CharStyle()

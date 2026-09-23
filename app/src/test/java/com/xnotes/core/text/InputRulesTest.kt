@@ -383,4 +383,119 @@ class InputRulesTest {
         assertNotNull(InputRules.forBackspace(flow, FlowPos(0, 0)))
     }
 
+    // --- inline math ---
+
+    @Test
+    fun dollarsSetTheirContentsAsAFormulaAndLeaveNoMarkers() {
+        val p = typed("mass is \$E=mc^2\$")
+        assertEquals("mass is E=mc^2", p.plainText())
+        val run = p.runs.first { it.style.math }
+        assertEquals("E=mc^2", run.text)
+    }
+
+    @Test
+    fun aFormulaKeepsTheSpacesInsideIt() {
+        val p = typed("\$a + b\$")
+        assertEquals("a + b", p.plainText())
+        assertTrue(p.runs.single().style.math)
+    }
+
+    @Test
+    fun moneyIsNotAFormula() {
+        // The closing marker would sit after a space, which is never a close.
+        val p = typed("it cost \$5 and \$10")
+        assertEquals("it cost \$5 and \$10", p.plainText())
+        assertTrue(p.runs.none { it.style.math })
+    }
+
+    @Test
+    fun anEmptyPairOfDollarsSetsNothing() {
+        val p = typed("\$\$")
+        assertEquals("\$\$", p.plainText())
+        assertTrue(p.runs.none { it.style.math })
+    }
+
+    @Test
+    fun typingOnPastAFormulaIsNotPartOfIt() {
+        val flow = TextFlow()
+        type(flow, "\$x^2\$ and on")
+        val p = flow.paragraphs[0]
+        assertEquals("x^2 and on", p.plainText())
+        assertEquals("x^2", p.runs.first { it.style.math }.text)
+        assertEquals(" and on", p.runs.last().text)
+        assertFalse(p.runs.last().style.math)
+    }
+
+    @Test
+    fun typingBackAtAFormulaJoinsIt() {
+        val flow = TextFlow()
+        val end = type(flow, "\$x\$")
+        // Returning to the formula is typing into it: the same reach that shows
+        // its source, and the only way a one-character formula can be edited.
+        FlowEditor(flow).replaceRange(FlowRange.caret(end), "y")
+        val p = flow.paragraphs[0]
+        assertEquals("xy", p.runs.single().text)
+        assertTrue(p.runs.single().style.math)
+    }
+
+    @Test
+    fun theFirstKeyAfterAFormulaLandsOutsideItAnyway() {
+        val flow = TextFlow()
+        type(flow, "\$x^2\$ ok")
+        val p = flow.paragraphs[0]
+        assertEquals("x^2", p.runs.first { it.style.math }.text)
+        assertEquals(" ok", p.runs.last().text)
+        assertFalse(p.runs.last().style.math)
+    }
+
+    @Test
+    fun aFormulaReportsItselfSoItDrawsRatherThanReopening() {
+        val flow = TextFlow()
+        type(flow, "a")
+        val pos = FlowPos(0, 1)
+        var last: InputRules.Result? = null
+        for (ch in "\$x^2\$") {
+            val (_, caret) = FlowEditor(flow).replaceRange(FlowRange.caret(last?.caret ?: pos), ch.toString())
+            InputRules.forTyped(flow, caret, ch.toString())?.let {
+                last = InputRules.apply(flow, caret, it)
+            } ?: run { last = InputRules.Result(null, caret) }
+        }
+        assertTrue(last!!.math)
+    }
+
+    @Test
+    fun doubledDollarsSetADisplayEquationAndCentreIt() {
+        val flow = TextFlow()
+        type(flow, "\$\$\\sum_{i=1}^n i\$\$")
+        val p = flow.paragraphs[0]
+        val run = p.runs.single()
+        assertEquals("\\sum_{i=1}^n i", run.text)
+        assertTrue(run.style.math)
+        assertTrue(run.style.mathDisplay)
+        assertEquals(ParaAlign.CENTER, p.align)
+    }
+
+    @Test
+    fun aDisplayEquationMidSentenceStaysWhereItWasPut() {
+        val flow = TextFlow()
+        type(flow, "see \$\$x^2\$\$")
+        val p = flow.paragraphs[0]
+        assertEquals("see x^2", p.plainText())
+        assertTrue(p.runs.last().style.mathDisplay)
+        assertEquals(ParaAlign.LEFT, p.align)
+    }
+
+    @Test
+    fun anInlineFormulaIsNotADisplayOne() {
+        val p = typed("\$x^2\$")
+        assertTrue(p.runs.single().style.math)
+        assertFalse(p.runs.single().style.mathDisplay)
+        assertEquals(ParaAlign.LEFT, p.align)
+    }
+
+    @Test
+    fun emptyDoubledDollarsSetNothing() {
+        assertEquals("\$\$\$\$", typed("\$\$\$\$").plainText())
+    }
+
 }

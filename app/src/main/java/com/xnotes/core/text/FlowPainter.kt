@@ -125,7 +125,7 @@ object FlowPainter {
         for (seg in line.segs) {
             val color = seg.style.color ?: frame.defaultColor
             if (seg.math) {
-                r.drawMath(seg.text, seg.x, line.baseline, seg.font.pointSize, color)
+                r.drawMath(seg.text, seg.x, line.baseline, seg.font.pointSize, color, seg.style.mathDisplay)
                 continue
             }
             r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, color)

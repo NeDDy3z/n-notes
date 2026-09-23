@@ -174,7 +174,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
      * so a formula the renderer chokes on is still text the user can fix.
      */
     private fun mathBox(run: Run, font: FontSpec): MathBox? =
-        if (run.text.isEmpty()) null else math?.measure(run.text, font.pointSize)
+        if (run.text.isEmpty()) null else math?.measure(run.text, font.pointSize, run.style.mathDisplay)
 
     // --- line breaking ---
 
