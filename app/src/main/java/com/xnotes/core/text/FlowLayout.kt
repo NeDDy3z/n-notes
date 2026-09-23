@@ -117,6 +117,14 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             (flow.monoFace.id.hashCode().toLong() shl 16) xor
             flow.defaultSizePt.toRawBits()
 
+    /**
+     * The font a math run would take if it were prose: the same size, in the face
+     * the text around it is set in. A formula resolves to mono so its source
+     * reads as source, which is no use for deciding the line it has to sit on.
+     */
+    private fun proseFont(flow: TextFlow, para: Paragraph, style: CharStyle, bold: Boolean): FontSpec =
+        resolveFont(flow, para, (if (bold) style.copy(bold = true) else style).copy(math = false, code = false))
+
     /** [bold] forces bold on every run (a table's header row). */
     private fun shapeOf(flow: TextFlow, para: Paragraph, bold: Boolean = false): ParaShape {
         val key = defaultsKey(flow)
@@ -154,7 +162,17 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             if (box != null) {
                 adv[offset] = box.width
                 for (k in offset + 1 until offset + run.text.length) atom[k] = true
-                runMetrics[i] = box.metrics()
+                // A formula asks for at least the room the same text would: most of
+                // them are shorter than a line of prose, and a line holding nothing
+                // else would then sit higher than the lines around it, dropping to
+                // the normal baseline the moment a single character joined it.
+                // Measured against the face the prose uses, not the mono one the
+                // run resolves to, since that is the baseline it has to share.
+                val asText = measurer.metrics(proseFont(flow, para, run.style, bold))
+                runMetrics[i] = LineMetrics(
+                    maxOf(box.ascent, asText.ascent),
+                    maxOf(box.descent, asText.descent),
+                )
             } else {
                 measurer.advances(run.text, font).copyInto(adv, offset)
                 runMetrics[i] = measurer.metrics(font)
@@ -671,12 +689,17 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         ordinal: Int,
     ): PlacedLine {
         val n = bl.endChar - bl.startChar
+        // A display equation with nothing beside it sits centred, which is where
+        // one belongs. It is centred here rather than by turning the paragraph's
+        // alignment on, because that would outlive the equation and leave the
+        // user turning it off again. An alignment they chose still wins.
+        val centreDisplay = para.align == ParaAlign.LEFT && loneDisplayMath(para, shape, bl)
         val justify = para.align == ParaAlign.JUSTIFY &&
             !lastLineOfPara && !bl.hardBroken && bl.spaceCount > 0
         val extraPerSpace = if (justify) ((avail - bl.width) / bl.spaceCount).coerceAtLeast(0.0) else 0.0
-        val alignOffset = when (para.align) {
-            ParaAlign.CENTER -> ((avail - bl.width) / 2.0).coerceAtLeast(0.0)
-            ParaAlign.RIGHT -> (avail - bl.width).coerceAtLeast(0.0)
+        val alignOffset = when {
+            centreDisplay || para.align == ParaAlign.CENTER -> ((avail - bl.width) / 2.0).coerceAtLeast(0.0)
+            para.align == ParaAlign.RIGHT -> (avail - bl.width).coerceAtLeast(0.0)
             else -> 0.0
         }
         val left = contentRect.left + indentPx + alignOffset
@@ -762,6 +785,28 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             codeRight = contentRect.right,
             mathStarts = mathStarts.toIntArray(),
         )
+    }
+
+    /**
+     * True when this line holds a drawn display equation and nothing else. Such a
+     * line centres itself: a formula set on its own line is display maths, and
+     * that is how display maths is laid out.
+     */
+    private fun loneDisplayMath(para: Paragraph, shape: ParaShape, bl: BrokenLine): Boolean {
+        var found = false
+        var at = 0
+        for ((i, run) in para.runs.withIndex()) {
+            val end = at + run.text.length
+            if (end > bl.startChar && at < bl.endChar) {
+                if (run.style.mathDisplay && shape.mathShow[i] == MathShow.FORMULA) {
+                    found = true
+                } else if (shape.text.substring(maxOf(at, bl.startChar), minOf(end, bl.endChar)).isNotBlank()) {
+                    return false
+                }
+            }
+            at = end
+        }
+        return found
     }
 
     /** Emit one word's segments, split at highlight-span boundaries with their colours. */

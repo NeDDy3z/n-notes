@@ -123,12 +123,12 @@ class MarkdownParserTest {
     }
 
     @Test
-    fun doubledDollarsPasteAsADisplayFormulaAndCentre() {
+    fun doubledDollarsPasteAsADisplayFormula() {
         val p = parse("\$\$\\sum_{i=1}^n i\$\$")[0]
         val f = p.runs.single()
         assertEquals("\\sum_{i=1}^n i", f.text)
         assertTrue(f.style.mathDisplay)
-        assertEquals(ParaAlign.CENTER, p.align)
+        assertEquals(ParaAlign.LEFT, p.align)
     }
 
     @Test
@@ -146,7 +146,7 @@ class MarkdownParserTest {
         assertEquals("before", paras[0].plainText())
         assertEquals("\\frac{a}{b} = c", paras[1].runs.single().text)
         assertTrue(paras[1].runs.single().style.mathDisplay)
-        assertEquals(ParaAlign.CENTER, paras[1].align)
+        assertEquals(ParaAlign.LEFT, paras[1].align)
         assertEquals("after", paras[2].plainText())
     }
 

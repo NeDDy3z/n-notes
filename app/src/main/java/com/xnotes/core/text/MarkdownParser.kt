@@ -196,15 +196,16 @@ object MarkdownParser {
         return Paragraph(runs)
     }
 
-    /** One display equation on a line of its own, centred. */
+    /**
+     * One display equation on a line of its own. The layout centres such a line
+     * itself, so the paragraph keeps the default alignment rather than carrying
+     * one the reader would have to undo.
+     */
     private fun displayParagraph(latex: String): Paragraph =
         if (latex.isEmpty()) {
             Paragraph()
         } else {
-            Paragraph(
-                mutableListOf(Run(latex, CharStyle(math = true, mathDisplay = true))),
-                align = ParaAlign.CENTER,
-            )
+            Paragraph(mutableListOf(Run(latex, CharStyle(math = true, mathDisplay = true))))
         }
 
     private fun indentOf(leading: String): Int =

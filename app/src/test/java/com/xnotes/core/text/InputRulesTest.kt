@@ -461,7 +461,7 @@ class InputRulesTest {
 
 
     @Test
-    fun doubledDollarsSetADisplayEquationAndCentreIt() {
+    fun doubledDollarsSetADisplayEquationWithoutStampingAlignment() {
         val flow = TextFlow()
         type(flow, "\$\$\\sum_{i=1}^n i\$\$")
         val p = flow.paragraphs[0]
@@ -469,7 +469,9 @@ class InputRulesTest {
         assertEquals("\\sum_{i=1}^n i", run.text)
         assertTrue(run.style.math)
         assertTrue(run.style.mathDisplay)
-        assertEquals(ParaAlign.CENTER, p.align)
+        // Drawn centred by the layout, without an alignment left on the
+        // paragraph for the user to turn off again.
+        assertEquals(ParaAlign.LEFT, p.align)
     }
 
     @Test

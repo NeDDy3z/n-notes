@@ -259,9 +259,9 @@ object InputRules {
     }
 
     /**
-     * Drop both markers and set what was between them. A display equation that
-     * ends up alone on its line is centred, which is where one belongs; one
-     * written mid-sentence is left where it was put.
+     * Drop both markers and set what was between them. A display equation alone
+     * on its line draws centred, but the paragraph's own alignment is left as it
+     * was: turning it on here would outlive the equation.
      */
     private fun applyMath(flow: TextFlow, pos: FlowPos, r: Math): Result {
         val p = pos.para
@@ -283,9 +283,6 @@ object InputRules {
         ed.setCharStyle(FlowRange(FlowPos(p, r.open), FlowPos(p, end))) {
             it.copy(math = true, mathDisplay = r.display)
         }?.let { cmds += it }
-        if (r.display && r.open == 0 && flow.paragraphs[p].length == end) {
-            ed.setParaStyle(FlowRange.caret(FlowPos(p, 0))) { it.align = ParaAlign.CENTER }?.let { cmds += it }
-        }
         return Result(ed.combined(cmds), FlowPos(p, end), outside.copy(math = false, mathDisplay = false))
     }
 

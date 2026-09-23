@@ -210,7 +210,16 @@ class FlowFrame(
             bottom = maxOf(bottom, t.bottom + t.lineWidth)
             pad = maxOf(pad, t.lineWidth)
         }
-        return Rect(page.contentRect.left - pad, top, page.contentRect.w + 2 * pad, bottom - top)
+        var left = page.contentRect.left - pad
+        var right = page.contentRect.right + pad
+        // A formula wider than the column hangs out of it, and a crop taken at the
+        // column would cut in the export what the screen draws whole.
+        for (line in page.lines) {
+            if (line.xs.isEmpty()) continue
+            left = minOf(left, line.xs.first() - pad)
+            right = maxOf(right, line.xs.last() + pad)
+        }
+        return Rect(left, top, right - left, bottom - top)
     }
 
     /** (page index, bottom y) of the last placed line, or null when nothing is placed. */
