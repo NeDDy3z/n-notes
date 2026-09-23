@@ -18,7 +18,7 @@ data class Preferences(
     val darkPaletteStyle: String = "material",
     val lightPaletteStyle: String = "material",
     val oledPaletteStyle: String = "classic",
-    val materialMode: MaterialColourMode = MaterialColourMode.SYSTEM,
+    val materialMode: MaterialColourMode = MaterialColourMode.DUAL,
     val materialSingleSeed: Rgba = DEFAULT_MATERIAL_SINGLE,
     val materialDualSeed: Rgba = DEFAULT_MATERIAL_DUAL,
     val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
