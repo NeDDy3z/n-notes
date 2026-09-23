@@ -63,6 +63,14 @@ class FlowTextController(
     /** Style for the next typed run (set by the format bar on a collapsed caret). */
     var pendingStyle: CharStyle? = null
 
+    /**
+     * The style text typed at a position must take, when the host knows better
+     * than the flow does. A formula's closing edge is both beside the equation
+     * and at the end of its LaTeX, and only the host tracks which of the two the
+     * caret arrived at, so only the host can say whether typing there goes in.
+     */
+    var styleAt: (FlowPos) -> CharStyle? = { null }
+
     /** Whether typed markdown markers convert (the text tool's Markdown shortcuts toggle). */
     var markdownInput = true
 
@@ -460,7 +468,9 @@ class FlowTextController(
             InputRules.forEnter(flow(), r.start, markdownInput)?.let { return applyRule(it, r.start) }
         }
         // The armed style is only spent on text that actually lands; a deletion keeps it.
-        val effStyle = style ?: (if (text.isNotEmpty()) pendingStyle?.also { pendingStyle = null } else null)
+        val effStyle = style
+            ?: (if (text.isNotEmpty()) pendingStyle?.also { pendingStyle = null } else null)
+            ?: (if (text.isNotEmpty()) styleAt(r.start) else null)
         if (r.start.para == r.end.para && '\n' !in text && para != null) {
             if (burstPara !== para) {
                 flushBurst()
