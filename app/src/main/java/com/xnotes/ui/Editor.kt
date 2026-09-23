@@ -203,6 +203,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private val deviceHasDisplayCutout = com.xnotes.deviceHasDisplayCutout(context)
 
+    /** The flow defaults a new note starts with when none are saved: text sized for this screen. */
+    val factoryFlow = FlowDefaults(sizePt = FlowDefaults.sizeForScreen(com.xnotes.deviceShortSideDp(context)))
+
     /** Whether the OS is in dark mode right now; resolves the "system" appearance. */
     private var systemInDarkMode = (context.resources.configuration.uiMode and
         android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -2100,15 +2103,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         settingsRepo.save(settings)
     }
 
-    /** The saved flow defaults stamped onto newly created notes (empty ⇒ app built-ins). */
-    var newNoteFlow by mutableStateOf(settings.newNoteFlow)
+    /** The flow defaults stamped onto newly created notes: the saved ones, else [factoryFlow]. */
+    var newNoteFlow by mutableStateOf(settings.newNoteFlow ?: factoryFlow)
         private set
 
-    /** Save (or, passing empty defaults, forget) the flow defaults new notes start with. */
+    /** Save (or, passing [factoryFlow], forget) the flow defaults new notes start with. */
     fun saveNewNoteFlow(defaults: FlowDefaults) {
         if (newNoteFlow == defaults) return
         newNoteFlow = defaults
-        settings = settings.copy(newNoteFlow = defaults)
+        settings = settings.copy(newNoteFlow = defaults.takeIf { it != factoryFlow })
         settingsRepo.save(settings)
     }
 
@@ -2140,7 +2143,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 doc.style = doc.style.withTemplate(null, PageTemplates.NONE)
             }
         }
-        settings.newNoteFlow.applyTo(doc.flow)
+        (settings.newNoteFlow ?: factoryFlow).applyTo(doc.flow)
         return doc
     }
 

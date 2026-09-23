@@ -2,6 +2,9 @@ package com.xnotes.core.text
 
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /** Paragraph alignment. [id] is the stable serialized token. */
 enum class ParaAlign(val id: String) {
@@ -240,7 +243,7 @@ class TextFlow {
 /**
  * The flow's document-level defaults as one value: what the text tool's config
  * popup edits, what "Default for new notes" saves, and what new notes are
- * stamped with. Empty (all built-ins) means nothing to stamp or persist.
+ * stamped with. The factory size depends on the screen ([sizeForScreen]).
  */
 data class FlowDefaults(
     val face: FontFace = FontFace.SANS,
@@ -249,6 +252,7 @@ data class FlowDefaults(
     val color: Rgba? = null,
     val margins: FlowMargins = FlowMargins(),
 ) {
+    /** All the file format's built-ins, which a note need not record (not a device's factory). */
     val isEmpty: Boolean get() = this == FlowDefaults()
 
     fun applyTo(flow: TextFlow) {
@@ -262,5 +266,25 @@ data class FlowDefaults(
     companion object {
         fun of(flow: TextFlow): FlowDefaults =
             FlowDefaults(flow.defaultFace, flow.monoFace, flow.defaultSizePt, flow.defaultColor, flow.margins)
+
+        /**
+         * The factory text size for a screen whose shorter side is [shortSideDp]. A
+         * narrower screen shows the fitted page smaller, so the size grows as a power
+         * law through the two calibration points, in whole points held to 12..36.
+         */
+        fun sizeForScreen(shortSideDp: Double): Double {
+            if (!(shortSideDp > 0.0)) return TextFlow.DEFAULT_SIZE_PT
+            val k = ln(PHONE_PT / TABLET_PT) / ln(TABLET_DP / PHONE_DP)
+            val pt = TABLET_PT * (TABLET_DP / shortSideDp).pow(k)
+            return pt.roundToInt().toDouble().coerceIn(MIN_SCREEN_PT, MAX_SCREEN_PT)
+        }
+
+        // Chosen by eye on a Galaxy A14 (phone) and a Galaxy Tab S9 FE (tablet).
+        private const val PHONE_DP = 411.0
+        private const val PHONE_PT = 30.0
+        private const val TABLET_DP = 823.0
+        private const val TABLET_PT = 18.0
+        private const val MIN_SCREEN_PT = 12.0
+        private const val MAX_SCREEN_PT = 36.0
     }
 }

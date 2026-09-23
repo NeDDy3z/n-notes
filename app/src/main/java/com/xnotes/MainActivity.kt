@@ -2,9 +2,12 @@ package com.xnotes
 
 import android.content.Context
 import android.content.Intent
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.DisplayMetrics
+import android.view.Display
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -110,6 +113,17 @@ internal fun deviceHasDisplayCutout(context: Context): Boolean {
             (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
     }.getOrNull()
     return display?.cutout != null
+}
+
+/** The whole screen's shorter side in dp, the same in any orientation, window or split; 0 if unknown. */
+internal fun deviceShortSideDp(context: Context): Double {
+    val metrics = runCatching {
+        DisplayMetrics().also {
+            @Suppress("DEPRECATION")
+            context.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY).getRealMetrics(it)
+        }
+    }.getOrNull() ?: return 0.0
+    return minOf(metrics.widthPixels, metrics.heightPixels) / metrics.density.toDouble()
 }
 
 /** The standard touch action an old One UI S-Pen-button code stands in for, or -1 for anything else. */

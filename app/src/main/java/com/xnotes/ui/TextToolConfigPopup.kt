@@ -111,12 +111,12 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
                     fontSize = 13.sp,
                 )
             }
-            if (showNewNoteRow && !config.isEmpty) {
+            if (showNewNoteRow && config != editor.factoryFlow) {
                 // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
                     Checkbox(
-                        checked = !editor.newNoteFlow.isEmpty && config == editor.newNoteFlow,
-                        onCheckedChange = { on -> editor.saveNewNoteFlow(if (on) config else FlowDefaults()) },
+                        checked = editor.newNoteFlow != editor.factoryFlow && config == editor.newNoteFlow,
+                        onCheckedChange = { on -> editor.saveNewNoteFlow(if (on) config else editor.factoryFlow) },
                     )
                     Text(
                         stringResource(R.string.default_for_new_notes),
@@ -128,7 +128,7 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
                 Spacer(Modifier.size(4.dp))
             }
             Row(Modifier.align(Alignment.End)) {
-                ModeChip(stringResource(R.string.reset), false) { apply(FlowDefaults()) }
+                ModeChip(stringResource(R.string.reset), false) { apply(editor.factoryFlow) }
             }
         }
     }

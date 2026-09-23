@@ -75,8 +75,8 @@ data class Settings(
     val renderScale: Double = 1.0,
     /** All Pages style stamped onto every newly created note; empty ⇒ none saved. */
     val newNoteStyle: PageStyle = PageStyle(),
-    /** Flow (text tool) defaults stamped onto every newly created note; empty ⇒ none saved. */
-    val newNoteFlow: FlowDefaults = FlowDefaults(),
+    /** Flow (text tool) defaults stamped onto every newly created note; null ⇒ none saved (the device's factory). */
+    val newNoteFlow: FlowDefaults? = null,
     /** Background stamped onto every newly created canvas; null ⇒ none saved. */
     val newCanvasBackground: CanvasBackground? = null,
     /** Size and look the insert-table dialog starts from ("Default for new tables"). */
@@ -117,7 +117,7 @@ data class Settings(
             .apply { lastFolder?.let { put("last_folder", it) } }
             .put("render_scale", renderScale)
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
-            .apply { if (!newNoteFlow.isEmpty) put("new_note_flow", flowDefaultsJson(newNoteFlow)) }
+            .apply { newNoteFlow?.let { put("new_note_flow", flowDefaultsJson(it)) } }
             .apply { newCanvasBackground?.let { put("new_canvas_background", canvasBackgroundJson(it)) } }
             .apply { if (!newTable.isFactory) put("new_table", tableDefaultsJson(newTable)) }
             .put("prefs", prefs.toJson())
@@ -173,7 +173,7 @@ data class Settings(
                 lastFolder = o.optString("last_folder", "").ifEmpty { null },
                 renderScale = o.optDouble("render_scale", 1.0),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
-                newNoteFlow = flowDefaults(o.optJSONObject("new_note_flow")),
+                newNoteFlow = o.optJSONObject("new_note_flow")?.let { flowDefaults(it) },
                 newCanvasBackground = canvasBackground(o.optJSONObject("new_canvas_background")),
                 newTable = tableDefaults(o.optJSONObject("new_table")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
@@ -272,8 +272,7 @@ data class Settings(
             .put("margin_right_mm", d.margins.rightMm)
             .put("margin_bottom_mm", d.margins.bottomMm)
 
-        private fun flowDefaults(o: JSONObject?): FlowDefaults {
-            if (o == null) return FlowDefaults()
+        private fun flowDefaults(o: JSONObject): FlowDefaults {
             val d = FlowDefaults()
             return FlowDefaults(
                 face = FontFace(o.optString("face", d.face.id)),

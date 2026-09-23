@@ -107,6 +107,18 @@ class TextFlowTest {
     }
 
     @Test
+    fun factorySizeFitsTheScreenThroughBothCalibrationPoints() {
+        // The shorter sides of the two devices it was tuned on: 1080px at 420dpi, 1440px at 280dpi.
+        assertEquals(30.0, FlowDefaults.sizeForScreen(1080 * 160 / 420.0), 0.0)
+        assertEquals(18.0, FlowDefaults.sizeForScreen(1440 * 160 / 280.0), 0.0)
+        val between = FlowDefaults.sizeForScreen(600.0)
+        assertTrue(between > 18.0 && between < 30.0)
+        assertEquals(12.0, FlowDefaults.sizeForScreen(5000.0), 0.0)
+        assertEquals(36.0, FlowDefaults.sizeForScreen(100.0), 0.0)
+        assertEquals(TextFlow.DEFAULT_SIZE_PT, FlowDefaults.sizeForScreen(0.0), 0.0)
+    }
+
+    @Test
     fun headingsAreBoldAndScaleWithTheFlowsBaseSize() {
         val small = Paragraph.headingStyle(3, 10.0).sizePt!!
         val large = Paragraph.headingStyle(3, 20.0).sizePt!!
