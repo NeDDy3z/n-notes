@@ -94,6 +94,9 @@ class FlowTextController(
     /** Installed by the input layer: a committed edit landed (reconcile the IME mirror). */
     var onEdited: () -> Unit = {}
 
+    /** Installed by the input layer: a typed edit landed, which a key event may have made behind the mirror. */
+    var onTyped: () -> Unit = {}
+
     /** Installed by the input layer: re-show the soft keyboard (a caret tap wants it back). */
     var requestIme: () -> Unit = {}
 
@@ -481,6 +484,7 @@ class FlowTextController(
             onChanged(active)
             burstExtras += autoAppendPages()
             selection = FlowRange.caret(caret)
+            onTyped()
             if (markdownInput) InputRules.forTyped(flow(), caret, text)?.let { return applyRule(it, caret) }
             if (slashCommands && text == "/") {
                 SlashCommands.escapeAt(flow(), caret)?.let { return dropSlash(caret.para, it) }
