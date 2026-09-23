@@ -1,6 +1,7 @@
 package com.xnotes.core.text
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -197,4 +198,26 @@ class SlashCommandsTest {
             assertTrue(entry.id, ids("/${entry.id}").contains(entry.id))
         }
     }
+    @Test
+    fun equationIsReachableAndWantsItsLatex() {
+        assertTrue("equation" in ids("/eq"))
+        val entry = SlashCommands.entries().first { it.id == "equation" }
+        assertTrue(entry.needsArg)
+        assertFalse(SlashCommands.ready(queryOf("/equation ")!!, entry))
+        assertTrue(SlashCommands.ready(queryOf("/equation x^2")!!, entry))
+    }
+
+    @Test
+    fun aFormulaArgumentMayRunLongerThanAKeyword() {
+        val long = "\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a} + \\int_0^1 f(x) dx"
+        assertTrue(long.length > SlashCommands.MAX_QUERY)
+        val q = queryOf("/equation $long")
+        assertEquals(long, q!!.arg)
+    }
+
+    @Test
+    fun aLongWordIsStillProseNotACommand() {
+        assertNull(queryOf("/" + "a".repeat(SlashCommands.MAX_QUERY + 1)))
+    }
+
 }

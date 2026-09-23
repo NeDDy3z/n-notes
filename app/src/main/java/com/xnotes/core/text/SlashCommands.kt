@@ -15,7 +15,7 @@ import com.xnotes.core.history.Command
 object SlashCommands {
 
     /** What a committed entry does. The host dispatches on it. */
-    enum class Kind { HEADING, BODY, BULLET, ORDERED, TODO, CODE, TABLE, SIZE, COLOR, DATE, TIME }
+    enum class Kind { HEADING, BODY, BULLET, ORDERED, TODO, CODE, TABLE, SIZE, COLOR, MATH, DATE, TIME }
 
     /**
      * One menu entry. [keys] are matched by prefix, so "h" offers all six headings
@@ -32,6 +32,8 @@ object SlashCommands {
         val needsArg: Boolean = false,
         val markdown: String? = null,
         val param: String? = null,
+        /** Lets this entry's argument run past [MAX_QUERY]; a formula is still one argument. */
+        val longArg: Boolean = false,
     )
 
     /** An open query: where the "/" sits in its paragraph, and everything typed after it. */
@@ -49,8 +51,15 @@ object SlashCommands {
         val range: FlowRange get() = FlowRange(FlowPos(para, slash), FlowPos(para, slash + 1 + text.length))
     }
 
-    /** Past this the user is plainly writing prose, not a command. */
+    /** Past this the keyword is plainly prose, not a command. */
     const val MAX_QUERY = 24
+
+    /**
+     * How far past [MAX_QUERY] an [Entry.longArg] command may run. Only the keyword
+     * is really a guess at intent; once it has closed on an entry that wants a long
+     * argument, the rest of the line belongs to that entry.
+     */
+    const val MAX_ARG = 160
 
     private val ENTRIES: List<Entry> = buildList {
         for (n in 1..Paragraph.MAX_HEADING) {
@@ -64,6 +73,10 @@ object SlashCommands {
         add(Entry(Kind.TABLE, "table", listOf("table", "grid"), param = "ROWSxCOLS"))
         add(Entry(Kind.SIZE, "size", listOf("size", "fontsize", "pt"), needsArg = true, param = "NUMBER"))
         add(Entry(Kind.COLOR, "color", listOf("color", "colour"), needsArg = true, param = "NAME"))
+        add(Entry(
+            Kind.MATH, "equation", listOf("equation", "math", "latex", "eq"),
+            needsArg = true, markdown = "$", param = "LATEX", longArg = true,
+        ))
         add(Entry(Kind.DATE, "date", listOf("date", "today")))
         add(Entry(Kind.TIME, "time", listOf("time", "now")))
     }
@@ -86,9 +99,12 @@ object SlashCommands {
         if (slash < 0) return null
         if (slash > 0 && !before[slash - 1].isWhitespace()) return null
         val typed = before.substring(slash + 1)
-        if (typed.length > MAX_QUERY) return null
+        if (typed.substringBefore(' ').length > MAX_QUERY) return null
         val q = Query(pos.para, slash, typed)
-        return if (candidates(q).isEmpty()) null else q
+        val cands = candidates(q)
+        if (cands.isEmpty()) return null
+        val limit = if (cands.any { it.longArg }) MAX_QUERY + MAX_ARG else MAX_QUERY
+        return if (typed.length > limit) null else q
     }
 
     /** The entries [q] still matches; a closed keyword matches only itself. */

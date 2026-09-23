@@ -490,6 +490,8 @@
     <string name="margins_mm">Margins (mm)</string>
     <string name="markdown_shortcuts">Markdown shortcuts</string>
     <string name="slash_commands">Slash commands</string>
+    <string name="equation">Equation</string>
+    <string name="select_latex_first">Select the LaTeX to set as an equation</string>
     <string name="insert_date">Date</string>
     <string name="insert_time">Time</string>
     <string name="done">Done</string>

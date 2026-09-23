@@ -174,6 +174,7 @@ private fun slashLabel(entry: SlashCommands.Entry): String = when (entry.kind) {
     SlashCommands.Kind.TABLE -> stringResource(R.string.insert_table)
     SlashCommands.Kind.SIZE -> stringResource(R.string.size_pt)
     SlashCommands.Kind.COLOR -> stringResource(R.string.colour)
+    SlashCommands.Kind.MATH -> stringResource(R.string.equation)
     SlashCommands.Kind.DATE -> stringResource(R.string.insert_date)
     SlashCommands.Kind.TIME -> stringResource(R.string.insert_time)
 }

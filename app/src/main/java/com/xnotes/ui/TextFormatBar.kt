@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.outlined.CheckBox
@@ -126,6 +127,9 @@ fun TextFormatBar(editor: Editor) {
             editor.flowToggleList(ListKind.BULLET)
         }
         CodeBlockButton(editor, para?.codeLang, enabled = !inCell)
+        BarIcon(Icons.Filled.Functions, stringResource(R.string.equation), active = style.math, enabled = editor.flowEditingActive) {
+            editor.flowToggleMath()
+        }
         BarIcon(Icons.Outlined.TableChart, stringResource(R.string.insert_table), enabled = editor.flowEditingActive && !inCell) {
             tableDialog = true
         }

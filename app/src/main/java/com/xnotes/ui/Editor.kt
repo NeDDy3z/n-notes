@@ -173,6 +173,7 @@ private const val SETTINGS_SAVE_DELAY_MS = 400L
 /** How many opened documents Recent remembers. */
 private const val RECENT_MAX = 40
 
+
 /** Recent, shared by both panes of a split so a note opened in either shows up; null until first read from settings. */
 private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xnotes.settings.RecentDoc>?>(null)
 
@@ -5515,6 +5516,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             SlashCommands.Kind.TABLE -> slashInsertTable(arg)
             SlashCommands.Kind.SIZE -> flowSetChar { it.copy(sizePt = size.coerceIn(6.0, 96.0)) }
             SlashCommands.Kind.COLOR -> flowSetCharColor(color)
+            SlashCommands.Kind.MATH -> flowInsertMath(arg)
             SlashCommands.Kind.DATE, SlashCommands.Kind.TIME -> Unit
         }
         // A command that changed nothing (already a bullet, say) leaves the strip
@@ -5874,6 +5876,52 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun removeCustomFont(face: FontFace) {
         com.xnotes.platform.FontCatalog.removeCustomFont(face)
         fontsChanged()
+    }
+
+    /**
+     * The bar's equation control: selected text becomes the formula it spells,
+     * since that is the LaTeX the user already wrote. With nothing selected
+     * there is nothing to set, so it says so rather than leaving a placeholder
+     * the caret has already stepped out of.
+     */
+    fun flowToggleMath() {
+        if (!flowText.active) return
+        val sel = flowText.selection.normalized()
+        if (sel.collapsed) {
+            say(appContext.getString(R.string.select_latex_first))
+            return
+        }
+        val on = !flowCaretStyle().math
+        flowText.flushBurst()
+        flowText.commitEdit(
+            FlowEditor(state.document.flow).setCharStyle(sel) { it.copy(math = on) },
+            null,
+        )
+        flowSelTick++
+    }
+
+    /**
+     * Put [latex] in at the caret as a formula. [settled] draws it straight away,
+     * with the caret against its closing edge where the source would otherwise
+     * open, so the next key types beside it rather than into it; unset leaves the
+     * source showing, which is what a placeholder wants. the caret
+     * lands against its closing edge, which is where the source would otherwise
+     * open, and the next key types beside it rather than into it.
+     */
+    fun flowInsertMath(latex: String, settled: Boolean = true) {
+        if (!flowText.active) return
+        val text = latex.trim()
+        if (text.isEmpty() || '\n' in text) return
+        flowText.flushBurst()
+        flowText.mirrorStale = true
+        val at = flowText.selection.normalized().start
+        val (cmd, caret) = FlowEditor(state.document.flow).insertText(at, text, CharStyle(math = true))
+        flowText.commitEdit(cmd, caret)
+        if (settled) {
+            flowText.mathSettled = caret
+            flowText.pendingStyle = CharStyle.DEFAULT
+        }
+        flowSelTick++
     }
 
     /**
