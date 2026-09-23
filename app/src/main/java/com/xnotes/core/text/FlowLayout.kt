@@ -5,6 +5,8 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontSpec
 import com.xnotes.core.pal.LineMetrics
+import com.xnotes.core.pal.MathBox
+import com.xnotes.core.pal.MathTypesetter
 import com.xnotes.core.pal.TextMeasurer
 
 /** The concrete font a run resolves to: style overrides over the flow defaults; code is mono. */
@@ -38,7 +40,7 @@ class BrokenLine(
  * revision and width), then pagination into per-page content rects. Everything
  * here is pure and deterministic against the [TextMeasurer].
  */
-class FlowLayout(private val measurer: TextMeasurer) {
+class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypesetter? = null) {
 
     /**
      * Derived syntax-highlight colours for a code paragraph (start-sorted char
@@ -59,6 +61,13 @@ class FlowLayout(private val measurer: TextMeasurer) {
     /** The grey a table's rules take unless the table picks a colour (it depends on the paper). */
     var ruleColor: () -> Rgba? = { null }
 
+    /**
+     * Char offset of the math run showing its source because the caret is inside
+     * it, or -1. Installed by the host and read at shaping time, so an equation
+     * turns back into text to be edited and back into a formula on the way out.
+     */
+    var revealedMath: (Paragraph) -> Int = { -1 }
+
     // --- per-paragraph measurement (cached) ---
 
     /** Advances and per-run fonts/metrics for one paragraph at given flow defaults. */
@@ -69,13 +78,28 @@ class FlowLayout(private val measurer: TextMeasurer) {
         val runMetrics: Array<LineMetrics>,
         val runFonts: Array<FontSpec>,
         val emptyMetrics: LineMetrics,
+        /**
+         * True for characters that *continue* a drawn formula. A line may still
+         * start at one, since the box is a word like any other; it may never
+         * break inside it, which is what these mark.
+         */
+        val atom: BooleanArray,
+        /** Per run: true when it is being drawn as a formula rather than read as text. */
+        val mathRuns: BooleanArray,
     )
 
-    private class ShapeEntry(val rev: Int, val defaultsKey: Long, val bold: Boolean, val shape: ParaShape)
+    private class ShapeEntry(
+        val rev: Int,
+        val defaultsKey: Long,
+        val bold: Boolean,
+        val reveal: Int,
+        val shape: ParaShape,
+    )
     private class BreakEntry(
         val rev: Int,
         val defaultsKey: Long,
         val bold: Boolean,
+        val reveal: Int,
         val width: Double,
         val lines: List<BrokenLine>,
     )
@@ -91,21 +115,38 @@ class FlowLayout(private val measurer: TextMeasurer) {
     /** [bold] forces bold on every run (a table's header row). */
     private fun shapeOf(flow: TextFlow, para: Paragraph, bold: Boolean = false): ParaShape {
         val key = defaultsKey(flow)
-        shapes[para]?.let { if (it.rev == para.rev && it.defaultsKey == key && it.bold == bold) return it.shape }
+        val reveal = if (para.runs.any { it.style.math }) revealedMath(para) else -1
+        shapes[para]?.let {
+            if (it.rev == para.rev && it.defaultsKey == key && it.bold == bold && it.reveal == reveal) {
+                return it.shape
+            }
+        }
         val text = para.plainText()
         val adv = DoubleArray(text.length)
+        val atom = BooleanArray(text.length)
+        val mathRuns = BooleanArray(para.runs.size)
         val runEnds = IntArray(para.runs.size)
         val runMetrics = arrayOfNulls<LineMetrics>(para.runs.size)
         val runFonts = arrayOfNulls<FontSpec>(para.runs.size)
         var offset = 0
         for ((i, run) in para.runs.withIndex()) {
             val font = resolveFont(flow, para, if (bold) run.style.copy(bold = true) else run.style)
-            val a = measurer.advances(run.text, font)
-            a.copyInto(adv, offset)
+            // A formula is one box on the line: its whole advance rides on the first
+            // character so the caret and the glyphs agree, and the rest measure zero.
+            // Revealed (the caret is inside it) it is just its own source text again.
+            val box = if (run.style.math && offset != reveal) mathBox(run, font) else null
+            if (box != null) {
+                mathRuns[i] = true
+                adv[offset] = box.width
+                for (k in offset + 1 until offset + run.text.length) atom[k] = true
+                runMetrics[i] = box.metrics()
+            } else {
+                measurer.advances(run.text, font).copyInto(adv, offset)
+                runMetrics[i] = measurer.metrics(font)
+            }
             offset += run.text.length
             runEnds[i] = offset
             runFonts[i] = font
-            runMetrics[i] = measurer.metrics(font)
         }
         // An empty heading still stands as tall as the text it is waiting for, so the
         // caret previews at the right height and the line does not jump on the first key.
@@ -120,10 +161,20 @@ class FlowLayout(private val measurer: TextMeasurer) {
             @Suppress("UNCHECKED_CAST") (runMetrics as Array<LineMetrics>),
             @Suppress("UNCHECKED_CAST") (runFonts as Array<FontSpec>),
             measurer.metrics(emptyFont),
+            atom,
+            mathRuns,
         )
-        shapes[para] = ShapeEntry(para.rev, key, bold, shape)
+        shapes[para] = ShapeEntry(para.rev, key, bold, reveal, shape)
         return shape
     }
+
+    /**
+     * The box [run]'s LaTeX sets in, or null when there is no typesetter or it
+     * will not parse; either way the run falls back to reading as its own source,
+     * so a formula the renderer chokes on is still text the user can fix.
+     */
+    private fun mathBox(run: Run, font: FontSpec): MathBox? =
+        if (run.text.isEmpty()) null else math?.measure(run.text, font.pointSize)
 
     // --- line breaking ---
 
@@ -141,16 +192,19 @@ class FlowLayout(private val measurer: TextMeasurer) {
         bold: Boolean = false,
     ): List<BrokenLine> {
         val key = defaultsKey(flow)
+        val reveal = if (para.runs.any { it.style.math }) revealedMath(para) else -1
         if (fromChar == 0) {
             breaks[para]?.let {
-                if (it.rev == para.rev && it.defaultsKey == key && it.bold == bold && it.width == availWidth) {
+                if (it.rev == para.rev && it.defaultsKey == key && it.bold == bold &&
+                    it.reveal == reveal && it.width == availWidth
+                ) {
                     return it.lines
                 }
             }
         }
         val shape = shapeOf(flow, para, bold)
         val lines = breakShape(shape, availWidth.coerceAtLeast(MIN_LINE_WIDTH), fromChar)
-        if (fromChar == 0) breaks[para] = BreakEntry(para.rev, key, bold, availWidth, lines)
+        if (fromChar == 0) breaks[para] = BreakEntry(para.rev, key, bold, reveal, availWidth, lines)
         return lines
     }
 
@@ -176,7 +230,9 @@ class FlowLayout(private val measurer: TextMeasurer) {
             while (j < len) {
                 val c = text[j]
                 val a = shape.adv[j]
-                if (c == ' ') {
+                // A space inside a drawn formula is LaTeX, not a gap in the prose, so
+                // it neither hangs nor offers anywhere to break: the box goes whole.
+                if (c == ' ' && !shape.atom[j]) {
                     // Spaces hang: they widen the running total but never overflow a line.
                     spacesSeen++
                     w += a
@@ -184,12 +240,12 @@ class FlowLayout(private val measurer: TextMeasurer) {
                     continue
                 }
                 // A non-space after spaces marks a break opportunity at its start.
-                if (j > i && text[j - 1] == ' ') {
+                if (j > i && text[j - 1] == ' ' && !shape.atom[j]) {
                     lastBreak = j
                     lastBreakWidth = wAtLastContent
                     lastBreakSpaces = spacesBeforeLastContent
                 }
-                if (w + a > availWidth && j > i) {
+                if (w + a > availWidth && j > i && !shape.atom[j]) {
                     if (lastBreak > i) {
                         out.add(lineOf(shape, i, lastBreak, lastBreakWidth, lastBreakSpaces))
                         i = lastBreak
@@ -641,6 +697,13 @@ class FlowLayout(private val measurer: TextMeasurer) {
                 val style = para.runs[r].style
                 if (style.underline || style.strike || style.highlight != null || style.code) {
                     decos.add(Deco(xs[from - bl.startChar], xs[to - bl.startChar], font, style))
+                }
+                // A formula is one segment whatever is inside it: splitting at its
+                // spaces would hand the painter pieces of LaTeX to set separately.
+                if (shape.mathRuns[r]) {
+                    segs.add(Seg(shape.text.substring(from, to), xs[from - bl.startChar], font, style, math = true))
+                    runStart = runEnd
+                    continue
                 }
                 // Words draw one run-fragment at a time; spaces are gaps the xs already carry.
                 var s = from

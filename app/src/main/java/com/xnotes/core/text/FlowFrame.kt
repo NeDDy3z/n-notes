@@ -9,8 +9,18 @@ import com.xnotes.core.pal.LineMetrics
 /** Page dimensions handed to layout (content px at the document dpi). */
 data class PageBox(val width: Double, val height: Double)
 
-/** A drawable text fragment: [text] starts at page-local [x] on the line baseline. */
-class Seg(val text: String, val x: Double, val font: FontSpec, val style: CharStyle)
+/**
+ * A drawable fragment: [text] starts at page-local [x] on the line baseline.
+ * With [math] set it is LaTeX to be typeset there rather than characters to
+ * draw, which is the same run read either way depending on where the caret is.
+ */
+class Seg(
+    val text: String,
+    val x: Double,
+    val font: FontSpec,
+    val style: CharStyle,
+    val math: Boolean = false,
+)
 
 /** A decorated span of one line (underline/strike/highlight/inline-code chip), page-local x0..x1. */
 class Deco(val x0: Double, val x1: Double, val font: FontSpec, val style: CharStyle)

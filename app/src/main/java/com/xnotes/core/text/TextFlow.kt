@@ -43,6 +43,8 @@ data class CharStyle(
     val highlight: Rgba? = null,
     val sizePt: Double? = null,
     val face: FontFace? = null,
+    /** Marks a run whose text is LaTeX, drawn as the formula it sets. */
+    val math: Boolean = false,
 ) {
     companion object {
         val DEFAULT = CharStyle()

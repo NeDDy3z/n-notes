@@ -127,6 +127,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.pdfbox.android)
     implementation(libs.androidsvg)
+    implementation(libs.latex.base)
+    implementation(libs.latex.parser)
+    implementation(libs.latex.renderer)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)

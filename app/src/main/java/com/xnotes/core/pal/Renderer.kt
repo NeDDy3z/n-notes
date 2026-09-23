@@ -191,6 +191,15 @@ interface Renderer {
      */
     fun drawTextRun(text: String, x: Double, baseline: Double, font: FontSpec, color: Rgba) {}
 
+    /**
+     * Draw the formula [latex] sets at [sizePt], its left edge at [x] and its own
+     * baseline on [baseline] so it sits on the line like a word. The backend that
+     * draws this must be the one behind [MathTypesetter], which already measured
+     * the same string, or the text will wrap around a box that is not there.
+     * Default is a no-op, like [drawTextRun], for backends that never see maths.
+     */
+    fun drawMath(latex: String, x: Double, baseline: Double, sizePt: Double, color: Rgba) {}
+
     /** Run [block] between matching [save]/[restore] calls. */
     fun withSave(block: () -> Unit) {
         save()

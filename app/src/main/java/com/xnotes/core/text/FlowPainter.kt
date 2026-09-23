@@ -123,7 +123,12 @@ object FlowPainter {
         }
         line.marker?.let { paintMarker(r, frame, line, it) }
         for (seg in line.segs) {
-            r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, seg.style.color ?: frame.defaultColor)
+            val color = seg.style.color ?: frame.defaultColor
+            if (seg.math) {
+                r.drawMath(seg.text, seg.x, line.baseline, seg.font.pointSize, color)
+                continue
+            }
+            r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, color)
         }
         val ascent = line.baseline - line.top
         val descent = line.bottom - line.baseline
