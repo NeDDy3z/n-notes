@@ -179,6 +179,9 @@ data class PendingImport(
     /** Original file name (with extension) and MIME, kept so the text importer can pick a parser. */
     val sourceName: String = "",
     val mime: String = "",
+    /** The folder to save into instead of the explorer's current one, and the name prompt's title (Convert to note). */
+    val parentDocId: String? = null,
+    val title: String? = null,
 )
 
 /** Per-folder colour sidecar: a hidden ".xnote" dir holding "colors.json" (item name -> hex). */
@@ -3385,8 +3388,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** A picked PDF (referenced by content [uri]) now awaits a name before being saved into the
      *  folder. The file is deliberately **not** copied yet — that happens at [commitImport], under the
      *  import loader — so the name dialog can appear instantly instead of after a big copy. */
-    fun requestImport(kind: ImportKind, defaultName: String, uri: String, sourceName: String = "", mime: String = "") {
-        pendingImport = PendingImport(kind, defaultName, uri, sourceName, mime)
+    fun requestImport(
+        kind: ImportKind, defaultName: String, uri: String, sourceName: String = "", mime: String = "",
+        parentDocId: String? = null, title: String? = null,
+    ) {
+        pendingImport = PendingImport(kind, defaultName, uri, sourceName, mime, parentDocId, title)
     }
 
     /** Discards a pending import (the user cancelled the name prompt). Nothing was copied yet. */

@@ -8,7 +8,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +36,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.MutableFloatState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,13 +57,11 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.positionChanged
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -73,6 +72,7 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.util.ReaderKind
 import com.xnotes.platform.ReaderHtml
 import com.xnotes.platform.ReaderPdf
+import com.xnotes.platform.ReaderPrint
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.Palette
@@ -91,6 +91,27 @@ import java.nio.charset.CodingErrorAction
 import java.util.Locale
 import java.util.zip.ZipFile
 import kotlin.math.abs
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /** A file open in the read-only reader. */
 data class ReaderFile(val uri: String, val name: String)
@@ -124,14 +145,7 @@ internal fun ReaderScreen(editor: Editor, file: ReaderFile, onClose: () -> Unit,
     val palette = remember(appPalette, dark) { if (dark == appPalette.isDark) appPalette else editor.readerPalette(dark) }
     val background = palette.paper
     val text = palette.text
-    val labels = ReaderHtml.Labels(
-        slide = { n, total -> context.getString(R.string.reader_slide, n, total) },
-        notes = stringResource(R.string.reader_notes),
-        truncatedRows = { context.getString(R.string.reader_rows_truncated, it) },
-        truncatedCells = { r, c -> context.getString(R.string.reader_truncated_cells, r, c) },
-        image = stringResource(R.string.reader_image),
-        empty = stringResource(R.string.reader_empty),
-    )
+    val labels = readerLabels(context)
     BackHandler(onBack = onClose)
 
     val content by produceState<ReaderContent?>(null, file.uri) {
@@ -145,6 +159,7 @@ internal fun ReaderScreen(editor: Editor, file: ReaderFile, onClose: () -> Unit,
 
     val pdfList = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val zoom = remember(file.uri) { mutableFloatStateOf(1f) }
     val pages = (content as? ReaderContent.Pdf)?.doc?.ratios?.size ?: 0
     Column(Modifier.fillMaxSize().background(background.toComposeColor())) {
         // The bar is app chrome like the note toolbar; only the page below follows the reader's light/dark.
@@ -152,6 +167,8 @@ internal fun ReaderScreen(editor: Editor, file: ReaderFile, onClose: () -> Unit,
             file, dark,
             page = if (pages > 0) (pdfList.firstVisibleItemIndex + 1) to pages else null,
             onPage = { i -> scope.launch { pdfList.animateScrollToItem(i.coerceIn(0, pages - 1)) } },
+            zoom = zoom.floatValue,
+            onZoom = { zoom.floatValue = it },
             onToggleDark = { editor.applyHomePreferences(editor.preferences.copy(readerDark = !dark)) },
             onClose = onClose,
         )
@@ -161,17 +178,11 @@ internal fun ReaderScreen(editor: Editor, file: ReaderFile, onClose: () -> Unit,
                     null -> ReaderMessage(stringResource(R.string.loading), text)
                     ReaderContent.Failed -> ReaderMessage(stringResource(R.string.reader_open_failed), text)
                     is ReaderContent.Html -> {
-                        val html = remember(c, palette) {
-                            val colors = ReaderHtml.Colors(
-                                Rgba.toHex(background), Rgba.toHex(text), Rgba.toHex(palette.textDim),
-                                Rgba.toHex(palette.accent), Rgba.toHex(raisedOnPaper(palette)), Rgba.toHex(palette.border),
-                            )
-                            ReaderHtml.page(c.body, colors, c.wide)
-                        }
-                        ReaderWebView(html, background.toComposeColor()) { url -> openLink(context, url, onWikiLink) }
+                        val html = remember(c, palette) { ReaderHtml.page(c.body, readerColors(palette), c.wide) }
+                        ReaderWebView(html, background.toComposeColor(), (zoom.floatValue * 100).roundToInt()) { url -> openLink(context, url, onWikiLink) }
                     }
                     // Light shows PDF pages as they are; dark inverts them to the reader colours.
-                    is ReaderContent.Pdf -> PdfPages(c.doc, pdfList, background.toComposeColor(), if (dark) duotone(background, text) else null)
+                    is ReaderContent.Pdf -> PdfPages(c.doc, pdfList, zoom, background.toComposeColor(), if (dark) duotone(background, text) else null)
                 }
             }
         }
@@ -185,6 +196,8 @@ private fun ReaderBar(
     dark: Boolean,
     page: Pair<Int, Int>?,
     onPage: (Int) -> Unit,
+    zoom: Float,
+    onZoom: (Float) -> Unit,
     onToggleDark: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -209,6 +222,17 @@ private fun ReaderBar(
                 Label("$current / $total")
                 ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page), enabled = current < total) { onPage(current) }
             }
+            Separator()
+            // A pinch can go past the slider's range; the slider then rests at its nearest end.
+            Slider(
+                value = zoom.coerceIn(ZOOM_STEPS.first(), ZOOM_STEPS.last()),
+                onValueChange = { v -> onZoom(ZOOM_STEPS.minBy { abs(it - v) }) },
+                valueRange = ZOOM_STEPS.first()..ZOOM_STEPS.last(),
+                steps = ZOOM_STEPS.size - 2,
+                modifier = Modifier.width(140.dp),
+            )
+            Label("${(zoom * 100).roundToInt()}%", Modifier.widthIn(min = 44.dp))
+            ToolbarIcon(Icons.Outlined.RestartAlt, stringResource(R.string.reader_zoom_reset), enabled = zoom != 1f) { onZoom(1f) }
         }
         ToolbarIcon(
             if (dark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
@@ -227,7 +251,7 @@ private fun ReaderMessage(message: String, text: Rgba) {
 }
 
 @Composable
-private fun ReaderWebView(html: String, background: Color, onLink: (String) -> Unit) {
+private fun ReaderWebView(html: String, background: Color, textZoom: Int, onLink: (String) -> Unit) {
     val onLinkNow = rememberUpdatedState(onLink)
     AndroidView(
         modifier = Modifier.fillMaxSize(),
@@ -259,6 +283,7 @@ private fun ReaderWebView(html: String, background: Color, onLink: (String) -> U
         },
         update = { wv ->
             wv.setBackgroundColor(background.toArgb())
+            if (wv.settings.textZoom != textZoom) wv.settings.textZoom = textZoom
             if (wv.tag != html) {
                 if (wv.tag != null) wv.setTag(R.id.reader_scroll, wv.scrollY)
                 wv.tag = html
@@ -267,6 +292,32 @@ private fun ReaderWebView(html: String, background: Color, onLink: (String) -> U
         },
         onRelease = { it.destroy() },
     )
+}
+
+private fun readerLabels(context: Context) = ReaderHtml.Labels(
+    slide = { n, total -> context.getString(R.string.reader_slide, n, total) },
+    notes = context.getString(R.string.reader_notes),
+    truncatedRows = { context.getString(R.string.reader_rows_truncated, it) },
+    truncatedCells = { r, c -> context.getString(R.string.reader_truncated_cells, r, c) },
+    image = context.getString(R.string.reader_image),
+    empty = context.getString(R.string.reader_empty),
+)
+
+private fun readerColors(p: Palette, background: String = Rgba.toHex(p.paper)) = ReaderHtml.Colors(
+    background, Rgba.toHex(p.text), Rgba.toHex(p.textDim), Rgba.toHex(p.accent), Rgba.toHex(raisedOnPaper(p)), Rgba.toHex(p.border),
+)
+
+/**
+ * Prints a non-PDF reader file as the light reader shows it (on white paper) into a PDF in the cache,
+ * for turning into a note; null when it will not open. Each call replaces the previous one's file.
+ */
+internal suspend fun readerFileToPdf(context: Context, editor: Editor, file: ReaderFile): File? {
+    val content = withContext(Dispatchers.IO) { runCatching { readerHtmlBody(context, file, readerLabels(context)) }.getOrNull() } ?: return null
+    val html = ReaderHtml.printPage(content.body, readerColors(editor.readerPalette(dark = false), "#ffffff"), content.wide)
+    val out = withContext(Dispatchers.IO) {
+        File(context.cacheDir, "convert").apply { deleteRecursively(); mkdirs() }.resolve("${file.name.substringBeforeLast('.')}.pdf")
+    }
+    return out.takeIf { ReaderPrint.toPdf(context, html, landscape = content.wide, out) }
 }
 
 /** The theme surface that stands out from the page enough to show code blocks and table headers. */
@@ -296,55 +347,142 @@ private fun duotone(background: Rgba, text: Rgba): ColorFilter {
     return ColorFilter.colorMatrix(ColorMatrix(m))
 }
 
-/** PDF pages in a column; pinch zooms (and pans sideways), and zoomed-in pages re-render sharper. */
+private val ZOOM_STEPS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f)
+
+/** A sharp render of the visible part of a zoomed page, in the page's own pixels at [pageWidth]. */
+private class PdfTile(val bitmap: ImageBitmap, val pageWidth: Int, val left: Int, val top: Int)
+
+/**
+ * PDF pages in a column; pinch zooms around the fingers and pans sideways. Pages are laid out at the zoomed
+ * size so the column scrolls over all of them, and once a zoom or scroll settles the visible parts re-render sharp.
+ */
 @Composable
-private fun PdfPages(doc: PdfDoc, listState: LazyListState, background: Color, filter: ColorFilter?) {
+private fun PdfPages(doc: PdfDoc, listState: LazyListState, zoom: MutableFloatState, background: Color, filter: ColorFilter?) {
     val palette = LocalPalette.current
-    var scale by remember { mutableFloatStateOf(1f) }
+    val density = LocalDensity.current
+    var scale by zoom
     var offsetX by remember { mutableFloatStateOf(0f) }
-    BoxWithConstraints(Modifier.fillMaxSize().background(background)) {
-        val widthPx = constraints.maxWidth.toFloat()
-        fun clampX(x: Float): Float { val limit = (scale - 1f) * widthPx / 2f; return x.coerceIn(-limit, limit) }
-        val renderWidth = (widthPx * (if (scale > 1.4f) 2f else 1f)).toInt().coerceIn(1, 3000)
+    var pinching by remember { mutableStateOf(false) }
+    val tiles = remember(doc) { mutableStateMapOf<Int, PdfTile>() }
+    val pageCoords = remember(doc) { HashMap<Int, LayoutCoordinates>() }
+    var viewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val padPx = with(density) { 8.dp.toPx() }
+    BoxWithConstraints(Modifier.fillMaxSize().background(background).clipToBounds()) {
+        val contentWidth = (constraints.maxWidth - 2 * padPx).coerceAtLeast(1f)
+        val baseWidth = contentWidth.roundToInt().coerceIn(1, 3000)
+        fun clampX(x: Float) = x.coerceIn(-(scale - 1f).coerceAtLeast(0f) * contentWidth, 0f)
+        fun topOf(i: Int): Float? {
+            val v = viewport ?: return null
+            val c = pageCoords[i]?.takeIf { it.isAttached } ?: return null
+            return v.localBoundingBoxOf(c, clipBounds = false).top
+        }
+
+        LaunchedEffect(doc, baseWidth) {
+            snapshotFlow { listOf(scale, offsetX, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, pinching || listState.isScrollInProgress) }
+                .collectLatest { key ->
+                    if (key.last() == true) return@collectLatest
+                    // At or below 1x the base render is already at least as sharp as the screen.
+                    if (scale < 1.05f) { tiles.clear(); return@collectLatest }
+                    delay(150)
+                    val v = viewport ?: return@collectLatest
+                    val view = Rect(0f, 0f, v.size.width.toFloat(), v.size.height.toFloat())
+                    val wanted = pageCoords.filterValues { it.isAttached }.mapNotNull { (i, c) ->
+                        val bounds = v.localBoundingBoxOf(c, clipBounds = false)
+                        val seen = bounds.intersect(view)
+                        if (seen.width < 1f || seen.height < 1f) null else Triple(i, c.size.width, seen.translate(-bounds.left, -bounds.top))
+                    }
+                    tiles.keys.retainAll(wanted.map { it.first }.toSet())
+                    for ((i, pageWidth, r) in wanted) {
+                        val left = r.left.toInt()
+                        val top = r.top.toInt()
+                        val bmp = withContext(Dispatchers.IO) {
+                            doc.lock.withLock {
+                                if (doc.closed) null else runCatching {
+                                    doc.pdf.renderRegion(i, pageWidth, left, top, ceil(r.right).toInt() - left, ceil(r.bottom).toInt() - top).asImageBitmap()
+                                }.getOrNull()
+                            }
+                        } ?: continue
+                        tiles[i] = PdfTile(bmp, pageWidth, left, top)
+                    }
+                }
+        }
+
         Box(
-            Modifier.fillMaxSize().pointerInput(widthPx) {
+            Modifier.fillMaxSize().onGloballyPositioned { viewport = it }.pointerInput(contentWidth) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     do {
                         val e = awaitPointerEvent(PointerEventPass.Initial)
                         if (e.changes.count { it.pressed } >= 2) {
-                            scale = (scale * e.calculateZoom()).coerceIn(1f, 5f)
-                            offsetX = clampX(offsetX + e.calculatePan().x)
+                            pinching = true
+                            val newScale = (scale * e.calculateZoom()).coerceIn(ZOOM_STEPS.first(), 5f)
+                            val z = newScale / scale
+                            val c = e.calculateCentroid(useCurrent = true)
+                            if (z != 1f && c.isSpecified) {
+                                // Keep the content under the fingers in place: sideways by the offset, down the column by scrolling.
+                                offsetX = c.x - padPx - (c.x - padPx - offsetX) * z
+                                val firstTop = topOf(listState.firstVisibleItemIndex) ?: -listState.firstVisibleItemScrollOffset.toFloat()
+                                listState.dispatchRawDelta((c.y - firstTop) * (z - 1f))
+                                scale = newScale
+                            }
+                            val pan = e.calculatePan()
+                            offsetX = clampX(offsetX + pan.x)
+                            listState.dispatchRawDelta(-pan.y)
                             e.changes.forEach { if (it.positionChanged()) it.consume() }
                         } else if (scale > 1f) {
                             // One finger pans sideways; the column keeps the vertical scroll.
                             e.changes.firstOrNull()?.let { offsetX = clampX(offsetX + it.positionChange().x) }
                         }
                     } while (e.changes.any { it.pressed })
+                    pinching = false
                 }
             },
         ) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offsetX },
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(doc.ratios.size) { i ->
-                    val key = "$i@$renderWidth"
+                    val key = "$i@$baseWidth"
                     val bmp by produceState(doc.pages.get(key), key) {
                         if (value != null) return@produceState
                         value = withContext(Dispatchers.IO) {
                             doc.lock.withLock {
-                                if (doc.closed) null else runCatching { doc.pdf.render(i, renderWidth).asImageBitmap() }.getOrNull()
+                                if (doc.closed) null else runCatching { doc.pdf.render(i, baseWidth).asImageBitmap() }.getOrNull()
                             }
                         }?.also { doc.pages.put(key, it) }
                     }
+                    DisposableEffect(i) { onDispose { pageCoords.remove(i); tiles.remove(i) } }
                     // Recoloured pages share the background, so an outline keeps them apart.
                     val edge = if (filter != null) Modifier.border(1.dp, palette.border.toComposeColor()) else Modifier
-                    Box(Modifier.fillMaxWidth().aspectRatio(doc.ratios[i]).then(edge).background(if (filter != null) background else Color.White)) {
-                        bmp?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds, colorFilter = filter) }
-                    }
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .layout { m, cs ->
+                                val w = (cs.maxWidth * scale).roundToInt()
+                                val h = (w / doc.ratios[i]).roundToInt()
+                                val p = m.measure(Constraints.fixed(w, h))
+                                val x = if (w <= cs.maxWidth) (cs.maxWidth - w) / 2 else offsetX.roundToInt().coerceIn(cs.maxWidth - w, 0)
+                                layout(cs.maxWidth, h) { p.place(x, 0) }
+                            }
+                            .onGloballyPositioned { pageCoords[i] = it }
+                            .then(edge)
+                            .background(if (filter != null) background else Color.White)
+                            .drawBehind {
+                                bmp?.let { drawImage(it, dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()), colorFilter = filter) }
+                                tiles[i]?.let { t ->
+                                    val f = size.width / t.pageWidth
+                                    drawImage(
+                                        t.bitmap,
+                                        dstOffset = IntOffset((t.left * f).roundToInt(), (t.top * f).roundToInt()),
+                                        dstSize = IntSize((t.bitmap.width * f).roundToInt(), (t.bitmap.height * f).roundToInt()),
+                                        colorFilter = filter,
+                                    )
+                                }
+                            },
+                    )
                 }
             }
         }
@@ -352,6 +490,16 @@ private fun PdfPages(doc: PdfDoc, listState: LazyListState, background: Color, f
 }
 
 private fun loadReader(context: Context, file: ReaderFile, labels: ReaderHtml.Labels): ReaderContent {
+    if (ReaderKind.ofName(file.name) == ReaderKind.PDF) {
+        val pdf = ReaderPdf.open(context, Uri.parse(file.uri)) ?: return ReaderContent.Failed
+        val ratios = runCatching { List(pdf.pageCount) { pdf.ratio(it) } }.getOrNull()
+        return if (ratios == null || ratios.isEmpty()) { pdf.close(); ReaderContent.Failed } else ReaderContent.Pdf(PdfDoc(pdf, ratios))
+    }
+    return readerHtmlBody(context, file, labels) ?: ReaderContent.Failed
+}
+
+/** The HTML body of every reader format but PDF; null for a PDF or an unknown kind. */
+private fun readerHtmlBody(context: Context, file: ReaderFile, labels: ReaderHtml.Labels): ReaderContent.Html? {
     val uri = Uri.parse(file.uri)
     return when (ReaderKind.ofName(file.name)) {
         ReaderKind.MARKDOWN -> ReaderContent.Html(ReaderHtml.markdown(readText(context, uri), labels), wide = false)
@@ -359,12 +507,7 @@ private fun loadReader(context: Context, file: ReaderFile, labels: ReaderHtml.La
         ReaderKind.DOCX -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.docx(it, ::newParser, labels) }, wide = false)
         ReaderKind.PPTX -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.pptx(it, ::newParser, labels) }, wide = false)
         ReaderKind.XLSX -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.xlsx(it, ::newParser, labels) }, wide = true)
-        ReaderKind.PDF -> {
-            val pdf = ReaderPdf.open(context, uri) ?: return ReaderContent.Failed
-            val ratios = runCatching { List(pdf.pageCount) { pdf.ratio(it) } }.getOrNull()
-            if (ratios == null || ratios.isEmpty()) { pdf.close(); ReaderContent.Failed } else ReaderContent.Pdf(PdfDoc(pdf, ratios))
-        }
-        null -> ReaderContent.Failed
+        ReaderKind.PDF, null -> null
     }
 }
 

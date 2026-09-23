@@ -918,6 +918,7 @@ private fun ExplorerSection(
     var timelineMonth by remember(root) { mutableStateOf<YearMonth?>(null) }
     var columnsPick by remember(root) { mutableStateOf<BrowseEntry?>(null) }
     var namingColor by remember(root) { mutableStateOf<Rgba?>(null) }
+    var converting by remember(root) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var metaTick by remember(root) { mutableIntStateOf(0) }
     fun clearUp() { selection.clear(); opError = null; columnsPick = null }
     // A sidebar pick either filters by a colour or replaces the path with a folder's chain from the root.
@@ -1175,6 +1176,23 @@ private fun ExplorerSection(
             }
         }
     }
+    // PDFs go in as they are; the other reader files are printed to PDF first so the note looks like the reader.
+    fun convertToNote(e: BrowseEntry) {
+        opError = null
+        val name = e.name.substringBeforeLast('.')
+        val title = context.getString(R.string.convert_to_note)
+        if (ReaderKind.ofName(e.name) == ReaderKind.PDF) {
+            editor.requestImport(ImportKind.PDF, name, e.documentUri, e.name, "application/pdf", e.parentDocId, title)
+            return
+        }
+        converting?.cancel()
+        converting = scope.launch {
+            val pdf = readerFileToPdf(context, editor, ReaderFile(e.documentUri, e.name))
+            converting = null
+            if (pdf == null) opError = context.getString(R.string.err_convert_to_note)
+            else editor.requestImport(ImportKind.PDF, name, android.net.Uri.fromFile(pdf).toString(), pdf.name, "application/pdf", e.parentDocId, title)
+        }
+    }
     fun recolor(items: List<BrowseEntry>, c: Rgba?) {
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -1222,6 +1240,7 @@ private fun ExplorerSection(
                 saveCopy = { callsNow.value.saveCopyFile(it.documentUri) },
                 exportPdf = { callsNow.value.exportFilePdf(it.documentUri) },
                 preview = { previewing = it },
+                convertToNote = { convertToNote(it) },
             ),
         )
     }
@@ -1730,7 +1749,7 @@ private fun ExplorerSection(
         }
         NameDialog(
             title = when {
-                pendingImport != null -> stringResource(R.string.import_title)
+                pendingImport != null -> pendingImport.title ?: stringResource(R.string.import_title)
                 isFolder -> stringResource(R.string.new_folder)
                 createMode == CreateMode.CANVAS -> stringResource(R.string.new_canvas)
                 else -> stringResource(R.string.new_note)
@@ -1745,7 +1764,7 @@ private fun ExplorerSection(
                     pendingImport != null -> scope.launch {
                         // Land the import in the current folder; it opens only when the user taps it.
                         // commitImportAsync drives the "Importing…" dialog and runs the copy off-thread.
-                        val uri = editor.commitImportAsync(root, currentDocId, n)
+                        val uri = editor.commitImportAsync(root, pendingImport.parentDocId ?: currentDocId, n)
                         when {
                             uri != null -> refreshKey++
                             editor.pendingImport != null -> fieldError = context.getString(R.string.err_save_that_note) // genuine failure; keep the prompt
@@ -1767,6 +1786,7 @@ private fun ExplorerSection(
     }
 
     namingColor?.let { c -> ColorNameDialog(editor, c) { namingColor = null } }
+    if (converting != null) com.xnotes.SpinnerDialog(stringResource(R.string.converting_to_note)) { converting?.cancel(); converting = null }
 
     renaming?.let { entry ->
         NameDialog(
@@ -1996,6 +2016,7 @@ internal fun EntryMenu(
     onNameColor: (() -> Unit)? = null,
     onMoveTo: (() -> Unit)? = null,
     onPreview: (() -> Unit)? = null,
+    onConvertToNote: (() -> Unit)? = null,
     deleteLabel: String = stringResource(R.string.delete),
 ) {
     val palette = LocalPalette.current
@@ -2008,6 +2029,7 @@ internal fun EntryMenu(
             ColorCodeMenuContent { c -> onDismiss(); onColor?.invoke(c) }
         } else {
             if (onPreview != null) DropdownMenuItem(text = { Text(stringResource(R.string.preview)) }, onClick = { onDismiss(); onPreview() })
+            if (onConvertToNote != null) DropdownMenuItem(text = { Text(stringResource(R.string.convert_to_note)) }, onClick = { onDismiss(); onConvertToNote() })
             DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, onClick = { onDismiss(); onRename?.invoke() })
             if (onMoveTo != null) DropdownMenuItem(text = { Text(stringResource(R.string.move_to_folder_ellipsis)) }, onClick = { onDismiss(); onMoveTo() })
             DropdownMenuItem(text = { Text(stringResource(R.string.copy)) }, onClick = { onDismiss(); onCopy?.invoke() })

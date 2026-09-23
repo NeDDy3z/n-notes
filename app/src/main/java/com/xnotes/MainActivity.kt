@@ -226,6 +226,11 @@ class MainActivity : ComponentActivity() {
         if (hasFocus && editor?.fullscreen == true) applyFullscreen(true) // re-hide transient bars after they swipe in
     }
 
+    override fun onStart() {
+        super.onStart()
+        com.xnotes.sync.filen.FilenSyncManager.syncOnAppOpen(this)
+    }
+
     override fun onPause() {
         super.onPause()
         editor?.persist()
@@ -1356,7 +1361,7 @@ private fun PdfExportDialog(done: Int, total: Int, counting: String, onCancel: (
  * [PdfExportDialog].
  */
 @Composable
-private fun SpinnerDialog(title: String, onCancel: () -> Unit) {
+internal fun SpinnerDialog(title: String, onCancel: () -> Unit) {
     val palette = LocalPalette.current
     androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
         Column(

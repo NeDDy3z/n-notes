@@ -3,6 +3,7 @@ package com.xnotes.platform
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -24,10 +25,21 @@ class ReaderPdf private constructor(
     fun render(index: Int, widthPx: Int): Bitmap = renderer.openPage(index).use { page ->
         val w = widthPx.coerceIn(1, MAX_PX)
         val h = (w.toLong() * page.height / page.width.coerceAtLeast(1)).toInt().coerceIn(1, MAX_PX)
+        renderInto(page, w, 0, 0, w, h)
+    }
+
+    /** The [w] x [h] part at ([left], [top]) of page [index] laid out [pageWidthPx] wide, for sharp zoomed-in views. */
+    fun renderRegion(index: Int, pageWidthPx: Int, left: Int, top: Int, w: Int, h: Int): Bitmap = renderer.openPage(index).use { page ->
+        renderInto(page, pageWidthPx, left, top, w.coerceIn(1, MAX_PX), h.coerceIn(1, MAX_PX))
+    }
+
+    private fun renderInto(page: PdfRenderer.Page, pageWidthPx: Int, left: Int, top: Int, w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         bmp.eraseColor(Color.WHITE)
-        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-        bmp
+        val s = pageWidthPx.toFloat() / page.width.coerceAtLeast(1)
+        val m = Matrix().apply { setScale(s, s); postTranslate(-left.toFloat(), -top.toFloat()) }
+        page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        return bmp
     }
 
     override fun close() {

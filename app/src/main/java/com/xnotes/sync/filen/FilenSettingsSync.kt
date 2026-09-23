@@ -28,7 +28,7 @@ object FilenSettingsSync {
     /** Preference keys that stay device-local: the Filen sync config itself. */
     private val LOCAL_PREF_KEYS = listOf(
         "filen_sync_enabled", "filen_folder_uuid", "filen_folder_name",
-        "filen_auto_sync", "filen_wifi_only", "filen_sync_interval_minutes",
+        "filen_auto_sync", "filen_wifi_only", "filen_sync_interval_minutes", "filen_sync_on_app_open",
     )
 
     /** Reconcile the settings blob. Returns true if local settings were replaced from the cloud. */

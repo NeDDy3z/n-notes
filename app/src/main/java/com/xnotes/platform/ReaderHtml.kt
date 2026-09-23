@@ -40,7 +40,22 @@ object ReaderHtml {
     // --- page shell ---
 
     /** Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides). */
-    fun page(body: String, c: Colors, wide: Boolean = false): String {
+    fun page(body: String, c: Colors, wide: Boolean = false): String = shell(body, c, wide, "")
+
+    /** [page] laid out for print: backgrounds kept, nothing clipped by scroll boxes, blocks not split across pages. */
+    fun printPage(body: String, c: Colors, wide: Boolean = false): String = shell(body, c, wide, """
+        @page{margin:14mm 13mm}
+        *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        body{max-width:none;padding:0}
+        pre{white-space:pre-wrap;overflow:visible}
+        table{display:table;overflow:visible}
+        table.csv th{position:static}
+        thead{display:table-header-group}
+        tr,img,pre,blockquote,.slide,.callout,.props{break-inside:avoid}
+        h1,h2,h3,h4,h5,h6{break-after:avoid}
+    """.trimIndent())
+
+    private fun shell(body: String, c: Colors, wide: Boolean, extraCss: String): String {
         val css = """
             html{-webkit-text-size-adjust:100%}
             body{background:${c.background};color:${c.text};font-family:sans-serif;font-size:17px;line-height:1.6;margin:0 auto;padding:18px 18px 72px;${if (wide) "" else "max-width:820px;"}overflow-wrap:break-word;word-wrap:break-word}
@@ -78,7 +93,7 @@ object ReaderHtml {
             .note{font-size:13px;color:${c.muted};margin:.6em 0}
         """.trimIndent()
         return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
-            "<style>$css</style></head><body>$body</body></html>"
+            "<style>$css\n$extraCss</style></head><body>$body</body></html>"
     }
 
     // --- Markdown ---

@@ -767,5 +767,9 @@
     <string name="reader_close">Close reader</string>
     <string name="reader_switch_to_light">Switch to light</string>
     <string name="reader_switch_to_dark">Switch to dark</string>
+    <string name="reader_zoom_reset">Reset zoom</string>
+    <string name="convert_to_note">Convert to note</string>
+    <string name="converting_to_note">Converting to note...</string>
+    <string name="err_convert_to_note">Couldn\'t convert that file.</string>
     <string name="reader_truncated_cells">Showing the first %1$d rows and %2$d columns of this sheet.</string>
 </resources>

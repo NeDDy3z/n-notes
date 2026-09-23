@@ -704,5 +704,9 @@
     <string name="reader_close">关闭阅读器</string>
     <string name="reader_switch_to_light">切换到浅色</string>
     <string name="reader_switch_to_dark">切换到深色</string>
+    <string name="reader_zoom_reset">重置缩放</string>
+    <string name="convert_to_note">转换为笔记</string>
+    <string name="converting_to_note">正在转换为笔记...</string>
+    <string name="err_convert_to_note">无法转换该文件。</string>
     <string name="reader_truncated_cells">仅显示此工作表的前 %1$d 行和 %2$d 列。</string>
 </resources>

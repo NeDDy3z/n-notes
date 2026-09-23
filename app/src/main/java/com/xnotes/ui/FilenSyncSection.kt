@@ -170,7 +170,8 @@ private fun FilenSignedIn(
 
     FilenCheckRow("Enable sync", prefs.filenSyncEnabled) { onUpdate(prefs.copy(filenSyncEnabled = it)) }
     FilenCheckRow("Sync automatically", prefs.filenAutoSync) { onUpdate(prefs.copy(filenAutoSync = it)) }
-    FilenCheckRow("Sync when leaving a note", prefs.filenSyncOnNoteExit) { onUpdate(prefs.copy(filenSyncOnNoteExit = it)) }
+    FilenCheckRow("Sync on note close", prefs.filenSyncOnNoteExit) { onUpdate(prefs.copy(filenSyncOnNoteExit = it)) }
+    FilenCheckRow("Sync on app open", prefs.filenSyncOnAppOpen) { onUpdate(prefs.copy(filenSyncOnAppOpen = it)) }
     FilenCheckRow("Only on Wi-Fi", prefs.filenWifiOnly) { onUpdate(prefs.copy(filenWifiOnly = it)) }
 
     FilenLabel("Sync direction")

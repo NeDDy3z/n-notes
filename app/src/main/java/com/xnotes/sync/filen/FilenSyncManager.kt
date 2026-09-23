@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Entry point the UI and the background worker share. Owns the session (via
@@ -29,6 +30,8 @@ object FilenSyncManager {
     private const val WORK_NAME = "filen_periodic_sync"
     private val syncMutex = Mutex()
     private val exitSyncScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private val backgroundQueued = AtomicBoolean(false)
+    private const val APP_OPEN_MIN_GAP_MS = 60_000L
 
     data class Status(
         val running: Boolean = false,
@@ -111,6 +114,7 @@ object FilenSyncManager {
 
     suspend fun syncNow(context: Context): Result<FilenSyncEngine.Summary> = withContext(Dispatchers.IO) {
         syncMutex.withLock {
+            backgroundQueued.set(false) // this pass covers anything queued before it started
             _status.value = _status.value.copy(running = true, message = "Syncing")
             val result = runCatching {
                 val prefs = settings(context).prefs
@@ -152,13 +156,31 @@ object FilenSyncManager {
         }
     }
 
-    /** Fire-and-forget sync when a note is closed, if sync-on-exit is on and config/network allow it. */
+    /** Fire-and-forget sync when a note is closed, if sync on note close is on. */
     fun syncOnNoteExit(context: Context) {
+        if (settings(context.applicationContext).prefs.filenSyncOnNoteExit) syncInBackground(context)
+    }
+
+    /** Fire-and-forget sync when the app comes to the foreground, if sync on app open is on. */
+    fun syncOnAppOpen(context: Context) {
+        val appCtx = context.applicationContext
+        // Off the main thread: on a cold start this is the first settings load and session decrypt.
+        exitSyncScope.launch {
+            if (!settings(appCtx).prefs.filenSyncOnAppOpen) return@launch
+            primeStatus(appCtx)
+            // Coming back from a file picker or share sheet also starts the activity; skip if we just synced.
+            if (System.currentTimeMillis() - _status.value.lastSyncMs < APP_OPEN_MIN_GAP_MS) return@launch
+            syncInBackground(appCtx)
+        }
+    }
+
+    private fun syncInBackground(context: Context) {
         val appCtx = context.applicationContext
         val prefs = settings(appCtx).prefs
-        if (!prefs.filenSyncEnabled || prefs.filenSyncDirection == "off" || !prefs.filenSyncOnNoteExit || !isConfigured(appCtx)) return
-        if (_status.value.running) return // a periodic/manual sync is already covering these changes
+        if (!prefs.filenSyncEnabled || prefs.filenSyncDirection == "off" || !isConfigured(appCtx)) return
         if (prefs.filenWifiOnly && !isUnmetered(appCtx)) return
+        // A sync already running may have passed the just-saved note, so queue one pass after it (at most one waits).
+        if (!backgroundQueued.compareAndSet(false, true)) return
         exitSyncScope.launch { runCatching { syncNow(appCtx) } }
     }
 
