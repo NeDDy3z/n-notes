@@ -82,6 +82,10 @@ class PlacedLine(
 ) {
     val height: Double get() = bottom - top
 
+    /** The metrics holding this line open, or null when nothing is typed on it yet. */
+    val held: LineMetrics? get() =
+        if (startChar >= endChar) null else LineMetrics(baseline - top, bottom - baseline)
+
     /** Page-local x of the caret before character [offset] (paragraph-local), clamped. */
     fun caretX(offset: Int): Double = xs[(offset - startChar).coerceIn(0, xs.size - 1)]
 
@@ -452,18 +456,16 @@ class FlowFrame(
     }
 }
 
-/** The double-tap word range around [pos]: same-class char run (word/space/other). */
 /**
- * The caret's vertical span, as (top, height), while it previews [pending] on the
- * line at [lineTop] with [baseline]. It grows about the baseline like the glyphs it
- * will produce, but never starts above the line: a style taller than the line moves
- * the baseline down when the first character lands, so measuring from today's
- * baseline would park the caret where nothing is going to be drawn and drop it on
- * the next keystroke.
+ * The caret's vertical span, as (top, height), while it previews [pending] on a line
+ * at [lineTop] that [held] glyphs already hold open, null when there are none. It is
+ * the line box that first character leaves behind, which is what [caretRect] hands
+ * back once the style is spent, so the caret does not jump when it lands.
  */
-fun caretPreviewSpan(lineTop: Double, baseline: Double, pending: LineMetrics): Pair<Double, Double> =
-    maxOf(lineTop, baseline - pending.ascent) to pending.height
+fun caretPreviewSpan(lineTop: Double, held: LineMetrics?, pending: LineMetrics): Pair<Double, Double> =
+    lineTop to (maxOf(held?.ascent ?: 0.0, pending.ascent) + maxOf(held?.descent ?: 0.0, pending.descent))
 
+/** The double-tap word range around [pos]: same-class char run (word/space/other). */
 fun wordRangeAt(flow: TextFlow, pos: FlowPos): FlowRange {
     val para = flow.paragraphs.getOrNull(pos.para) ?: return FlowRange.caret(pos)
     val text = para.plainText()

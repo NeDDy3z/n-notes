@@ -161,37 +161,42 @@ class FlowLayoutTest {
 
     // --- the caret's pending-style preview ---
 
+    // A 12pt line against the fake measurer: ascent 12.0, descent 3.6, height 15.6.
+    private val held = LineMetrics(ascent = 12.0, descent = 3.6)
+    private val bigger = LineMetrics(ascent = 24.0, descent = 7.2)
+    private val smaller = LineMetrics(ascent = 8.0, descent = 2.4)
+
     @Test
-    fun aTallerPendingStyleNeverLiftsTheCaretAboveItsLine() {
-        // "/size 18" on a 12pt line: the baseline moves down when the first character
-        // lands, so measuring up from today's baseline drew the caret too high and it
-        // dropped after a keystroke or two.
-        val lineTop = 100.0
-        val baseline = lineTop + 12.0
-        val (top, height) = caretPreviewSpan(lineTop, baseline, LineMetrics(ascent = 24.0, descent = 7.2))
-        assertEquals(lineTop, top, 1e-9)
-        assertEquals(31.2, height, 1e-9)
+    fun aTallerPendingStyleStretchesTheCaretDownTheLineItWillMake() {
+        // "/size 24" on a 12pt line: the line grows to the pending metrics, so the
+        // caret already spans them. The line top does not move, so neither does it.
+        assertEquals(100.0 to 31.2, caretPreviewSpan(100.0, held, bigger))
     }
 
     @Test
-    fun aTallerPendingStyleLandsWhereTheTypedCharacterWill() {
-        // Once the bigger glyph is in, the line's ascent is the pending one and the
-        // caret sits at the line top: the preview has to already be there.
-        val lineTop = 40.0
-        val pending = LineMetrics(ascent = 24.0, descent = 7.2)
-        val (preview, _) = caretPreviewSpan(lineTop, lineTop + 12.0, pending)
-        val (settled, _) = caretPreviewSpan(lineTop, lineTop + pending.ascent, pending)
-        assertEquals(settled, preview, 1e-9)
+    fun aShorterPendingStyleLeavesALineWithGlyphsOnItAlone() {
+        // "/size 8" beside 12pt text: that text holds the line open, so nothing about
+        // it changes. Previewing the small glyph instead dropped the caret 4.0 below
+        // the line top and it jumped back up on the first key.
+        assertEquals(10.0 to 15.6, caretPreviewSpan(10.0, held, smaller))
     }
 
     @Test
-    fun aShorterPendingStyleStillSitsOnTheBaseline() {
-        // The line does not shrink around it, so a smaller caret hangs off the baseline
-        // rather than floating at the top of a line it no longer fills.
-        val lineTop = 10.0
-        val baseline = lineTop + 24.0
-        val (top, height) = caretPreviewSpan(lineTop, baseline, LineMetrics(ascent = 12.0, descent = 3.6))
-        assertEquals(baseline - 12.0, top, 1e-9)
-        assertEquals(15.6, height, 1e-9)
+    fun anEmptyLineTakesThePendingMetricsWhole() {
+        // Nothing holds a fresh line open, so it becomes exactly what is typed on it,
+        // shrinking for a smaller style as readily as it grows for a bigger one.
+        assertEquals(64.0 to 10.4, caretPreviewSpan(64.0, null, smaller))
+        assertEquals(64.0 to 31.2, caretPreviewSpan(64.0, null, bigger))
+    }
+
+    @Test
+    fun thePreviewIsTheCaretRectTheSettledLineHandsBack() {
+        // The whole point: caretRect is the line box, so the preview has to be the line
+        // box too, or the caret moves the moment the style stops being pending.
+        for (pending in listOf(smaller, held, bigger)) {
+            val grown = LineMetrics(maxOf(held.ascent, pending.ascent), maxOf(held.descent, pending.descent))
+            assertEquals(40.0 to grown.height, caretPreviewSpan(40.0, held, pending))
+            assertEquals(40.0 to pending.height, caretPreviewSpan(40.0, null, pending))
+        }
     }
 }

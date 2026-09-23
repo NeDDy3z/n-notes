@@ -660,13 +660,14 @@ class FlowTextController(
             var top = cr.top
             var height = cr.h
             // A pending style (size bumped before typing) previews on the caret itself,
-            // grown/shrunk about the line's baseline like the glyphs it will produce.
+            // as the line box the first character it styles is going to leave behind.
             pendingStyle?.let { pending ->
-                caretMetricsFor?.invoke(pending)?.let { m ->
-                    val baseline = f.placedLineFor(selection.end)?.second?.baseline ?: (cr.top + cr.h)
-                    val span = caretPreviewSpan(cr.top, baseline, m)
-                    top = span.first
-                    height = span.second
+                f.placedLineFor(selection.end)?.second?.let { line ->
+                    caretMetricsFor?.invoke(pending)?.let { m ->
+                        val span = caretPreviewSpan(line.top, line.held, m)
+                        top = span.first
+                        height = span.second
+                    }
                 }
             }
             val w = (FlowFrame.CARET_WIDTH / state.zoom).coerceAtLeast(0.75)
