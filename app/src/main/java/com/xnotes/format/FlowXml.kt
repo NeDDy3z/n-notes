@@ -119,6 +119,9 @@ object FlowXml {
         if (s.underline) append(" style:text-underline-style=\"solid\"")
         if (s.strike) append(" style:text-line-through-style=\"solid\"")
         if (s.code) append(" xnotes:code=\"true\"")
+        // The run's text is the LaTeX itself, so a reader that ignores this still
+        // shows the source rather than losing the equation.
+        if (s.math) append(" xnotes:math=\"true\"")
         s.face?.let { append(" style:font-name=\"${escapeAttr(it.id)}\"") }
         s.color?.let { append(" fo:color=\"${hex(it)}\"") }
         s.highlight?.let { append(" fo:background-color=\"${hex(it)}\"") }
@@ -430,6 +433,7 @@ object FlowXml {
         underline = attr(props, "text-underline-style").let { it != null && it != "none" },
         strike = attr(props, "text-line-through-style").let { it != null && it != "none" },
         code = attr(props, "code") == "true",
+        math = attr(props, "math") == "true",
         color = parseHex(attr(props, "color")),
         highlight = parseHex(attr(props, "background-color")),
         sizePt = attr(props, "font-size")?.removeSuffix("pt")?.toDoubleOrNull(),
