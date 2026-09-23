@@ -25,6 +25,16 @@ class Template(
     val spacingParam: TemplateParam? = params.firstOrNull { it.role == TemplateParam.ROLE_SPACING }
 
     fun param(name: String): TemplateParam? = params.firstOrNull { it.name == name }
+
+    /** Whether anything draws in the host's `accent` colour, so a host shows that control. */
+    val usesAccent: Boolean by lazy { uses(root) }
+
+    private fun uses(n: TNode): Boolean =
+        n.style.stroke == TColor.Accent || n.style.fill == TColor.Accent || when (n) {
+            is TNode.Group -> n.children.any(::uses)
+            is TNode.Repeat -> n.children.any(::uses)
+            else -> false
+        }
 }
 
 enum class ParamType { LENGTH, NUMBER, INTEGER, COLOR }

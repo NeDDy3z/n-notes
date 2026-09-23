@@ -76,6 +76,16 @@
     <string name="pattern_dots">Dots</string>
     <string name="pattern_grid">Grid</string>
     <string name="caption_pattern_colour">PATTERN COLOUR</string>
+    <string name="caption_template">TEMPLATE</string>
+    <string name="caption_accent_colour">ACCENT COLOUR</string>
+    <string name="customize">Customize</string>
+    <string name="back_customize">"‹  CUSTOMIZE"</string>
+    <string name="import_template">Import</string>
+    <string name="remove_template">Remove from library</string>
+    <string name="keep_template">Add to library</string>
+    <string name="template_imported">Template \"%1$s\" imported.</string>
+    <string name="err_import_template">Could not import the template: %1$s</string>
+    <string name="template_too_large">it is larger than 1 MiB</string>
     <string name="default_for_new_notes">Default for new notes</string>
     <string name="reset">Reset</string>
     <string name="title_margins">MARGINS</string>

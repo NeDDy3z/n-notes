@@ -35,7 +35,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object TemplateLibrary {
 
-    enum class Source { BUILT_IN, BUNDLED, IMPORTED }
+    /** Where a template comes from; [NOTE] is one a note carries that the library does not have. */
+    enum class Source { BUILT_IN, BUNDLED, IMPORTED, NOTE }
 
     class Entry(val key: String, val template: Template, val text: String, val source: Source)
 

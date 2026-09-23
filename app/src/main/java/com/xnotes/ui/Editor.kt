@@ -37,6 +37,7 @@ import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageStyle
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
@@ -2092,6 +2093,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Save (or, passing an empty style, forget) the All Pages style new notes start with. */
     fun saveNewNoteStyle(style: PageStyle) {
         if (newNoteStyle == style) return
+        // New notes copy their template from the library, so adopt one only this note carries.
+        style.template?.let { if (TemplateLibrary.entry(it) == null) keepNoteTemplate(it) }
         newNoteStyle = style
         settings = settings.copy(newNoteStyle = style)
         settingsRepo.save(settings)
@@ -2131,6 +2134,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun stampNewNoteDefaults(doc: Document): Document {
         doc.style = settings.newNoteStyle
         TemplateLibrary.embed(doc, doc.style.template)
+        // A default whose template left the library falls back to the built-in ruling.
+        doc.style.template?.let { key ->
+            if (key != PageTemplates.NONE && !PageTemplates.isBuiltIn(key) && key !in doc.templates) {
+                doc.style = doc.style.withTemplate(null, PageTemplates.NONE)
+            }
+        }
         settings.newNoteFlow.applyTo(doc.flow)
         return doc
     }
@@ -5872,6 +5881,56 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .onFailure { message = it.message ?: appContext.getString(R.string.err_import_font) }
         fontsChanged()
     }
+
+    /** Adopt [bytes] as a user page template, reporting the outcome as a message. */
+    fun importTemplate(bytes: ByteArray) {
+        if (bytes.size > com.xnotes.format.TemplateReader.MAX_BYTES) {
+            message = appContext.getString(R.string.err_import_template, appContext.getString(R.string.template_too_large))
+            return
+        }
+        runCatching { TemplateLibrary.import(String(bytes, Charsets.UTF_8)) }
+            .onSuccess {
+                message = appContext.getString(R.string.template_imported, it.template.name)
+                TemplateLibraryUi.version++
+            }
+            .onFailure { message = appContext.getString(R.string.err_import_template, it.message ?: "") }
+    }
+
+    /** Forget an imported template. Notes that use it keep drawing it from their own copy. */
+    fun removeTemplate(key: String) {
+        TemplateLibrary.remove(key)
+        TemplateLibraryUi.version++
+    }
+
+    /** Add a template this note carries, but the library lacks, to the library. */
+    fun keepNoteTemplate(key: String) {
+        state.document.templates[key]?.let { importTemplate(it.toByteArray(Charsets.UTF_8)) }
+    }
+
+    /** The templates to offer: the library's, then any this note carries that the library lacks. */
+    fun templateChoices(): List<TemplateLibrary.Entry> {
+        val lib = TemplateLibrary.all()
+        val known = lib.mapTo(HashSet()) { it.key }
+        val carried = state.document.templates.mapNotNull { (key, text) ->
+            if (key in known) return@mapNotNull null
+            val t = TemplateLibrary.template(state.document, key) ?: return@mapNotNull null
+            TemplateLibrary.Entry(key, t, text, TemplateLibrary.Source.NOTE)
+        }
+        return lib + carried.sortedBy { it.template.name.lowercase() }
+    }
+
+    fun templateFor(key: String): com.xnotes.core.template.Template? = TemplateLibrary.template(state.document, key)
+
+    /** The note's resolution: content px per inch, for turning template mm into the style's px. */
+    val documentDpi: Int get() = state.document.dpi
+
+    /** The current page's size in mm, for template previews. */
+    val currentPageMm: Pair<Double, Double>
+        get() {
+            val p = state.document.pages.getOrNull(state.currentPageIndex()) ?: return 210.0 to 297.0
+            val k = 25.4 / state.document.dpi
+            return p.width * k to p.height * k
+        }
 
     fun removeCustomFont(face: FontFace) {
         com.xnotes.platform.FontCatalog.removeCustomFont(face)

@@ -72,6 +72,7 @@ fun Toolbar(
     onAddStickers: () -> Unit,
     modifier: Modifier = Modifier,
     onClosePane: (() -> Unit)? = null,
+    onImportTemplate: () -> Unit = {},
 ) {
     val palette = LocalPalette.current
     // The five stroke tools use the designed vector drawables (res/drawable/ic_stroke_*),
@@ -124,6 +125,7 @@ fun Toolbar(
                         onInsertImage = onInsertImage,
                         onAddStickers = onAddStickers,
                         onToggleFullscreen = onToggleFullscreen,
+                        onImportTemplate = onImportTemplate,
                     )
                 }
             }
@@ -160,6 +162,7 @@ private fun ToolbarItemView(
     onInsertImage: () -> Unit,
     onAddStickers: () -> Unit,
     onToggleFullscreen: () -> Unit,
+    onImportTemplate: () -> Unit,
 ) {
     when (item) {
         // Canvas-only items; a stored paged layout can never hold one, so nothing is drawn.
@@ -208,7 +211,7 @@ private fun ToolbarItemView(
             }
             ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page)) { editor.nextPage() }
         }
-        ToolbarItem.STYLES -> StylesButton(editor)
+        ToolbarItem.STYLES -> StylesButton(editor, onImportTemplate)
         ToolbarItem.MARGINS -> MarginsButton(editor)
         ToolbarItem.VIEW -> ViewButton(editor)
 
@@ -305,11 +308,12 @@ private fun RenameDialog(initial: String, onConfirm: (String) -> Unit, onDismiss
 
 /** Opens the page-styles popup (paper colour + ruling) for the document and the current page. */
 @Composable
-private fun StylesButton(editor: Editor) {
+private fun StylesButton(editor: Editor, onImportTemplate: () -> Unit) {
     var open by remember { mutableStateOf(false) }
+    PrewarmTemplateThumbs(editor, open)
     Box {
         ToolbarIcon(XnotesIcons.sliders, stringResource(R.string.toolbar_styles)) { open = true }
-        if (open) StylesPopup(editor) { open = false }
+        if (open) StylesPopup(editor, onImportTemplate) { open = false }
     }
 }
 

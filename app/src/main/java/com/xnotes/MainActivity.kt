@@ -417,6 +417,16 @@ private fun EditorScreen(
         }
     }
 
+    // A user page template (.xtemplate), checked and stored in the template library.
+    val importTemplateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }
+                .getOrNull()
+                ?.let { editor.importTemplate(it) }
+                ?: run { editor.message = context.getString(R.string.err_read_file) }
+        }
+    }
+
     // A user font (.ttf/.otf), stored + registered by the editor.
     val importFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -808,6 +818,7 @@ private fun EditorScreen(
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
+                onImportTemplate = { importTemplateLauncher.launch(arrayOf("*/*")) },
                 onSharePages = { pane, pages, asPdf -> sharePages(pane, pages, asPdf) },
                 onSavePagesAsPdf = { pane, pages -> savePagesAsPdf(pane, pages) },
                 onSavePagesAsImages = { pane, pages -> savePagesAsImages(pane, pages) },
@@ -948,6 +959,7 @@ private class PaneActions(
     val onInsertImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onAddStickers: () -> Unit,
+    val onImportTemplate: () -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
     val onSavePagesAsPdf: (Editor, List<Int>) -> Unit,
     val onSavePagesAsImages: (Editor, List<Int>) -> Unit,
@@ -1128,6 +1140,7 @@ private fun EditorPane(
                 onInsertImage = { actions.onInsertImage(editor, null) },
                 onAddStickers = actions.onAddStickers,
                 onClosePane = onClose,
+                onImportTemplate = actions.onImportTemplate,
             )
             Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 if (editor.sidebarVisible) {
