@@ -62,6 +62,8 @@ object MathRendering : MathTypesetter {
         }
     }
 
+    override fun ready(): Boolean = engine != null
+
     override fun measure(latex: String, sizePt: Double, display: Boolean): MathBox? {
         val e = engine ?: return null
         if (latex.isBlank() || e.spPx <= 0f) return null

@@ -201,10 +201,11 @@ class FlowEditor(private val flow: TextFlow) {
 
     /**
      * The style new text takes at [offset]: whatever the character before it has,
-     * except that a formula carries over only from within, its closing edge
-     * included, which is the same reach over which the caret shows its source.
-     * Typing at its opening edge writes in front of the equation instead, and
-     * carrying on past one is the caret's pending style, set when it was made.
+     * except that a formula carries over only from strictly within it, which is
+     * the same reach over which the caret shows its source. Its closing edge
+     * belongs to whatever comes next, so typing on past an equation writes beside
+     * it; that boundary has to match the one reveal uses, or text would land
+     * inside a formula that is not showing what it is doing with it.
      */
     private fun styleForInsert(para: Paragraph, offset: Int): CharStyle {
         val base = styleOfCharAt(para, if (offset > 0) offset - 1 else 0) ?: CharStyle.DEFAULT
@@ -212,7 +213,7 @@ class FlowEditor(private val flow: TextFlow) {
         var seen = 0
         for (run in para.runs) {
             val end = seen + run.text.length
-            if (run.style.math && offset > seen && offset <= end) return base
+            if (run.style.math && offset > seen && offset < end) return base
             seen = end
         }
         return base.copy(math = false)

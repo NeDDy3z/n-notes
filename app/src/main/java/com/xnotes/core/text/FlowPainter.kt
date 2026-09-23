@@ -120,6 +120,14 @@ object FlowPainter {
                     frame.codeBg ?: CHIP_BG,
                 )
             }
+            // A formula showing its LaTeX: the chip is the only thing telling the
+            // user this is an equation opened up rather than text that lost it.
+            deco.math?.let {
+                r.fillRect(
+                    Rect(deco.x0 - CHIP_PAD, line.top, deco.x1 - deco.x0 + 2 * CHIP_PAD, line.height),
+                    if (it == MathShow.ERROR) MATH_ERROR_BG else MATH_BG,
+                )
+            }
         }
         line.marker?.let { paintMarker(r, frame, line, it) }
         for (seg in line.segs) {
@@ -140,6 +148,14 @@ object FlowPainter {
             }
             if (deco.style.strike) {
                 r.fillRect(Rect(deco.x0, line.baseline - ascent * 0.30, deco.x1 - deco.x0, thickness), color)
+            }
+            // LaTeX that would not set is ruled underneath, so a broken formula
+            // reads as broken from across the page and not only by its tint.
+            if (deco.math == MathShow.ERROR) {
+                r.fillRect(
+                    Rect(deco.x0 - CHIP_PAD, line.bottom - thickness, deco.x1 - deco.x0 + 2 * CHIP_PAD, thickness),
+                    MATH_ERROR_RULE,
+                )
             }
         }
     }
@@ -171,6 +187,16 @@ object FlowPainter {
     /** Code line/chip backgrounds: neutral translucent grey, legible on light and dark paper. */
     val CODE_BG = Rgba(128, 128, 128, 42)
     val CHIP_BG = Rgba(128, 128, 128, 56)
+
+    /**
+     * Chips behind a formula showing its source. Both are translucent tints so
+     * they sit on light and dark paper alike, and the cool one is deliberately
+     * not the code grey: opening an equation is a different thing from a code
+     * span, and the warm one says the LaTeX is broken rather than merely open.
+     */
+    val MATH_BG = Rgba(88, 140, 216, 44)
+    val MATH_ERROR_BG = Rgba(214, 74, 68, 52)
+    val MATH_ERROR_RULE = Rgba(214, 74, 68, 190)
 
     const val CODE_PAD = 6.0
     const val CHIP_PAD = 3.0

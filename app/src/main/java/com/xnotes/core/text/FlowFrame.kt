@@ -10,6 +10,14 @@ import com.xnotes.core.pal.LineMetrics
 data class PageBox(val width: Double, val height: Double)
 
 /**
+ * How a math run is being shown this pass: as the formula it sets, as the LaTeX
+ * behind it because the caret is in there, or as LaTeX the typesetter refused.
+ * The last two both draw as text, and only the chip behind them tells the user
+ * whether they opened it or broke it.
+ */
+enum class MathShow { FORMULA, SOURCE, ERROR }
+
+/**
  * A drawable fragment: [text] starts at page-local [x] on the line baseline.
  * With [math] set it is LaTeX to be typeset there rather than characters to
  * draw, which is the same run read either way depending on where the caret is.
@@ -22,8 +30,18 @@ class Seg(
     val math: Boolean = false,
 )
 
-/** A decorated span of one line (underline/strike/highlight/inline-code chip), page-local x0..x1. */
-class Deco(val x0: Double, val x1: Double, val font: FontSpec, val style: CharStyle)
+/**
+ * A decorated span of one line (underline/strike/highlight/inline-code chip),
+ * page-local x0..x1. [math] set means the span is a formula showing its source,
+ * which gets a chip of its own so it never reads as ordinary prose.
+ */
+class Deco(
+    val x0: Double,
+    val x1: Double,
+    val font: FontSpec,
+    val style: CharStyle,
+    val math: MathShow? = null,
+)
 
 /**
  * The bullet/number/checkbox marker of a list paragraph's first line; [rect] is
@@ -59,6 +77,8 @@ class PlacedLine(
     val codeLine: Boolean,
     val codeLeft: Double,
     val codeRight: Double,
+    /** Paragraph-local offsets where a drawn formula begins on this line. */
+    val mathStarts: IntArray = IntArray(0),
 ) {
     val height: Double get() = bottom - top
 
@@ -76,7 +96,14 @@ class PlacedLine(
                 best = k
             }
         }
-        return startChar + best
+        val offset = startChar + best
+        // A drawn formula carries its whole width on one character, so its interior
+        // boundaries all sit at its right edge and a tap on its left half snaps to
+        // the offset in front of it. That offset is outside the formula, which
+        // would make tapping an equation fail to open it, so a tap that actually
+        // landed within the box is nudged inside.
+        if (x > xs[best] && offset in mathStarts) return offset + 1
+        return offset
     }
 }
 

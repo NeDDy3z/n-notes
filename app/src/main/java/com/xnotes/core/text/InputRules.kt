@@ -15,17 +15,8 @@ object InputRules {
     /** A rule that matched. Opaque to callers, who only pass it back to [apply]. */
     sealed interface Rule
 
-    /**
-     * An applied rule: its command, the caret after it, and the next typing style.
-     * [math] marks the one that just set a formula, which the host keeps showing
-     * as a formula until the caret leaves, rather than reopening what was typed.
-     */
-    class Result(
-        val command: Command?,
-        val caret: FlowPos,
-        val pending: CharStyle? = null,
-        val math: Boolean = false,
-    )
+    /** An applied rule: its command, the caret after it, and the next typing style. */
+    class Result(val command: Command?, val caret: FlowPos, val pending: CharStyle? = null)
 
     // Block markers match the whole text before the caret, so they only fire on a
     // prefix the user just completed with the trigger space.
@@ -283,7 +274,7 @@ object InputRules {
         if (r.display && r.open == 0 && flow.paragraphs[p].length == end) {
             ed.setParaStyle(FlowRange.caret(FlowPos(p, 0))) { it.align = ParaAlign.CENTER }?.let { cmds += it }
         }
-        return Result(ed.combined(cmds), FlowPos(p, end), outside.copy(math = false, mathDisplay = false), math = true)
+        return Result(ed.combined(cmds), FlowPos(p, end), outside.copy(math = false, mathDisplay = false))
     }
 
     private fun applyFence(flow: TextFlow, pos: FlowPos, r: Fence): Result {

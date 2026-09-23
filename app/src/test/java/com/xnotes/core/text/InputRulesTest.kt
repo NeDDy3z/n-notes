@@ -427,14 +427,25 @@ class InputRulesTest {
     }
 
     @Test
-    fun typingBackAtAFormulaJoinsIt() {
+    fun typingBackAtAFormulasClosingEdgeLandsBesideIt() {
         val flow = TextFlow()
-        val end = type(flow, "\$x\$")
-        // Returning to the formula is typing into it: the same reach that shows
-        // its source, and the only way a one-character formula can be edited.
+        val end = type(flow, "\$x^2\$")
+        // The closing edge is outside: it is where the caret is left every time a
+        // formula is typed, so text going in there is text meant to follow it.
         FlowEditor(flow).replaceRange(FlowRange.caret(end), "y")
         val p = flow.paragraphs[0]
-        assertEquals("xy", p.runs.single().text)
+        assertEquals("x^2", p.runs.first().text)
+        assertEquals("y", p.runs.last().text)
+        assertFalse(p.runs.last().style.math)
+    }
+
+    @Test
+    fun typingInsideAFormulaJoinsIt() {
+        val flow = TextFlow()
+        val end = type(flow, "\$x^2\$")
+        FlowEditor(flow).replaceRange(FlowRange.caret(FlowPos(end.para, end.offset - 1)), "y")
+        val p = flow.paragraphs[0]
+        assertEquals("x^y2", p.runs.single().text)
         assertTrue(p.runs.single().style.math)
     }
 
@@ -448,20 +459,6 @@ class InputRulesTest {
         assertFalse(p.runs.last().style.math)
     }
 
-    @Test
-    fun aFormulaReportsItselfSoItDrawsRatherThanReopening() {
-        val flow = TextFlow()
-        type(flow, "a")
-        val pos = FlowPos(0, 1)
-        var last: InputRules.Result? = null
-        for (ch in "\$x^2\$") {
-            val (_, caret) = FlowEditor(flow).replaceRange(FlowRange.caret(last?.caret ?: pos), ch.toString())
-            InputRules.forTyped(flow, caret, ch.toString())?.let {
-                last = InputRules.apply(flow, caret, it)
-            } ?: run { last = InputRules.Result(null, caret) }
-        }
-        assertTrue(last!!.math)
-    }
 
     @Test
     fun doubledDollarsSetADisplayEquationAndCentreIt() {

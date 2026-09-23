@@ -63,13 +63,6 @@ class FlowTextController(
     /** Style for the next typed run (set by the format bar on a collapsed caret). */
     var pendingStyle: CharStyle? = null
 
-    /**
-     * Where a formula was just set, so it draws as one instead of reopening as the
-     * source that made it. The caret ends up against its edge, which is otherwise
-     * where the source shows; the host clears this as soon as the caret moves.
-     */
-    var mathSettled: FlowPos? = null
-
     /** Whether typed markdown markers convert (the text tool's Markdown shortcuts toggle). */
     var markdownInput = true
 
@@ -529,8 +522,6 @@ class FlowTextController(
         mirrorStale = true
         commitEdit(result.command, result.caret)
         pendingStyle = result.pending
-        // After the commit: placing the caret is itself a move, which clears this.
-        mathSettled = if (result.math) result.caret else null
         return result.caret
     }
 

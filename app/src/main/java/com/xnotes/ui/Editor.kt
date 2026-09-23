@@ -852,8 +852,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
             // Typing re-filters the menu, so any arrowed-to row stops meaning anything.
             slashSelected = -1
-            // Moving off a just-set formula is what lets it open as source again.
-            flowText.mathSettled = flowText.mathSettled?.takeIf { it == ctrl.selection.normalized().start }
+            // Moving into or out of a formula changes how the paragraph is shaped,
+            // not just where the caret sits, so the frame has to be laid out again.
+            // Nothing else here republishes: a caret move normally cannot reshape.
+            val key = revealedMathKey()
+            if (key != revealedMath) {
+                revealedMath = key
+                republishFlow(invalidate = true)
+                onRender()
+            }
         }
         ctrl.onSlashEnter = { commitSlashMenu() }
         ctrl.onContextMenu = { viewport -> flowContextMenu = flowMenuAnchor(viewport) }
@@ -5901,14 +5908,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * Put [latex] in at the caret as a formula. [settled] draws it straight away,
-     * with the caret against its closing edge where the source would otherwise
-     * open, so the next key types beside it rather than into it; unset leaves the
-     * source showing, which is what a placeholder wants. the caret
+     * Put [latex] in at the caret as a formula, drawn as one straight away. The
+     * caret lands against its closing edge, which is outside it, so the next key
+     * types beside the equation rather than into its LaTeX. the caret
      * lands against its closing edge, which is where the source would otherwise
      * open, and the next key types beside it rather than into it.
      */
-    fun flowInsertMath(latex: String, settled: Boolean = true) {
+    fun flowInsertMath(latex: String) {
         if (!flowText.active) return
         val text = latex.trim()
         if (text.isEmpty() || '\n' in text) return
@@ -5917,28 +5923,52 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val at = flowText.selection.normalized().start
         val (cmd, caret) = FlowEditor(state.document.flow).insertText(at, text, CharStyle(math = true))
         flowText.commitEdit(cmd, caret)
-        if (settled) {
-            flowText.mathSettled = caret
-            flowText.pendingStyle = CharStyle.DEFAULT
-        }
+        flowText.pendingStyle = CharStyle.DEFAULT
         flowSelTick++
     }
 
+    /** The formula the caret was last inside, as paragraph and offset packed, or -1. */
+    private var revealedMath = -1L
+
     /**
-     * The math run the caret is in, as its char offset into [para], or -1. A
-     * formula shows its source while the caret is anywhere in it, edges included,
-     * so tapping just past one is enough to get at the LaTeX behind it.
+     * Which formula the caret is inside right now, as a single comparable value,
+     * so a caret move can tell whether the paragraph needs shaping again.
+     */
+    private fun revealedMathKey(): Long {
+        if (!flowText.active) return -1L
+        val sel = flowText.selection.normalized()
+        // Selecting over a formula is not editing it, and a drag whose end walks
+        // through one would otherwise re-shape the flow on every pointer move.
+        if (!sel.collapsed) return -1L
+        val para = state.document.flow.paragraphs.getOrNull(sel.start.para) ?: return -1L
+        var at = 0
+        for (run in para.runs) {
+            val end = at + run.text.length
+            if (run.style.math && sel.start.offset > at && sel.start.offset < end) {
+                return (sel.start.para.toLong() shl 32) or at.toLong()
+            }
+            at = end
+        }
+        return -1L
+    }
+
+    /**
+     * The math run the caret is strictly inside, as its char offset into [para],
+     * or -1. Both edges belong to the text on either side: the offset just past a
+     * formula is equally "the end of it" and "before whatever follows", and the
+     * caret lands there every time one is typed, so counting it as inside meant a
+     * formula reopening the moment anything put the caret back on that boundary.
+     * A tap anywhere in a drawn formula lands within it (see [PlacedLine.offsetAt]).
      */
     private fun revealedMathIn(para: Paragraph): Int {
         if (!flowText.active) return -1
         val sel = flowText.selection.normalized()
+        if (!sel.collapsed) return -1
         if (state.document.flow.paragraphs.getOrNull(sel.start.para) !== para) return -1
-        // A formula just typed draws as one, though the caret is against its edge.
-        flowText.mathSettled?.let { if (it == sel.start) return -1 }
         var offset = 0
         for (run in para.runs) {
             val end = offset + run.text.length
-            if (run.style.math && sel.start.offset in offset..end) return offset
+            if (run.style.math && sel.start.offset > offset && sel.start.offset < end) return offset
             offset = end
         }
         return -1

@@ -148,7 +148,10 @@ class FakeMathTypesetter(
     private val scale: Double = 2.0,
     private val tall: Double = 3.0,
     private val rejects: Set<String> = emptySet(),
+    private val ready: Boolean = true,
 ) : MathTypesetter {
+    override fun ready(): Boolean = ready
+
     override fun measure(latex: String, sizePt: Double, display: Boolean): MathBox? {
         if (latex.isEmpty() || latex in rejects) return null
         // Display form sets half again as large, so a test can see which it got.

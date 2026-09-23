@@ -29,4 +29,11 @@ interface MathTypesetter {
      * grow and put their limits above and below rather than beside.
      */
     fun measure(latex: String, sizePt: Double, display: Boolean = false): MathBox?
+
+    /**
+     * Whether this can set anything yet. A typesetter still waiting for the host
+     * to hand it a renderer refuses everything, and that must not be mistaken for
+     * every formula in the document being broken.
+     */
+    fun ready(): Boolean = true
 }

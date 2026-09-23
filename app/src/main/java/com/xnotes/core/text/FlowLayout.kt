@@ -9,10 +9,15 @@ import com.xnotes.core.pal.MathBox
 import com.xnotes.core.pal.MathTypesetter
 import com.xnotes.core.pal.TextMeasurer
 
-/** The concrete font a run resolves to: style overrides over the flow defaults; code is mono. */
+/**
+ * The concrete font a run resolves to: style overrides over the flow defaults.
+ * Code is mono, and so is maths: a formula sets in its own faces anyway, so this
+ * only shows when the LaTeX behind it does, which is exactly when it should not
+ * look like the prose around it.
+ */
 fun resolveFont(flow: TextFlow, para: Paragraph, style: CharStyle): FontSpec = FontSpec(
     pointSize = style.sizePt ?: flow.defaultSizePt,
-    face = if (para.codeLang != null || style.code) flow.monoFace else style.face ?: flow.defaultFace,
+    face = if (para.codeLang != null || style.code || style.math) flow.monoFace else style.face ?: flow.defaultFace,
     bold = style.bold,
     italic = style.italic,
 )
@@ -84,8 +89,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
          * break inside it, which is what these mark.
          */
         val atom: BooleanArray,
-        /** Per run: true when it is being drawn as a formula rather than read as text. */
-        val mathRuns: BooleanArray,
+        /** Per run: how a math run is being shown, or null when it is not one. */
+        val mathShow: Array<MathShow?>,
     )
 
     private class ShapeEntry(
@@ -124,7 +129,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         val text = para.plainText()
         val adv = DoubleArray(text.length)
         val atom = BooleanArray(text.length)
-        val mathRuns = BooleanArray(para.runs.size)
+        val mathShow = arrayOfNulls<MathShow>(para.runs.size)
         val runEnds = IntArray(para.runs.size)
         val runMetrics = arrayOfNulls<LineMetrics>(para.runs.size)
         val runFonts = arrayOfNulls<FontSpec>(para.runs.size)
@@ -133,10 +138,20 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             val font = resolveFont(flow, para, if (bold) run.style.copy(bold = true) else run.style)
             // A formula is one box on the line: its whole advance rides on the first
             // character so the caret and the glyphs agree, and the rest measure zero.
-            // Revealed (the caret is inside it) it is just its own source text again.
-            val box = if (run.style.math && offset != reveal) mathBox(run, font) else null
+            // Shown as source (revealed, or refused) it is its own text again.
+            var box: MathBox? = null
+            if (run.style.math) {
+                val ts = math
+                mathShow[i] = when {
+                    offset == reveal -> MathShow.SOURCE
+                    ts == null || !ts.ready() || run.text.isEmpty() -> MathShow.SOURCE
+                    else -> {
+                        box = ts.measure(run.text, font.pointSize, run.style.mathDisplay)
+                        if (box == null) MathShow.ERROR else MathShow.FORMULA
+                    }
+                }
+            }
             if (box != null) {
-                mathRuns[i] = true
                 adv[offset] = box.width
                 for (k in offset + 1 until offset + run.text.length) atom[k] = true
                 runMetrics[i] = box.metrics()
@@ -162,19 +177,12 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             @Suppress("UNCHECKED_CAST") (runFonts as Array<FontSpec>),
             measurer.metrics(emptyFont),
             atom,
-            mathRuns,
+            mathShow,
         )
         shapes[para] = ShapeEntry(para.rev, key, bold, reveal, shape)
         return shape
     }
 
-    /**
-     * The box [run]'s LaTeX sets in, or null when there is no typesetter or it
-     * will not parse; either way the run falls back to reading as its own source,
-     * so a formula the renderer chokes on is still text the user can fix.
-     */
-    private fun mathBox(run: Run, font: FontSpec): MathBox? =
-        if (run.text.isEmpty()) null else math?.measure(run.text, font.pointSize, run.style.mathDisplay)
 
     // --- line breaking ---
 
@@ -686,6 +694,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         }
         val segs = mutableListOf<Seg>()
         val decos = mutableListOf<Deco>()
+        val mathStarts = mutableListOf<Int>()
         val spans = if (para.codeLang != null) codeSpans(para) else null
         var runStart = 0
         for (r in para.runs.indices) {
@@ -700,10 +709,16 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 }
                 // A formula is one segment whatever is inside it: splitting at its
                 // spaces would hand the painter pieces of LaTeX to set separately.
-                if (shape.mathRuns[r]) {
+                val show = shape.mathShow[r]
+                if (show == MathShow.FORMULA) {
                     segs.add(Seg(shape.text.substring(from, to), xs[from - bl.startChar], font, style, math = true))
+                    mathStarts += from
                     runStart = runEnd
                     continue
+                }
+                // Showing its source instead: chip it so it cannot read as prose.
+                if (show != null) {
+                    decos.add(Deco(xs[from - bl.startChar], xs[to - bl.startChar], font, style, show))
                 }
                 // Words draw one run-fragment at a time; spaces are gaps the xs already carry.
                 var s = from
@@ -745,6 +760,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             codeLine = para.codeLang != null,
             codeLeft = contentRect.left + indentPx,
             codeRight = contentRect.right,
+            mathStarts = mathStarts.toIntArray(),
         )
     }
 
