@@ -43,12 +43,7 @@ import com.xnotes.core.pal.Renderer
 import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.snapshot
 import com.xnotes.core.model.insets
-import com.xnotes.core.model.paintMarginPattern
-import com.xnotes.core.model.paintPagePattern
 import com.xnotes.core.model.resolvedPageColor
-import com.xnotes.core.model.resolvedPattern
-import com.xnotes.core.model.resolvedPatternColor
-import com.xnotes.core.model.resolvedSpacing
 import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.CharStyle
 import com.xnotes.core.text.DeadKeyLatch
@@ -58,6 +53,7 @@ import com.xnotes.core.text.FlowFrame
 import com.xnotes.core.text.FlowLayout
 import com.xnotes.core.text.FlowMargins
 import com.xnotes.core.text.FlowPainter
+import com.xnotes.platform.TemplateLibrary
 import com.xnotes.core.text.FlowPos
 import com.xnotes.core.text.FlowRange
 import com.xnotes.core.text.InputRules
@@ -1325,19 +1321,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     }
                 }
             }
-            // A ruling covers a blank note page whole; on an imported PDF page it rules the
+            // A template covers a blank note page whole; on an imported PDF page it rules the
             // margins only, so the page itself is never drawn over.
-            val pattern = state.effectivePattern(page)
-            if (pattern != PagePattern.NONE) {
-                val color = state.effectivePatternColor(page)
-                val spacing = state.effectiveSpacing(page)
-                val cover = state.footprint(page)
-                if (pi == null) {
-                    paintPagePattern(renderer, pattern, color, spacing, cover, region)
-                } else {
-                    paintMarginPattern(renderer, pattern, color, spacing, cover, content, region)
-                }
-            }
+            TemplateLibrary.paint(renderer, state.document, page, state.footprint(page), region)
         }
     }
 
@@ -2144,6 +2130,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Stamp the saved new-note defaults (page style + flow config) onto a fresh [doc]. */
     private fun stampNewNoteDefaults(doc: Document): Document {
         doc.style = settings.newNoteStyle
+        TemplateLibrary.embed(doc, doc.style.template)
         settings.newNoteFlow.applyTo(doc.flow)
         return doc
     }
@@ -2152,6 +2139,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun setDocumentStyle(style: PageStyle) {
         val prev = state.document.style
         if (prev == style) return
+        TemplateLibrary.embed(state.document, style.template)
         state.document.style = style
         applyStyleChange(prev, style, state.document.pages.toList())
     }
@@ -2161,6 +2149,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val page = state.document.pages.getOrNull(state.currentPageIndex()) ?: return
         val prev = page.style
         if (prev == style) return
+        TemplateLibrary.embed(state.document, style.template)
         page.style = style
         applyStyleChange(prev, style, listOf(page))
     }
@@ -2208,9 +2197,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * repaints; a ruling change ([pages] are the pages it may affect) rebuilds their background caches.
      */
     private fun applyStyleChange(prev: PageStyle, next: PageStyle, pages: List<Page>) {
-        val rulingChanged = prev.pattern != next.pattern ||
+        val rulingChanged = prev.template != next.template ||
             prev.patternColor != next.patternColor ||
-            prev.spacing != next.spacing
+            prev.spacing != next.spacing ||
+            prev.accentColor != next.accentColor ||
+            prev.params != next.params ||
+            prev.colors != next.colors
         if (rulingChanged) {
             if (pages.size == 1) state.invalidateBackground(pages[0]) else state.invalidateAllBackgrounds()
         } else {
@@ -2228,18 +2220,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper
 
     private fun paintExportRuling(doc: Document, page: Page, r: Renderer) {
-        val pattern = page.resolvedPattern(doc)
-        if (pattern == PagePattern.NONE) return
-        val color = page.resolvedPatternColor(doc)
-        val spacing = page.resolvedSpacing(doc)
-        val content = com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height)
         val cover = exportFootprint(doc, page)
-        // Mirrors the canvas: a blank note page is ruled whole, an imported PDF page only in its margins.
-        if (page.pdfPage == null) {
-            paintPagePattern(r, pattern, color, spacing, cover, cover)
-        } else {
-            paintMarginPattern(r, pattern, color, spacing, cover, content, cover)
-        }
+        TemplateLibrary.paint(r, doc, page, cover, cover)
     }
 
     /** [page]'s whole paper in page space, margins included, resolved against [doc] (export/thumbnails). */
@@ -5135,6 +5117,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val sub = Document(dpi = state.document.dpi, pdfFile = state.document.pdfFile)
         sub.pages.addAll(pages) // share the page objects; export only reads them
         sub.style = state.document.style // carry the note's "all pages" style into the subset export
+        sub.templates = state.document.templates
         // A private source per export — see [exportPdf]: the canvas's cache thread may be
         // touching the live [pdfSource], and PdfRenderer can't be shared across threads. The
         // shared PDF file is read-only and owned by the open document, so closing src won't delete it.

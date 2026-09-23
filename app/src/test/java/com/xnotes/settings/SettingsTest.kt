@@ -187,16 +187,19 @@ class SettingsTest {
     @Test fun newNoteStyleRoundTrips() {
         val style = com.xnotes.core.model.PageStyle(
             pageColor = Rgba(255, 250, 230),
-            pattern = com.xnotes.core.model.PagePattern.GRID,
+            template = "0123456789abcdef",
             patternColor = Rgba(100, 120, 140, 80),
             spacing = 48.0,
+            accentColor = Rgba(200, 10, 10, 150),
+            params = mapOf("rows" to 7.0),
+            colors = mapOf("frame" to Rgba(1, 2, 3)),
         )
         val back = Settings.fromJson(Settings(newNoteStyle = style).toJson())
         assertEquals(style, back.newNoteStyle)
     }
 
     @Test fun newNoteStylePartialFieldsStayNull() {
-        val style = com.xnotes.core.model.PageStyle(pattern = com.xnotes.core.model.PagePattern.LINES)
+        val style = com.xnotes.core.model.PageStyle(template = com.xnotes.core.model.PagePattern.LINES.id)
         val back = Settings.fromJson(Settings(newNoteStyle = style).toJson())
         assertEquals(style, back.newNoteStyle)
         assertNull(back.newNoteStyle.pageColor)

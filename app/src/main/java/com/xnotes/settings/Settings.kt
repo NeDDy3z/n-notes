@@ -2,6 +2,7 @@ package com.xnotes.settings
 
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.model.PagePattern
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
@@ -215,17 +216,30 @@ data class Settings(
 
         private fun pageStyleJson(s: PageStyle) = JSONObject()
             .apply { s.pageColor?.let { put("page_color", rgbaArr(it)) } }
-            .apply { s.pattern?.let { put("pattern", it.id) } }
+            .apply { s.template?.let { put(if (it == PageTemplates.NONE || PageTemplates.isBuiltIn(it)) "pattern" else "template", it) } }
             .apply { s.patternColor?.let { put("pattern_color", rgbaArr(it)) } }
             .apply { s.spacing?.let { put("spacing", it) } }
+            .apply { s.accentColor?.let { put("accent_color", rgbaArr(it)) } }
+            .apply { s.params?.takeIf { it.isNotEmpty() }?.let { m -> put("params", JSONObject().apply { m.forEach { (k, v) -> put(k, v) } }) } }
+            .apply { s.colors?.takeIf { it.isNotEmpty() }?.let { m -> put("colors", JSONObject().apply { m.forEach { (k, v) -> put(k, rgbaArr(v)) } }) } }
 
         private fun pageStyle(o: JSONObject?): PageStyle {
             if (o == null) return PageStyle()
+            val params = o.optJSONObject("params")?.let { j ->
+                j.keys().asSequence().mapNotNull { k -> j.optDouble(k).takeIf { !it.isNaN() }?.let { k to it } }.toMap()
+            }
+            val colors = o.optJSONObject("colors")?.let { j ->
+                j.keys().asSequence().mapNotNull { k -> rgba(j.optJSONArray(k))?.let { k to it } }.toMap()
+            }
             return PageStyle(
                 pageColor = rgba(o.optJSONArray("page_color")),
-                pattern = PagePattern.fromId(o.optString("pattern", "")),
+                template = o.optString("template", "").takeIf { it.isNotEmpty() }
+                    ?: PagePattern.fromId(o.optString("pattern", ""))?.id,
                 patternColor = rgba(o.optJSONArray("pattern_color")),
                 spacing = if (o.has("spacing")) o.optDouble("spacing") else null,
+                accentColor = rgba(o.optJSONArray("accent_color")),
+                params = params?.takeIf { it.isNotEmpty() },
+                colors = colors?.takeIf { it.isNotEmpty() },
             )
         }
 

@@ -1,0 +1,20 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.weekly-planner",
+  "name": "Weekly planner",
+  "description": "Seven day boxes and a notes box in a two-column grid, each labelled and lightly ruled.",
+  "license": "MIT",
+  "tags": ["planner"],
+  "items": [
+    { "type": "group", "inset": ["14mm", "10mm", "10mm", "10mm"], "children": [
+      { "type": "repeat", "axis": "xy", "count": [2, 4], "children": [
+        { "type": "rect", "x": "2mm", "y": "2mm", "w": "100% - 4mm", "h": "100% - 4mm", "rx": "2mm" },
+        { "type": "text", "text": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Notes"],
+          "select": "j * 2 + i", "x": "6mm", "y": "9mm", "size": "3.5mm", "weight": "bold", "fill": "accent" },
+        { "type": "group", "x": "6mm", "y": "12mm", "w": "100% - 12mm", "h": "100% - 16mm", "children": [
+          { "type": "repeat", "axis": "y", "period": "7mm", "children": [ { "type": "hline", "y": "100%", "opacity": 0.5 } ] }
+        ]}
+      ]}
+    ]}
+  ]
+}

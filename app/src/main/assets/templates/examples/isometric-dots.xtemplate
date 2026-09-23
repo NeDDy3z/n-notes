@@ -1,0 +1,16 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.isometric-dots",
+  "name": "Isometric dots",
+  "description": "Dots on a triangular lattice: every other row shifted by half a step.",
+  "license": "MIT",
+  "tags": ["dots", "drawing", "isometric"],
+  "params": {
+    "side": { "type": "length", "default": "6mm", "min": "3mm", "max": "20mm", "label": "Dot spacing", "role": "spacing" }
+  },
+  "items": [
+    { "type": "repeat", "axis": "xy", "period": ["side", "side * sin(60)"], "stagger": "side / 2", "extend": true, "children": [
+      { "type": "dot", "r": "0.35mm" }
+    ]}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.dot-grid",
+  "name": "Dot grid",
+  "description": "Dots on a square grid, centred so the margins match on every side.",
+  "license": "MIT",
+  "tags": ["dots", "journal"],
+  "params": {
+    "size": { "type": "length", "default": "5mm", "min": "3mm", "max": "15mm", "label": "Dot spacing", "role": "spacing" }
+  },
+  "items": [
+    { "type": "group", "inset": "6mm", "children": [
+      { "type": "repeat", "axis": "xy", "period": "size", "fit": "center", "children": [
+        { "type": "dot", "cx": "50%", "cy": "50%", "r": "0.3mm" }
+      ]}
+    ]}
+  ]
+}

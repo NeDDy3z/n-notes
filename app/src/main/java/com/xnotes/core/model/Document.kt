@@ -33,6 +33,11 @@ class Document(
     val flow: TextFlow = TextFlow(),
     /** When the note was created (epoch ms), or null for files written before this was recorded. */
     var created: Long? = null,
+    /**
+     * The `.xtemplate` files this note's styles name, by key, carried inside the bundle so the note
+     * draws the same on any device. Built-in rulings are never here. Replaced whole, never mutated.
+     */
+    var templates: Map<String, String> = emptyMap(),
 ) {
     /** Transient: set by the codec when legacy ink was compacted at load (debug overlay readout). */
     var compactedOnLoad = false

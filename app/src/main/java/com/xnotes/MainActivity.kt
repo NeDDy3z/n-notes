@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.xnotes.platform.FontCatalog.init(this)
+        com.xnotes.platform.TemplateLibrary.init(this)
         setTheme(com.xnotes.R.style.Theme_Xnotes) // leave the dark launch/splash theme behind
         applyFullscreen(!deviceHasDisplayCutout(this)) // provisional; reconciled once the editor loads prefs
         pendingPdfImport = pdfImportUri(intent)

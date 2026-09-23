@@ -1,0 +1,22 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.hexagons",
+  "name": "Hexagon grid",
+  "description": "Pointy-top hexagons, for game maps and organic chemistry.",
+  "license": "MIT",
+  "tags": ["grid", "games", "chemistry"],
+  "params": {
+    "r": { "type": "length", "default": "6mm", "min": "3mm", "max": "20mm", "label": "Hexagon size", "role": "spacing" }
+  },
+  "strokeWidth": "0.2mm",
+  "items": [
+    { "type": "repeat", "axis": "xy", "period": ["r * sqrt(3)", "r * 1.5"], "stagger": "r * sqrt(3) / 2", "extend": true,
+      "comment": "Each hexagon sits in the top-left of its cell and spills half a side into the row below.",
+      "children": [
+        { "type": "polygon", "points": [
+          ["r * sqrt(3)", "r * 1.5"], ["r * sqrt(3) / 2", "r * 2"], [0, "r * 1.5"],
+          [0, "r / 2"], ["r * sqrt(3) / 2", 0], ["r * sqrt(3)", "r / 2"]
+        ]}
+      ]}
+  ]
+}

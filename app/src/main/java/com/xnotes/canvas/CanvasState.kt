@@ -7,14 +7,12 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageInsets
-import com.xnotes.core.model.PagePattern
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.insets
 import com.xnotes.core.model.resolvedPageColor
-import com.xnotes.core.model.resolvedPattern
-import com.xnotes.core.model.resolvedPatternColor
-import com.xnotes.core.model.resolvedSpacing
+import com.xnotes.core.model.resolvedTemplate
 import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.RasterSurface
 import com.xnotes.core.pal.Renderer
@@ -655,12 +653,8 @@ class CanvasState(
     /** Resolved paper colour for [page], or null to fall back to the theme paper (see [paperColor]). */
     fun effectivePageColor(page: Page): Rgba? = page.resolvedPageColor(document, pageColorOverride)
 
-    /** Resolved background ruling for [page] (NONE when nothing in the chain sets one). */
-    fun effectivePattern(page: Page): PagePattern = page.resolvedPattern(document)
-
-    fun effectivePatternColor(page: Page): Rgba = page.resolvedPatternColor(document)
-
-    fun effectiveSpacing(page: Page): Double = page.resolvedSpacing(document)
+    /** Resolved page template key for [page] ([PageTemplates.NONE] when nothing in the chain sets one). */
+    fun effectiveTemplate(page: Page): String = page.resolvedTemplate(document)
 
     fun paperColor(page: Page): Rgba = effectivePageColor(page) ?: palette.paper
 
@@ -1097,7 +1091,7 @@ class CanvasState(
      * even though [paintPageBackground] is always installed for the pattern path.
      */
     fun hasPageBackground(page: Page): Boolean =
-        paintPageBackground != null && (page.pdfPage != null || effectivePattern(page) != PagePattern.NONE)
+        paintPageBackground != null && (page.pdfPage != null || effectiveTemplate(page) != PageTemplates.NONE)
 
     /**
      * The page's rendered background layer (PDF/template) at the current resolution,

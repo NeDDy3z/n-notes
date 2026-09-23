@@ -1,0 +1,20 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.musical-staves",
+  "name": "Musical staves",
+  "description": "Five-line staves spread evenly down the page, whole staves only.",
+  "license": "MIT",
+  "tags": ["music"],
+  "params": {
+    "gap": { "type": "length", "default": "2mm", "min": "1.2mm", "max": "3mm", "label": "Line gap", "role": "spacing" }
+  },
+  "items": [
+    { "type": "group", "inset": ["15mm", "12mm"], "children": [
+      { "type": "repeat", "axis": "y", "period": "gap * 10", "fit": "space", "children": [
+        { "type": "repeat", "axis": "none", "count": 5, "children": [
+          { "type": "hline", "y": "gap * (3 + i)" }
+        ]}
+      ]}
+    ]}
+  ]
+}

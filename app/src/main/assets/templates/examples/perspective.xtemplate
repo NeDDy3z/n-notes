@@ -1,0 +1,24 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.perspective",
+  "name": "Two-point perspective",
+  "description": "A horizon line with rays fanning out from two vanishing points beyond the page edges.",
+  "license": "MIT",
+  "tags": ["drawing", "perspective"],
+  "params": {
+    "horizon": { "type": "number", "default": 0.4, "min": 0.1, "max": 0.9, "step": 0.05, "label": "Horizon height" },
+    "rays": { "type": "integer", "default": 24, "min": 6, "max": 60, "label": "Rays per point" }
+  },
+  "strokeWidth": "0.18mm",
+  "items": [
+    { "type": "repeat", "axis": "none", "count": "rays", "opacity": 0.45, "children": [
+      { "type": "line", "x1": "-20%", "y1": "H * horizon",
+        "x2": "-20% + 3 * (W + H) * cos(i * 140 / (rays - 1) - 70)",
+        "y2": "H * horizon - 3 * (W + H) * sin(i * 140 / (rays - 1) - 70)" },
+      { "type": "line", "x1": "120%", "y1": "H * horizon",
+        "x2": "120% - 3 * (W + H) * cos(i * 140 / (rays - 1) - 70)",
+        "y2": "H * horizon - 3 * (W + H) * sin(i * 140 / (rays - 1) - 70)" }
+    ]},
+    { "type": "hline", "y": "H * horizon", "stroke": "accent", "strokeWidth": "0.3mm" }
+  ]
+}

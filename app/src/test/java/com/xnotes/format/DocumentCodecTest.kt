@@ -559,7 +559,7 @@ class DocumentCodecTest {
         // the versionCode, so it is read from the codec rather than typed in: spelled out it
         // turns every release bump into a failing test.
         val doc = Document(dpi = 150)
-        doc.style = PageStyle(pattern = PagePattern.LINES, spacing = 48.0)
+        doc.style = PageStyle(template = PagePattern.LINES.id, spacing = 48.0)
         doc.bookmarks.add(Bookmark(0, "Intro"))
         val page = Page(100.0, 200.0)
         page.items.add(
@@ -639,11 +639,11 @@ class DocumentCodecTest {
 
     @Test fun pageStyleRoundTrips() {
         val doc = Document(dpi = 150)
-        doc.style = PageStyle(pattern = PagePattern.LINES, spacing = 48.0) // document-wide ("all pages")
+        doc.style = PageStyle(template = PagePattern.LINES.id, spacing = 48.0) // document-wide ("all pages")
         val page = Page(1240.0, 1754.0)
         page.style = PageStyle(
             pageColor = Rgba(20, 20, 20),
-            pattern = PagePattern.GRID,
+            template = PagePattern.GRID.id,
             patternColor = Rgba(100, 100, 100, 120),
             spacing = 32.0,
         )
@@ -651,14 +651,47 @@ class DocumentCodecTest {
 
         val back = roundTrip(doc)
 
-        assertEquals(PagePattern.LINES, back.style.pattern)
+        assertEquals(PagePattern.LINES.id, back.style.template)
         assertEquals(48.0, back.style.spacing!!, 1e-9)
         assertNull(back.style.pageColor) // unset fields stay null (inherit)
         val s = back.pages[0].style
         assertEquals(Rgba(20, 20, 20), s.pageColor)
-        assertEquals(PagePattern.GRID, s.pattern)
+        assertEquals(PagePattern.GRID.id, s.template)
         assertEquals(Rgba(100, 100, 100, 120), s.patternColor)
         assertEquals(32.0, s.spacing!!, 1e-9)
+    }
+
+    @Test fun embeddedTemplatesRoundTripWithTheirParameters() {
+        val text = """{ "xtemplate": 1, "name": "Staff", "items": [] }"""
+        val doc = Document(dpi = 150)
+        doc.style = PageStyle(template = "0123456789abcdef", accentColor = Rgba(1, 2, 3, 4), params = mapOf("gap" to 2.5))
+        doc.templates = mapOf("0123456789abcdef" to text, "fedcba9876543210" to "unused")
+        val page = Page(100.0, 100.0)
+        page.style = PageStyle(colors = mapOf("frame" to Rgba(9, 8, 7)))
+        doc.pages.add(page)
+
+        val back = roundTrip(doc)
+
+        assertEquals("0123456789abcdef", back.style.template)
+        assertEquals(Rgba(1, 2, 3, 4), back.style.accentColor)
+        assertEquals(mapOf("gap" to 2.5), back.style.params)
+        assertEquals(mapOf("frame" to Rgba(9, 8, 7)), back.pages[0].style.colors)
+        // Only templates a style names are carried.
+        assertEquals(mapOf("0123456789abcdef" to text), back.templates)
+    }
+
+    @Test fun builtInTemplatesKeepTheOldPatternName() {
+        val doc = Document(dpi = 150)
+        doc.style = PageStyle(template = "dots")
+        doc.pages.add(Page(100.0, 100.0))
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        val manifest = java.util.zip.ZipInputStream(ByteArrayInputStream(out.toByteArray())).use { zis ->
+            generateSequence { zis.nextEntry }.first { it.name == "manifest.json" }
+            zis.readBytes().toString(Charsets.UTF_8)
+        }
+        assertTrue(manifest.contains("\"pattern\":\"dots\""))
+        assertFalse(manifest.contains("\"template\""))
     }
 
     @Test fun emptyStyleReadsBackEmpty() {
@@ -683,7 +716,7 @@ class DocumentCodecTest {
         }
         val doc = codec.read(ByteArrayInputStream(out.toByteArray()))
         val s = doc.pages[0].style
-        assertEquals(PagePattern.DOTS, s.pattern)
+        assertEquals(PagePattern.DOTS.id, s.template)
         assertNull(s.pageColor)
         assertNull(s.patternColor)
         assertNull(s.spacing)

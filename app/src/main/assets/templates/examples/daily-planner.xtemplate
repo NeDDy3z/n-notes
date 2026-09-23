@@ -1,0 +1,38 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.daily-planner",
+  "name": "Daily planner",
+  "description": "An hourly schedule with half-hour marks, beside a to-do list and a notes area.",
+  "license": "MIT",
+  "tags": ["planner"],
+  "params": {
+    "start": { "type": "integer", "default": 7, "min": 0, "max": 12, "label": "First hour" },
+    "hours": { "type": "integer", "default": 14, "min": 6, "max": 18, "label": "Hours" }
+  },
+  "items": [
+    { "type": "text", "text": "Date", "x": "12mm", "y": "16mm", "size": "3.2mm", "fill": "accent" },
+    { "type": "hline", "y": "20mm", "x1": "12mm", "x2": "100% - 12mm", "strokeWidth": "0.35mm" },
+    { "type": "group", "x": "12mm", "y": "28mm", "w": "62% - 12mm", "h": "100% - 40mm", "children": [
+      { "type": "repeat", "axis": "y", "count": "hours", "children": [
+        { "type": "hline", "y": 0 },
+        { "type": "hline", "y": "50%", "x1": "14mm", "dash": ["1mm", "1mm"], "opacity": 0.5 },
+        { "type": "text", "text": "{start + i:02}:00", "x": 0, "y": "4mm", "size": "3mm" }
+      ]},
+      { "type": "hline", "y": "100%" },
+      { "type": "vline", "x": "12mm", "opacity": 0.5 }
+    ]},
+    { "type": "group", "x": "62% + 6mm", "y": "28mm", "w": "38% - 18mm", "h": "100% - 40mm", "children": [
+      { "type": "text", "text": "To do", "x": 0, "y": "4mm", "size": "3.2mm", "fill": "accent" },
+      { "type": "group", "y": "8mm", "h": "45% - 8mm", "children": [
+        { "type": "repeat", "axis": "y", "period": "8mm", "fit": "round", "children": [
+          { "type": "rect", "y": "2mm", "w": "4mm", "h": "4mm", "rx": "0.6mm" },
+          { "type": "hline", "y": "6mm", "x1": "6mm" }
+        ]}
+      ]},
+      { "type": "text", "text": "Notes", "x": 0, "y": "50% + 4mm", "size": "3.2mm", "fill": "accent" },
+      { "type": "group", "y": "50% + 8mm", "h": "50% - 8mm", "children": [
+        { "type": "repeat", "axis": "y", "period": "8mm", "children": [ { "type": "hline", "y": "100%" } ] }
+      ]}
+    ]}
+  ]
+}

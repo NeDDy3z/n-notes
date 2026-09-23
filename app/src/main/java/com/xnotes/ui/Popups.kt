@@ -51,6 +51,7 @@ import com.xnotes.canvas.ViewingMode
 import com.xnotes.core.model.PageEdge
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
@@ -246,11 +247,11 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                ModeChip(stringResource(R.string.default_choice), style.pattern == null) { apply(style.copy(pattern = null)) }
-                ModeChip(stringResource(R.string.none), style.pattern == PagePattern.NONE) { apply(style.copy(pattern = PagePattern.NONE)) }
-                ModeChip(stringResource(R.string.pattern_lines), style.pattern == PagePattern.LINES) { apply(style.copy(pattern = PagePattern.LINES)) }
-                ModeChip(stringResource(R.string.pattern_dots), style.pattern == PagePattern.DOTS) { apply(style.copy(pattern = PagePattern.DOTS)) }
-                ModeChip(stringResource(R.string.pattern_grid), style.pattern == PagePattern.GRID) { apply(style.copy(pattern = PagePattern.GRID)) }
+                ModeChip(stringResource(R.string.default_choice), style.template == null) { apply(style.copy(template = null)) }
+                ModeChip(stringResource(R.string.none), style.template == PageTemplates.NONE) { apply(style.copy(template = PageTemplates.NONE)) }
+                ModeChip(stringResource(R.string.pattern_lines), style.template == PagePattern.LINES.id) { apply(style.copy(template = PagePattern.LINES.id)) }
+                ModeChip(stringResource(R.string.pattern_dots), style.template == PagePattern.DOTS.id) { apply(style.copy(template = PagePattern.DOTS.id)) }
+                ModeChip(stringResource(R.string.pattern_grid), style.template == PagePattern.GRID.id) { apply(style.copy(template = PagePattern.GRID.id)) }
             }
 
             Spacer(Modifier.size(12.dp))

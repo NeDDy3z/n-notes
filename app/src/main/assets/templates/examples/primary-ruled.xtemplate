@@ -1,0 +1,20 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.primary-ruled",
+  "name": "Handwriting practice",
+  "description": "Early-years ruling: a top line, a dashed midline and a coloured baseline, repeated in evenly spaced rows.",
+  "license": "MIT",
+  "tags": ["lines", "writing", "school"],
+  "params": {
+    "size": { "type": "length", "default": "16mm", "min": "8mm", "max": "30mm", "label": "Letter height", "role": "spacing" }
+  },
+  "items": [
+    { "type": "group", "inset": ["15mm", "10mm"], "children": [
+      { "type": "repeat", "axis": "y", "period": "size * 1.6", "fit": "space", "children": [
+        { "type": "hline", "y": 0 },
+        { "type": "hline", "y": "size / 2", "dash": ["2mm", "1.5mm"], "opacity": 0.6 },
+        { "type": "hline", "y": "size", "stroke": "accent", "strokeWidth": "0.4mm" }
+      ]}
+    ]}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.semilog",
+  "name": "Semi-log paper",
+  "description": "A linear scale across and logarithmic decades down, for plotting growth and decay.",
+  "license": "MIT",
+  "tags": ["math", "graph", "science"],
+  "params": {
+    "decades": { "type": "integer", "default": 3, "min": 1, "max": 6, "label": "Decades" },
+    "grid": { "type": "length", "default": "5mm", "min": "2mm", "max": "15mm", "label": "Linear spacing", "role": "spacing" }
+  },
+  "strokeWidth": "0.18mm",
+  "items": [
+    { "type": "group", "inset": ["15mm", "12mm"], "children": [
+      { "type": "repeat", "axis": "x", "period": "grid", "fit": "round", "children": [ { "type": "vline", "opacity": 0.5 } ] },
+      { "type": "vline", "x": "100%", "opacity": 0.5 },
+      { "type": "repeat", "axis": "y", "count": "decades", "children": [
+        { "type": "hline", "y": 0, "strokeWidth": "0.35mm" },
+        { "type": "repeat", "axis": "none", "count": 8, "children": [
+          { "type": "hline", "y": "100% - log10(i + 2) * 100%", "opacity": 0.55 }
+        ]}
+      ]},
+      { "type": "hline", "y": "100%", "strokeWidth": "0.35mm" }
+    ]}
+  ]
+}
