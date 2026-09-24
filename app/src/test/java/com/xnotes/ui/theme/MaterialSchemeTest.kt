@@ -131,6 +131,15 @@ class MaterialSchemeTest {
         }
     }
 
+    @Test fun greySurfaceSeedKeepsSurfacesUntinted() {
+        fun neutral(c: Rgba) = c.r == c.g && c.g == c.b
+        for (style in MaterialStyle.entries) for (dark in listOf(false, true)) for (grey in listOf(0x000000, 0x303030, 0x808080, 0xffffff)) {
+            val m = MaterialColors.seeded(rgb(0x2196f3), dark, style, rgb(grey))
+            val roles = listOf(m.background, m.surface, m.surfaceContainer, m.surfaceContainerHighest, m.onSurface, m.surfaceVariant, m.outline)
+            assertTrue("$style dark=$dark grey=${grey.toString(16)} $roles", roles.all(::neutral))
+        }
+    }
+
     @Test fun seedAlphaCannotMakeChromeTransparent() {
         assertEquals(MaterialColors.seeded(rgb(0xff5733), false), MaterialColors.seeded(rgb(0xff5733).copy(a = 0), false))
     }

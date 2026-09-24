@@ -6,6 +6,7 @@ import com.xnotes.vendor.materialcolor.dynamiccolor.ColorSpec.SpecVersion
 import com.xnotes.vendor.materialcolor.dynamiccolor.DynamicScheme
 import com.xnotes.vendor.materialcolor.dynamiccolor.DynamicScheme.Platform
 import com.xnotes.vendor.materialcolor.hct.Hct
+import com.xnotes.vendor.materialcolor.palettes.TonalPalette
 import com.xnotes.vendor.materialcolor.scheme.SchemeTonalSpot
 import com.xnotes.vendor.materialcolor.scheme.SchemeVibrant
 import com.xnotes.vendor.materialcolor.scheme.SchemeExpressive
@@ -14,7 +15,9 @@ import com.xnotes.vendor.materialcolor.scheme.SchemeRainbow
 import com.xnotes.vendor.materialcolor.scheme.SchemeFidelity
 import com.xnotes.vendor.materialcolor.scheme.SchemeNeutral
 import com.xnotes.vendor.materialcolor.scheme.SchemeMonochrome
+import com.xnotes.vendor.materialcolor.utils.ColorUtils
 import java.util.Optional
+import kotlin.math.hypot
 
 // Plain colour values keep generation and palette mapping JVM-testable.
 data class MaterialColors(
@@ -91,15 +94,17 @@ data class MaterialColors(
                 }
             }
             val accent = generate(seed)
-            val scheme = if (surfaceSeed == null) accent else {
-                val surfaces = generate(surfaceSeed)
-                // Combine tonal palettes before Material resolves roles and foreground contrast.
-                DynamicScheme(
-                    accent.sourceColorHct, accent.variant, dark, contrast, platform, spec,
-                    accent.primaryPalette, accent.secondaryPalette, accent.tertiaryPalette,
-                    surfaces.neutralPalette, surfaces.neutralVariantPalette, Optional.of(accent.errorPalette),
-                )
-            }
+            val surfaces = if (surfaceSeed == null) accent else generate(surfaceSeed)
+            // Styles tint surfaces at a fixed chroma; never tint beyond the seed's own, so a grey stays grey.
+            val lab = ColorUtils.labFromArgb((surfaceSeed ?: seed).copy(a = 255).toArgb())
+            val maxChroma = hypot(lab[1], lab[2])
+            fun tamed(p: TonalPalette) = if (p.chroma <= maxChroma) p else TonalPalette.fromHueAndChroma(p.hue, maxChroma)
+            // Combine tonal palettes before Material resolves roles and foreground contrast.
+            val scheme = DynamicScheme(
+                accent.sourceColorHct, accent.variant, dark, contrast, platform, spec,
+                accent.primaryPalette, accent.secondaryPalette, accent.tertiaryPalette,
+                tamed(surfaces.neutralPalette), tamed(surfaces.neutralVariantPalette), Optional.of(accent.errorPalette),
+            )
             return MaterialColors(
                 primary = Rgba.fromArgb(scheme.primary),
                 onPrimary = Rgba.fromArgb(scheme.onPrimary),
