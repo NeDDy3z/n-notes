@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -191,7 +191,7 @@ private fun TablePreview(rows: Int, cols: Int, style: TableStyle, autoRule: com.
         Modifier
             .fillMaxWidth()
             .height(92.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(palette.surface.toComposeColor()),
     ) {
         val r = rows.coerceAtMost(PREVIEW_MAX)
@@ -542,7 +542,7 @@ private fun Grip(
     onDragCancel: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    val shape = RoundedCornerShape(11.dp)
+    val shape = MaterialTheme.shapes.medium
     val start by rememberUpdatedState(onDragStart)
     val move by rememberUpdatedState(onDrag)
     val end by rememberUpdatedState(onDragEnd)
@@ -642,7 +642,7 @@ private fun DragHandle(
         Box(
             Modifier
                 .size(if (vertical) 8.dp else 24.dp, if (vertical) 24.dp else 8.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(MaterialTheme.shapes.extraSmall)
                 .background(palette.accent.toComposeColor()),
         )
     }

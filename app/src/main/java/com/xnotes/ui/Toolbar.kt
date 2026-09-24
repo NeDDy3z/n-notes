@@ -23,10 +23,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -173,7 +173,7 @@ private fun ToolbarItemView(
             if (editor.state.document.displayName == null && editor.state.document.path == null) stringResource(R.string.untitled) else editor.title,
             modifier = Modifier
                 .widthIn(max = 160.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(MaterialTheme.shapes.extraSmall)
                 .clickable { onRename() },
         )
         ToolbarItem.SIDEBAR ->
@@ -204,7 +204,7 @@ private fun ToolbarItemView(
                 Label(
                     "${editor.pageIndex + 1} / ${editor.pageCount}",
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(MaterialTheme.shapes.extraSmall)
                         .clickable { jumpOpen = true },
                 )
                 if (jumpOpen) PageJumpPopup(editor) { jumpOpen = false }
@@ -222,7 +222,7 @@ private fun ToolbarItemView(
                 Label(
                     "${editor.zoomPercent}%",
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(MaterialTheme.shapes.extraSmall)
                         .clickable { zoomMenuOpen = true },
                 )
                 if (zoomMenuOpen) ZoomMenuPopup(editor) { zoomMenuOpen = false }
@@ -496,8 +496,8 @@ private fun StickerTile(file: java.io.File, onInsert: () -> Unit, onRemove: () -
     Box(
         modifier = Modifier
             .size(72.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.small)
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
             .combinedClickable(onClick = onInsert, onLongClick = onRemove),
         contentAlignment = Alignment.Center,
     ) {

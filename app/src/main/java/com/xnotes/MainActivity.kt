@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -163,7 +164,7 @@ class MainActivity : ComponentActivity() {
                 ready = true
                 ed.prewarmBackstage() // warm recents/explorer caches so the first backstage open is instant
             }
-            XnotesTheme(ed.palette) {
+            XnotesTheme(ed.palette, ed.cornerStyle) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (ready) EditorScreen(
                         ed,
@@ -1290,9 +1291,9 @@ private fun PdfExportDialog(done: Int, total: Int, counting: String, onCancel: (
     androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
                 .padding(horizontal = 32.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1356,9 +1357,9 @@ private fun SpinnerDialog(title: String, onCancel: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
                 .padding(horizontal = 32.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1394,9 +1395,9 @@ private fun SavingDialog() {
     ) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
                 .padding(horizontal = 32.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1435,9 +1436,9 @@ private fun PdfImportBatchDialog(done: Int, total: Int, onCancel: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
                 .padding(horizontal = 32.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1490,9 +1491,9 @@ private fun BoxScope.RefiningPdfHint(editor: Editor) {
             // wraps to two tidy lines under it.
             modifier = Modifier
                 .width(190.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             androidx.compose.material3.LinearProgressIndicator(
@@ -1553,9 +1554,9 @@ private fun BoxScope.ZoomLockHint(editor: Editor) {
     ) {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
                 .clickable { editor.toggleZoomLock(); armToken++ }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,

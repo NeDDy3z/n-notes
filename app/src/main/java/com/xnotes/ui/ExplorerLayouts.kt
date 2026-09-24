@@ -40,6 +40,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -284,7 +285,7 @@ internal fun ColumnsBody(
                                     val on = !e.isDir && picked?.documentUri == e.documentUri
                                     val sel = on || b.host.isSelected(e)
                                     val code = b.colorOf(e)?.let { codeTint(it, palette) }
-                                    val shape = RoundedCornerShape(6.dp)
+                                    val shape = MaterialTheme.shapes.small
                                     Row(
                                         Modifier
                                             .fillMaxWidth()

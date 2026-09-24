@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -376,9 +377,9 @@ private fun HighlightButton(editor: Editor, current: Rgba?) {
             Box(
                 Modifier
                     .size(26.dp)
-                    .clip(RoundedCornerShape(7.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background((current ?: palette.panel).toComposeColor())
-                    .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(7.dp)),
+                    .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -415,7 +416,7 @@ private fun FontFaceButton(editor: Editor, current: FontFace?) {
         Row(
             modifier = Modifier
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(8.dp))
+                .clip(MaterialTheme.shapes.small)
                 .clickable { open = true }
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

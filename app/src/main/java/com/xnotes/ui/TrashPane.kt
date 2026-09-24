@@ -23,10 +23,10 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -106,7 +106,7 @@ internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -
                 Text(stringResource(R.string.trash), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp, maxLines = 1, modifier = Modifier.weight(1f))
                 ExplorerSearchField(query, { query = it }, expandedWidth = searchRoom.coerceIn(40.dp, 300.dp))
                 Spacer(Modifier.width(12.dp))
-                val shape = RoundedCornerShape(22.dp)
+                val shape = MaterialTheme.shapes.extraLarge
                 val enabled = !busy && !items.isNullOrEmpty()
                 Row(
                     Modifier.onSizeChanged { emptyWidth = with(density) { it.width.toDp() } }
@@ -122,7 +122,7 @@ internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -
             }
         }
         Spacer(Modifier.height(8.dp))
-        val bannerShape = RoundedCornerShape(12.dp)
+        val bannerShape = MaterialTheme.shapes.medium
         Row(
             Modifier.fillMaxWidth().clip(bannerShape).background(palette.surface.toComposeColor())
                 .border(1.dp, palette.border.toComposeColor(), bannerShape).padding(horizontal = 14.dp, vertical = 10.dp),
@@ -140,7 +140,7 @@ internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -
             )
             Text(
                 stringResource(R.string.change), color = palette.accent.toComposeColor(), fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
-                modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onOpenPreferences).padding(horizontal = 6.dp, vertical = 4.dp),
+                modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onOpenPreferences).padding(horizontal = 6.dp, vertical = 4.dp),
             )
         }
         Spacer(Modifier.height(10.dp))
@@ -261,7 +261,7 @@ private fun TrashRow(
     val deleted = formatWhen(words, item.deleted, now, "day", true, clock24, zone)
     val left = if (days > 0) (days - ((now - item.deleted) / 86_400_000L).toInt()).coerceAtLeast(0) else null
     Row(Modifier.fillMaxWidth().height(60.dp).padding(start = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        val shape = RoundedCornerShape(8.dp)
+        val shape = MaterialTheme.shapes.small
         if (e.isDir) {
             Box(Modifier.size(40.dp).clip(shape).background(palette.surface.toComposeColor()), contentAlignment = Alignment.Center) {
                 Icon(XnotesIcons.folder, null, tint = e.color?.let { codeTint(it, palette) } ?: dim, modifier = Modifier.size(22.dp))
@@ -291,7 +291,7 @@ private fun TrashRow(
         }
         Row(Modifier.width(150.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
             Row(
-                Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onRestore).padding(horizontal = 8.dp, vertical = 8.dp),
+                Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onRestore).padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {

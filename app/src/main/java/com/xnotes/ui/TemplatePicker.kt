@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -100,7 +101,7 @@ internal fun TemplateStrip(
             Column(
                 Modifier
                     .width(TILE_W)
-                    .clip(RoundedCornerShape(5.dp))
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .combinedClickable(
                         onClick = { onSelect(e.key) },
                         onLongClick = {
@@ -142,7 +143,7 @@ internal fun TemplateStrip(
         Column(
             Modifier
                 .width(TILE_W)
-                .clip(RoundedCornerShape(5.dp))
+                .clip(MaterialTheme.shapes.extraSmall)
                 .combinedClickable(onClick = onImport)
                 .padding(vertical = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

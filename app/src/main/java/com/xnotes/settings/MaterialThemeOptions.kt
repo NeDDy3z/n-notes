@@ -14,3 +14,14 @@ enum class MaterialStyle(val id: String) {
         fun fromId(id: String): MaterialStyle = entries.find { it.id == id } ?: TONAL_SPOT
     }
 }
+
+/** How round the chrome's corners are; [scale] multiplies every shape role's radius. */
+enum class CornerStyle(val id: String, val scale: Float) {
+    SHARP("sharp", 0.35f),
+    ROUNDED("rounded", 1f),
+    SOFT("soft", 1.75f);
+
+    companion object {
+        fun fromId(id: String): CornerStyle = entries.find { it.id == id } ?: ROUNDED
+    }
+}

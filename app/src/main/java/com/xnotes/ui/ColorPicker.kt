@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -360,9 +361,9 @@ private fun ColorFooter(current: Rgba, onColor: (Rgba) -> Unit) {
             Box(
                 Modifier
                     .size(30.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .background(current.toComposeColor())
-                    .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(4.dp)),
+                    .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall),
             )
             HexField(current, onColor, Modifier.weight(1f))
         }
@@ -500,9 +501,9 @@ internal fun FieldFrame(modifier: Modifier = Modifier, content: @Composable RowS
     val palette = LocalPalette.current
     Row(
         modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(palette.surface.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) { content() }
@@ -513,9 +514,9 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {

@@ -397,6 +397,14 @@ class SettingsTest {
         assertEquals(0.0, Preferences.fromJson(JSONObject().put("material_contrast", 1.5)).materialContrast, 0.0)
     }
 
+    @Test fun cornerStyleRoundTripsAndDefaultsToRounded() {
+        for (style in CornerStyle.entries) {
+            val p = Preferences(cornerStyle = style)
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
+        assertEquals(CornerStyle.ROUNDED, Preferences.fromJson(JSONObject().put("corner_style", "blobby")).cornerStyle)
+    }
+
     @Test fun defaultPresetsRoundTripInEveryMode() {
         for (mode in MaterialColourMode.entries) {
             val p = Preferences(materialMode = mode)

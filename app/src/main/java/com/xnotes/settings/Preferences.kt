@@ -19,6 +19,7 @@ data class Preferences(
     /** Material contrast level, -1 (reduced) .. 0 (standard) .. 1 (high). */
     val materialContrast: Double = 0.0,
     val materialSurfaceSeed: Rgba = DEFAULT_MATERIAL_SURFACE,
+    val cornerStyle: CornerStyle = CornerStyle.ROUNDED,
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
     val pageTemplatePdf: String? = null,
@@ -167,6 +168,7 @@ data class Preferences(
             if (materialMode == MaterialColourMode.DUAL || materialSurfaceSeed != DEFAULT_MATERIAL_SURFACE) {
                 put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
             }
+            if (cornerStyle != CornerStyle.ROUNDED) put("corner_style", cornerStyle.id)
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
             codeThemeName?.let { put("code_theme_name", it) }
@@ -233,6 +235,7 @@ data class Preferences(
                 materialContrast = o.optDouble("material_contrast", 0.0).takeIf { it in -1.0..1.0 } ?: 0.0,
                 materialSurfaceSeed = Rgba.fromHex(o.optString("material_surface_seed"))
                     ?: if (legacyDual && !o.has("material_mode")) Rgba(33, 150, 243, 255) else DEFAULT_MATERIAL_SURFACE,
+                cornerStyle = CornerStyle.fromId(o.optString("corner_style")),
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },

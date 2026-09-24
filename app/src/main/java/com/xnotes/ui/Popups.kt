@@ -17,10 +17,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -352,7 +352,7 @@ private fun TemplateCustomizer(
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 11.sp,
-            modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onBack).padding(vertical = 4.dp),
+            modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onBack).padding(vertical = 4.dp),
         )
         Text(
             t.name,
@@ -1019,9 +1019,9 @@ private fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClic
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .clickable(onClick = onClick)
             .padding(8.dp),
     ) {
@@ -1074,7 +1074,7 @@ internal fun AlertDialog(
     dismissButton: (@Composable () -> Unit)? = null,
     title: (@Composable () -> Unit)? = null,
     text: (@Composable () -> Unit)? = null,
-    shape: Shape = RoundedCornerShape(14.dp),
+    shape: Shape = MaterialTheme.shapes.large,
     containerColor: Color = LocalPalette.current.menuBg.toComposeColor(),
 ) {
     androidx.compose.material3.AlertDialog(
@@ -1113,9 +1113,9 @@ internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {

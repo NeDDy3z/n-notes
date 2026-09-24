@@ -32,6 +32,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -78,6 +79,7 @@ import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.MaterialStyle
+import com.xnotes.settings.CornerStyle
 import com.xnotes.settings.MaterialColourMode
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -239,6 +241,12 @@ fun PreferencesPane(
                 CustomMaterialControls(prefs, ::update)
             } else if (Build.VERSION.SDK_INT < 31) {
                 Text(stringResource(R.string.material_system_fallback), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+            }
+            FieldLabel(stringResource(R.string.pref_corners))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((style, label) in listOf(CornerStyle.SHARP to R.string.corners_sharp, CornerStyle.ROUNDED to R.string.corners_rounded, CornerStyle.SOFT to R.string.corners_soft)) {
+                    Chip(stringResource(label), prefs.cornerStyle == style) { updateHome(prefs.copy(cornerStyle = style)) }
+                }
             }
             CheckRow(stringResource(R.string.pref_start_fullscreen), editor.fullscreen) { editor.setFullscreenPref(it) }
 
@@ -430,8 +438,8 @@ fun PreferencesPane(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     editor.colorNames.entries.sortedBy { it.value.lowercase() }.forEach { (c, name) ->
                         Row(
-                            Modifier.clip(RoundedCornerShape(6.dp)).background(palette.surface.toComposeColor())
-                                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                            Modifier.clip(MaterialTheme.shapes.small).background(palette.surface.toComposeColor())
+                                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
                                 .clickable { namingColor = c }.padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -725,9 +733,9 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
             .semantics { this.selected = selected }
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -818,7 +826,7 @@ internal fun ColorCodeMenuContent(onPick: (Rgba?) -> Unit) {
     val palette = LocalPalette.current
     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
-            Modifier.clip(RoundedCornerShape(4.dp)).clickable { onPick(null) }.padding(vertical = 2.dp),
+            Modifier.clip(MaterialTheme.shapes.extraSmall).clickable { onPick(null) }.padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -885,8 +893,8 @@ private fun SizeDropdown(size: PageSize, onSelect: (PageSize) -> Unit) {
     Box {
         Box(
             Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                .clip(MaterialTheme.shapes.small)
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
                 .clickable { expanded = true }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
@@ -908,8 +916,8 @@ private fun OptionDropdown(options: List<Pair<String, String>>, selectedId: Stri
     Box {
         Box(
             Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                .clip(MaterialTheme.shapes.small)
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
                 .clickable { expanded = true }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {

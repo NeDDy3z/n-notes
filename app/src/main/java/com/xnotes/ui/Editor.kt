@@ -87,6 +87,7 @@ import com.xnotes.platform.AndroidTextMeasurer
 import com.xnotes.settings.ExplorerView
 import com.xnotes.settings.LiveSettings
 import com.xnotes.settings.Preferences
+import com.xnotes.settings.CornerStyle
 import com.xnotes.settings.MaterialColourMode
 import com.xnotes.settings.Settings
 import com.xnotes.settings.SettingsRepository
@@ -403,6 +404,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var tool by mutableStateOf(Tool.DEFAULT)
         private set
     var palette by mutableStateOf(state.palette)
+        private set
+    /** How round the chrome is, [Preferences.cornerStyle]. */
+    var cornerStyle by mutableStateOf(CornerStyle.ROUNDED)
         private set
     var zoomPercent by mutableStateOf(100)
         private set
@@ -1772,6 +1776,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun applyPagePrefsToState(p: Preferences) {
         palette = buildPalette(p)
+        cornerStyle = p.cornerStyle
         state.palette = palette
         infiniteOrNull?.applyPalette(palette)
         infiniteOrNull?.applyInputPrefs(
@@ -1870,6 +1875,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Apply preferences only the home screen reads, without the canvas refresh [applyPreferences] does. */
     fun applyHomePreferences(p: Preferences) {
         settings = settings.copy(prefs = p)
+        cornerStyle = p.cornerStyle
         saveSettingsSoon()
         prefsVersion++
     }

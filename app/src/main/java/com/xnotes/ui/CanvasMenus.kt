@@ -14,13 +14,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GridOff
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -110,9 +110,9 @@ fun SelectionMenu(host: SelectionMenuHost) {
     Row(
         modifier = Modifier
             .offset(xDp, yDp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
     ) {
         ActionIcon(XnotesIcons.trash, stringResource(R.string.delete)) { host.deleteSelection() }
         ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
@@ -235,9 +235,9 @@ fun ScreenshotMenu(editor: Editor) {
     Row(
         modifier = Modifier
             .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp))
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium)
             .clickable { editor.copyScreenshotAsImage() }
             .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -356,9 +356,9 @@ fun FlowEditMenu(editor: Editor) {
     Row(
         modifier = Modifier
             .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
     ) {
         ActionIcon(XnotesIcons.cut, stringResource(R.string.cut), enabled = hasSelection) {
             editor.flowCut(); editor.dismissFlowContextMenu()
@@ -427,9 +427,9 @@ fun FlowTableMenu(editor: Editor) {
     Row(
         modifier = Modifier
             .offset(with(density) { bar.left.toDp() }, with(density) { bar.top.toDp() })
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
     ) {
         ActionIcon(XnotesIcons.tableEdit, stringResource(R.string.edit_table)) { editor.startTableEdit(table) }
         ActionIcon(XnotesIcons.magicWand, stringResource(R.string.fit_columns)) { editor.tableAutoFit(table) }

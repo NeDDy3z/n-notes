@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -280,7 +281,7 @@ internal fun GridFileTile(b: ExplorerBody, e: BrowseEntry) {
     val selected = b.host.isSelected(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val accent = palette.accent.toComposeColor()
-    val shape = CARD_SHAPE
+    val shape = MaterialTheme.shapes.medium
     Column(
         Modifier
             .alpha(if (b.host.isCut(e)) 0.4f else 1f)
@@ -338,7 +339,7 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
             b.host.onPulseDone(e)
         }
     }
-    val shape = CHIP_SHAPE
+    val shape = MaterialTheme.shapes.small
     Row(
         Modifier
             .fillMaxWidth()
@@ -387,7 +388,7 @@ internal fun FolderCardTile(b: ExplorerBody, e: BrowseEntry) {
     val active = b.host.isSelected(e) || b.host.isDropTarget(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val accent = palette.accent.toComposeColor()
-    val shape = CARD_SHAPE
+    val shape = MaterialTheme.shapes.medium
     Column(
         Modifier
             .alpha(if (b.host.isCut(e)) 0.4f else 1f)
@@ -457,7 +458,7 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
             Spacer(Modifier.width(14.dp))
         }
         val box = if (compact) 28.dp else 40.dp
-        val shape = RoundedCornerShape(8.dp)
+        val shape = MaterialTheme.shapes.small
         if (e.isDir || compact) {
             Box(Modifier.size(box).clip(shape).background(palette.surface.toComposeColor()), contentAlignment = Alignment.Center) {
                 Icon(kindIcon(kind), null, tint = code ?: dim, modifier = Modifier.size(if (compact) 17.dp else 22.dp))
@@ -559,7 +560,7 @@ internal fun TimelineCard(b: ExplorerBody, e: BrowseEntry, side: Dp) {
     val selecting = b.host.selecting()
     val selected = b.host.isSelected(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
-    val shape = CARD_SHAPE
+    val shape = MaterialTheme.shapes.medium
     Column(
         Modifier
             .width(side)
@@ -600,7 +601,7 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
     val palette = LocalPalette.current
     val active = b.host.isSelected(e) || b.host.isDropTarget(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
-    val shape = CHIP_SHAPE
+    val shape = MaterialTheme.shapes.small
     Row(
         Modifier
             .height(44.dp)
@@ -661,7 +662,7 @@ internal fun HomeShelves(
             ShelfTitle(stringResource(R.string.pinned))
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 pins.forEach { pin ->
-                    val shape = CHIP_SHAPE
+                    val shape = MaterialTheme.shapes.small
                     Row(
                         Modifier.height(44.dp).clip(shape).border(1.dp, palette.border.toComposeColor(), shape)
                             .clickable { onOpenPin(pin) }.padding(start = 12.dp, end = 16.dp),
@@ -687,7 +688,7 @@ internal fun HomeShelves(
 private fun RecentCard(b: ExplorerBody, r: RecentEntry, onOpen: (BrowseEntry) -> Unit) {
     val palette = LocalPalette.current
     val e = r.entry
-    val shape = CARD_SHAPE
+    val shape = MaterialTheme.shapes.medium
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     Column(
         Modifier.width(168.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpen(e) },
@@ -717,7 +718,7 @@ internal fun ShelfTitle(title: String, action: String? = null, onAction: () -> U
         Text(title, color = palette.text.toComposeColor(), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         if (action != null) {
             Text(action, color = palette.accent.toComposeColor(), fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
-                modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onAction).padding(horizontal = 8.dp, vertical = 4.dp))
+                modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onAction).padding(horizontal = 8.dp, vertical = 4.dp))
         }
     }
 }

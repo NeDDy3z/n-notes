@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -209,8 +210,8 @@ private fun SectionCard(
         modifier = Modifier
             .alpha(if (dimmed) 0.35f else 1f)
             .onGloballyPositioned { onBounds(it.boundsInRoot()) }
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, (if (targeted) palette.accent else palette.border).toComposeColor(), RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.small)
+            .border(1.dp, (if (targeted) palette.accent else palette.border).toComposeColor(), MaterialTheme.shapes.small)
             .padding(start = 6.dp, top = 2.dp, end = 2.dp, bottom = 6.dp),
         header = {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -329,9 +330,9 @@ private fun ChipFace(item: ToolbarItem, visible: Boolean, modifier: Modifier = M
     Row(
         modifier
             .alpha(if (!visible) 0.4f else 1f)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(palette.surface.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -348,9 +349,9 @@ fun ToolbarDragGhost(item: ToolbarItem) {
     Row(
         Modifier
             .alpha(0.9f)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(palette.surface.toComposeColor())
-            .border(1.dp, palette.accent.toComposeColor(), RoundedCornerShape(6.dp))
+            .border(1.dp, palette.accent.toComposeColor(), MaterialTheme.shapes.small)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -373,9 +374,9 @@ fun SectionCardGhost(section: ToolbarSection, widthPx: Float) {
         Modifier
             .width(width)
             .alpha(0.95f)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.accent.toComposeColor(), RoundedCornerShape(8.dp))
+            .border(1.dp, palette.accent.toComposeColor(), MaterialTheme.shapes.small)
             .padding(start = 6.dp, top = 2.dp, end = 2.dp, bottom = 6.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -405,8 +406,8 @@ private fun AddSectionChip(onClick: () -> Unit) {
     val palette = LocalPalette.current
     Row(
         Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, palette.accent.toComposeColor(), RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.small)
+            .border(1.dp, palette.accent.toComposeColor(), MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

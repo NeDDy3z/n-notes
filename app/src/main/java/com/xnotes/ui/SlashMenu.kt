@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -85,9 +85,9 @@ fun SlashMenu(editor: Editor) {
             .offset(with(density) { x.toDp() }, with(density) { y.coerceAtLeast(0f).toDp() })
             .width(MENU_WIDTH)
             .heightIn(max = ROW_HEIGHT * VISIBLE_ROWS + 8.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp))
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium)
             .padding(vertical = 4.dp)
             .verticalScroll(scroll),
     ) {

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -193,9 +194,9 @@ private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -
         Modifier
             .weight(1f)
             .fillMaxHeight()
-            .clip(CARD_SHAPE)
+            .clip(MaterialTheme.shapes.medium)
             .background(if (pressed) palette.selectionBackground.toComposeColor() else Color.Transparent)
-            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), CARD_SHAPE)
+            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), MaterialTheme.shapes.medium)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

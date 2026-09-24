@@ -49,7 +49,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -59,6 +58,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -586,7 +586,7 @@ private fun Command(icon: ImageVector, label: String, selected: Boolean = false,
 @Composable
 private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val pill = RoundedCornerShape(16.dp)
+    val pill = MaterialTheme.shapes.large
     Column(
         Modifier.width(RAIL_WIDTH).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(top = 6.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1573,7 +1573,7 @@ private fun ExplorerSection(
                                 if (!recents.isNullOrEmpty()) {
                                     Text(
                                         stringResource(R.string.clear), color = palette.accent.toComposeColor(), fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(4.dp)).clickable { editor.clearRecents() }.padding(horizontal = 6.dp, vertical = 4.dp),
+                                        modifier = Modifier.padding(start = 6.dp).clip(MaterialTheme.shapes.extraSmall).clickable { editor.clearRecents() }.padding(horizontal = 6.dp, vertical = 4.dp),
                                     )
                                 }
                             } else if (filter != null) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1587,7 +1587,7 @@ private fun ExplorerSection(
                                 Icon(
                                     XnotesIcons.home, stringResource(R.string.top_folder),
                                     tint = (if (stack.isEmpty()) palette.accent else palette.textDim).toComposeColor(),
-                                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)).clickable { stack.clear(); clearUp() },
+                                    modifier = Modifier.size(18.dp).clip(MaterialTheme.shapes.extraSmall).clickable { stack.clear(); clearUp() },
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Crumb(rootName ?: stringResource(R.string.folder), current = stack.isEmpty()) { stack.clear(); clearUp() }
@@ -1925,7 +1925,7 @@ internal fun Crumb(text: String, current: Boolean, onClick: () -> Unit) {
         color = (if (current) palette.text else palette.textDim).toComposeColor(),
         fontSize = 14.sp,
         maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onClick).padding(horizontal = 2.dp, vertical = 2.dp),
+        modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onClick).padding(horizontal = 2.dp, vertical = 2.dp),
     )
 }
 
@@ -2006,11 +2006,6 @@ internal fun Modifier.colorHatch(color: Color): Modifier = drawBehind {
     }
 }
 
-internal val CARD_SHAPE = RoundedCornerShape(12.dp)
-
-/** Slightly tighter rounding for the compact folder chips. */
-internal val CHIP_SHAPE = RoundedCornerShape(8.dp)
-
 /** Step each deeper card down-and-right by this much so the stack reads as a tidy pile. */
 private val DRAG_STACK_STEP = 8.dp
 
@@ -2042,7 +2037,7 @@ private fun DragPreview(editor: Editor, items: List<BrowseEntry>, sizePx: IntSiz
 private fun StackedNoteCard(editor: Editor, entry: BrowseEntry, modifier: Modifier) {
     val palette = LocalPalette.current
     val thumb = editor.cachedNoteTile(entry.documentUri)
-    val shape = CARD_SHAPE
+    val shape = MaterialTheme.shapes.medium
     Column(modifier.clip(shape).background(palette.bg.toComposeColor()).border(1.dp, palette.accent.toComposeColor(), shape)) {
         Box(Modifier.fillMaxWidth().weight(1f).background(palette.paper.toComposeColor())) {
             if (thumb != null) {
@@ -2161,7 +2156,7 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
     }
     val accent = palette.accent.toComposeColor()
     val onAccent = palette.selectionForeground.toComposeColor()
-    val shape = CARD_SHAPE
+    val shape = MaterialTheme.shapes.medium
     Column(
         modifier
             .clip(shape)

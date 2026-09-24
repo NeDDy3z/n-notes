@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -78,9 +78,9 @@ fun TextStyleBar(editor: Editor) {
             .offset(xDp, yDp)
             .height(44.dp)
             .onSizeChanged { measuredWidthPx = it.width.toFloat() }
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(10.dp)),
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FacePicker(current = bar.face) { editor.setTextFace(it) }

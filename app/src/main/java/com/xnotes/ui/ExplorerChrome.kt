@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -90,8 +91,6 @@ internal fun directionLabel(k: ExplorerSortKey, descending: Boolean): String = w
     else -> if (descending) stringResource(R.string.newest_first) else stringResource(R.string.oldest_first)
 }
 
-private val CONTROL_SHAPE = RoundedCornerShape(6.dp)
-
 /** A toggle or menu chip in the explorer's chip row and View options; [on] fills it with the accent, and without [labelled] only its icons show. */
 @Composable
 internal fun ExplorerChip(
@@ -109,9 +108,9 @@ internal fun ExplorerChip(
     Row(
         modifier
             .height(32.dp)
-            .clip(CONTROL_SHAPE)
+            .clip(MaterialTheme.shapes.small)
             .background(if (on) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), CONTROL_SHAPE)
+            .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
             .padding(start = if (icon != null) 8.dp else 12.dp, end = if (trailing != null || !labelled) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -182,7 +181,7 @@ internal fun Modifier.liftPadding(lift: () -> Float, pad: Dp): Modifier = layout
 @Composable
 internal fun LayoutSwitcher(layouts: List<ExplorerLayout>, current: ExplorerLayout, lift: () -> Float = { 0f }, onPick: (ExplorerLayout) -> Unit) {
     val palette = LocalPalette.current
-    val shape = RoundedCornerShape(10.dp)
+    val shape = MaterialTheme.shapes.medium
     Row(
         Modifier.height(40.dp).floatingBacking(lift, shape, palette.surface.toComposeColor(), Color.Transparent)
             .clip(shape).border(1.dp, palette.border.toComposeColor(), shape),
@@ -240,7 +239,7 @@ internal fun SelectionBar(
     actions: @Composable () -> Unit,
 ) {
     val palette = LocalPalette.current
-    val shape = RoundedCornerShape(12.dp)
+    val shape = MaterialTheme.shapes.medium
     val fg = palette.selectionForeground.toComposeColor()
     Row(
         // Opaque under its fill, since it stays put while files scroll beneath it, and edged so the
@@ -265,7 +264,7 @@ internal fun SelectionBar(
                     color = fg,
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onSelectAll).padding(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onSelectAll).padding(horizontal = 8.dp, vertical = 6.dp),
                 )
             }.firstOrNull()?.measure(loose)
             val tools = subcompose("tools") {
@@ -299,7 +298,7 @@ internal fun SelectionDivider() {
 @Composable
 internal fun TileBadge(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
-    val shape = RoundedCornerShape(11.dp)
+    val shape = MaterialTheme.shapes.medium
     Row(
         modifier
             .height(22.dp)
@@ -373,7 +372,7 @@ internal fun ViewOptionsContent(
                 color = palette.accent.toComposeColor(),
                 fontSize = 13.5.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onReset).padding(horizontal = 8.dp, vertical = 6.dp),
+                modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onReset).padding(horizontal = 8.dp, vertical = 6.dp),
             )
             ExplorerIcon(XnotesIcons.close, stringResource(R.string.close_view_options), palette.textDim.toComposeColor(), onClick = onClose)
         }
@@ -381,7 +380,7 @@ internal fun ViewOptionsContent(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 layouts.forEach { l ->
                     val on = l == layout
-                    val shape = RoundedCornerShape(12.dp)
+                    val shape = MaterialTheme.shapes.medium
                     Column(
                         Modifier
                             .width(62.dp)
@@ -480,7 +479,7 @@ internal fun ViewOptionsContent(
         }
         HorizontalDivider(color = palette.border.toComposeColor())
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).clickable { onEveryFolder(!everyFolder) }.padding(vertical = 2.dp),
+            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraSmall).clickable { onEveryFolder(!everyFolder) }.padding(vertical = 2.dp),
             verticalAlignment = Alignment.Top,
         ) {
             RowCheck(everyFolder, Modifier.padding(top = 3.dp))
