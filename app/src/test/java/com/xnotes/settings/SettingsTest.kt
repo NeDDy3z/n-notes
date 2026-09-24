@@ -63,7 +63,6 @@ class SettingsTest {
             sidebarVisible = true,
             prefs = Preferences(
                 uiAppearance = "light",
-                accentColor = Rgba(255, 138, 30),
                 defaultPageSize = PageSize.LETTER,
                 defaultPageOrientation = Orientation.LANDSCAPE,
                 pageColor = Rgba(20, 20, 20),
@@ -273,42 +272,12 @@ class SettingsTest {
         assertFalse(Preferences().toJson().has("start_fullscreen"))
     }
 
-    @Test fun paletteStyleDefaultsPerMode() {
-        val p = Preferences.fromJson(JSONObject())
-        assertEquals("material", p.systemPaletteStyle)
-        assertEquals("material", p.darkPaletteStyle)
-        assertEquals("material", p.lightPaletteStyle)
-        assertEquals("classic", p.oledPaletteStyle)
-        assertEquals("material", p.paletteStyle)
-        assertEquals("classic", p.copy(uiAppearance = "oled").paletteStyle)
-    }
-
-    @Test fun paletteStyleRoundTrips() {
-        val back = Preferences.fromJson(
-            Preferences(
-                systemPaletteStyle = "classic",
-                darkPaletteStyle = "classic",
-                lightPaletteStyle = "classic",
-                oledPaletteStyle = "material",
-            ).toJson(),
-        )
-        assertEquals("classic", back.systemPaletteStyle)
-        assertEquals("classic", back.darkPaletteStyle)
-        assertEquals("classic", back.lightPaletteStyle)
-        assertEquals("material", back.oledPaletteStyle)
-    }
-
-    @Test fun paletteStyleMalformedFallsBackPerMode() {
-        val o = JSONObject()
-            .put("system_palette_style", "neon")
-            .put("dark_palette_style", "neon")
-            .put("light_palette_style", "neon")
-            .put("oled_palette_style", "neon")
-        val p = Preferences.fromJson(o)
-        assertEquals("material", p.systemPaletteStyle)
-        assertEquals("material", p.darkPaletteStyle)
-        assertEquals("material", p.lightPaletteStyle)
-        assertEquals("classic", p.oledPaletteStyle)
+    @Test fun classicPaletteKeysAreDroppedOnLoad() {
+        val o = JSONObject().put("accent_color", "#ff8a1e").put("oled_palette_style", "classic").put("dark_palette_style", "classic")
+        val json = Preferences.fromJson(o).toJson()
+        for (key in listOf("accent_color", "system_palette_style", "dark_palette_style", "light_palette_style", "oled_palette_style")) {
+            assertFalse(key, json.has(key))
+        }
     }
 
     @Test fun materialDefaultsUseSystemWithFirstPresetsReady() {
@@ -397,8 +366,8 @@ class SettingsTest {
         assertEquals(Rgba(13, 14, 15), backToDual.materialSingleSeed)
     }
 
-    @Test fun firstSingleToneDoesNotInheritDualToneOrClassicAccent() {
-        val dual = Preferences(accentColor = Rgba(1, 2, 3), materialMode = MaterialColourMode.DUAL,
+    @Test fun firstSingleToneDoesNotInheritDualTone() {
+        val dual = Preferences(materialMode = MaterialColourMode.DUAL,
             materialDualSeed = Rgba(4, 5, 6), materialSurfaceSeed = Rgba(7, 8, 9))
         val single = Preferences.fromJson(dual.copy(materialMode = MaterialColourMode.SINGLE).toJson())
         assertEquals(Preferences.DEFAULT_MATERIAL_SINGLE, single.materialSingleSeed)
@@ -413,7 +382,7 @@ class SettingsTest {
                     materialDualSeed = Rgba(0, 128, 0), materialSurfaceSeed = Rgba(0, 0, 128), materialStyle = style)
                 assertEquals(p, Preferences.fromJson(p.toJson()))
                 for (appearance in listOf("light", "dark", "oled", "system")) {
-                    val changed = p.copy(uiAppearance = appearance).withPaletteStyle("classic")
+                    val changed = p.copy(uiAppearance = appearance)
                     assertEquals(changed, Preferences.fromJson(changed.toJson()))
                 }
             }
@@ -433,19 +402,6 @@ class SettingsTest {
             val p = Preferences(materialMode = mode)
             assertEquals(p, Preferences.fromJson(p.toJson()))
         }
-    }
-
-    @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {
-        val p = Preferences(
-            uiAppearance = "oled",
-            systemPaletteStyle = "classic",
-            darkPaletteStyle = "classic",
-            lightPaletteStyle = "classic",
-        ).withPaletteStyle("material")
-        assertEquals("material", p.oledPaletteStyle)
-        assertEquals("classic", p.systemPaletteStyle)
-        assertEquals("classic", p.darkPaletteStyle)
-        assertEquals("classic", p.lightPaletteStyle)
     }
 
     @Test fun startFullscreenRoundTrips() {

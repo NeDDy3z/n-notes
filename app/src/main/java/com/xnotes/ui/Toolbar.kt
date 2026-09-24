@@ -346,12 +346,9 @@ internal fun ToolbarIcon(
     onClick: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    // Material selections use the generated container and its matching foreground.
-    val filled = active && palette.isMaterial
     val tint = when {
-        !enabled -> com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor()
-        filled -> palette.selectionForeground.toComposeColor()
-        active -> palette.accent.toComposeColor()
+        !enabled -> palette.disabled.toComposeColor()
+        active -> palette.selectionForeground.toComposeColor()
         else -> palette.textDim.toComposeColor()
     }
     IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(42.dp)) {
@@ -359,7 +356,7 @@ internal fun ToolbarIcon(
             Modifier
                 .size(34.dp)
                 .clip(CircleShape)
-                .background(if (filled) palette.selectionBackground.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent),
+                .background(if (active) palette.selectionBackground.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))

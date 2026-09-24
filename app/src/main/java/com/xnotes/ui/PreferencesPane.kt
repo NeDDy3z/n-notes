@@ -80,14 +80,10 @@ import com.xnotes.settings.Preferences
 import com.xnotes.settings.MaterialStyle
 import com.xnotes.settings.MaterialColourMode
 import com.xnotes.ui.icons.XnotesIcons
-import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.delay
 
-private val accentPresets = listOf(
-    Rgba(0, 230, 118), Rgba(255, 138, 30), Rgba(255, 77, 77), Rgba(255, 210, 30),
-)
 internal val pageColorPresets = listOf(
     Rgba(22, 22, 22), Rgba(13, 13, 13), Rgba(255, 255, 255), Rgba(247, 243, 233), Rgba(232, 232, 232),
 )
@@ -225,43 +221,24 @@ fun PreferencesPane(
                 Chip(stringResource(R.string.theme_light), prefs.uiAppearance == "light") { update(prefs.copy(uiAppearance = "light")) }
                 Chip(stringResource(R.string.theme_oled), prefs.uiAppearance == "oled") { update(prefs.copy(uiAppearance = "oled")) }
             }
-            FieldLabel(stringResource(R.string.pref_colour_palette))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip(stringResource(R.string.palette_classic), prefs.paletteStyle == "classic") { update(prefs.withPaletteStyle("classic")) }
-                Chip(stringResource(R.string.palette_material), prefs.paletteStyle == "material") { update(prefs.withPaletteStyle("material")) }
+            val systemColours = prefs.materialMode == MaterialColourMode.SYSTEM
+            FieldLabel(stringResource(R.string.material_tone))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip(stringResource(R.string.material_system_colours), systemColours) {
+                    update(prefs.copy(materialMode = MaterialColourMode.SYSTEM))
+                }
+                Chip(stringResource(R.string.material_single_tone), prefs.materialMode == MaterialColourMode.SINGLE) {
+                    update(prefs.copy(materialMode = MaterialColourMode.SINGLE))
+                }
+                Chip(stringResource(R.string.material_dual_tone), prefs.materialMode == MaterialColourMode.DUAL) {
+                    update(prefs.copy(materialMode = MaterialColourMode.DUAL))
+                }
             }
-            if (prefs.paletteStyle == "material") {
-                val systemColours = prefs.materialMode == MaterialColourMode.SYSTEM
-                FieldLabel(stringResource(R.string.material_tone))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip(stringResource(R.string.material_system_colours), systemColours) {
-                        update(prefs.copy(materialMode = MaterialColourMode.SYSTEM))
-                    }
-                    Chip(stringResource(R.string.material_single_tone), prefs.materialMode == MaterialColourMode.SINGLE) {
-                        update(prefs.copy(materialMode = MaterialColourMode.SINGLE))
-                    }
-                    Chip(stringResource(R.string.material_dual_tone), prefs.materialMode == MaterialColourMode.DUAL) {
-                        update(prefs.copy(materialMode = MaterialColourMode.DUAL))
-                    }
-                }
-                if (!systemColours) {
-                    key(prefs.materialMode) { MaterialColourPicker(prefs, ::update) }
-                    CustomMaterialControls(prefs, ::update)
-                } else if (Build.VERSION.SDK_INT < 31) {
-                    Text(stringResource(R.string.material_system_fallback), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                }
-            } else {
-                FieldLabel(stringResource(R.string.pref_accent_colour))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    accentPresets.forEach { c ->
-                        ColorDot(c.toComposeColor(), prefs.accentColor == c) { update(prefs.copy(accentColor = c)) }
-                    }
-                    ColorPickerDot(
-                        prefs.accentColor,
-                        custom = prefs.accentColor !in accentPresets,
-                        onPick = { update(prefs.copy(accentColor = it)) },
-                    ) { onDismiss, onPick -> AccentColorGridPopup(onDismiss, onPick) }
-                }
+            if (!systemColours) {
+                key(prefs.materialMode) { MaterialColourPicker(prefs, ::update) }
+                CustomMaterialControls(prefs, ::update)
+            } else if (Build.VERSION.SDK_INT < 31) {
+                Text(stringResource(R.string.material_system_fallback), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
             }
             CheckRow(stringResource(R.string.pref_start_fullscreen), editor.fullscreen) { editor.setFullscreenPref(it) }
 
@@ -831,34 +808,6 @@ internal fun ColorPickerDot(
 }
 
 /** One tappable colour cell in a picker grid. */
-@Composable
-private fun Swatch(c: Rgba, onPick: (Rgba) -> Unit) {
-    Box(
-        Modifier
-            .size(20.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(c.toComposeColor())
-            .border(0.5.dp, LocalPalette.current.border.toComposeColor(), RoundedCornerShape(2.dp))
-            .clickable { onPick(c) },
-    )
-}
-
-/** Picker grid restricted to bright, saturated hues — no greys, no washed-out tints. */
-@Composable
-private fun AccentColorGridPopup(onDismiss: () -> Unit, onPick: (Rgba) -> Unit) {
-    val hues = (0 until 12).map { it * 360.0 / 12.0 }
-    val shades = listOf(1.0 to 1.0, 1.0 to 0.82, 0.78 to 1.0)
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            shades.forEach { (s, v) ->
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    hues.forEach { h -> Swatch(ColorMath.hsvToRgb(h, s, v), onPick) }
-                }
-            }
-        }
-    }
-}
-
 /**
  * The colour-code picker shown inside a note/folder's overflow menu: a None row to clear the colour,
  * then the picker's full matrix (pale tints through near-black plus the greyscale row). [onPick] is

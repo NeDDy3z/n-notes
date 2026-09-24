@@ -13,7 +13,7 @@ import com.xnotes.core.model.Rgba
 /** Convert a core [Rgba] to a Compose [Color]. */
 fun Rgba.toComposeColor(): Color = Color(r, g, b, a)
 
-val LocalPalette = staticCompositionLocalOf { Palette.dark() }
+val LocalPalette = staticCompositionLocalOf { Palette.DEFAULT }
 
 @Composable
 fun XnotesTheme(palette: Palette, content: @Composable () -> Unit) {
@@ -69,7 +69,7 @@ internal fun Palette.composeColorScheme(): ColorScheme {
             surfaceContainerHighest = palette.bg.toComposeColor(),
         )
     }
-    val m = materialColors ?: return scheme
+    val m = materialColors
     return scheme.copy(
         onPrimary = m.onPrimary.toComposeColor(),
         primaryContainer = m.primaryContainer.toComposeColor(),

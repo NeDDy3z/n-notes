@@ -12,12 +12,6 @@ import org.json.JSONObject
  */
 data class Preferences(
     val uiAppearance: String = "system", // "system" (follows OS dark/light) | "dark" | "light" | "oled"
-    val accentColor: Rgba = DEFAULT_ACCENT,
-    /** Chrome palette per appearance mode: "classic" (accent-derived) | "material". */
-    val systemPaletteStyle: String = "material",
-    val darkPaletteStyle: String = "material",
-    val lightPaletteStyle: String = "material",
-    val oledPaletteStyle: String = "classic",
     val materialMode: MaterialColourMode = MaterialColourMode.DUAL,
     val materialSingleSeed: Rgba = DEFAULT_MATERIAL_SINGLE,
     val materialDualSeed: Rgba = DEFAULT_MATERIAL_DUAL,
@@ -126,31 +120,8 @@ data class Preferences(
             defaultPageSize.pixels(defaultPageOrientation, dpi)
         }
 
-    /** The palette style of the active appearance mode. */
-    val paletteStyle: String get() = paletteStyleFor(uiAppearance)
-
-    fun paletteStyleFor(appearance: String): String = when (appearance) {
-        "light" -> lightPaletteStyle
-        "oled" -> oledPaletteStyle
-        "dark" -> darkPaletteStyle
-        else -> systemPaletteStyle
-    }
-
-    /** Set the palette style of the active appearance mode, leaving the other modes alone. */
-    fun withPaletteStyle(style: String): Preferences = when (uiAppearance) {
-        "light" -> copy(lightPaletteStyle = style)
-        "oled" -> copy(oledPaletteStyle = style)
-        "dark" -> copy(darkPaletteStyle = style)
-        else -> copy(systemPaletteStyle = style)
-    }
-
     fun toJson(): JSONObject = JSONObject()
         .put("ui_appearance", uiAppearance)
-        .put("accent_color", Rgba.toHex(accentColor))
-        .put("system_palette_style", systemPaletteStyle)
-        .put("dark_palette_style", darkPaletteStyle)
-        .put("light_palette_style", lightPaletteStyle)
-        .put("oled_palette_style", oledPaletteStyle)
         .put("hide_window_decoration", hideWindowDecoration)
         .put("page_color", pageColor?.let { Rgba.toHex(it) } ?: JSONObject.NULL)
         .put("page_template_pdf", pageTemplatePdf ?: JSONObject.NULL)
@@ -243,8 +214,6 @@ data class Preferences(
             val zoomLockPan = o.optString("zoom_lock_pan", "single").let { if (it == "double" || it == "none") it else "single" }
             val tapActions = setOf("none", "undo", "redo", "toggle_pan", "toggle_eraser", "toggle_previous")
             fun tapAction(key: String) = o.optString(key, "none").let { if (it in tapActions) it else "none" }
-            fun paletteStyle(key: String, default: String) =
-                o.optString(key, default).let { if (it == "classic" || it == "material") it else default }
             val legacySeed = Rgba.fromHex(o.optString("material_seed"))
             val legacyDual = o.optBoolean("material_dual_tone", false)
             val materialMode = MaterialColourMode.fromId(o.optString("material_mode")) ?: when {
@@ -255,11 +224,6 @@ data class Preferences(
             val legacyDualAccent = legacySeed ?: Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT
             return Preferences(
                 uiAppearance = appearance,
-                accentColor = Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT,
-                systemPaletteStyle = paletteStyle("system_palette_style", "material"),
-                darkPaletteStyle = paletteStyle("dark_palette_style", "material"),
-                lightPaletteStyle = paletteStyle("light_palette_style", "material"),
-                oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
                 materialMode = materialMode,
                 materialSingleSeed = Rgba.fromHex(o.optString("material_single_seed"))
                     ?: legacySeed?.takeIf { !legacyDual } ?: DEFAULT_MATERIAL_SINGLE,

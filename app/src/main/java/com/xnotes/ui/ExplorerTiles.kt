@@ -280,7 +280,7 @@ internal fun GridFileTile(b: ExplorerBody, e: BrowseEntry) {
     val selected = b.host.isSelected(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val accent = palette.accent.toComposeColor()
-    val shape = cardShape(palette)
+    val shape = CARD_SHAPE
     Column(
         Modifier
             .alpha(if (b.host.isCut(e)) 0.4f else 1f)
@@ -338,7 +338,7 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
             b.host.onPulseDone(e)
         }
     }
-    val shape = chipShape(palette)
+    val shape = CHIP_SHAPE
     Row(
         Modifier
             .fillMaxWidth()
@@ -387,7 +387,7 @@ internal fun FolderCardTile(b: ExplorerBody, e: BrowseEntry) {
     val active = b.host.isSelected(e) || b.host.isDropTarget(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val accent = palette.accent.toComposeColor()
-    val shape = cardShape(palette)
+    val shape = CARD_SHAPE
     Column(
         Modifier
             .alpha(if (b.host.isCut(e)) 0.4f else 1f)
@@ -558,7 +558,7 @@ internal fun TimelineCard(b: ExplorerBody, e: BrowseEntry, side: Dp) {
     val selecting = b.host.selecting()
     val selected = b.host.isSelected(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
-    val shape = cardShape(palette)
+    val shape = CARD_SHAPE
     Column(
         Modifier
             .width(side)
@@ -599,7 +599,7 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
     val palette = LocalPalette.current
     val active = b.host.isSelected(e) || b.host.isDropTarget(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
-    val shape = chipShape(palette)
+    val shape = CHIP_SHAPE
     Row(
         Modifier
             .height(44.dp)
@@ -660,7 +660,7 @@ internal fun HomeShelves(
             ShelfTitle(stringResource(R.string.pinned))
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 pins.forEach { pin ->
-                    val shape = chipShape(palette)
+                    val shape = CHIP_SHAPE
                     Row(
                         Modifier.height(44.dp).clip(shape).border(1.dp, palette.border.toComposeColor(), shape)
                             .clickable { onOpenPin(pin) }.padding(start = 12.dp, end = 16.dp),
@@ -686,7 +686,7 @@ internal fun HomeShelves(
 private fun RecentCard(b: ExplorerBody, r: RecentEntry, onOpen: (BrowseEntry) -> Unit) {
     val palette = LocalPalette.current
     val e = r.entry
-    val shape = cardShape(palette)
+    val shape = CARD_SHAPE
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     Column(
         Modifier.width(168.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpen(e) },

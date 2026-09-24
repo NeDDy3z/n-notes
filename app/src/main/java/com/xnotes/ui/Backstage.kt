@@ -85,8 +85,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -151,7 +149,6 @@ import com.xnotes.settings.PinnedFolder
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
-import com.xnotes.ui.theme.Palette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -589,7 +586,7 @@ private fun Command(icon: ImageVector, label: String, selected: Boolean = false,
 @Composable
 private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val pill = if (palette.isMaterial) RoundedCornerShape(16.dp) else RectangleShape
+    val pill = RoundedCornerShape(16.dp)
     Column(
         Modifier.width(RAIL_WIDTH).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(top = 6.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2017,13 +2014,10 @@ internal fun Modifier.colorHatch(color: Color): Modifier = drawBehind {
     }
 }
 
-/** Material chrome rounds the backstage cards; the classic accent chrome keeps them squared. */
-internal fun cardShape(palette: Palette): Shape =
-    if (palette.isMaterial) RoundedCornerShape(12.dp) else RectangleShape
+internal val CARD_SHAPE = RoundedCornerShape(12.dp)
 
 /** Slightly tighter rounding for the compact folder chips. */
-internal fun chipShape(palette: Palette): Shape =
-    if (palette.isMaterial) RoundedCornerShape(8.dp) else RectangleShape
+internal val CHIP_SHAPE = RoundedCornerShape(8.dp)
 
 /** Step each deeper card down-and-right by this much so the stack reads as a tidy pile. */
 private val DRAG_STACK_STEP = 8.dp
@@ -2056,7 +2050,7 @@ private fun DragPreview(editor: Editor, items: List<BrowseEntry>, sizePx: IntSiz
 private fun StackedNoteCard(editor: Editor, entry: BrowseEntry, modifier: Modifier) {
     val palette = LocalPalette.current
     val thumb = editor.cachedNoteTile(entry.documentUri)
-    val shape = cardShape(palette)
+    val shape = CARD_SHAPE
     Column(modifier.clip(shape).background(palette.bg.toComposeColor()).border(1.dp, palette.accent.toComposeColor(), shape)) {
         Box(Modifier.fillMaxWidth().weight(1f).background(palette.paper.toComposeColor())) {
             if (thumb != null) {
@@ -2175,7 +2169,7 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
     }
     val accent = palette.accent.toComposeColor()
     val onAccent = palette.onAccent.toComposeColor()
-    val shape = cardShape(palette)
+    val shape = CARD_SHAPE
     Column(
         modifier
             .clip(shape)

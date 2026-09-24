@@ -98,7 +98,7 @@ class MaterialSchemeTest {
         val b = MaterialColors.seeded(rgb(0x0000ff), true, MaterialStyle.MONOCHROME)
         assertEquals(a, b)
         val p = Palette.material("dark", a)
-        for (color in listOf(p.accent, p.accentDim, p.selectionBackground, p.selectionForeground, p.paper)) {
+        for (color in listOf(p.accent, p.selectionBackground, p.selectionForeground, p.paper)) {
             assertEquals(color.r, color.g)
             assertEquals(color.g, color.b)
         }

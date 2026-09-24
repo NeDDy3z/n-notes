@@ -107,7 +107,7 @@ internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -
                 Text(stringResource(R.string.trash), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp, maxLines = 1, modifier = Modifier.weight(1f))
                 ExplorerSearchField(query, { query = it }, expandedWidth = searchRoom.coerceIn(40.dp, 300.dp))
                 Spacer(Modifier.width(12.dp))
-                val shape = roundedIf(palette, 22)
+                val shape = RoundedCornerShape(22.dp)
                 val enabled = !busy && !items.isNullOrEmpty()
                 Row(
                     Modifier.onSizeChanged { emptyWidth = with(density) { it.width.toDp() } }
@@ -123,7 +123,7 @@ internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -
             }
         }
         Spacer(Modifier.height(8.dp))
-        val bannerShape = roundedIf(palette, 12)
+        val bannerShape = RoundedCornerShape(12.dp)
         Row(
             Modifier.fillMaxWidth().clip(bannerShape).background(palette.surface.toComposeColor())
                 .border(1.dp, palette.border.toComposeColor(), bannerShape).padding(horizontal = 14.dp, vertical = 10.dp),

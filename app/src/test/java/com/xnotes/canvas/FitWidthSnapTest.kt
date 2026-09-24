@@ -3,7 +3,6 @@ package com.xnotes.canvas
 import com.xnotes.core.FakeSurfaceFactory
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.model.Document
-import com.xnotes.core.model.Rgba
 import com.xnotes.ui.theme.Palette
 import kotlin.math.min
 import org.junit.Assert.assertEquals
@@ -15,7 +14,7 @@ import org.junit.Test
 class FitWidthSnapTest {
 
     private fun state(pages: Int = 1, viewportW: Int = 1000): CanvasState =
-        CanvasState(Document.blank(pages), FakeSurfaceFactory(), Palette.forAppearance("dark", Rgba(0, 230, 118))).apply {
+        CanvasState(Document.blank(pages), FakeSurfaceFactory(), Palette.DEFAULT).apply {
             this.viewportW = viewportW
             viewportH = 1400
             relayout()

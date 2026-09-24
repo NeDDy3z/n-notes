@@ -283,7 +283,7 @@ internal fun ColumnsBody(
                                     val onPath = e.isDir && next != null && b.editor.browseDocId(e.documentUri) == next
                                     val on = !e.isDir && picked?.documentUri == e.documentUri
                                     val code = b.colorOf(e)?.let { codeTint(it, palette) }
-                                    val shape = roundedIf(palette, 6)
+                                    val shape = RoundedCornerShape(6.dp)
                                     Row(
                                         Modifier
                                             .fillMaxWidth()

@@ -34,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -90,9 +89,6 @@ internal fun directionLabel(k: ExplorerSortKey, descending: Boolean): String = w
     ExplorerSortKey.SIZE -> if (descending) stringResource(R.string.largest_first) else stringResource(R.string.smallest_first)
     else -> if (descending) stringResource(R.string.newest_first) else stringResource(R.string.oldest_first)
 }
-
-/** The rounding the classic chrome drops: Material rounds [r], classic keeps corners square. */
-internal fun roundedIf(palette: Palette, r: Int): Shape = if (palette.isMaterial) RoundedCornerShape(r.dp) else RectangleShape
 
 private val CONTROL_SHAPE = RoundedCornerShape(6.dp)
 
@@ -186,7 +182,7 @@ internal fun Modifier.liftPadding(lift: () -> Float, pad: Dp): Modifier = layout
 @Composable
 internal fun LayoutSwitcher(layouts: List<ExplorerLayout>, current: ExplorerLayout, lift: () -> Float = { 0f }, onPick: (ExplorerLayout) -> Unit) {
     val palette = LocalPalette.current
-    val shape = roundedIf(palette, 10)
+    val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier.height(40.dp).floatingBacking(lift, shape, palette.surface.toComposeColor(), Color.Transparent)
             .clip(shape).border(1.dp, palette.border.toComposeColor(), shape),
@@ -244,12 +240,12 @@ internal fun SelectionBar(
     actions: @Composable () -> Unit,
 ) {
     val palette = LocalPalette.current
-    val shape = roundedIf(palette, 12)
+    val shape = RoundedCornerShape(12.dp)
     val fg = palette.selectionForeground.toComposeColor()
     Row(
         // Opaque under its fill, since it stays put while files scroll beneath it, and edged so the
         // pinned bar reads as a surface rather than a tint over the ones sliding past.
-        Modifier.fillMaxWidth().height(44.dp).shadow(if (palette.isMaterial) 3.dp else 0.dp, shape)
+        Modifier.fillMaxWidth().height(44.dp).shadow(3.dp, shape)
             .clip(shape).background(palette.bg.toComposeColor())
             .background(palette.selectionBackground.toComposeColor())
             .border(1.dp, fg.copy(alpha = 0.25f), shape)
@@ -303,7 +299,7 @@ internal fun SelectionDivider() {
 @Composable
 internal fun TileBadge(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
-    val shape = roundedIf(palette, 11)
+    val shape = RoundedCornerShape(11.dp)
     Row(
         modifier
             .height(22.dp)
@@ -385,7 +381,7 @@ internal fun ViewOptionsContent(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 layouts.forEach { l ->
                     val on = l == layout
-                    val shape = roundedIf(palette, 12)
+                    val shape = RoundedCornerShape(12.dp)
                     Column(
                         Modifier
                             .width(62.dp)

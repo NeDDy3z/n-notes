@@ -185,7 +185,7 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
             contentAlignment = Alignment.Center,
         ) {
             val tint = when {
-                !enabled -> com.xnotes.ui.theme.Palette.DISABLED_ICON
+                !enabled -> palette.disabled
                 level > 0 -> palette.accent
                 else -> palette.textDim
             }
@@ -261,7 +261,7 @@ private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
                 Icon(
                     Icons.Filled.Code,
                     contentDescription = stringResource(R.string.code_block),
-                    tint = if (enabled) palette.textDim.toComposeColor() else com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor(),
+                    tint = if (enabled) palette.textDim.toComposeColor() else palette.disabled.toComposeColor(),
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -301,7 +301,7 @@ private fun BarIcon(
 ) {
     val palette = LocalPalette.current
     val tint = when {
-        !enabled -> com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor()
+        !enabled -> palette.disabled.toComposeColor()
         active -> palette.accent.toComposeColor()
         else -> palette.textDim.toComposeColor()
     }

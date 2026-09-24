@@ -4,7 +4,6 @@ import com.xnotes.core.FakeSurfaceFactory
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.PageMargins
-import com.xnotes.core.model.Rgba
 import com.xnotes.ui.theme.Palette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -16,7 +15,7 @@ import org.junit.Test
 class MarginLayoutTest {
 
     private fun state(rotation: Int = 0): CanvasState =
-        CanvasState(Document.blank(2), FakeSurfaceFactory(), Palette.forAppearance("dark", Rgba(0, 230, 118))).apply {
+        CanvasState(Document.blank(2), FakeSurfaceFactory(), Palette.DEFAULT).apply {
             rotationDeg = rotation
             viewportW = 1000
             viewportH = 1400

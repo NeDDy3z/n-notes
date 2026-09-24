@@ -1742,21 +1742,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun resolvedAppearance(p: Preferences): String =
         if (p.uiAppearance == "system") (if (systemInDarkMode) "dark" else "light") else p.uiAppearance
 
-    /** The chrome palette for [p]: Material You (system scheme, accent-seeded below Android 12)
-     *  when the active appearance mode picked the material style, else the classic accent chrome. */
+    /** The chrome palette for [p]: the system scheme (default-seeded below Android 12) or a custom seed. */
     private fun buildPalette(p: Preferences): Palette {
         val appearance = resolvedAppearance(p)
         val dark = appearance != "light"
-        if (p.paletteStyle == "material") {
-            val m = when (p.materialMode) {
-                MaterialColourMode.DUAL -> MaterialColors.seeded(p.materialDualSeed, dark, p.materialStyle, p.materialSurfaceSeed, p.materialContrast)
-                MaterialColourMode.SINGLE -> MaterialColors.seeded(p.materialSingleSeed, dark, p.materialStyle, contrast = p.materialContrast)
-                MaterialColourMode.SYSTEM -> dynamicMaterialColors(appContext, dark = dark)
-                    ?: MaterialColors.seeded(p.accentColor, dark = dark)
-            }
-            return Palette.material(appearance, m)
+        val m = when (p.materialMode) {
+            MaterialColourMode.DUAL -> MaterialColors.seeded(p.materialDualSeed, dark, p.materialStyle, p.materialSurfaceSeed, p.materialContrast)
+            MaterialColourMode.SINGLE -> MaterialColors.seeded(p.materialSingleSeed, dark, p.materialStyle, contrast = p.materialContrast)
+            MaterialColourMode.SYSTEM -> dynamicMaterialColors(appContext, dark = dark)
+                ?: MaterialColors.seeded(Preferences.DEFAULT_ACCENT, dark = dark)
         }
-        return Palette.forAppearance(appearance, p.accentColor)
+        return Palette.material(appearance, m)
     }
 
     /** The OS dark/light state flipped (uiMode arrives via onConfigurationChanged, no activity

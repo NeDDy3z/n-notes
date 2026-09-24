@@ -4,7 +4,6 @@ import com.xnotes.core.FakeSurfaceFactory
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
-import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.tools.Tool
@@ -33,7 +32,7 @@ class GeometryEvictionTest {
         val pages = (0 until pageCount).mapTo(mutableListOf()) {
             Page(200.0, 200.0, mutableListOf(ink(20.0, 20.0), ink(120.0, 120.0)))
         }
-        return CanvasState(Document(pages), FakeSurfaceFactory(), Palette.forAppearance("dark", Rgba(0, 230, 118))).apply {
+        return CanvasState(Document(pages), FakeSurfaceFactory(), Palette.DEFAULT).apply {
             viewportW = 800
             viewportH = 1000
             relayout()
