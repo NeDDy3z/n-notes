@@ -1,7 +1,6 @@
 package com.xnotes.ui
 
 import android.content.Context
-import android.graphics.Typeface
 import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
@@ -49,7 +48,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -379,7 +377,7 @@ private fun ColorFooter(current: Rgba, onColor: (Rgba) -> Unit) {
 private fun HexField(current: Rgba, onColor: (Rgba) -> Unit, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
     FieldFrame(modifier) {
-        Text("#", color = palette.textDim.toComposeColor(), fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        Text("#", color = palette.textDim.toComposeColor(), fontSize = 13.sp)
         NativeField(
             value = Rgba.toHex(current).removePrefix("#").uppercase(),
             onText = { raw -> if (raw.length == 6) Rgba.fromHex("#$raw")?.let { onColor(it.copy(a = 255)) } },
@@ -394,7 +392,7 @@ private fun HexField(current: Rgba, onColor: (Rgba) -> Unit, modifier: Modifier 
 private fun ChannelField(label: String, value: Int, modifier: Modifier = Modifier, onChange: (Int) -> Unit) {
     val palette = LocalPalette.current
     FieldFrame(modifier) {
-        Text(label, color = palette.textDim.toComposeColor(), fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp)
         NativeField(
             value = value.toString(),
             onText = { raw -> raw.toIntOrNull()?.let { onChange(it.coerceIn(0, 255)) } },
@@ -437,7 +435,6 @@ internal fun NativeField(
                 includeFontPadding = false
                 isSingleLine = true
                 setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f)
-                typeface = Typeface.MONOSPACE
                 inputType = if (numeric) {
                     InputType.TYPE_CLASS_NUMBER
                 } else {
@@ -523,8 +520,7 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
         Text(
             label,
             color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
         )
     }
@@ -535,8 +531,7 @@ private fun Caption(text: String) {
     Text(
         text,
         color = LocalPalette.current.textDim.toComposeColor(),
-        fontFamily = FontFamily.Monospace,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
         modifier = Modifier.padding(vertical = 2.dp),
     )
 }

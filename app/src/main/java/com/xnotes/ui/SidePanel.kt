@@ -54,7 +54,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -241,7 +240,6 @@ private fun PageThumb(
             "%02d".format(index + 1),
             color = (if (current || selected) palette.accent else palette.textDim).toComposeColor(),
             fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
         )
     }
 }
@@ -310,7 +308,7 @@ private fun PageSelectionBar(
         IconButton(onClick = { editor.clearPageSelection() }) {
             Icon(XnotesIcons.close, stringResource(R.string.clear_selection), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp))
         }
-        Text("${editor.pageSelectionCount}", color = palette.text.toComposeColor(), fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+        Text("${editor.pageSelectionCount}", color = palette.text.toComposeColor(), fontSize = 13.sp)
         Spacer(Modifier.weight(1f))
         BarAction(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyPages(editor.selectedPageIndices()) }
         BarAction(XnotesIcons.cut, stringResource(R.string.cut)) { editor.cutPages(editor.selectedPageIndices()) }

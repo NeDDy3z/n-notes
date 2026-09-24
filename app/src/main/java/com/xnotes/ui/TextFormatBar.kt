@@ -55,7 +55,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,7 +193,6 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
                 color = tint.toComposeColor(),
                 fontSize = if (level > 0) 12.sp else 15.sp,
                 fontWeight = FontWeight.SemiBold,
-                style = TextStyle(fontFamily = FontFamily.Monospace),
             )
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -215,7 +213,6 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
                                 "#".repeat(n),
                                 color = fg.copy(alpha = 0.72f),
                                 fontSize = 12.sp,
-                                style = TextStyle(fontFamily = FontFamily.Monospace),
                             )
                         }
                     } else {
@@ -256,7 +253,6 @@ private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
                     color = palette.accent.toComposeColor(),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    style = TextStyle(fontFamily = FontFamily.Monospace),
                 )
             } else {
                 Icon(
@@ -452,7 +448,6 @@ private fun SizeStepper(size: Double, onDelta: (Double) -> Unit) {
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(26.dp),
-            style = TextStyle(fontFamily = FontFamily.Monospace),
         )
         Box(Modifier.size(36.dp).clip(CircleShape).clickable { onDelta(1.0) }, contentAlignment = Alignment.Center) {
             Icon(XnotesIcons.plus, stringResource(R.string.larger), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))

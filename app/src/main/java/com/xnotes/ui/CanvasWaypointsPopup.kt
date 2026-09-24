@@ -23,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
@@ -48,7 +47,6 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                 Text(
                     stringResource(R.string.no_waypoints),
                     color = palette.textDim.toComposeColor(),
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
@@ -61,7 +59,6 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                     Text(
                         waypoint.name,
                         color = palette.text.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         modifier = Modifier
                             .weight(1f)
@@ -71,7 +68,6 @@ fun CanvasWaypointsPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                     Text(
                         "${Math.round(waypoint.zoom * 100)}%",
                         color = palette.textDim.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                     )
                     IconButton(onClick = { editor.removeWaypoint(waypoint) }, modifier = Modifier.size(30.dp)) {

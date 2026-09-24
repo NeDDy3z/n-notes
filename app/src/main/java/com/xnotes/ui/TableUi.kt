@@ -50,7 +50,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -155,7 +154,6 @@ fun TableDialog(editor: Editor, table: FlowTable?, onDismiss: () -> Unit) {
                         Text(
                             stringResource(R.string.default_for_new_tables),
                             color = palette.text.toComposeColor(),
-                            fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
                         )
                     }
@@ -237,7 +235,6 @@ private fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: (
             value,
             color = palette.text.toComposeColor(),
             fontSize = 14.sp,
-            fontFamily = FontFamily.Monospace,
             modifier = Modifier.width(72.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )

@@ -37,7 +37,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -124,7 +123,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(tool.labelRes).uppercase())
+            PopupTitle(stringResource(tool.labelRes))
             // COLOUR override: "Default" follows the toolbar's active ink colour; pick a hue to pin
             // this tool to it regardless of the toolbar selection.
             StyleCaption(stringResource(R.string.caption_colour))
@@ -286,7 +285,6 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                     Text(
                         shown.name,
                         color = LocalPalette.current.text.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         maxLines = 1,
@@ -311,7 +309,6 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                         Text(
                             stringResource(R.string.default_for_new_notes),
                             color = LocalPalette.current.text.toComposeColor(),
-                            fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
                         )
                     }
@@ -349,20 +346,18 @@ private fun TemplateCustomizer(
         Text(
             stringResource(R.string.back_customize),
             color = palette.accent.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
             modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onBack).padding(vertical = 4.dp),
         )
         Text(
             t.name,
             color = palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
             modifier = Modifier.padding(top = 4.dp),
         )
-        StyleCaption(stringResource(if (tab == 0) R.string.all_pages else R.string.current_page).uppercase())
+        StyleCaption(stringResource(if (tab == 0) R.string.all_pages else R.string.current_page))
         t.description?.let {
             Spacer(Modifier.size(4.dp))
             Text(it, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
@@ -478,7 +473,7 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.caption_value_percent, stringResource(edge.labelRes).uppercase(), percent.roundToInt()) + if (own == null) stringResource(R.string.default_suffix) else "")
+            StyleCaption(stringResource(R.string.caption_value_percent, stringResource(edge.labelRes), percent.roundToInt()) + if (own == null) stringResource(R.string.default_suffix) else "")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChip(stringResource(R.string.default_choice), own == null) { apply(margins.withEdge(edge, null)) }
                 Slider(
@@ -531,7 +526,7 @@ private fun TemplateParamControls(
     for (p in t.params) {
         if (p === t.spacingParam) continue
         Spacer(Modifier.size(12.dp))
-        val label = (p.label ?: p.name).uppercase()
+        val label = p.label ?: p.name.replaceFirstChar { it.uppercase() }
         if (p.type == com.xnotes.core.template.ParamType.COLOR) {
             val own = style.colors?.get(p.name)
             StyleCaption(label)
@@ -579,8 +574,7 @@ internal fun StyleCaption(text: String) {
     Text(
         text,
         color = LocalPalette.current.textDim.toComposeColor(),
-        fontFamily = FontFamily.Monospace,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
     )
 }
 
@@ -665,7 +659,6 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                     Text(
                         stringResource(R.string.default_for_all_notes),
                         color = LocalPalette.current.text.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                     )
                 }
@@ -690,7 +683,6 @@ private fun FilterSpinRow(label: String, value: Int, min: Int, max: Int, onChang
         Text(
             "$value%",
             color = palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(46.dp),
@@ -751,7 +743,6 @@ fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
                 Text(
                     "/ ${editor.pageCount}",
                     color = LocalPalette.current.textDim.toComposeColor(),
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                 )
                 ModeChip(stringResource(R.string.go), selected = true) { go() }
@@ -816,14 +807,13 @@ private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: 
     val palette = LocalPalette.current
     val color = (if (enabled) palette.text else palette.textDim).toComposeColor()
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = color, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(76.dp))
+        Text(label, color = color, fontSize = 12.sp, modifier = Modifier.width(76.dp))
         Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value - 10) }, contentAlignment = Alignment.Center) {
             Text("−", color = color, fontSize = 18.sp)
         }
         Text(
             "$value%",
             color = color,
-            fontFamily = FontFamily.Monospace,
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(52.dp),
@@ -963,9 +953,8 @@ internal fun PopupTitle(text: String) {
     Text(
         text,
         color = LocalPalette.current.accent.toComposeColor(),
-        fontFamily = FontFamily.Monospace,
-        fontWeight = FontWeight.Bold,
-        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
         modifier = Modifier.padding(vertical = 4.dp),
     )
 }
@@ -973,7 +962,7 @@ internal fun PopupTitle(text: String) {
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.width(220.dp)) {
-        Text(label, color = LocalPalette.current.text.toComposeColor(), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 12.sp)
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
@@ -991,7 +980,6 @@ internal fun SliderRow(
         Text(
             "$label  ${"%.0f".format(value)}",
             color = (if (enabled) LocalPalette.current.text else LocalPalette.current.textDim).toComposeColor(),
-            fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
         )
         Slider(
@@ -1122,8 +1110,7 @@ internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
         Text(
             label,
             color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
         )
     }

@@ -25,8 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -128,7 +126,6 @@ private fun SlashRow(
             color = (if (ready) palette.text else palette.textDim).toComposeColor(),
             fontSize = 13.sp,
             fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Normal,
-            style = TextStyle(fontFamily = FontFamily.Monospace),
             maxLines = 1,
         )
         entry.param?.let {
@@ -137,7 +134,6 @@ private fun SlashRow(
                 it,
                 color = palette.textDim.toComposeColor(),
                 fontSize = 11.sp,
-                style = TextStyle(fontFamily = FontFamily.Monospace),
                 maxLines = 1,
             )
         }
@@ -156,7 +152,6 @@ private fun SlashRow(
                 it,
                 color = palette.textDim.toComposeColor(),
                 fontSize = 11.sp,
-                style = TextStyle(fontFamily = FontFamily.Monospace),
             )
         }
     }

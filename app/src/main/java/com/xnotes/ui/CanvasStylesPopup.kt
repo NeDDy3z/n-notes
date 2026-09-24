@@ -22,7 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
@@ -140,7 +139,6 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                     Text(
                         stringResource(R.string.default_for_new_canvases),
                         color = LocalPalette.current.text.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                     )
                 }

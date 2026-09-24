@@ -39,7 +39,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -125,7 +124,6 @@ internal fun TemplateStrip(
                 Text(
                     e.template.name,
                     color = palette.text.toComposeColor(),
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -161,7 +159,6 @@ internal fun TemplateStrip(
             Text(
                 stringResource(R.string.import_template),
                 color = palette.text.toComposeColor(),
-                fontFamily = FontFamily.Monospace,
                 fontSize = 9.sp,
                 maxLines = 1,
             )

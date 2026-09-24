@@ -37,7 +37,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -214,7 +213,7 @@ private fun CustomColourField(
                     Text(label, color = palette.text.toComposeColor(), fontSize = 12.sp)
                     Text(
                         Rgba.toHex(colour).uppercase(),
-                        color = palette.textDim.toComposeColor(), fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        color = palette.textDim.toComposeColor(), fontSize = 12.sp,
                     )
                 }
             }

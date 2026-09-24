@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
@@ -121,7 +120,6 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
                     Text(
                         stringResource(R.string.default_for_new_notes),
                         color = palette.text.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                     )
                 }
@@ -170,7 +168,6 @@ private fun SpinField(label: String, value: Double, min: Double, max: Double, on
             color = palette.text.toComposeColor(),
             fontSize = 14.sp,
             modifier = Modifier.width(30.dp),
-            style = TextStyle(fontFamily = FontFamily.Monospace),
         )
         Box(Modifier.size(34.dp).clickable { onChange((value + 1.0).coerceIn(min, max)) }, contentAlignment = Alignment.Center) {
             Text("+", color = palette.text.toComposeColor(), fontSize = 18.sp)

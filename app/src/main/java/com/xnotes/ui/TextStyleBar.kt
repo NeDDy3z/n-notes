@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -154,7 +153,6 @@ private fun SizeStepper(size: Double, onDelta: (Double) -> Unit) {
             color = palette.text.toComposeColor(),
             fontSize = 15.sp,
             modifier = Modifier.width(26.dp),
-            style = TextStyle(fontFamily = FontFamily.Monospace),
         )
         StepButton("+") { onDelta(1.0) }
     }

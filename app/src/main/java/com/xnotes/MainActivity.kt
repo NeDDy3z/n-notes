@@ -67,7 +67,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1510,7 +1509,6 @@ private fun BoxScope.RefiningPdfHint(editor: Editor) {
             Text(
                 stringResource(R.string.refining_pdf_colours, done, total),
                 color = palette.textDim.toComposeColor(),
-                fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
             )
         }
