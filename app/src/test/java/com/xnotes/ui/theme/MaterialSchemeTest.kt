@@ -121,6 +121,16 @@ class MaterialSchemeTest {
         }
     }
 
+    @Test fun contrastLevelWidensTextOnSurface() {
+        for (style in MaterialStyle.entries) for (dark in listOf(false, true)) for (seed in seeds) {
+            val ratio = listOf(-1.0, 0.0, 1.0).map {
+                val m = MaterialColors.seeded(rgb(seed), dark, style, contrast = it)
+                contrast(m.onSurfaceVariant, m.surface)
+            }
+            assertTrue("$style dark=$dark seed=${seed.toString(16)} $ratio", ratio[0] <= ratio[1] && ratio[1] < ratio[2])
+        }
+    }
+
     @Test fun seedAlphaCannotMakeChromeTransparent() {
         assertEquals(MaterialColors.seeded(rgb(0xff5733), false), MaterialColors.seeded(rgb(0xff5733).copy(a = 0), false))
     }

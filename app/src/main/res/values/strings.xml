@@ -793,4 +793,5 @@
     <string name="material_style_clean_description">Colourful accents with untinted neutral backgrounds.</string>
     <string name="material_style_muted_description">Subtle colour with neutral surfaces.</string>
     <string name="material_style_grayscale_description">No colour tint. Your chosen colour is kept for other styles.</string>
+    <string name="material_contrast">"Contrast  %1$s"</string>
 </resources>

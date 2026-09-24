@@ -68,27 +68,26 @@ data class MaterialColors(
     val onTertiaryFixedVariant: Rgba,
 ) {
     companion object {
-        private const val STANDARD_CONTRAST = 0.0
-
         fun seeded(
             seed: Rgba,
             dark: Boolean,
             style: MaterialStyle = MaterialStyle.TONAL_SPOT,
             surfaceSeed: Rgba? = null,
+            contrast: Double = 0.0,
         ): MaterialColors {
             val spec = SpecVersion.SPEC_2021
             val platform = Platform.PHONE
             fun generate(colour: Rgba): DynamicScheme {
                 val hct = Hct.fromInt(colour.copy(a = 255).toArgb())
                 return when (style) {
-                    MaterialStyle.TONAL_SPOT -> SchemeTonalSpot(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.VIBRANT -> SchemeVibrant(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.FIDELITY -> SchemeFidelity(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.EXPRESSIVE -> SchemeExpressive(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.FRUIT_SALAD -> SchemeFruitSalad(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.RAINBOW -> SchemeRainbow(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.NEUTRAL -> SchemeNeutral(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.MONOCHROME -> SchemeMonochrome(hct, dark, STANDARD_CONTRAST, spec, platform)
+                    MaterialStyle.TONAL_SPOT -> SchemeTonalSpot(hct, dark, contrast, spec, platform)
+                    MaterialStyle.VIBRANT -> SchemeVibrant(hct, dark, contrast, spec, platform)
+                    MaterialStyle.FIDELITY -> SchemeFidelity(hct, dark, contrast, spec, platform)
+                    MaterialStyle.EXPRESSIVE -> SchemeExpressive(hct, dark, contrast, spec, platform)
+                    MaterialStyle.FRUIT_SALAD -> SchemeFruitSalad(hct, dark, contrast, spec, platform)
+                    MaterialStyle.RAINBOW -> SchemeRainbow(hct, dark, contrast, spec, platform)
+                    MaterialStyle.NEUTRAL -> SchemeNeutral(hct, dark, contrast, spec, platform)
+                    MaterialStyle.MONOCHROME -> SchemeMonochrome(hct, dark, contrast, spec, platform)
                 }
             }
             val accent = generate(seed)
@@ -96,7 +95,7 @@ data class MaterialColors(
                 val surfaces = generate(surfaceSeed)
                 // Combine tonal palettes before Material resolves roles and foreground contrast.
                 DynamicScheme(
-                    accent.sourceColorHct, accent.variant, dark, STANDARD_CONTRAST, platform, spec,
+                    accent.sourceColorHct, accent.variant, dark, contrast, platform, spec,
                     accent.primaryPalette, accent.secondaryPalette, accent.tertiaryPalette,
                     surfaces.neutralPalette, surfaces.neutralVariantPalette, Optional.of(accent.errorPalette),
                 )

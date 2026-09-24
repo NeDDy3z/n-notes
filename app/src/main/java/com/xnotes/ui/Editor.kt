@@ -1749,8 +1749,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val dark = appearance != "light"
         if (p.paletteStyle == "material") {
             val m = when (p.materialMode) {
-                MaterialColourMode.DUAL -> MaterialColors.seeded(p.materialDualSeed, dark, p.materialStyle, p.materialSurfaceSeed)
-                MaterialColourMode.SINGLE -> MaterialColors.seeded(p.materialSingleSeed, dark, p.materialStyle)
+                MaterialColourMode.DUAL -> MaterialColors.seeded(p.materialDualSeed, dark, p.materialStyle, p.materialSurfaceSeed, p.materialContrast)
+                MaterialColourMode.SINGLE -> MaterialColors.seeded(p.materialSingleSeed, dark, p.materialStyle, contrast = p.materialContrast)
                 MaterialColourMode.SYSTEM -> dynamicMaterialColors(appContext, dark = dark)
                     ?: MaterialColors.seeded(p.accentColor, dark = dark)
             }

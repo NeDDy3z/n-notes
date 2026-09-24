@@ -22,6 +22,8 @@ data class Preferences(
     val materialSingleSeed: Rgba = DEFAULT_MATERIAL_SINGLE,
     val materialDualSeed: Rgba = DEFAULT_MATERIAL_DUAL,
     val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
+    /** Material contrast level, -1 (reduced) .. 0 (standard) .. 1 (high). */
+    val materialContrast: Double = 0.0,
     val materialSurfaceSeed: Rgba = DEFAULT_MATERIAL_SURFACE,
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
@@ -190,6 +192,7 @@ data class Preferences(
                 MaterialColourMode.DUAL -> put("material_seed", Rgba.toHex(materialDualSeed)).put("material_dual_tone", true)
             }
             if (materialStyle != MaterialStyle.TONAL_SPOT) put("material_style", materialStyle.id)
+            if (materialContrast != 0.0) put("material_contrast", materialContrast)
             if (materialMode == MaterialColourMode.DUAL || materialSurfaceSeed != DEFAULT_MATERIAL_SURFACE) {
                 put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
             }
@@ -263,6 +266,7 @@ data class Preferences(
                 materialDualSeed = Rgba.fromHex(o.optString("material_dual_seed"))
                     ?: if (legacyDual) legacyDualAccent else DEFAULT_MATERIAL_DUAL,
                 materialStyle = MaterialStyle.fromId(o.optString("material_style")),
+                materialContrast = o.optDouble("material_contrast", 0.0).takeIf { it in -1.0..1.0 } ?: 0.0,
                 materialSurfaceSeed = Rgba.fromHex(o.optString("material_surface_seed"))
                     ?: if (legacyDual && !o.has("material_mode")) Rgba(33, 150, 243, 255) else DEFAULT_MATERIAL_SURFACE,
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),

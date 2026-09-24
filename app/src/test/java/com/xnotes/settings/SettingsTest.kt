@@ -420,6 +420,14 @@ class SettingsTest {
         }
     }
 
+    @Test fun materialContrastRoundTripsAndRejectsOutOfRange() {
+        for (level in listOf(-1.0, -0.3, 0.5, 1.0)) {
+            val p = Preferences(materialContrast = level)
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
+        assertEquals(0.0, Preferences.fromJson(JSONObject().put("material_contrast", 1.5)).materialContrast, 0.0)
+    }
+
     @Test fun defaultPresetsRoundTripInEveryMode() {
         for (mode in MaterialColourMode.entries) {
             val p = Preferences(materialMode = mode)

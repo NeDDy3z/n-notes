@@ -732,6 +732,15 @@ private fun CustomMaterialControls(prefs: Preferences, update: (Preferences) -> 
         MaterialStyle.MONOCHROME -> R.string.material_style_grayscale_description
     }
     Text(stringResource(description), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+    val percent = Math.round(prefs.materialContrast * 100).toInt()
+    FieldLabel(stringResource(R.string.material_contrast, if (percent > 0) "+$percent%" else "$percent%"))
+    Slider(
+        value = prefs.materialContrast.toFloat(),
+        onValueChange = { update(prefs.copy(materialContrast = Math.round(it * 10) / 10.0)) },
+        valueRange = -1f..1f,
+        steps = 19,
+        modifier = Modifier.width(280.dp),
+    )
 }
 
 @Composable
