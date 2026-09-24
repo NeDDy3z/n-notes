@@ -175,6 +175,23 @@ class CanvasViewportTest {
         assertEquals(-5678.0, other.centerContent.y, 1e-6)
     }
 
+    @Test fun fitFramesContentInTheAreaAFloatingBarLeavesClear() {
+        val v = viewport(1000, 800)
+        v.insetTop = 100.0
+        v.fit(Rect(0.0, 0.0, 400.0, 400.0), padPx = 0.0)
+        assertEquals((800.0 - 100.0) / 400.0, v.zoom, 1e-9)
+        val centre = v.contentToViewport(Pt(200.0, 200.0))
+        assertEquals(500.0, centre.x, 1e-6)
+        assertEquals(100.0 + 350.0, centre.y, 1e-6)
+    }
+
+    @Test fun theMinimapStepsOutFromUnderAFloatingBar() {
+        val plain = Minimap.panel(1000, 800)
+        val covered = Minimap.panel(1000, 800, insetRight = 60.0, insetBottom = 40.0)
+        assertEquals(plain.x - 60.0, covered.x, 1e-9)
+        assertEquals(plain.y - 40.0, covered.y, 1e-9)
+    }
+
     @Test fun canvasRunsInEveryDirection() {
         val v = viewport()
         v.panByViewport(1e6, 1e6)

@@ -795,6 +795,9 @@
     <string name="corners_sharp">Sharp</string>
     <string name="corners_rounded">Rounded</string>
     <string name="corners_soft">Soft</string>
+    <string name="pref_toolbar_style">Style</string>
+    <string name="toolbar_docked">Docked</string>
+    <string name="toolbar_floating">Floating</string>
     <string name="pref_toolbar_position">Position</string>
     <string name="pref_toolbar_size">Size</string>
     <string name="toolbar_size_compact">Compact</string>

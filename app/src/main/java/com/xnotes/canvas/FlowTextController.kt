@@ -311,10 +311,11 @@ class FlowTextController(
     private fun updateAutoscroll(viewport: Pt) {
         val zone = AUTOSCROLL_ZONE_DP * state.devicePxPerDp
         val maxV = AUTOSCROLL_MAX_DP * state.devicePxPerDp
-        val vh = state.viewportH.toDouble()
+        val top = state.insetTop
+        val bottom = state.viewportH - state.insetBottom
         val vel = when {
-            viewport.y < zone -> -maxV * ((zone - viewport.y) / zone).coerceAtMost(1.0)
-            viewport.y > vh - zone -> maxV * ((viewport.y - (vh - zone)) / zone).coerceAtMost(1.0)
+            viewport.y < top + zone -> -maxV * ((top + zone - viewport.y) / zone).coerceAtMost(1.0)
+            viewport.y > bottom - zone -> maxV * ((viewport.y - (bottom - zone)) / zone).coerceAtMost(1.0)
             else -> 0.0
         }
         val wasStill = autoscrollVel == 0.0
@@ -621,8 +622,8 @@ class FlowTextController(
         val topV = state.contentToViewport(Pt(0.0, cr.top)).y
         val bottomV = state.contentToViewport(Pt(0.0, cr.bottom)).y
         val margin = CARET_MARGIN * state.devicePxPerDp
-        val top = margin
-        val bottom = state.viewportH - margin
+        val top = state.insetTop + margin
+        val bottom = state.viewportH - state.insetBottom - margin
         if (bottom <= top) return
         val dy = when {
             bottomV > bottom -> bottomV - bottom

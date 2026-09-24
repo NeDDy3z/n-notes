@@ -172,6 +172,7 @@ data class Preferences(
             if (cornerStyle != CornerStyle.ROUNDED) put("corner_style", cornerStyle.id)
             if (toolbarLook.position != ToolbarPosition.TOP) put("toolbar_position", toolbarLook.position.id)
             if (toolbarLook.size != ToolbarSize.REGULAR) put("toolbar_size", toolbarLook.size.id)
+            if (toolbarLook.floating) put("toolbar_floating", true)
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
             codeThemeName?.let { put("code_theme_name", it) }
@@ -242,6 +243,7 @@ data class Preferences(
                 toolbarLook = ToolbarLook(
                     position = ToolbarPosition.fromId(o.optString("toolbar_position")),
                     size = ToolbarSize.fromId(o.optString("toolbar_size")),
+                    floating = o.optBoolean("toolbar_floating", false),
                 ),
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),

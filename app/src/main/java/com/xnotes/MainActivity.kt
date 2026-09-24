@@ -1142,13 +1142,14 @@ private fun EditorPane(
                     onClosePane = onClose,
                 )
             }
-            ToolbarAround(bar) {
+            ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
                 Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                     AndroidView(
                         factory = { detached(canvas.surfaces) },
                         modifier = Modifier.fillMaxSize(),
                         update = { canvas.view.publish() },
                     )
+                    floatingBar()
                     com.xnotes.ui.SelectionMenu(canvas)
                     com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
                     com.xnotes.ui.CanvasDebugOverlay(canvas)
@@ -1166,7 +1167,7 @@ private fun EditorPane(
                     onImportTemplate = actions.onImportTemplate,
                 )
             }
-            ToolbarAround(bar) {
+            ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->
                 Row(modifier = Modifier.fillMaxSize()) {
                     if (editor.sidebarVisible) {
                         com.xnotes.ui.SidePanel(
@@ -1185,6 +1186,7 @@ private fun EditorPane(
                         editor.editingField?.let { field ->
                             com.xnotes.ui.TextEditorOverlay(editor, field)
                         }
+                        floatingBar()
                         com.xnotes.ui.SelectionMenu(editor)
                         com.xnotes.ui.ScreenshotMenu(editor)
                         com.xnotes.ui.TextStyleBar(editor)
@@ -1490,7 +1492,7 @@ private fun BoxScope.RefiningPdfHint(editor: Editor) {
     val palette = LocalPalette.current
     AnimatedVisibility(
         visible = editor.isRefiningPdf,
-        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+        modifier = Modifier.align(Alignment.BottomEnd).padding(com.xnotes.ui.LocalToolbarCover.current).padding(12.dp),
         enter = fadeIn(),
         exit = fadeOut(),
     ) {
@@ -1558,7 +1560,7 @@ private fun BoxScope.ZoomLockHint(editor: Editor) {
     val locked = editor.zoomLocked
     AnimatedVisibility(
         visible = visible,
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+        modifier = Modifier.align(Alignment.TopCenter).padding(com.xnotes.ui.LocalToolbarCover.current).padding(top = 8.dp),
         enter = fadeIn(),
         exit = fadeOut(),
     ) {

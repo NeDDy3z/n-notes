@@ -23,10 +23,10 @@ object Minimap {
     /** Space left inside the panel around the mapped extent. */
     const val PAD_PX = 8.0
 
-    /** The panel's own rectangle, in device pixels, bottom-right of a viewport that size. */
-    fun panel(viewportW: Int, viewportH: Int): Rect = Rect(
-        viewportW - WIDTH_PX - MARGIN_PX,
-        viewportH - HEIGHT_PX - MARGIN_PX,
+    /** The panel's own rectangle in device pixels: bottom-right of the viewport, clear of a floating bar. */
+    fun panel(viewportW: Int, viewportH: Int, insetRight: Double = 0.0, insetBottom: Double = 0.0): Rect = Rect(
+        viewportW - insetRight - WIDTH_PX - MARGIN_PX,
+        viewportH - insetBottom - HEIGHT_PX - MARGIN_PX,
         WIDTH_PX,
         HEIGHT_PX,
     )

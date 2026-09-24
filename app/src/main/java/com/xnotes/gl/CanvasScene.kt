@@ -382,7 +382,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      */
     private fun drawMinimap(frame: FrameState) {
         val shader = minimapShader ?: return
-        val panel = Minimap.panel(frame.widthPx, frame.heightPx)
+        val panel = Minimap.panel(frame.widthPx, frame.heightPx, frame.insetRight, frame.insetBottom)
         val visible = Rect(frame.scrollX, frame.scrollY, frame.widthPx / frame.zoom, frame.heightPx / frame.zoom)
         val extent = Minimap.mappedExtent(frame.contentBounds, visible)
         val paperDim = Rgba(frame.paper.r, frame.paper.g, frame.paper.b, 210)

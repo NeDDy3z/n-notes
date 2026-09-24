@@ -1451,6 +1451,21 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         view.publish()
     }
 
+    /** What a floating toolbar covers of the canvas, in px per edge; centring and fitting keep clear of it. */
+    fun setToolbarCover(left: Double, top: Double, right: Double, bottom: Double) {
+        val v = viewport
+        if (v.insetLeft == left && v.insetTop == top && v.insetRight == right && v.insetBottom == bottom) return
+        // What sat in the middle of the clear area stays in the middle as the area changes.
+        val center = v.centerContent
+        v.insetLeft = left
+        v.insetTop = top
+        v.insetRight = right
+        v.insetBottom = bottom
+        v.centerOn(center.x, center.y)
+        onViewChanged()
+        view.publish()
+    }
+
     fun jumpTo(waypoint: Waypoint) {
         viewport.apply(waypoint)
         onViewChanged()
@@ -1476,7 +1491,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** A tap on the minimap: centre the view on whatever was tapped. */
     fun minimapTap(vx: Double, vy: Double): Boolean {
         if (!minimapVisible) return false
-        val panel = Minimap.panel(viewport.widthPx, viewport.heightPx)
+        val panel = Minimap.panel(viewport.widthPx, viewport.heightPx, viewport.insetRight, viewport.insetBottom)
         if (!panel.contains(Pt(vx, vy))) return false
         val extent = Minimap.mappedExtent(document.contentBounds(), viewport.visibleContentRect())
         val target = Minimap.toContent(Pt(vx, vy), extent, panel)

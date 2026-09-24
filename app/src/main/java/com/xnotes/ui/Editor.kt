@@ -5457,6 +5457,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The canvas viewport in px, so chrome anchored to a point can keep itself on screen. */
     fun viewportSize(): Pt = Pt(state.viewportW.toDouble(), state.viewportH.toDouble())
 
+    /**
+     * What a floating toolbar covers of this pane's pages, in px per edge. The fits, page jumps and
+     * scroll range keep clear of it, and whatever sat at the clear area's corner stays there.
+     */
+    fun setToolbarCover(left: Double, top: Double, right: Double, bottom: Double) {
+        val st = state
+        if (st.insetLeft == left && st.insetTop == top && st.insetRight == right && st.insetBottom == bottom) return
+        val widthChanged = left + right != st.insetLeft + st.insetRight
+        st.scrollX -= left - st.insetLeft
+        st.scrollY -= top - st.insetTop
+        st.insetLeft = left
+        st.insetTop = top
+        st.insetRight = right
+        st.insetBottom = bottom
+        if (widthChanged && st.didInitialFit) st.reflowFitWidthForResize()
+        st.clampScroll()
+        refreshView()
+        view.requestRender()
+    }
+
     /** Shut the menu for the slash it is on, leaving the typed text alone. */
     fun dismissSlashMenu() {
         val q = slashQuery() ?: return

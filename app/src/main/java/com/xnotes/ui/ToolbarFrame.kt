@@ -1,10 +1,14 @@
 package com.xnotes.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,13 +17,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.TextUnit
@@ -59,15 +69,57 @@ internal val LocalBar = staticCompositionLocalOf { barMetrics(ToolbarSize.REGULA
 /** Where a menu opens from its anchor; a side rail sets it so its menus open beside the rail. */
 internal val LocalMenuOffset = compositionLocalOf { DpOffset.Zero }
 
-/** Lays a pane out with its [bar] along the edge Preferences chose and [content] in the rest. */
+/** How far a floating bar sits in from the canvas edge. */
+private val FLOAT_MARGIN = 8.dp
+
+/** What a floating bar covers of the canvas, for overlays that must stay out from under it. */
+internal val LocalToolbarCover = compositionLocalOf { PaddingValues(0.dp) }
+
+/**
+ * Lays a pane out with its [bar] along the edge Preferences chose and [content] in the rest. A
+ * floating bar is handed to [content] to lay over its canvas instead, and [onCover] learns how many
+ * px of each edge (left, top, right, bottom) it covers so the canvas keeps its pages clear of it.
+ */
 @Composable
-internal fun ColumnScope.ToolbarAround(bar: @Composable () -> Unit, content: @Composable () -> Unit) {
+internal fun ColumnScope.ToolbarAround(
+    bar: @Composable () -> Unit,
+    onCover: (Double, Double, Double, Double) -> Unit,
+    content: @Composable (floatingBar: @Composable BoxScope.() -> Unit) -> Unit,
+) {
+    val look = LocalToolbarLook.current
     val rest = Modifier.weight(1f).fillMaxWidth()
-    when (LocalToolbarLook.current.position) {
-        ToolbarPosition.TOP -> { bar(); Box(rest) { content() } }
-        ToolbarPosition.BOTTOM -> { Box(rest) { content() }; bar() }
-        ToolbarPosition.LEFT -> Row(rest) { bar(); Box(Modifier.weight(1f).fillMaxHeight()) { content() } }
-        ToolbarPosition.RIGHT -> Row(rest) { Box(Modifier.weight(1f).fillMaxHeight()) { content() }; bar() }
+    if (!look.floating) {
+        SideEffect { onCover(0.0, 0.0, 0.0, 0.0) }
+        val docked: @Composable BoxScope.() -> Unit = {}
+        // Left and right are the screen's, as the canvas insets are, whatever the language.
+        val across = Arrangement.Absolute.Left
+        when (look.position) {
+            ToolbarPosition.TOP -> { bar(); Box(rest) { content(docked) } }
+            ToolbarPosition.BOTTOM -> { Box(rest) { content(docked) }; bar() }
+            ToolbarPosition.LEFT -> Row(rest, across) { bar(); Box(Modifier.weight(1f).fillMaxHeight()) { content(docked) } }
+            ToolbarPosition.RIGHT -> Row(rest, across) { Box(Modifier.weight(1f).fillMaxHeight()) { content(docked) }; bar() }
+        }
+        return
+    }
+    val depth = barMetrics(look.size).thickness + FLOAT_MARGIN
+    val px = with(LocalDensity.current) { depth.toPx().toDouble() }
+    val position = look.position
+    SideEffect {
+        onCover(
+            if (position == ToolbarPosition.LEFT) px else 0.0,
+            if (position == ToolbarPosition.TOP) px else 0.0,
+            if (position == ToolbarPosition.RIGHT) px else 0.0,
+            if (position == ToolbarPosition.BOTTOM) px else 0.0,
+        )
+    }
+    val (cover, edge) = when (position) {
+        ToolbarPosition.TOP -> PaddingValues(top = depth) to Alignment.TopCenter
+        ToolbarPosition.BOTTOM -> PaddingValues(bottom = depth) to Alignment.BottomCenter
+        ToolbarPosition.LEFT -> PaddingValues.Absolute(left = depth) to AbsoluteAlignment.CenterLeft
+        ToolbarPosition.RIGHT -> PaddingValues.Absolute(right = depth) to AbsoluteAlignment.CenterRight
+    }
+    CompositionLocalProvider(LocalToolbarCover provides cover) {
+        Box(rest) { content { Box(Modifier.align(edge).padding(FLOAT_MARGIN)) { bar() } } }
     }
 }
 
@@ -85,19 +137,35 @@ internal fun ToolbarFrame(
     val look = LocalToolbarLook.current
     val bar = barMetrics(look.size).copy(vertical = look.position.vertical)
     val glide = remember { ToolGlide() }
-    val background = Modifier.background(LocalPalette.current.panel.toComposeColor())
+    val palette = LocalPalette.current
+    val shape = MaterialTheme.shapes.extraLarge
+    // Docked, the strip fills its edge; floating, a pill only as long as its tools, up to that edge.
+    val surface = if (!look.floating) {
+        Modifier.background(palette.panel.toComposeColor())
+    } else {
+        Modifier
+            .shadow(6.dp, shape)
+            .clip(shape)
+            .background(palette.panel.toComposeColor())
+            .border(1.dp, palette.border.toComposeColor(), shape)
+    }
+    val stretch = when {
+        look.floating -> Modifier
+        bar.vertical -> Modifier.fillMaxHeight()
+        else -> Modifier.fillMaxWidth()
+    }
     // Material places a menu below its anchor; shifting it one bar across and one button up puts it
     // beside the rail, and on a right rail material mirrors it to the left side on its own.
     val menuOffset = if (bar.vertical) DpOffset(bar.thickness, -bar.button) else DpOffset.Zero
     CompositionLocalProvider(LocalToolGlide provides glide, LocalBar provides bar, LocalMenuOffset provides menuOffset) {
         if (bar.vertical) {
             Column(
-                Modifier.fillMaxHeight().width(bar.thickness).then(background),
+                stretch.width(bar.thickness).then(surface),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(
                     Modifier
-                        .weight(1f)
+                        .weight(1f, fill = !look.floating)
                         .verticalScroll(rememberScrollState())
                         .padding(vertical = 4.dp)
                         .toolGlide(glide, armed),
@@ -107,12 +175,12 @@ internal fun ToolbarFrame(
             }
         } else {
             Row(
-                Modifier.fillMaxWidth().height(bar.thickness).then(background),
+                stretch.height(bar.thickness).then(surface),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     Modifier
-                        .weight(1f)
+                        .weight(1f, fill = !look.floating)
                         .horizontalScroll(rememberScrollState())
                         .padding(horizontal = 4.dp)
                         .toolGlide(glide, armed),

@@ -406,14 +406,15 @@ class SettingsTest {
     }
 
     @Test fun toolbarLookRoundTripsAndDefaults() {
-        for (size in ToolbarSize.entries) for (position in ToolbarPosition.entries) {
-            val p = Preferences(toolbarLook = ToolbarLook(position = position, size = size))
+        for (size in ToolbarSize.entries) for (position in ToolbarPosition.entries) for (floating in listOf(false, true)) {
+            val p = Preferences(toolbarLook = ToolbarLook(position, size, floating))
             assertEquals(p, Preferences.fromJson(p.toJson()))
         }
         val junk = JSONObject().put("toolbar_size", "huge").put("toolbar_position", "middle")
         assertEquals(ToolbarLook(), Preferences.fromJson(junk).toolbarLook)
         assertFalse(Preferences().toJson().has("toolbar_size"))
         assertFalse(Preferences().toJson().has("toolbar_position"))
+        assertFalse(Preferences().toJson().has("toolbar_floating"))
     }
 
     @Test fun defaultPresetsRoundTripInEveryMode() {
