@@ -170,6 +170,7 @@ data class Preferences(
                 put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
             }
             if (cornerStyle != CornerStyle.ROUNDED) put("corner_style", cornerStyle.id)
+            if (toolbarLook.position != ToolbarPosition.TOP) put("toolbar_position", toolbarLook.position.id)
             if (toolbarLook.size != ToolbarSize.REGULAR) put("toolbar_size", toolbarLook.size.id)
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
@@ -238,7 +239,10 @@ data class Preferences(
                 materialSurfaceSeed = Rgba.fromHex(o.optString("material_surface_seed"))
                     ?: if (legacyDual && !o.has("material_mode")) Rgba(33, 150, 243, 255) else DEFAULT_MATERIAL_SURFACE,
                 cornerStyle = CornerStyle.fromId(o.optString("corner_style")),
-                toolbarLook = ToolbarLook(size = ToolbarSize.fromId(o.optString("toolbar_size"))),
+                toolbarLook = ToolbarLook(
+                    position = ToolbarPosition.fromId(o.optString("toolbar_position")),
+                    size = ToolbarSize.fromId(o.optString("toolbar_size")),
+                ),
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },

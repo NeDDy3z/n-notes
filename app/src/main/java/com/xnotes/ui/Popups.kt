@@ -25,6 +25,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
@@ -1041,11 +1043,14 @@ internal fun DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
+        offset = LocalMenuOffset.current,
         properties = properties,
         containerColor = palette.menuBg.toComposeColor(),
         border = BorderStroke(1.dp, palette.border.toComposeColor()),
-        content = content,
-    )
+    ) {
+        // A menu opened from inside this one hangs off its own row, not beside the rail.
+        CompositionLocalProvider(LocalMenuOffset provides DpOffset.Zero) { content() }
+    }
 }
 
 /**

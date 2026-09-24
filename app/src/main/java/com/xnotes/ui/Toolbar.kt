@@ -13,15 +13,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,7 +28,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -39,7 +36,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -96,11 +92,9 @@ fun Toolbar(
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit,
     onAddStickers: () -> Unit,
-    modifier: Modifier = Modifier,
     onClosePane: (() -> Unit)? = null,
     onImportTemplate: () -> Unit = {},
 ) {
-    val palette = LocalPalette.current
     // The five stroke tools use the designed vector drawables (res/drawable/ic_stroke_*),
     // tinted at the call site like every other icon; the rest use the built-in line set.
     val toolIcons: Map<Tool, ImageVector> = mapOf(
@@ -122,46 +116,29 @@ fun Toolbar(
     var configForTool by remember { mutableStateOf<Tool?>(null) }
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
     var renaming by remember { mutableStateOf(false) }
-    val glide = remember { ToolGlide() }
-    val bar = barMetrics(LocalToolbarLook.current.size)
-    CompositionLocalProvider(LocalToolGlide provides glide, LocalBar provides bar) {
-        Row(
-            modifier = modifier.fillMaxWidth().height(bar.thickness).background(palette.panel.toComposeColor()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp)
-                    .toolGlide(glide, editor.tool),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // The bar is driven by the user-customisable layout; separators sit between non-empty
-                // sections, and each item dispatches to its renderer (see ToolbarItemView).
-                editor.toolbarLayout.visibleSections.forEachIndexed { si, section ->
-                    if (si > 0) Separator()
-                    section.visibleEntries.forEach { entry ->
-                        ToolbarItemView(
-                            editor = editor,
-                            item = entry.item,
-                            toolIcons = toolIcons,
-                            configForTool = configForTool,
-                            setConfigForTool = { configForTool = it },
-                            switcherIndex = switcherIndex,
-                            setSwitcherIndex = { switcherIndex = it },
-                            onRename = { renaming = true },
-                            onOpenBackstage = onOpenBackstage,
-                            onInsertImage = onInsertImage,
-                            onAddStickers = onAddStickers,
-                            onToggleFullscreen = onToggleFullscreen,
-                            onImportTemplate = onImportTemplate,
-                        )
-                    }
-                }
+    // Pinned outside the scrolling strip so closing a split pane is always one tap away.
+    ToolbarFrame(armed = editor.tool, trailing = onClosePane?.let { { ClosePaneButton(it) } }) {
+        // The bar is driven by the user-customisable layout; separators sit between non-empty
+        // sections, and each item dispatches to its renderer (see ToolbarItemView).
+        editor.toolbarLayout.visibleSections.forEachIndexed { si, section ->
+            if (si > 0) Separator()
+            section.visibleEntries.forEach { entry ->
+                ToolbarItemView(
+                    editor = editor,
+                    item = entry.item,
+                    toolIcons = toolIcons,
+                    configForTool = configForTool,
+                    setConfigForTool = { configForTool = it },
+                    switcherIndex = switcherIndex,
+                    setSwitcherIndex = { switcherIndex = it },
+                    onRename = { renaming = true },
+                    onOpenBackstage = onOpenBackstage,
+                    onInsertImage = onInsertImage,
+                    onAddStickers = onAddStickers,
+                    onToggleFullscreen = onToggleFullscreen,
+                    onImportTemplate = onImportTemplate,
+                )
             }
-            // Pinned outside the scrolling row so closing a split pane is always one tap away.
-            onClosePane?.let { ClosePaneButton(it) }
         }
     }
 
@@ -200,7 +177,8 @@ private fun ToolbarItemView(
         ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP -> Unit
 
         ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, stringResource(R.string.toolbar_home)) { onOpenBackstage() }
-        ToolbarItem.TITLE -> Label(
+        // A name has no room down a side rail.
+        ToolbarItem.TITLE -> if (!LocalBar.current.vertical) Label(
             if (editor.state.document.displayName == null && editor.state.document.path == null) stringResource(R.string.untitled) else editor.title,
             modifier = Modifier
                 .widthIn(max = 160.dp)
@@ -232,9 +210,10 @@ private fun ToolbarItemView(
             ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page)) { editor.prevPage() }
             var jumpOpen by remember { mutableStateOf(false) }
             Box {
-                Label(
-                    "${editor.pageIndex + 1} / ${editor.pageCount}",
-                    modifier = Modifier
+                PageCounter(
+                    editor.pageIndex + 1,
+                    editor.pageCount,
+                    Modifier
                         .clip(MaterialTheme.shapes.extraSmall)
                         .clickable { jumpOpen = true },
                 )
@@ -381,11 +360,12 @@ internal class ToolGlide {
 
 internal val LocalToolGlide = staticCompositionLocalOf<ToolGlide?> { null }
 
-/** One hop of the glide: where it set out from and is headed, and how far it may stretch. */
+/** One hop of the glide along the bar: where it set out from and is headed, and how far it may stretch. */
 private class GlideTrip {
     var from = 0f
     var to = 0f
-    var y = 0f
+    /** Where the circle sits across the bar. */
+    var across = 0f
     var stretch = 0f
     /** Stretch left over from a hop cut short, let go of over the new one. */
     var carry = 0f
@@ -406,7 +386,8 @@ private class GlideTrip {
 internal fun Modifier.toolGlide(glide: ToolGlide, armed: Any?): Modifier {
     val target = glide.centers[armed]
     val density = LocalDensity.current
-    val r = with(density) { LocalBar.current.circle.toPx() / 2 }
+    val bar = LocalBar.current
+    val r = with(density) { bar.circle.toPx() / 2 }
     val trip = remember { GlideTrip() }
     val progress = remember { Animatable(1f) }
     val shown = remember { Animatable(0f) }
@@ -416,10 +397,11 @@ internal fun Modifier.toolGlide(glide: ToolGlide, armed: Any?): Modifier {
             return@LaunchedEffect
         }
         val t = progress.value
+        val along = if (bar.vertical) target.y else target.x
         trip.carry = if (shown.value == 0f) 0f else trip.drawnOut(t)
-        trip.from = if (shown.value == 0f) target.x else trip.x(t)
-        trip.to = target.x
-        trip.y = target.y
+        trip.from = if (shown.value == 0f) along else trip.x(t)
+        trip.to = along
+        trip.across = if (bar.vertical) target.x else target.y
         val hopDp = abs(trip.to - trip.from) / density.density
         // Longer hops stretch further, levelling off towards the cap rather than hitting it.
         trip.stretch = with(density) { GLIDE_MAX_STRETCH.toPx() } * (1 - exp(-hopDp / GLIDE_REACH_DP))
@@ -435,10 +417,11 @@ internal fun Modifier.toolGlide(glide: ToolGlide, armed: Any?): Modifier {
         val s = trip.drawnOut(t)
         // The leading side takes most of the stretch, so the tail seems to trail behind.
         val ahead = if (trip.to >= trip.from) GLIDE_LEAD else 1 - GLIDE_LEAD
+        val start = x - r - s * (1 - ahead)
         drawRoundRect(
             fill.copy(alpha = fill.alpha * shown.value),
-            topLeft = Offset(x - r - s * (1 - ahead), trip.y - r),
-            size = Size(2 * r + s, 2 * r),
+            topLeft = if (bar.vertical) Offset(trip.across - r, start) else Offset(start, trip.across - r),
+            size = if (bar.vertical) Size(2 * r, 2 * r + s) else Size(2 * r + s, 2 * r),
             cornerRadius = CornerRadius(r),
         )
     }
@@ -507,13 +490,7 @@ internal fun ToolbarIcon(
 /** Closes this pane of a split, leaving the other one to fill the window. Shown on both toolbars. */
 @Composable
 internal fun ClosePaneButton(onClose: () -> Unit) {
-    val palette = LocalPalette.current
-    Box(
-        Modifier
-            .width(1.dp)
-            .height(LocalBar.current.rule)
-            .background(palette.border.toComposeColor()),
-    )
+    Rule()
     ToolbarIcon(XnotesIcons.close, stringResource(R.string.close_pane), onClick = onClose)
 }
 
@@ -521,7 +498,7 @@ internal fun ClosePaneButton(onClose: () -> Unit) {
 internal fun Swatch(color: androidx.compose.ui.graphics.Color, active: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .padding(horizontal = 3.dp)
+            .then(if (LocalBar.current.vertical) Modifier.padding(vertical = 3.dp) else Modifier.padding(horizontal = 3.dp))
             .size(LocalBar.current.swatch)
             // The selection ring takes the swatch's own colour, not the theme accent.
             .then(if (active) Modifier.border(2.dp, color, CircleShape) else Modifier)
@@ -546,13 +523,32 @@ internal fun Label(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 internal fun Separator() {
+    Box(Modifier.padding(if (LocalBar.current.vertical) PaddingValues(vertical = 4.dp) else PaddingValues(horizontal = 4.dp))) { Rule() }
+}
+
+/** A hairline across the bar. */
+@Composable
+private fun Rule() {
+    val bar = LocalBar.current
     Box(
         Modifier
-            .padding(horizontal = 4.dp)
-            .width(1.dp)
-            .height(LocalBar.current.rule)
+            .then(if (bar.vertical) Modifier.height(1.dp).width(bar.rule) else Modifier.width(1.dp).height(bar.rule))
             .background(LocalPalette.current.border.toComposeColor()),
     )
+}
+
+/** "3 / 12" along the bar; down a side rail, where that is too wide, the two numbers stack. */
+@Composable
+private fun PageCounter(current: Int, count: Int, modifier: Modifier) {
+    if (!LocalBar.current.vertical) {
+        Label("$current / $count", modifier)
+        return
+    }
+    Column(modifier.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Label("$current")
+        Rule()
+        Label("$count")
+    }
 }
 
 @Composable
