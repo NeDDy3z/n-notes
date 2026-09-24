@@ -150,7 +150,7 @@ internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -
             when {
                 root == null -> EmptyPane(stringResource(R.string.trash_no_root))
                 list == null -> EmptyPane(stringResource(R.string.loading))
-                list.isEmpty() -> EmptyPane(stringResource(R.string.trash_empty))
+                list.isEmpty() -> EmptyPane(stringResource(R.string.trash_empty), EmptyArt.TRASH)
                 shown.isEmpty() -> EmptyPane(stringResource(R.string.trash_no_match, query.trim()))
                 else -> Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().height(36.dp).padding(start = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {

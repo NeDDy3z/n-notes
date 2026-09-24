@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -851,6 +853,8 @@ private fun ExplorerSection(
             }
             Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.weight(1f))
+                EmptyIllustration(EmptyArt.PAGES)
+                Spacer(Modifier.height(20.dp))
                 Text(stringResource(R.string.choose_folder_hint), color = palette.textDim.toComposeColor(), fontSize = 14.sp, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1254,22 +1258,28 @@ private fun ExplorerSection(
     // A failed operation shows in the app's snackbar, which stays in view however far the files are scrolled.
     LaunchedEffect(opError) { opError?.let { editor.say(it); opError = null } }
     val empty = when {
-        colorFilter != null && colorResults == null -> stringResource(R.string.finding)
-        colorFilter != null && colorResults!!.isEmpty() -> stringResource(R.string.nothing_this_colour)
-        searching && results == null -> stringResource(R.string.searching)
-        searching && results!!.isEmpty() -> stringResource(R.string.no_notes_match, trimmed)
-        showRecent && recents == null -> stringResource(R.string.loading)
-        showRecent && recents!!.isEmpty() -> stringResource(R.string.recent_empty)
-        source == null -> stringResource(R.string.loading)
+        colorFilter != null && colorResults == null -> EmptyState(stringResource(R.string.finding))
+        colorFilter != null && colorResults!!.isEmpty() -> EmptyState(stringResource(R.string.nothing_this_colour), EmptyArt.SEARCH)
+        searching && results == null -> EmptyState(stringResource(R.string.searching))
+        searching && results!!.isEmpty() -> EmptyState(stringResource(R.string.no_notes_match, trimmed), EmptyArt.SEARCH)
+        showRecent && recents == null -> EmptyState(stringResource(R.string.loading))
+        showRecent && recents!!.isEmpty() -> EmptyState(stringResource(R.string.recent_empty), EmptyArt.RECENT)
+        source == null -> EmptyState(stringResource(R.string.loading))
         layout == ExplorerLayout.COLUMNS -> null
-        source.isEmpty() -> if (layout == ExplorerLayout.TIMELINE) stringResource(R.string.nothing_here_yet) else stringResource(R.string.folder_empty)
-        arranged.isNullOrEmpty() -> when (val k = kindFilter) {
-            null -> stringResource(R.string.nothing_to_show)
-            EntryKind.PDF -> stringResource(R.string.no_pdf_notes_here)
-            EntryKind.FOLDER -> stringResource(R.string.kind_no_folders)
-            EntryKind.NOTE -> stringResource(R.string.kind_no_notes)
-            EntryKind.CANVAS -> stringResource(R.string.kind_no_canvases)
-        }
+        source.isEmpty() -> EmptyState(
+            if (layout == ExplorerLayout.TIMELINE) stringResource(R.string.nothing_here_yet) else stringResource(R.string.folder_empty),
+            EmptyArt.PAGES, offersCreate = true,
+        )
+        arranged.isNullOrEmpty() -> EmptyState(
+            when (kindFilter) {
+                null -> stringResource(R.string.nothing_to_show)
+                EntryKind.PDF -> stringResource(R.string.no_pdf_notes_here)
+                EntryKind.FOLDER -> stringResource(R.string.kind_no_folders)
+                EntryKind.NOTE -> stringResource(R.string.kind_no_notes)
+                EntryKind.CANVAS -> stringResource(R.string.kind_no_canvases)
+            },
+            EmptyArt.SEARCH,
+        )
         else -> null
     }
     // Files scroll under the header except in Columns and the empty states, which keep it over plain background.
@@ -1492,7 +1502,11 @@ private fun ExplorerSection(
                 empty != null && !shelves -> Column(Modifier.fillMaxSize()) {
                     Spacer(Modifier.height(EXPLORER_HEADER))
                     chipRow(48.dp)
-                    EmptyPane(empty)
+                    EmptyPane(empty.text, empty.art, if (!empty.offersCreate) null else { {
+                        PrimaryButton(XnotesIcons.edit, stringResource(R.string.new_note_menu)) { onCreateMode(CreateMode.FILE) }
+                        PrimaryButton(XnotesIcons.canvas, stringResource(R.string.new_canvas_menu)) { onCreateMode(CreateMode.CANVAS) }
+                        PrimaryButton(XnotesIcons.importDoc, stringResource(R.string.import_pdf), onClick = calls.importPdf)
+                    } })
                 }
                 layout == ExplorerLayout.GRID -> GridBody(body, gridState, gridColumns(screenWidthDp, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
                 layout == ExplorerLayout.GALLERY -> GalleryBody(body, galleryState, galleryColumns(screenWidthDp, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
@@ -2178,9 +2192,32 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
     }
 }
 
+/** What an empty explorer body says, the picture above it, and whether it offers to make something. */
+private class EmptyState(val text: String, val art: EmptyArt? = null, val offersCreate: Boolean = false)
+
+/** An empty body: a picture, what is (not) here, and ways to fill it; scrolls when the window is short. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun EmptyPane(text: String) {
-    Box(Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.Center) {
-        Text(text, color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp)
+internal fun EmptyPane(text: String, art: EmptyArt? = null, actions: (@Composable FlowRowScope.() -> Unit)? = null) {
+    BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (art != null) {
+                EmptyIllustration(art)
+                Spacer(Modifier.height(20.dp))
+            }
+            Text(text, color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 360.dp))
+            if (actions != null) {
+                Spacer(Modifier.height(20.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = actions,
+                )
+            }
+        }
     }
 }
