@@ -86,9 +86,10 @@ fun InfiniteToolbar(
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
 
     val glide = remember { ToolGlide() }
-    CompositionLocalProvider(LocalToolGlide provides glide) {
+    val bar = barMetrics(LocalToolbarLook.current.size)
+    CompositionLocalProvider(LocalToolGlide provides glide, LocalBar provides bar) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(48.dp).background(palette.panel.toComposeColor()),
+            modifier = Modifier.fillMaxWidth().height(bar.thickness).background(palette.panel.toComposeColor()),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(

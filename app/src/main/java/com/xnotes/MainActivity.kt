@@ -53,6 +53,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -164,20 +165,22 @@ class MainActivity : ComponentActivity() {
                 ed.prewarmBackstage() // warm recents/explorer caches so the first backstage open is instant
             }
             XnotesTheme(ed.palette, ed.cornerStyle) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (ready) EditorScreen(
-                        ed,
-                        fullscreen = ed.fullscreen,
-                        onToggleFullscreen = ed::toggleFullscreen,
-                        importPdfUri = pendingPdfImport,
-                        onImportConsumed = { pendingPdfImport = null },
-                    )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = !ready,
-                        enter = androidx.compose.animation.EnterTransition.None,
-                        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(280)),
-                    ) {
-                        com.xnotes.ui.XnotesLoader()
+                CompositionLocalProvider(com.xnotes.ui.LocalToolbarLook provides ed.toolbarLook) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (ready) EditorScreen(
+                            ed,
+                            fullscreen = ed.fullscreen,
+                            onToggleFullscreen = ed::toggleFullscreen,
+                            importPdfUri = pendingPdfImport,
+                            onImportConsumed = { pendingPdfImport = null },
+                        )
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !ready,
+                            enter = androidx.compose.animation.EnterTransition.None,
+                            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(280)),
+                        ) {
+                            com.xnotes.ui.XnotesLoader()
+                        }
                     }
                 }
             }

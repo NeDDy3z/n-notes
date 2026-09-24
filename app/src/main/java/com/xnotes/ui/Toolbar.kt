@@ -123,9 +123,10 @@ fun Toolbar(
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
     var renaming by remember { mutableStateOf(false) }
     val glide = remember { ToolGlide() }
-    CompositionLocalProvider(LocalToolGlide provides glide) {
+    val bar = barMetrics(LocalToolbarLook.current.size)
+    CompositionLocalProvider(LocalToolGlide provides glide, LocalBar provides bar) {
         Row(
-            modifier = modifier.fillMaxWidth().height(50.dp).background(palette.panel.toComposeColor()),
+            modifier = modifier.fillMaxWidth().height(bar.thickness).background(palette.panel.toComposeColor()),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
@@ -405,7 +406,7 @@ private class GlideTrip {
 internal fun Modifier.toolGlide(glide: ToolGlide, armed: Any?): Modifier {
     val target = glide.centers[armed]
     val density = LocalDensity.current
-    val r = with(density) { 17.dp.toPx() }
+    val r = with(density) { LocalBar.current.circle.toPx() / 2 }
     val trip = remember { GlideTrip() }
     val progress = remember { Animatable(1f) }
     val shown = remember { Animatable(0f) }
@@ -464,6 +465,7 @@ internal fun ToolbarIcon(
     onClick: () -> Unit,
 ) {
     val palette = LocalPalette.current
+    val bar = LocalBar.current
     val glide = if (glideKey != null) LocalToolGlide.current else null
     val tint by animateColorAsState(
         when {
@@ -482,12 +484,12 @@ internal fun ToolbarIcon(
     val pressed by interaction.collectIsPressedAsState()
     val press by animateFloatAsState(if (pressed) 0.85f else 1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium), label = "toolPress")
     Box(
-        Modifier.size(42.dp).clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
+        Modifier.size(bar.button).clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
-                .size(34.dp)
+                .size(bar.circle)
                 .then(
                     if (glide == null || glideKey == null) Modifier
                     else Modifier.onGloballyPositioned { c ->
@@ -497,7 +499,7 @@ internal fun ToolbarIcon(
                 .drawBehind { if (fill > 0f) drawCircle(circle.copy(alpha = circle.alpha * fill)) },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp).graphicsLayer { scaleX = press; scaleY = press })
+            Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(bar.icon).graphicsLayer { scaleX = press; scaleY = press })
         }
     }
 }
@@ -509,7 +511,7 @@ internal fun ClosePaneButton(onClose: () -> Unit) {
     Box(
         Modifier
             .width(1.dp)
-            .height(26.dp)
+            .height(LocalBar.current.rule)
             .background(palette.border.toComposeColor()),
     )
     ToolbarIcon(XnotesIcons.close, stringResource(R.string.close_pane), onClick = onClose)
@@ -520,7 +522,7 @@ internal fun Swatch(color: androidx.compose.ui.graphics.Color, active: Boolean, 
     Box(
         modifier = Modifier
             .padding(horizontal = 3.dp)
-            .size(28.dp)
+            .size(LocalBar.current.swatch)
             // The selection ring takes the swatch's own colour, not the theme accent.
             .then(if (active) Modifier.border(2.dp, color, CircleShape) else Modifier)
             .padding(4.dp)
@@ -535,7 +537,7 @@ internal fun Label(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         color = LocalPalette.current.textDim.toComposeColor(),
-        fontSize = 12.sp,
+        fontSize = LocalBar.current.label,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier.padding(horizontal = 4.dp),
@@ -548,7 +550,7 @@ internal fun Separator() {
         Modifier
             .padding(horizontal = 4.dp)
             .width(1.dp)
-            .height(26.dp)
+            .height(LocalBar.current.rule)
             .background(LocalPalette.current.border.toComposeColor()),
     )
 }

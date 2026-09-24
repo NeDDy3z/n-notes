@@ -405,6 +405,15 @@ class SettingsTest {
         assertEquals(CornerStyle.ROUNDED, Preferences.fromJson(JSONObject().put("corner_style", "blobby")).cornerStyle)
     }
 
+    @Test fun toolbarLookRoundTripsAndDefaults() {
+        for (size in ToolbarSize.entries) {
+            val p = Preferences(toolbarLook = ToolbarLook(size = size))
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
+        assertEquals(ToolbarLook(), Preferences.fromJson(JSONObject().put("toolbar_size", "huge")).toolbarLook)
+        assertFalse(Preferences().toJson().has("toolbar_size"))
+    }
+
     @Test fun defaultPresetsRoundTripInEveryMode() {
         for (mode in MaterialColourMode.entries) {
             val p = Preferences(materialMode = mode)

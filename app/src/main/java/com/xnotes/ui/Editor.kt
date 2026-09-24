@@ -88,6 +88,7 @@ import com.xnotes.settings.ExplorerView
 import com.xnotes.settings.LiveSettings
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.CornerStyle
+import com.xnotes.settings.ToolbarLook
 import com.xnotes.settings.MaterialColourMode
 import com.xnotes.settings.Settings
 import com.xnotes.settings.SettingsRepository
@@ -407,6 +408,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         private set
     /** How round the chrome is, [Preferences.cornerStyle]. */
     var cornerStyle by mutableStateOf(CornerStyle.ROUNDED)
+        private set
+    /** How the toolbar is drawn, [Preferences.toolbarLook]. */
+    var toolbarLook by mutableStateOf(ToolbarLook())
         private set
     var zoomPercent by mutableStateOf(100)
         private set
@@ -1777,6 +1781,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun applyPagePrefsToState(p: Preferences) {
         palette = buildPalette(p)
         cornerStyle = p.cornerStyle
+        toolbarLook = p.toolbarLook
         state.palette = palette
         infiniteOrNull?.applyPalette(palette)
         infiniteOrNull?.applyInputPrefs(
@@ -1876,6 +1881,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun applyHomePreferences(p: Preferences) {
         settings = settings.copy(prefs = p)
         cornerStyle = p.cornerStyle
+        toolbarLook = p.toolbarLook
         saveSettingsSoon()
         prefsVersion++
     }

@@ -80,6 +80,7 @@ import com.xnotes.core.util.NameTemplate
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.MaterialStyle
 import com.xnotes.settings.CornerStyle
+import com.xnotes.settings.ToolbarSize
 import com.xnotes.settings.MaterialColourMode
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -545,7 +546,18 @@ fun PreferencesPane(
 
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle(stringResource(R.string.pref_toolbar))
-            // Above the tabs because it governs both bars: the swatch count is one setting.
+            // The look, like the swatch count below, is one setting for both bars.
+            val look = prefs.toolbarLook
+            FieldLabel(stringResource(R.string.pref_toolbar_size))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((size, label) in listOf(
+                    ToolbarSize.COMPACT to R.string.toolbar_size_compact,
+                    ToolbarSize.REGULAR to R.string.toolbar_size_regular,
+                    ToolbarSize.COMFORTABLE to R.string.toolbar_size_comfortable,
+                )) {
+                    Chip(stringResource(label), look.size == size) { updateHome(prefs.copy(toolbarLook = look.copy(size = size))) }
+                }
+            }
             FieldLabel(stringResource(R.string.pref_toolbar_colours_n, editor.toolbarColorCount))
             Slider(
                 value = editor.toolbarColorCount.toFloat(),
