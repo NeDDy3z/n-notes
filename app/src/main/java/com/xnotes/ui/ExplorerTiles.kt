@@ -293,7 +293,7 @@ internal fun GridFileTile(b: ExplorerBody, e: BrowseEntry) {
                 .clip(shape).border(if (selected) 2.dp else 1.dp, if (selected) accent else (code ?: palette.border.toComposeColor()), shape),
         ) {
             EntryThumb(b.editor, e, b.view.thumb, Modifier.fillMaxSize())
-            if (selected) Box(Modifier.fillMaxSize().background(palette.accentAlpha(38).toComposeColor()))
+            if (selected) Box(Modifier.fillMaxSize().background(palette.selectionBackground.withAlpha(77).toComposeColor()))
             ThumbBadges(b, e)
             if (selecting) CheckRing(selected, Modifier.align(Alignment.TopStart).padding(8.dp))
         }
@@ -434,13 +434,14 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
     val compact = b.view.compactRows
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val kind = b.kind(e)
-    val dim = palette.textDim.toComposeColor()
+    val fg = (if (selected) palette.selectionForeground else palette.text).toComposeColor()
+    val dim = if (selected) fg.copy(alpha = 0.72f) else palette.textDim.toComposeColor()
     Row(
         Modifier
             .fillMaxWidth()
             .height(if (compact) 40.dp else 56.dp)
             .alpha(if (b.host.isCut(e)) 0.4f else 1f)
-            .background(if (selected) palette.accentAlpha(38).toComposeColor() else Color.Transparent)
+            .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .registered(b, e)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -466,7 +467,7 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
         }
         Row(Modifier.weight(1f).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f, fill = false)) {
-                Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(b.label(e), color = fg, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val where = b.whereOf?.invoke(e)
                 if (!wide && !compact) Text(listOfNotNull(where, b.metaText(e).ifEmpty { null }).joinToString(" · "), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 else if (where != null && !compact) Text(where, color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -479,10 +480,10 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
                 Icon(kindIcon(kind), null, tint = dim, modifier = Modifier.size(16.dp))
                 Text(kindLabel(kind), color = dim, fontSize = 13.sp, maxLines = 1)
             }
-            Text(if (e.isDir || kind == EntryKind.CANVAS) "–" else b.pages(e).takeIf { it > 0 }?.toString() ?: "", color = palette.text.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.End, modifier = Modifier.width(LIST_PAGES_W))
+            Text(if (e.isDir || kind == EntryKind.CANVAS) "–" else b.pages(e).takeIf { it > 0 }?.toString() ?: "", color = fg, fontSize = 13.sp, textAlign = TextAlign.End, modifier = Modifier.width(LIST_PAGES_W))
             Text(
                 if (e.isDir) b.counts[e.documentUri]?.let { itemsLabel(b.words, it) } ?: "" else formatSize(e.size),
-                color = if (e.isDir) dim else palette.text.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.End, maxLines = 1,
+                color = if (e.isDir) dim else fg, fontSize = 13.sp, textAlign = TextAlign.End, maxLines = 1,
                 modifier = Modifier.width(LIST_SIZE_W),
             )
             Text(b.metaOverride?.invoke(e) ?: b.whenText(e, withTime = true), color = dim, fontSize = 13.sp, maxLines = 1, modifier = Modifier.width(LIST_WHEN_W).padding(start = 28.dp))
@@ -525,7 +526,7 @@ internal fun GalleryItem(b: ExplorerBody, e: BrowseEntry, shelf: Dp) {
                 if (pages > 1) Box(Modifier.offset(4.dp, 4.dp).size(pageW, pageH).clip(sheet).background(palette.paper.toComposeColor()).border(1.dp, edge, sheet))
                 Box(Modifier.offset(0.dp, 8.dp).size(pageW, pageH).clip(sheet).border(if (selected) 2.dp else 1.dp, edge, sheet)) {
                     ThumbImage(img, whole = true, Modifier.fillMaxSize())
-                    if (selected) Box(Modifier.fillMaxSize().background(palette.accentAlpha(38).toComposeColor()))
+                    if (selected) Box(Modifier.fillMaxSize().background(palette.selectionBackground.withAlpha(77).toComposeColor()))
                     if (selecting) CheckRing(selected, Modifier.align(Alignment.TopStart).padding(6.dp))
                 }
             }
@@ -569,7 +570,7 @@ internal fun TimelineCard(b: ExplorerBody, e: BrowseEntry, side: Dp) {
     ) {
         Box(Modifier.size(side).clip(shape).border(if (selected) 2.dp else 1.dp, if (selected) palette.accent.toComposeColor() else (code ?: palette.border.toComposeColor()), shape)) {
             EntryThumb(b.editor, e, ThumbShape.TOP, Modifier.fillMaxSize())
-            if (selected) Box(Modifier.fillMaxSize().background(palette.accentAlpha(38).toComposeColor()))
+            if (selected) Box(Modifier.fillMaxSize().background(palette.selectionBackground.withAlpha(77).toComposeColor()))
             if (b.view.showKind) {
                 val kind = b.kind(e)
                 if (kind == EntryKind.PDF || kind == EntryKind.CANVAS) {

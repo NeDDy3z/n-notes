@@ -104,13 +104,13 @@ internal fun ExplorerChip(
     onClick: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    val fg = (if (on) palette.accent else palette.text).toComposeColor()
-    val iconTint = (if (on) palette.accent else palette.textDim).toComposeColor()
+    val fg = (if (on) palette.selectionForeground else palette.text).toComposeColor()
+    val iconTint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor()
     Row(
         modifier
             .height(32.dp)
             .clip(CONTROL_SHAPE)
-            .background(if (on) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
+            .background(if (on) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
             .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), CONTROL_SHAPE)
             .clickable(onClick = onClick)
             .padding(start = if (icon != null) 8.dp else 12.dp, end = if (trailing != null || !labelled) 8.dp else 12.dp),
@@ -193,11 +193,11 @@ internal fun LayoutSwitcher(layouts: List<ExplorerLayout>, current: ExplorerLayo
                 Modifier
                     .width(42.dp)
                     .height(40.dp)
-                    .background(if (on) palette.accentAlpha(38).toComposeColor() else Color.Transparent)
+                    .background(if (on) palette.selectionBackground.toComposeColor() else Color.Transparent)
                     .clickable { onPick(l) },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(layoutIcon(l), stringResource(l.labelRes), tint = (if (on) palette.accent else palette.textDim).toComposeColor(), modifier = Modifier.size(20.dp))
+                Icon(layoutIcon(l), stringResource(l.labelRes), tint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor(), modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -387,13 +387,13 @@ internal fun ViewOptionsContent(
                             .width(62.dp)
                             .height(62.dp)
                             .clip(shape)
-                            .background(if (on) palette.accentAlpha(48).toComposeColor() else Color.Transparent)
+                            .background(if (on) palette.selectionBackground.toComposeColor() else Color.Transparent)
                             .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), shape)
                             .clickable { onChange(view.copy(layout = l)) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        val tint = (if (on) palette.accent else palette.textDim).toComposeColor()
+                        val tint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor()
                         Icon(layoutIcon(l), null, tint = tint, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.height(5.dp))
                         Text(stringResource(l.labelRes), color = tint, fontSize = 11.5.sp, lineHeight = 14.sp, maxLines = 1)

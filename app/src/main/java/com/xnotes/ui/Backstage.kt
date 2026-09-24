@@ -563,16 +563,16 @@ private fun Command(icon: ImageVector, label: String, selected: Boolean = false,
         Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .then(if (selected) Modifier.background(palette.accentAlpha(38).toComposeColor()) else Modifier)
+            .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = label, tint = palette.accent.toComposeColor(), modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = label, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(16.dp))
         Text(
             label,
-            color = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
+            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
             fontSize = 15.sp,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             modifier = Modifier.weight(1f),
@@ -593,10 +593,10 @@ private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false
     ) {
         Box(
             Modifier.size(width = 56.dp, height = 32.dp).clip(pill)
-                .background(if (selected) palette.accentAlpha(38).toComposeColor() else Color.Transparent),
+                .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -635,7 +635,7 @@ private fun ColorCommand(color: Rgba, name: String, selected: Boolean, onClick: 
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .then(if (selected) Modifier.background(palette.accentAlpha(38).toComposeColor()) else Modifier)
+                .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
                 .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
                 .padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -646,7 +646,7 @@ private fun ColorCommand(color: Rgba, name: String, selected: Boolean, onClick: 
             Spacer(Modifier.width(16.dp))
             Text(
                 name,
-                color = (if (selected) palette.accent else palette.text).toComposeColor(),
+                color = (if (selected) palette.selectionForeground else palette.text).toComposeColor(),
                 fontSize = 15.sp,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                 maxLines = 1,
@@ -689,16 +689,16 @@ private fun PinnedCommand(label: String, selected: Boolean, onClick: () -> Unit,
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .then(if (selected) Modifier.background(palette.accentAlpha(38).toComposeColor()) else Modifier)
+                .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
                 .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
                 .padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(XnotesIcons.folder, null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(20.dp))
+            Icon(XnotesIcons.folder, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(16.dp))
             Text(
                 label,
-                color = (if (selected) palette.accent else palette.text).toComposeColor(),
+                color = (if (selected) palette.selectionForeground else palette.text).toComposeColor(),
                 fontSize = 15.sp,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                 maxLines = 1,

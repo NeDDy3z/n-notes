@@ -1020,7 +1020,7 @@ private fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClic
     Box(
         Modifier
             .clip(RoundedCornerShape(5.dp))
-            .background(if (selected) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
+            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
             .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
             .clickable(onClick = onClick)
             .padding(8.dp),
@@ -1028,7 +1028,7 @@ private fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClic
         Icon(
             icon,
             contentDescription = label,
-            tint = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
+            tint = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
             modifier = Modifier.size(20.dp),
         )
     }
@@ -1096,14 +1096,14 @@ internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(5.dp))
-            .background(if (selected) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
+            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
             .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
         Text(
             label,
-            color = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
+            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp,
