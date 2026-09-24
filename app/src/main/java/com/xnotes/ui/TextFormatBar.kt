@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.TableChart
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -199,20 +198,21 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             for (n in 0..Paragraph.MAX_HEADING) {
-                DropdownMenuItem(
-                    text = {
+                ChoiceMenuItem(
+                    n == level,
+                    text = { fg ->
                         Text(
                             if (n == 0) stringResource(R.string.body_text) else stringResource(R.string.heading_n, n),
-                            color = (if (n == level) palette.accent else palette.text).toComposeColor(),
+                            color = fg,
                             fontSize = 14.sp,
                             fontWeight = if (n > 0) FontWeight.SemiBold else FontWeight.Normal,
                         )
                     },
                     trailingIcon = if (n > 0 && editor.markdownInput) {
-                        {
+                        { fg ->
                             Text(
                                 "#".repeat(n),
-                                color = palette.textDim.toComposeColor(),
+                                color = fg.copy(alpha = 0.72f),
                                 fontSize = 12.sp,
                                 style = TextStyle(fontFamily = FontFamily.Monospace),
                             )
@@ -273,11 +273,12 @@ private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
                 else -> lang
             }
             for (token in editor.codeLanguageChoices()) {
-                DropdownMenuItem(
-                    text = {
+                ChoiceMenuItem(
+                    token == current,
+                    text = { fg ->
                         Text(
                             if (token == "plain") stringResource(R.string.code_plain) else token,
-                            color = (if (token == current) palette.accent else palette.text).toComposeColor(),
+                            color = fg,
                             fontSize = 14.sp,
                         )
                     },

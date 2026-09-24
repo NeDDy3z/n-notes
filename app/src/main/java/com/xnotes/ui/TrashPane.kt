@@ -40,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -286,7 +285,7 @@ private fun TrashRow(
             Text(deleted, color = dim, fontSize = 13.sp, maxLines = 1, modifier = Modifier.width(150.dp))
             Text(
                 when (left) { null -> stringResource(R.string.never); 0 -> stringResource(R.string.today); else -> pluralStringResource(R.plurals.days_count, left, left) },
-                color = if (left != null && left <= 3) Color(0xFFE5534B) else palette.text.toComposeColor(),
+                color = if (left != null && left <= 3) palette.danger.toComposeColor() else palette.text.toComposeColor(),
                 fontSize = 13.sp, maxLines = 1, modifier = Modifier.width(110.dp),
             )
         }

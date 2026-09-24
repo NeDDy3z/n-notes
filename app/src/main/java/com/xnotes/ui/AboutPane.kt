@@ -39,8 +39,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -128,7 +128,7 @@ fun AboutPane() {
             Text(stringResource(R.string.help_make_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
 
-            // Three rectangular buttons, side by side; each fills with the accent while pressed.
+            // Three buttons, side by side; each fills with the selection container while pressed.
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -158,12 +158,12 @@ fun AboutPane() {
     }
 }
 
-/** A rectangular link button: line glyph above a label. Inverts to the accent while pressed. */
+/** A link button: line glyph above a label. Fills with the selection container while pressed. */
 @Composable
 private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     val palette = LocalPalette.current
     val interaction = remember { MutableInteractionSource() }
-    // Keep the accent fill visible for a minimum time so even a millisecond tap registers.
+    // Keep the pressed fill visible for a minimum time so even a millisecond tap registers.
     var pressed by remember { mutableStateOf(false) }
     LaunchedEffect(interaction) {
         val scope = this
@@ -188,13 +188,14 @@ private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -
         }
     }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.onAccent.toComposeColor()
+    val onAccent = palette.selectionForeground.toComposeColor()
     Column(
         Modifier
             .weight(1f)
             .fillMaxHeight()
-            .background(if (pressed) accent else Color.Transparent)
-            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), RectangleShape)
+            .clip(CARD_SHAPE)
+            .background(if (pressed) palette.selectionBackground.toComposeColor() else Color.Transparent)
+            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), CARD_SHAPE)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

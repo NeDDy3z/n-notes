@@ -328,7 +328,7 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
     val active = b.host.isSelected(e) || b.host.isDropTarget(e)
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.onAccent.toComposeColor()
+    val onAccent = palette.selectionForeground.toComposeColor()
     val pulse = remember { Animatable(1f) }
     val pulsing = b.host.isPulsing(e)
     LaunchedEffect(pulsing) {
@@ -346,7 +346,7 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
             .scale(pulse.value)
             .registered(b, e)
             .clip(shape)
-            .background(if (active) accent else Color.Transparent)
+            .background(if (active) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .then(if (!active && code != null) Modifier.colorHatch(code) else Modifier)
             .border(1.dp, if (active) accent else (code ?: palette.border.toComposeColor()), shape)
             .combinedClickable(
@@ -606,7 +606,7 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
             .height(44.dp)
             .registered(b, e)
             .clip(shape)
-            .background(if (active) palette.accent.toComposeColor() else Color.Transparent)
+            .background(if (active) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .then(if (!active && code != null) Modifier.colorHatch(code) else Modifier)
             .border(1.dp, if (active) palette.accent.toComposeColor() else (code ?: palette.border.toComposeColor()), shape)
             .combinedClickable(
@@ -619,7 +619,7 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        val fg = if (active) palette.onAccent.toComposeColor() else palette.text.toComposeColor()
+        val fg = if (active) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor()
         Icon(XnotesIcons.folder, null, tint = if (active) fg else (code ?: palette.textDim.toComposeColor()), modifier = Modifier.size(20.dp))
         Text(b.label(e), color = fg, fontSize = 14.sp, maxLines = 1)
         b.counts[e.documentUri]?.let { Text("$it", color = if (active) fg else palette.textDim.toComposeColor(), fontSize = 12.sp) }

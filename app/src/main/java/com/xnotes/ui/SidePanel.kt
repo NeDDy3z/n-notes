@@ -214,13 +214,13 @@ private fun PageThumb(
             bitmap?.let { Image(it, contentDescription = stringResource(R.string.page_n, index + 1), modifier = Modifier.fillMaxSize()) }
 
             if (selected) {
-                Box(Modifier.matchParentSize().background(palette.accent.toComposeColor().copy(alpha = 0.18f)))
+                Box(Modifier.matchParentSize().background(palette.selectionBackground.withAlpha(77).toComposeColor()))
                 Box(
                     Modifier.align(Alignment.TopStart).padding(4.dp).size(20.dp)
                         .clip(CircleShape).background(palette.accent.toComposeColor()),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(XnotesIcons.check, stringResource(R.string.selected), tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(13.dp))
+                    Icon(XnotesIcons.check, stringResource(R.string.selected), tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(13.dp))
                 }
             } else if (!selecting) {
                 // Three-dot menu, on a faint scrim so it reads over any thumbnail.

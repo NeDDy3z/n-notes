@@ -1090,6 +1090,24 @@ internal fun AlertDialog(
 }
 
 /** A text-label chip for a segmented picker (e.g. the eraser's STROKE/AREA modes). */
+/** A menu row for one of several choices; the current one wears the selection container. */
+@Composable
+internal fun ChoiceMenuItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    trailingIcon: (@Composable (Color) -> Unit)? = null,
+    text: @Composable (Color) -> Unit,
+) {
+    val palette = LocalPalette.current
+    val fg = (if (selected) palette.selectionForeground else palette.text).toComposeColor()
+    DropdownMenuItem(
+        text = { text(fg) },
+        onClick = onClick,
+        trailingIcon = trailingIcon?.let { icon -> { icon(fg) } },
+        modifier = if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier,
+    )
+}
+
 @Composable
 internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
@@ -1126,28 +1144,14 @@ fun FontMenuItems(
 ) {
     val palette = LocalPalette.current
     if (withDefault) {
-        DropdownMenuItem(
-            text = {
-                Text(
-                    stringResource(R.string.default_choice),
-                    color = (if (current == null) palette.accent else palette.text).toComposeColor(),
-                    fontSize = 14.sp,
-                )
-            },
-            onClick = { onPick(null) },
-        )
+        ChoiceMenuItem(current == null, onClick = { onPick(null) }) { fg ->
+            Text(stringResource(R.string.default_choice), color = fg, fontSize = 14.sp)
+        }
     }
     for (choice in FontCatalog.choices()) {
         if (monoOnly && !choice.mono) continue
-        DropdownMenuItem(
-            text = {
-                Text(
-                    fontLabel(choice.face),
-                    color = (if (choice.face == current) palette.accent else palette.text).toComposeColor(),
-                    style = TextStyle(fontFamily = choice.face.toComposeFamily(), fontSize = 14.sp),
-                )
-            },
-            onClick = { onPick(choice.face) },
-        )
+        ChoiceMenuItem(choice.face == current, onClick = { onPick(choice.face) }) { fg ->
+            Text(fontLabel(choice.face), color = fg, style = TextStyle(fontFamily = choice.face.toComposeFamily(), fontSize = 14.sp))
+        }
     }
 }

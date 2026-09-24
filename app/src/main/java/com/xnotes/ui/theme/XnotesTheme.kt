@@ -31,8 +31,6 @@ internal fun Palette.composeColorScheme(): ColorScheme {
     val scheme = if (palette.isDark) {
         darkColorScheme(
             primary = accent,
-            onPrimary = palette.bg.toComposeColor(),
-            secondary = accent,
             background = palette.bg.toComposeColor(),
             onBackground = palette.text.toComposeColor(),
             surface = palette.menuBg.toComposeColor(),
@@ -51,8 +49,6 @@ internal fun Palette.composeColorScheme(): ColorScheme {
     } else {
         lightColorScheme(
             primary = accent,
-            onPrimary = Color.White,
-            secondary = accent,
             background = palette.bg.toComposeColor(),
             onBackground = palette.text.toComposeColor(),
             surface = palette.menuBg.toComposeColor(),

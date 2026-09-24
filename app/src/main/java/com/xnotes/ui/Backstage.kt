@@ -337,7 +337,7 @@ private fun BackstageContent(
                 exit = if (animateClose) fadeOut(animationSpec = tween(SIDEBAR_ANIM_MS)) else ExitTransition.None,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                Box(Modifier.fillMaxSize().background(Color(0x99000000)).clickable { dismissDrawer() })
+                Box(Modifier.fillMaxSize().background(palette.materialColors.scrim.withAlpha(82).toComposeColor()).clickable { dismissDrawer() })
             }
             AnimatedVisibility(
                 visible = drawerOpen,
@@ -601,7 +601,7 @@ private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false
         Spacer(Modifier.height(4.dp))
         Text(
             label,
-            color = (if (selected) palette.accent else palette.text).toComposeColor(),
+            color = palette.text.toComposeColor(),
             fontSize = 11.sp,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
@@ -725,23 +725,21 @@ private fun SortOption(
     descending: Boolean,
     onPick: (ExplorerSortKey, Boolean) -> Unit,
 ) {
-    val palette = LocalPalette.current
     val active = key == activeKey
-    val tint = (if (active) palette.accent else palette.text).toComposeColor()
-    DropdownMenuItem(
-        text = { Text(label, color = tint) },
+    ChoiceMenuItem(
+        active,
+        onClick = { if (active) onPick(key, !descending) else onPick(key, key != ExplorerSortKey.NAME) },
         trailingIcon = if (active) {
-            {
+            { fg ->
                 Icon(
                     if (descending) XnotesIcons.arrowDown else XnotesIcons.arrowUp,
                     if (descending) stringResource(R.string.sort_descending) else stringResource(R.string.sort_ascending),
-                    tint = tint,
+                    tint = fg,
                     modifier = Modifier.size(18.dp),
                 )
             }
         } else null,
-        onClick = { if (active) onPick(key, !descending) else onPick(key, key != ExplorerSortKey.NAME) },
-    )
+    ) { fg -> Text(label, color = fg) }
 }
 
 // --- home pane: the folder explorer ---
@@ -812,8 +810,6 @@ private fun HomePane(
                 FloatingActionButton(
                     onClick = { createMenuOpen = true },
                     shape = CircleShape,
-                    containerColor = palette.accent.toComposeColor(),
-                    contentColor = palette.onAccent.toComposeColor(),
                 ) {
                     Icon(XnotesIcons.edit, stringResource(R.string.create_new), modifier = Modifier.size(24.dp))
                 }
@@ -1297,10 +1293,9 @@ private fun ExplorerSection(
                                 ExplorerChip(if (view.timelineByCreated) stringResource(R.string.sort_created) else stringResource(R.string.sort_modified), true, icon = XnotesIcons.sort, trailing = XnotesIcons.chevronDown, labelled = labelled) { byOpen = true }
                                 DropdownMenu(expanded = byOpen, onDismissRequest = { byOpen = false }) {
                                     listOf(true to stringResource(R.string.sort_created), false to stringResource(R.string.sort_modified)).forEach { (created, label) ->
-                                        DropdownMenuItem(
-                                            text = { Text(label, color = (if (created == view.timelineByCreated) palette.accent else palette.text).toComposeColor()) },
-                                            onClick = { byOpen = false; setView(view.copy(timelineByCreated = created)) },
-                                        )
+                                        ChoiceMenuItem(created == view.timelineByCreated, onClick = { byOpen = false; setView(view.copy(timelineByCreated = created)) }) { fg ->
+                                            Text(label, color = fg)
+                                        }
                                     }
                                 }
                             }
@@ -1322,10 +1317,9 @@ private fun ExplorerSection(
                                 ExplorerChip(stringResource(view.groupBy.chipRes), grouped, icon = XnotesIcons.layers, trailing = XnotesIcons.chevronDown, labelled = labelled) { groupOpen = true }
                                 DropdownMenu(expanded = groupOpen, onDismissRequest = { groupOpen = false }) {
                                     GroupBy.entries.forEach { g ->
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(g.labelRes), color = (if (g == view.groupBy) palette.accent else palette.text).toComposeColor()) },
-                                            onClick = { groupOpen = false; setView(view.copy(groupBy = g)) },
-                                        )
+                                        ChoiceMenuItem(g == view.groupBy, onClick = { groupOpen = false; setView(view.copy(groupBy = g)) }) { fg ->
+                                            Text(stringResource(g.labelRes), color = fg)
+                                        }
                                     }
                                 }
                             }
@@ -1336,11 +1330,9 @@ private fun ExplorerSection(
                             ExplorerChip(k?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), k != null, icon = XnotesIcons.filter, trailing = XnotesIcons.chevronDown, labelled = labelled) { kindOpen = true }
                             DropdownMenu(expanded = kindOpen, onDismissRequest = { kindOpen = false }) {
                                 (listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS)).forEach { option ->
-                                    val on = option == kindFilter
-                                    DropdownMenuItem(
-                                        text = { Text(option?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), color = (if (on) palette.accent else palette.text).toComposeColor()) },
-                                        onClick = { kindOpen = false; kindFilter = option },
-                                    )
+                                    ChoiceMenuItem(option == kindFilter, onClick = { kindOpen = false; kindFilter = option }) { fg ->
+                                        Text(option?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), color = fg)
+                                    }
                                 }
                             }
                         }
@@ -2109,7 +2101,7 @@ private fun NameDialog(
                 singleLine = true,
                 isError = error != null,
                 placeholder = placeholder?.let { { Text(it) } },
-                supportingText = error?.let { { Text(it, color = Color(0xFFE5534B)) } },
+                supportingText = error?.let { { Text(it) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { confirm() }),
                 modifier = Modifier
@@ -2138,12 +2130,12 @@ private fun NameDialog(
 
 private const val PRESS_FILL_MS = 120L
 
-/** Line glyph above a label in a bordered box; inverts to the accent while pressed. Matches the About pane buttons. */
+/** Line glyph above a label in a bordered box; fills with the selection container while pressed. Matches the About pane buttons. */
 @Composable
 private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val palette = LocalPalette.current
     val interaction = remember { MutableInteractionSource() }
-    // Keep the accent fill visible for a minimum time so even a millisecond tap registers.
+    // Keep the pressed fill visible for a minimum time so even a millisecond tap registers.
     var pressed by remember { mutableStateOf(false) }
     LaunchedEffect(interaction) {
         val scope = this
@@ -2168,12 +2160,12 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
         }
     }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.onAccent.toComposeColor()
+    val onAccent = palette.selectionForeground.toComposeColor()
     val shape = CARD_SHAPE
     Column(
         modifier
             .clip(shape)
-            .background(if (pressed) accent else Color.Transparent)
+            .background(if (pressed) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), shape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 22.dp),
