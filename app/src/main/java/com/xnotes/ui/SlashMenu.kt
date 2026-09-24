@@ -112,18 +112,20 @@ private fun SlashRow(
     onPick: () -> Unit,
 ) {
     val palette = LocalPalette.current
+    val fg = (if (!ready) palette.textDim else if (highlighted) palette.selectionForeground else palette.text).toComposeColor()
+    val dim = if (highlighted) palette.selectionForeground.toComposeColor().copy(alpha = 0.72f) else palette.textDim.toComposeColor()
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(ROW_HEIGHT)
-            .background(if (highlighted) palette.accent.withAlpha(36).toComposeColor() else Color.Transparent)
+            .background(if (highlighted) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .clickable(enabled = ready, onClick = onPick)
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             entry.id,
-            color = (if (ready) palette.text else palette.textDim).toComposeColor(),
+            color = fg,
             fontSize = 13.sp,
             fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
@@ -132,7 +134,7 @@ private fun SlashRow(
             Spacer(Modifier.width(5.dp))
             Text(
                 it,
-                color = palette.textDim.toComposeColor(),
+                color = dim,
                 fontSize = 11.sp,
                 maxLines = 1,
             )
@@ -140,7 +142,7 @@ private fun SlashRow(
         Spacer(Modifier.width(8.dp))
         Text(
             slashLabel(entry),
-            color = palette.textDim.toComposeColor(),
+            color = dim,
             fontSize = 11.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -150,7 +152,7 @@ private fun SlashRow(
         entry.markdown?.let {
             Text(
                 it,
-                color = palette.textDim.toComposeColor(),
+                color = dim,
                 fontSize = 11.sp,
             )
         }
