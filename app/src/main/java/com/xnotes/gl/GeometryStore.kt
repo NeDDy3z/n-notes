@@ -257,8 +257,7 @@ class GeometryStore {
     // --- internals ---
 
     private fun growVertices(need: Int) {
-        var cap = vertexAllocator.capacity
-        while (cap < vertexAllocator.used + need) cap *= 2
+        val cap = vertexAllocator.grownCapacity(need) ?: return
         val next = allocate(cap * VERTEX_STRIDE)
         vertexMirror.clear()
         next.put(vertexMirror)
@@ -269,8 +268,7 @@ class GeometryStore {
     }
 
     private fun growIndices(need: Int) {
-        var cap = indexAllocator.capacity
-        while (cap < indexAllocator.used + need) cap *= 2
+        val cap = indexAllocator.grownCapacity(need) ?: return
         val next = allocate(cap * INDEX_STRIDE)
         indexMirror.clear()
         next.put(indexMirror)

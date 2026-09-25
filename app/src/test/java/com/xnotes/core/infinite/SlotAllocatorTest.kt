@@ -37,6 +37,26 @@ class SlotAllocatorTest {
         assertEquals(50, a.capacity)
     }
 
+    @Test fun growthCountsFromTheEndRatherThanFromWhatIsLive() {
+        val a = SlotAllocator(100)
+        val slots = List(10) { a.allocate(10)!! }
+        // Half of it free, but as five separate holes of ten.
+        for (i in 0 until 10 step 2) a.free(slots[i], 10)
+        assertEquals(50, a.used)
+        assertEquals(100, a.end)
+        assertNull(a.allocate(20))
+        val cap = a.grownCapacity(20)!!
+        assertEquals(200, cap)
+        a.grow(cap)
+        assertEquals(100, a.allocate(20))
+    }
+
+    @Test fun growthPastAnIntIsRefused() {
+        val a = SlotAllocator(1 shl 30)
+        a.allocate(1 shl 30)
+        assertNull(a.grownCapacity(1))
+    }
+
     @Test fun aZeroOrNegativeRequestIsRefused() {
         val a = SlotAllocator(10)
         assertNull(a.allocate(0))
