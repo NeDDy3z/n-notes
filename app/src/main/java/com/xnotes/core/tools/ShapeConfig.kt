@@ -12,18 +12,20 @@ enum class ShapeKind(val id: String) {
     COORD_AXES("axes"),
     POLYGON("polygon"),
     POLYLINE("polyline"),
-    CURVE("curve");
+    CURVE("curve"),
+    NUMBER_LINE("numberline"),
+    SPLINE("spline");
 
     /** Closed shapes are stroked and optionally filled; open shapes never fill. */
     val isClosed: Boolean get() = this == RECTANGLE || this == ELLIPSE || this == CIRCLE || this == TRIANGLE || this == POLYGON
     val isOpen: Boolean get() = !isClosed
 
     /** Line/arrow resize by dragging their two endpoints; every other kind resizes by its box. */
-    val isEndpointShape: Boolean get() = this == LINE || this == ARROW
+    val isEndpointShape: Boolean get() = this == LINE || this == ARROW || this == NUMBER_LINE
 
     companion object {
         /** Kinds the shape tool offers; polygon/polyline arrive only from recognition. */
-        val DRAW_TOOL_KINDS = listOf(LINE, ARROW, RECTANGLE, ELLIPSE, CIRCLE, TRIANGLE, COORD_AXES)
+        val DRAW_TOOL_KINDS = listOf(LINE, ARROW, SPLINE, RECTANGLE, ELLIPSE, CIRCLE, TRIANGLE, COORD_AXES, NUMBER_LINE)
 
         fun fromId(id: String?): ShapeKind = entries.firstOrNull { it.id == id } ?: RECTANGLE
     }

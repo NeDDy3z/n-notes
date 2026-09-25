@@ -360,6 +360,9 @@ class InteractionController(
     private var resizeHandle: HandleId? = null
     private var resizeOldGeom: GeoHandle? = null
     private var resizePageIndex: Int = -1
+    // A spline control point being dragged, and the curve as it was, for the undo step.
+    private var resizePointIndex: Int = -1
+    private var resizeOldSnap: GeometrySnapshot? = null
 
     // CROP (adjusting an image's crop rectangle before baking it)
     private var cropItem: ImageItem? = null
@@ -801,6 +804,7 @@ class InteractionController(
                     when {
                         linkHandled -> Unit
                         state.overscrollY > 0.0 -> releaseOverscroll()
+                        tap && tool == Tool.SELECT && fingerTapSelect(content) -> Unit
                         tap && hasSelection && selectionBoundsContent()?.contains(content) != true -> clearSelection()
                         !state.verticalScroll -> endPanPaginated()
                         else -> startPanFling()
@@ -1348,6 +1352,7 @@ class InteractionController(
     /** Resize handles for the current selection in content space: a single line/arrow's two
      *  endpoint handles, else the eight handles of the oriented selection box. */
     private fun selectionResizeHandles(): List<ResizeHandle> {
+        if (singleSpline() != null) return emptyList()
         val endpoint = singleEndpointShape()
         if (endpoint != null) return endpointHandles(endpoint)
         return selObb?.let { ResizeMath.obbHandles(it) } ?: emptyList()
@@ -1363,6 +1368,32 @@ class InteractionController(
         )
     }
 
+    /** The single selected spline, whose control points are its handles, or null. */
+    private fun singleSpline(): Selected? {
+        val sel = selection.singleOrNull() ?: return null
+        return if ((sel.item as? ShapeItem)?.shape == ShapeKind.SPLINE) sel else null
+    }
+
+    /** A spline's control points, mapped from page space into content space. */
+    private fun splineHandles(sel: Selected): List<Pt> {
+        val item = sel.item as? ShapeItem ?: return emptyList()
+        if (state.pageRects.getOrNull(sel.pageIndex) == null) return emptyList()
+        return item.controlPoints().map { state.fromPageSpace(sel.pageIndex, it) }
+    }
+
+    /** Index of the spline control point under [content], or -1. */
+    private fun hitSplinePoint(sel: Selected, content: Pt, tol: Double): Int {
+        val pts = splineHandles(sel)
+        val i = pts.indices.minByOrNull { pts[it].distanceTo(content) } ?: return -1
+        return if (pts[i].distanceTo(content) <= tol) i else -1
+    }
+
+    /** The move grip under a selection too small to grab by its body, in content space, or null. */
+    private fun selectionMoveGrip(): Pt? {
+        val obb = selObb ?: return null
+        return ResizeMath.obbMoveGrip(obb, state.zoom, ROTATE_ARM / state.zoom)
+    }
+
     /** Strokes, shapes and images rotate; text doesn't. A mixed selection rotates only when every
      *  member is rotatable. */
     private fun selectionIsRotatable(): Boolean =
@@ -1371,7 +1402,7 @@ class InteractionController(
     /** Rotate-grip centre (content space, no move offset), out past the oriented box's top edge, or
      *  null when the selection can't rotate or is a single line/arrow (reoriented by an endpoint). */
     private fun selectionRotatePoint(): Pt? {
-        if (!selectionIsRotatable() || singleEndpointShape() != null) return null
+        if (!selectionIsRotatable() || singleEndpointShape() != null || singleSpline() != null) return null
         val obb = selObb ?: return null
         return ResizeMath.obbRotateGrip(obb, ROTATE_ARM / state.zoom)
     }
@@ -1383,6 +1414,8 @@ class InteractionController(
         if (selection.isEmpty()) return false
         val tol = HANDLE_HIT / state.zoom
         selectionRotatePoint()?.let { if (it.distanceTo(content) <= tol) return true }
+        selectionMoveGrip()?.let { if (it.distanceTo(content) <= tol) return true }
+        singleSpline()?.let { if (hitSplinePoint(it, content, tol) >= 0) return true }
         if (ResizeMath.hitHandle(selectionResizeHandles(), content, tol) != null) return true
         return selObb?.contains(content) == true
     }
@@ -1399,6 +1432,20 @@ class InteractionController(
                 return true
             }
         }
+        selectionMoveGrip()?.let {
+            if (it.distanceTo(content) <= tol) {
+                beginMove(content)
+                return true
+            }
+        }
+        singleSpline()?.let { sp ->
+            val i = hitSplinePoint(sp, content, tol)
+            if (i < 0) return false
+            beginResize(sp, HandleId.START)
+            resizePointIndex = i
+            resizeOldSnap = sp.item.snapshotGeometry()
+            return true
+        }
         val endpoint = singleEndpointShape()
         if (endpoint != null) {
             val id = ResizeMath.hitHandle(endpointHandles(endpoint), content, tol) ?: return false
@@ -1408,6 +1455,21 @@ class InteractionController(
         val obb = selObb ?: return false
         val id = ResizeMath.hitHandle(ResizeMath.obbHandles(obb), content, tol) ?: return false
         beginTransform(id, content)
+        return true
+    }
+
+    /** A finger tap with the select tool picks the item under it; a drag still pans. */
+    private fun fingerTapSelect(content: Pt): Boolean {
+        val pageIndex = state.pageIndexAtContent(content) ?: return false
+        if (pageIndex !in state.drawablePageRange()) return false
+        val local = state.toPageSpace(pageIndex, content)
+        val slop = TAP_SLOP / state.zoom
+        val items = state.document.pages[pageIndex].items
+        val hit = items.lastOrNull { !it.locked && it.contains(local) }
+            ?: items.lastOrNull { !it.locked && it.intersectsCircle(local.x, local.y, slop) }
+            ?: return false
+        setSelection(listOf(Selected(pageIndex, hit)))
+        refreshSelectionMenu()
         return true
     }
 
@@ -1612,7 +1674,7 @@ class InteractionController(
                 val (pos, w, h) = ResizeMath.resizeText(item.pos, item.width, item.bounds().h, handle, local)
                 item.setGeometry(TextHandle(pos, w, h))
             }
-            is ShapeItem -> {
+            is ShapeItem -> if (resizePointIndex >= 0) item.moveControlPoint(resizePointIndex, local) else {
                 val (s, en) = when {
                     item.shape.isEndpointShape -> ResizeMath.resizeOpenShape(item.start, item.end, handle, local)
                     item.shape == ShapeKind.CIRCLE -> ResizeMath.resizeSquareShape(item.start, item.end, handle, local)
@@ -1628,7 +1690,17 @@ class InteractionController(
         val item = resizeItem as? Resizable
         val old = resizeOldGeom
         var changed = false
-        if (item != null && old != null) {
+        val oldSnap = resizeOldSnap
+        if (resizePointIndex >= 0 && oldSnap != null) {
+            val moved = resizeItem!!
+            val new = moved.snapshotGeometry()
+            if (new != oldSnap) {
+                changed = true
+                history.push(TransformItems(listOf(moved), listOf(oldSnap), listOf(new)))
+                state.document.dirty = true
+                onContentChanged()
+            }
+        } else if (item != null && old != null) {
             val new = item.geometry()
             if (new != old) {
                 changed = true
@@ -1642,6 +1714,8 @@ class InteractionController(
         resizeItem = null
         resizeHandle = null
         resizeOldGeom = null
+        resizePointIndex = -1
+        resizeOldSnap = null
         // The endpoint resize (a single line/arrow) reshapes the box; refit it upright.
         selObb = selectionObb()
         mode = PointerMode.IDLE
@@ -2560,6 +2634,22 @@ class InteractionController(
         requestRender()
     }
 
+    /** The single selected spline, for the menu's add/remove point actions. */
+    fun singleSelectedSpline(): ShapeItem? = singleSpline()?.item as? ShapeItem
+
+    /** Add a control point to the selected spline, or remove one, as one undoable edit. */
+    fun editSelectedSpline(add: Boolean) {
+        val sp = singleSelectedSpline() ?: return
+        val before = sp.snapshotGeometry()
+        if (add) sp.addControlPoint() else if (!sp.removeControlPoint()) return
+        history.push(TransformItems(listOf(sp), listOf(before), listOf(sp.snapshotGeometry())))
+        state.document.dirty = true
+        selObb = selectionObb()
+        onContentChanged()
+        refreshSelectionMenu()
+        requestRender()
+    }
+
     fun clearSelection() {
         // Restore the tool a long-press grab temporarily switched away from.
         longPressPrevTool?.let {
@@ -2900,13 +2990,15 @@ class InteractionController(
         val content = selectionBoundsContent() ?: return null
         val tl = state.contentToViewport(content.topLeft)
         val br = state.contentToViewport(Pt(content.right, content.bottom))
-        val rect = Rect.fromPoints(tl, br)
+        var rect = Rect.fromPoints(tl, br)
         // Raise the menu's anchor top above the rotate grip (drawn ROTATE_ARM + grip radius above the
         // box) so the floating action bar floats over the grip instead of covering it. Bottom is left
         // put, so the below-the-selection fallback placement is unchanged.
-        if (selectionRotatePoint() == null) return rect
-        val clearance = ROTATE_ARM + HANDLE_SIZE * 0.6
-        return Rect(rect.left, rect.top - clearance, rect.w, rect.h + clearance)
+        val clearance = ROTATE_ARM + HANDLE_SIZE * 0.8
+        if (selectionRotatePoint() != null) rect = Rect(rect.left, rect.top - clearance, rect.w, rect.h + clearance)
+        // Likewise drop the bottom below the move grip, so the fallback placement clears it.
+        if (selectionMoveGrip() != null) rect = Rect(rect.left, rect.top, rect.w, rect.h + clearance)
+        return rect
     }
 
     // --- PAN ---
@@ -3434,6 +3526,17 @@ class InteractionController(
                 for (h in selectionResizeHandles()) {
                     val c = Pt(h.content.x + moveOffset.x, h.content.y + moveOffset.y)
                     r.fillRect(Rect(c.x - side / 2, c.y - side / 2, side, side), com.xnotes.core.model.Rgba.SELECTION)
+                }
+                singleSpline()?.let { sp ->
+                    for (p in splineHandles(sp)) {
+                        r.fillCircle(Pt(p.x + moveOffset.x, p.y + moveOffset.y), side * 0.5, com.xnotes.core.model.Rgba.SELECTION)
+                    }
+                }
+                selectionMoveGrip()?.let { g ->
+                    val c = Pt(g.x + moveOffset.x, g.y + moveOffset.y)
+                    r.fillCircle(c, side * 0.8, com.xnotes.core.model.Rgba.SELECTION)
+                    val glyph = Pen(com.xnotes.core.model.Rgba(255, 255, 255, 255), 1.6, cosmetic = true)
+                    for (run in ResizeMath.moveGlyph(c, side * 0.5)) r.strokePolyline(run, glyph)
                 }
             }
         }

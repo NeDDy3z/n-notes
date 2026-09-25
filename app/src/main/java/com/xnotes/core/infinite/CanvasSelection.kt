@@ -12,6 +12,8 @@ import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.GeometrySnapshot
+import com.xnotes.core.model.ShapeItem
+import com.xnotes.core.tools.ShapeKind
 
 /** Half-width of the sticky zone around each 90-degree step when snap-rotation is on. */
 private val SNAP_STICK_RAD = Math.toRadians(6.0)
@@ -78,11 +80,42 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     /** True when [p] is inside the selection, so a press there grabs it rather than starting a band. */
     fun contains(p: Pt): Boolean = box?.contains(p) == true
 
-    /** The eight resize handles, in content space. */
-    fun handles(): List<ResizeHandle> = box?.let { ResizeMath.obbHandles(it) } ?: emptyList()
+    /** The eight resize handles, in content space; none for a lone spline, whose points are its handles. */
+    fun handles(): List<ResizeHandle> =
+        if (spline() != null) emptyList() else box?.let { ResizeMath.obbHandles(it) } ?: emptyList()
 
     /** The rotate grip's centre, [arm] content pixels past the box's top edge. */
-    fun rotateGrip(arm: Double): Pt? = box?.let { ResizeMath.obbRotateGrip(it, arm) }
+    fun rotateGrip(arm: Double): Pt? = if (spline() != null) null else box?.let { ResizeMath.obbRotateGrip(it, arm) }
+
+    /** The move grip under a selection too small to grab by its body, seen at [zoom], or null. */
+    fun moveGrip(zoom: Double, arm: Double): Pt? = box?.let { ResizeMath.obbMoveGrip(it, zoom, arm) }
+
+    /** The lone selected spline, or null. */
+    fun spline(): ShapeItem? = (items.singleOrNull() as? ShapeItem)?.takeIf { it.shape == ShapeKind.SPLINE }
+
+    /** Index of the spline control point within [tolerance] of [p], or -1. */
+    fun hitSplinePoint(p: Pt, tolerance: Double): Int {
+        val pts = spline()?.controlPoints() ?: return -1
+        val i = pts.indices.minByOrNull { pts[it].distanceTo(p) } ?: return -1
+        return if (pts[i].distanceTo(p) <= tolerance) i else -1
+    }
+
+    /** Drag one spline control point; the model moves, so pair with [beginTransform] for the undo. */
+    fun moveSplinePointLive(index: Int, to: Pt) {
+        spline()?.moveControlPoint(index, to) ?: return
+        doc.itemsChanged(items)
+        refreshBox()
+    }
+
+    /** Add or remove a control point on the lone spline, returning the undo step or null when nothing changed. */
+    fun editSpline(add: Boolean): Command? {
+        val sp = spline() ?: return null
+        val before = sp.snapshotGeometry()
+        if (add) sp.addControlPoint() else if (!sp.removeControlPoint()) return null
+        doc.itemsChanged(items)
+        refreshBox()
+        return OnCanvas(doc, TransformItems(items, listOf(before), listOf(sp.snapshotGeometry())), items)
+    }
 
     /** Which handle [p] lands on, within [tolerance] content pixels, or null. */
     fun hitHandle(p: Pt, tolerance: Double): HandleId? =

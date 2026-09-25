@@ -103,6 +103,27 @@ object ResizeMath {
     /** The rotate-grip centre, [arm] (content px) out past the box's top edge along its local up. */
     fun obbRotateGrip(obb: Obb, arm: Double): Pt = obb.localToWorld(Pt(0.0, -obb.halfH - arm))
 
+    /** On-screen size (device px) below which a selection gets a move grip, as its handles crowd out its body. */
+    const val MOVE_GRIP_BELOW_PX = 120.0
+
+    /** The move-grip centre, [arm] content px past the bottom edge of [obb] seen at [zoom], or null when the box is big enough to grab. */
+    fun obbMoveGrip(obb: Obb, zoom: Double, arm: Double): Pt? =
+        if (kotlin.math.max(obb.halfW, obb.halfH) * 2.0 * zoom >= MOVE_GRIP_BELOW_PX) null
+        else obb.localToWorld(Pt(0.0, obb.halfH + arm))
+
+    /** The pan tool's four-way arrows as polylines centred on [c], reaching [r] content px out. */
+    fun moveGlyph(c: Pt, r: Double): List<List<Pt>> {
+        fun p(x: Double, y: Double) = Pt(c.x + (x - 12.0) / 10.0 * r, c.y + (y - 12.0) / 10.0 * r)
+        return listOf(
+            listOf(p(5.0, 9.0), p(2.0, 12.0), p(5.0, 15.0)),
+            listOf(p(9.0, 5.0), p(12.0, 2.0), p(15.0, 5.0)),
+            listOf(p(15.0, 19.0), p(12.0, 22.0), p(9.0, 19.0)),
+            listOf(p(19.0, 9.0), p(22.0, 12.0), p(19.0, 15.0)),
+            listOf(p(2.0, 12.0), p(22.0, 12.0)),
+            listOf(p(12.0, 2.0), p(12.0, 22.0)),
+        )
+    }
+
     /** The affine to bake into the items, plus the resulting oriented box. */
     data class ObbResize(val transform: Affine, val obb: Obb)
 

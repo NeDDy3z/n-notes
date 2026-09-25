@@ -115,6 +115,8 @@ object XnotesIcons {
     val shapeCircle = icon(circle(12.0, 12.0, 8.0))
     val shapeTriangle = icon("M12 4 21 19 3 19 Z")
     val shapeAxes = icon("M12 3 V21", "M3 12 H21", "M9 6 12 3 15 6", "M18 9 21 12 18 15")
+    val shapeNumberLine = icon("M3 12 H21", "M18 9 21 12 18 15", "M7 10 V14", "M11 10 V14", "M15 10 V14")
+    val shapeSpline = icon("M4 18 C8 4 16 20 20 6", circle(12.0, 12.0, 1.5))
     val table = icon(rect(3.0, 4.0, 18.0, 16.0), "M3 12 H21", "M9 4 V20", "M15 4 V20")
     val undo = icon("M9 14 4 9l5-5", "M20 20v-7a4 4 0 0 0-4-4H4")
     val redo = icon("M15 14l5-5-5-5", "M4 20v-7a4 4 0 0 1 4-4h12")

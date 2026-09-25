@@ -424,7 +424,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         // radius above the box. Without this the bar lands on the grip and buries it. The bottom
         // stays put, so the fallback placement below the selection is unchanged.
         val clearance = OverlayTessellator.GRIP_ARM_PX + OverlayTessellator.GRIP_PX / 2.0
-        selectionMenuRect = Rect(bounds.x, bounds.y - clearance, bounds.w, bounds.h + clearance)
+        // The move grip under a small selection sits the same distance below, so the fallback clears it too.
+        val below = if (selection.moveGrip(viewport.zoom, OverlayTessellator.GRIP_ARM_PX / viewport.zoom) != null) clearance else 0.0
+        selectionMenuRect = Rect(bounds.x, bounds.y - clearance, bounds.w, bounds.h + clearance + below)
     }
 
     override fun dismissSelectionMenu() {
@@ -494,6 +496,16 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override val selectionIsTable: Boolean get() = false
     override val tableEditing: Boolean get() = false
     override fun toggleTableEditMode() {}
+
+    override val selectionSplinePoints: Int get() = selection.spline()?.controlPoints()?.size ?: 0
+
+    override fun editSelectionSpline(add: Boolean) {
+        val command = selection.editSpline(add) ?: return
+        history.push(command)
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
 
     // Crop is a paged-note image action; not offered on the infinite canvas.
     override val selectionIsImage: Boolean get() = false
@@ -1015,7 +1027,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             bounds = it.outset(4.0 / zoom)
         }
         selection.box?.let { box ->
-            parts += OverlayTessellator.selection(box, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE, devicePxPerDp)
+            parts += OverlayTessellator.selection(
+                box, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE, devicePxPerDp,
+                points = selection.spline()?.controlPoints(),
+                moveGrip = selection.moveGrip(zoom, OverlayTessellator.GRIP_ARM_PX / zoom),
+            )
             val b = OverlayTessellator.selectionBounds(box, zoom)
             bounds = bounds?.union(b) ?: b
         }

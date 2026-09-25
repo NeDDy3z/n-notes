@@ -37,7 +37,7 @@ import kotlin.math.exp
 import kotlin.math.max
 
 /** What the current gesture is doing. */
-enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE, SHAPE, BAND, LASSO, MOVE, RESIZE, ROTATE }
+enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE, SHAPE, BAND, LASSO, MOVE, RESIZE, ROTATE, POINT }
 
 /**
  * Gestures on the infinite canvas.
@@ -150,6 +150,7 @@ class InfiniteInteraction(
 
     // The live transform drag.
     private var grabHandle: HandleId? = null
+    private var grabPoint = -1
     private var moveAnchor = Pt.ZERO
     private var movedBy = Pt.ZERO
 
@@ -402,6 +403,7 @@ class InfiniteInteraction(
             CanvasPointerMode.MOVE -> extendMove(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.RESIZE -> extendResize(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.ROTATE -> extendRotate(e.getX(0).toDouble(), e.getY(0).toDouble())
+            CanvasPointerMode.POINT -> extendPoint(e.getX(0).toDouble(), e.getY(0).toDouble())
             CanvasPointerMode.IDLE -> Unit
         }
     }
@@ -424,10 +426,9 @@ class InfiniteInteraction(
             (mode == CanvasPointerMode.PINCH && pinchPanAllowed())
         // A finger tap off the selection puts it away; a tap is the only way to say so with a
         // finger, since a drag there is a pan.
-        if (mode == CanvasPointerMode.PAN && panMayDismiss &&
-            panWasTap(e.getX(0).toDouble(), e.getY(0).toDouble())
-        ) {
-            clearSelection()
+        if (mode == CanvasPointerMode.PAN && panWasTap(e.getX(0).toDouble(), e.getY(0).toDouble())) {
+            val picked = tool == Tool.SELECT && tapSelect(viewport.viewportToContent(Pt(e.getX(0).toDouble(), e.getY(0).toDouble())))
+            if (!picked && panMayDismiss) clearSelection()
         }
         panMayDismiss = false
         if (mode == CanvasPointerMode.DRAW) endDraw(e)
@@ -438,6 +439,7 @@ class InfiniteInteraction(
             CanvasPointerMode.LASSO -> endLasso()
             CanvasPointerMode.MOVE -> endMove()
             CanvasPointerMode.RESIZE, CanvasPointerMode.ROTATE -> endTransform()
+            CanvasPointerMode.POINT -> endPoint()
             else -> Unit
         }
         mode = CanvasPointerMode.IDLE
@@ -455,6 +457,7 @@ class InfiniteInteraction(
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
         if (mode == CanvasPointerMode.ERASE) endErase()
         if (mode == CanvasPointerMode.SHAPE) abandonShape()
+        if (mode == CanvasPointerMode.POINT) endPoint()
         // A cancelled drag never happened: the model was never touched, so putting the box back and
         // dropping the lift is the whole undo.
         if (mode == CanvasPointerMode.MOVE) {
@@ -599,6 +602,8 @@ class InfiniteInteraction(
         val tolerance = HANDLE_TOUCH_PX / viewport.zoom
         val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
         if (grip != null && at.distanceTo(grip) <= tolerance) return true
+        sel.moveGrip(viewport.zoom, OverlayTessellator.GRIP_ARM_PX / viewport.zoom)?.let { if (at.distanceTo(it) <= tolerance) return true }
+        if (sel.hitSplinePoint(at, tolerance) >= 0) return true
         if (sel.hitHandle(at, tolerance) != null) return true
         return sel.contains(at)
     }
@@ -631,6 +636,18 @@ class InfiniteInteraction(
             sel.beginTransform(at)
             beginLiftedTransform(sel, at)
             mode = CanvasPointerMode.ROTATE
+            return true
+        }
+        val moveGrip = sel.moveGrip(viewport.zoom, OverlayTessellator.GRIP_ARM_PX / viewport.zoom)
+        if (moveGrip != null && at.distanceTo(moveGrip) <= tolerance) {
+            beginMoveAt(sel, at)
+            return true
+        }
+        val point = sel.hitSplinePoint(at, tolerance)
+        if (point >= 0) {
+            grabPoint = point
+            sel.beginTransform()
+            mode = CanvasPointerMode.POINT
             return true
         }
         val handle = sel.hitHandle(at, tolerance)
@@ -670,6 +687,35 @@ class InfiniteInteraction(
         bandRect = Rect(at.x, at.y, 0.0, 0.0)
         mode = CanvasPointerMode.BAND
         onSelectionChanged()
+    }
+
+    /** Drag the grabbed spline control point; the model moves live, as a text box resize does. */
+    private fun extendPoint(vx: Double, vy: Double) {
+        val sel = selection() ?: return
+        sel.moveSplinePointLive(grabPoint, viewport.viewportToContent(Pt(vx, vy)))
+        onSelectionChanged()
+        requestRender()
+    }
+
+    private fun endPoint() {
+        grabPoint = -1
+        val sel = selection() ?: return
+        onCommitSelection(sel.buildCommand(movedOnly = false))
+        onSelectionChanged()
+        requestRender()
+    }
+
+    /** A finger tap with the select tool picks the item under it; a drag still pans. */
+    private fun tapSelect(at: Pt): Boolean {
+        val sel = selection() ?: return false
+        val slop = TAP_SLOP_PX / viewport.zoom
+        val hit = grabbableAt(at)
+            ?: itemsIn(Rect(at.x - slop, at.y - slop, slop * 2, slop * 2)).lastOrNull { !it.locked && it.intersectsCircle(at.x, at.y, slop) }
+            ?: return false
+        sel.select(listOf(hit))
+        onSelectionChanged()
+        requestRender()
+        return true
     }
 
     /** Start dragging the selection from [at], the tail of every press that grabs one. */

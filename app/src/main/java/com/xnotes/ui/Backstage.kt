@@ -66,6 +66,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -75,6 +76,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -83,6 +85,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -279,6 +282,8 @@ private fun BackstageContent(
     }
     val scope = rememberCoroutineScope()
     var renamingColor by remember { mutableStateOf<Rgba?>(null) }
+    var focusSync by remember { mutableStateOf(false) }
+    val pinsOpen = rememberSaveable { mutableStateOf(false) }
     // Colour names live in the notes folder, so pick up another device's edits whenever Home comes back.
     LaunchedEffect(editor.browseRoot, editor.noteOpen) { withContext(Dispatchers.IO) { editor.loadColorNames() } }
     val colors = editor.colorNames.entries.sortedBy { it.value.lowercase() }.map { it.key to it.value }
@@ -293,7 +298,7 @@ private fun BackstageContent(
     LaunchedEffect(editor.browseRoot) { editor.browseRoot?.let { r -> withContext(Dispatchers.IO) { editor.purgeExpiredTrash(r, prefs.trashDays) } } }
     // Kept while its inputs hold, so folding the sidebar never recomposes the rail or the sidebar.
     val showRecent = prefs.sidebarRecent && editor.browseRoot != null
-    val nav = remember(view, shownColors, activeColor, pins, activePin, trashCount, showRecent, recentActive, compact) {
+    val nav = remember(view, shownColors, activeColor, pins, activePin, trashCount, showRecent, recentActive, compact, prefs) {
         SidebarNav(
             view = view,
             homeSelected = view == BackstageView.HOME && activePin < 0 && activeColor == null && !recentActive,
@@ -313,6 +318,11 @@ private fun BackstageContent(
             onUnpin = { editor.unpinFolder(it.uri) },
             onOpenFile = { e -> if (compact) dismissDrawer(); calls.openFile(e.documentUri) },
             onOpenFolder = { e -> selectView(BackstageView.HOME); explorerNav = ExplorerNav(e.documentUri) },
+            onSyncSettings = { focusSync = true; selectView(BackstageView.PREFERENCES) },
+            pinsOpen = pinsOpen,
+            showFiles = prefs.sidebarFiles,
+            showSync = prefs.sidebarSync,
+            showAbout = prefs.sidebarAbout,
         )
     }
     renamingColor?.let { c -> ColorNameDialog(editor, c) { renamingColor = null } }
@@ -338,6 +348,7 @@ private fun BackstageContent(
             BackstageMain(
                 Modifier.fillMaxSize(), editor, view, compact, drawerOpen, { animateClose = true; drawerOpen = true }, { selectView(BackstageView.HOME) },
                 calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, link, { selectView(BackstageView.PREFERENCES) },
+                focusSync, { focusSync = false },
             )
             AnimatedVisibility(
                 visible = drawerOpen,
@@ -371,6 +382,7 @@ private fun BackstageContent(
                 },
                 editor, view, compact, true, { setRailed(false) }, { selectView(BackstageView.HOME) },
                 calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, link, { selectView(BackstageView.PREFERENCES) },
+                focusSync, { focusSync = false },
             )
             // Both stay composed so a fold never pays to build one; only the current one is measured and placed.
             Layout(
@@ -429,6 +441,12 @@ private class SidebarNav(
     val onUnpin: (PinnedFolder) -> Unit,
     val onOpenFile: (BrowseEntry) -> Unit,
     val onOpenFolder: (BrowseEntry) -> Unit,
+    val onSyncSettings: () -> Unit,
+    /** Whether the sidebar's Pinned group is unfolded; kept here so the phone drawer remembers it. */
+    val pinsOpen: MutableState<Boolean>,
+    val showFiles: Boolean,
+    val showSync: Boolean,
+    val showAbout: Boolean,
 )
 
 /** The full sidebar: a pane on wide screens, a slide-over drawer on phones. */
@@ -447,11 +465,27 @@ private fun BackstageSidebar(modifier: Modifier, editor: Editor, nav: SidebarNav
             }
         }
         Spacer(Modifier.height(6.dp))
-        Command(XnotesIcons.home, stringResource(R.string.home), selected = nav.homeSelected) { nav.onHome() }
-        nav.recent?.let { on -> Command(XnotesIcons.clock, stringResource(R.string.recent), selected = on) { nav.onRecent() } }
-        if (editor.browseRoot != null) RailDivider()
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            SidebarFileTree(editor, nav.onOpenFile, nav.onOpenFolder)
+            nav.recent?.let { on -> Command(XnotesIcons.clock, stringResource(R.string.recent), selected = on) { nav.onRecent() } }
+            Command(XnotesIcons.home, stringResource(R.string.home), selected = nav.homeSelected) { nav.onHome() }
+            if (nav.trashCount >= 0) {
+                Command(XnotesIcons.trash, stringResource(R.string.trash), selected = nav.view == BackstageView.TRASH, count = nav.trashCount.takeIf { it > 0 }?.toString()) {
+                    nav.onSelectView(BackstageView.TRASH)
+                }
+            }
+            if (nav.pins.isNotEmpty()) {
+                var pinsOpen by nav.pinsOpen
+                Command(XnotesIcons.pin, stringResource(R.string.pinned), folded = !pinsOpen) { pinsOpen = !pinsOpen }
+                if (pinsOpen) nav.pins.forEachIndexed { i, pin ->
+                    key(pin.uri) {
+                        PinnedCommand(pin.name, selected = i == nav.activePin, onClick = { nav.onOpenPin(pin) }, onUnpin = { nav.onUnpin(pin) })
+                    }
+                }
+            }
+            if (nav.showFiles) {
+                if (editor.browseRoot != null) RailDivider()
+                SidebarFileTree(editor, nav.onOpenFile, nav.onOpenFolder)
+            }
             if (nav.colors.isNotEmpty()) {
                 SidebarLabel(stringResource(R.string.toolbar_colours))
                 nav.colors.forEach { (color, name) ->
@@ -463,24 +497,11 @@ private fun BackstageSidebar(modifier: Modifier, editor: Editor, nav: SidebarNav
                     }
                 }
             }
-            if (nav.pins.isNotEmpty()) {
-                SidebarLabel(stringResource(R.string.pinned))
-                nav.pins.forEachIndexed { i, pin ->
-                    key(pin.uri) {
-                        PinnedCommand(pin.name, selected = i == nav.activePin, onClick = { nav.onOpenPin(pin) }, onUnpin = { nav.onUnpin(pin) })
-                    }
-                }
-            }
         }
         RailDivider()
-        if (nav.trashCount >= 0) {
-            Command(XnotesIcons.trash, stringResource(R.string.trash), selected = nav.view == BackstageView.TRASH, count = nav.trashCount.takeIf { it > 0 }?.toString()) {
-                nav.onSelectView(BackstageView.TRASH)
-            }
-        }
-        FilenSyncNowCommand()
+        if (nav.showSync) FilenSyncNowCommand(nav.onSyncSettings)
         Command(XnotesIcons.sliders, stringResource(R.string.preferences), selected = nav.view == BackstageView.PREFERENCES) { nav.onSelectView(BackstageView.PREFERENCES) }
-        Command(XnotesIcons.info, stringResource(R.string.about), selected = nav.view == BackstageView.ABOUT) { nav.onSelectView(BackstageView.ABOUT) }
+        if (nav.showAbout) Command(XnotesIcons.info, stringResource(R.string.about), selected = nav.view == BackstageView.ABOUT) { nav.onSelectView(BackstageView.ABOUT) }
         FilenSidebarStatus()
     }
 }
@@ -498,8 +519,9 @@ private fun BackstageRail(modifier: Modifier, nav: SidebarNav, onExpand: () -> U
         }
         Spacer(Modifier.height(10.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-            RailItem(XnotesIcons.home, stringResource(R.string.home), selected = nav.homeSelected) { nav.onHome() }
             nav.recent?.let { on -> RailItem(XnotesIcons.clock, stringResource(R.string.recent), selected = on) { nav.onRecent() } }
+            RailItem(XnotesIcons.home, stringResource(R.string.home), selected = nav.homeSelected) { nav.onHome() }
+            if (nav.trashCount >= 0) RailItem(XnotesIcons.trash, stringResource(R.string.trash), selected = nav.view == BackstageView.TRASH) { nav.onSelectView(BackstageView.TRASH) }
             if (nav.pins.isNotEmpty()) Spacer(Modifier.height(8.dp))
             nav.pins.forEachIndexed { i, pin ->
                 key(pin.uri) {
@@ -513,9 +535,8 @@ private fun BackstageRail(modifier: Modifier, nav: SidebarNav, onExpand: () -> U
                 }
             }
         }
-        if (nav.trashCount >= 0) RailItem(XnotesIcons.trash, stringResource(R.string.trash), selected = nav.view == BackstageView.TRASH) { nav.onSelectView(BackstageView.TRASH) }
         RailItem(XnotesIcons.sliders, stringResource(R.string.preferences), selected = nav.view == BackstageView.PREFERENCES) { nav.onSelectView(BackstageView.PREFERENCES) }
-        RailItem(XnotesIcons.info, stringResource(R.string.about), selected = nav.view == BackstageView.ABOUT) { nav.onSelectView(BackstageView.ABOUT) }
+        if (nav.showAbout) RailItem(XnotesIcons.info, stringResource(R.string.about), selected = nav.view == BackstageView.ABOUT) { nav.onSelectView(BackstageView.ABOUT) }
     }
 }
 
@@ -536,6 +557,8 @@ private fun BackstageMain(
     onImportFont: () -> Unit,
     link: ExplorerLink,
     onOpenPreferences: () -> Unit,
+    focusSync: Boolean,
+    onSyncFocused: () -> Unit,
 ) {
     val palette = LocalPalette.current
     Column(modifier) {
@@ -560,7 +583,7 @@ private fun BackstageMain(
         Box(Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
             when (view) {
                 BackstageView.HOME -> HomePane(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, link)
-                BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont)
+                BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont, focusSync, onSyncFocused)
                 BackstageView.TRASH -> TrashPane(editor, sidebarOpen, onShowSidebar, onOpenPreferences)
                 BackstageView.ABOUT -> AboutPane()
             }
@@ -570,15 +593,25 @@ private fun BackstageMain(
 
 // --- left rail ---
 
+/** A sidebar row; [folded] adds a chevron for a group that unfolds in place. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Command(icon: ImageVector, label: String, selected: Boolean = false, count: String? = null, onClick: () -> Unit) {
+private fun Command(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean = false,
+    count: String? = null,
+    folded: Boolean? = null,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val palette = LocalPalette.current
     Row(
         Modifier
             .fillMaxWidth()
             .height(48.dp)
             .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -592,6 +625,12 @@ private fun Command(icon: ImageVector, label: String, selected: Boolean = false,
             modifier = Modifier.weight(1f),
         )
         if (count != null) Text(count, color = palette.textDim.toComposeColor(), fontSize = 13.sp)
+        if (folded != null) {
+            Icon(
+                XnotesIcons.chevronDown, null, tint = palette.textDim.toComposeColor(),
+                modifier = Modifier.size(18.dp).rotate(if (folded) -90f else 0f),
+            )
+        }
     }
 }
 
@@ -2330,14 +2369,14 @@ internal fun EmptyPane(text: String, art: EmptyArt? = null, actions: (@Composabl
     }
 }
 
-/** A "Sync now" sidebar action, shown only when a Filen account is signed in; runs an immediate sync. */
+/** A "Sync now" sidebar action, shown only when a Filen account is signed in; tap syncs, long-press opens sync settings. */
 @Composable
-private fun FilenSyncNowCommand() {
+private fun FilenSyncNowCommand(onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     if (!com.xnotes.sync.filen.FilenSyncManager.isConfigured(ctx)) return
     val status by com.xnotes.sync.filen.FilenSyncManager.status.collectAsState()
     val scope = rememberCoroutineScope()
-    Command(Icons.Filled.Sync, if (status.running) "Syncing..." else "Sync now") {
+    Command(Icons.Filled.Sync, if (status.running) "Syncing..." else "Sync now", onLongClick = onOpenSettings) {
         if (!status.running) scope.launch { com.xnotes.sync.filen.FilenSyncManager.syncNow(ctx) }
     }
 }

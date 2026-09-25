@@ -78,6 +78,12 @@ interface SelectionMenuHost {
     /** Toggle the table edit overlay (add/remove columns and rows, drag interior lines). */
     fun toggleTableEditMode()
 
+    /** Control points on the lone selected spline, or 0 when the selection is not one. */
+    val selectionSplinePoints: Int
+
+    /** Add a control point to the selected spline, or remove one (it keeps at least one in the middle). */
+    fun editSelectionSpline(add: Boolean)
+
     /** True when the selection is a single image (shows the Crop action). */
     val selectionIsImage: Boolean
 
@@ -178,6 +184,19 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     enabled = styles.isNotEmpty(),
                     onClick = { overflowOpen = false; styleOpen = true },
                 )
+                var splinePoints by remember { mutableStateOf(host.selectionSplinePoints) }
+                if (splinePoints > 0) {
+                    // Left open so a few taps in a row add or strip several points.
+                    DropdownMenuItem(
+                        text = { Text("Add curve point") },
+                        onClick = { host.editSelectionSpline(add = true); splinePoints = host.selectionSplinePoints },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Remove curve point") },
+                        enabled = splinePoints > 3,
+                        onClick = { host.editSelectionSpline(add = false); splinePoints = host.selectionSplinePoints },
+                    )
+                }
                 if (host.selectionIsText) {
                     DropdownMenuItem(
                         text = { Text("Edit") },

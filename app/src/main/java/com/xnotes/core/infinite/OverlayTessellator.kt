@@ -42,13 +42,18 @@ object OverlayTessellator {
     const val DASH_ON_DP = 8.0
     const val DASH_GAP_DP = 5.0
 
-    /** The selection box, its eight handles and the rotate grip and its stem. */
+    /**
+     * The selection box, its eight handles and the rotate grip and its stem. A lone spline swaps the
+     * handles and grip for its [points]; a [moveGrip] adds the pan glyph in a disc below a small box.
+     */
     fun selection(
         box: Obb,
         zoom: Double,
         accent: Rgba,
         tolerance: Double,
         devicePxPerDp: Double = 1.0,
+        points: List<Pt>? = null,
+        moveGrip: Pt? = null,
     ): List<MeshPart> {
         if (zoom <= 0.0) return emptyList()
         val outline = MeshBuilder()
@@ -57,21 +62,34 @@ object OverlayTessellator {
 
         // The stem out to the grip, so it reads as attached rather than floating. Solid: it is a
         // join, not a boundary, and a dashed one at this length would be two ticks and a gap.
-        val arm = GRIP_ARM_PX / zoom
-        val top = com.xnotes.canvas.ResizeMath.obbTopMid(box)
-        val grip = com.xnotes.canvas.ResizeMath.obbRotateGrip(box, arm)
-        outline.polylineRibbon(listOf(top, grip), half, closed = false, tolerance = tolerance)
-
         val marks = MeshBuilder()
         val handleHalf = HANDLE_PX / zoom / 2.0
-        for (handle in com.xnotes.canvas.ResizeMath.obbHandles(box)) {
-            marks.rect(handle.content.x - handleHalf, handle.content.y - handleHalf, handleHalf * 2, handleHalf * 2)
+        if (points == null) {
+            val arm = GRIP_ARM_PX / zoom
+            val top = com.xnotes.canvas.ResizeMath.obbTopMid(box)
+            val grip = com.xnotes.canvas.ResizeMath.obbRotateGrip(box, arm)
+            outline.polylineRibbon(listOf(top, grip), half, closed = false, tolerance = tolerance)
+            for (handle in com.xnotes.canvas.ResizeMath.obbHandles(box)) {
+                marks.rect(handle.content.x - handleHalf, handle.content.y - handleHalf, handleHalf * 2, handleHalf * 2)
+            }
+            marks.circle(grip.x, grip.y, GRIP_PX / zoom / 2.0, tolerance)
+        } else {
+            for (p in points) marks.circle(p.x, p.y, handleHalf, tolerance)
         }
-        marks.circle(grip.x, grip.y, GRIP_PX / zoom / 2.0, tolerance)
 
-        val parts = ArrayList<MeshPart>(2)
+        val glyph = MeshBuilder()
+        if (moveGrip != null) {
+            val r = GRIP_PX / zoom
+            marks.circle(moveGrip.x, moveGrip.y, r * 0.8, tolerance)
+            for (run in com.xnotes.canvas.ResizeMath.moveGlyph(moveGrip, r * 0.5)) {
+                glyph.polylineRibbon(run, half, closed = false, tolerance = tolerance)
+            }
+        }
+
+        val parts = ArrayList<MeshPart>(3)
         if (!outline.isEmpty) parts.add(MeshPart(outline.build(), accent, InkPass.OPAQUE))
         if (!marks.isEmpty) parts.add(MeshPart(marks.build(), accent, InkPass.OPAQUE))
+        if (!glyph.isEmpty) parts.add(MeshPart(glyph.build(), Rgba(255, 255, 255, 255), InkPass.OPAQUE))
         return parts
     }
 

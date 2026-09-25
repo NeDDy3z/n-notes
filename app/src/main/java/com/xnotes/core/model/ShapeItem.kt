@@ -92,8 +92,7 @@ class ShapeItem(
         val b = box
         val cx = b.centerX
         val cy = b.centerY
-        val head = max(8.0, min(strokeWidth * 3.0, min(b.w, b.h) * 0.15))
-        val tick = min(head * 0.5, min(b.w, b.h) * 0.04).coerceAtLeast(3.0)
+        val (head, tick) = markSizes(min(b.w, b.h))
         val segs = ArrayList<List<Pt>>()
         segs.add(listOf(Pt(b.left, cy), Pt(b.right, cy)))            // X axis
         segs.add(listOf(Pt(cx, b.bottom), Pt(cx, b.top)))           // Y axis
@@ -112,6 +111,91 @@ class ShapeItem(
             segs.add(listOf(Pt(cx - tick, yb), Pt(cx + tick, yb)))
         }
         return segs
+    }
+
+    /** Arrowhead length and tick half-length for the axes and the number line, scaled to [extent]. */
+    private fun markSizes(extent: Double): Pair<Double, Double> {
+        val head = max(5.0, min(strokeWidth * 1.7, extent * 0.08))
+        val tick = max(strokeWidth * 0.8, min(head * 0.45, extent * 0.025))
+        return head to tick
+    }
+
+    /** A number line from [start] to [end]: the axis, an arrowhead at [end] and evenly spaced ticks. */
+    internal fun numberLineSegments(): List<List<Pt>> {
+        val len = start.distanceTo(end)
+        if (len < 1e-9) return emptyList()
+        val dir = (end - start).normalized()
+        val perp = dir.perp()
+        val (head, tick) = markSizes(len)
+        val back = end - dir * head
+        val segs = ArrayList<List<Pt>>()
+        segs.add(listOf(start, end))
+        segs.add(listOf(back + perp * (head * 0.5), end, back - perp * (head * 0.5)))
+        val n = 10
+        for (i in 1 until n) {
+            val at = start + dir * (len * i / n)
+            segs.add(listOf(at + perp * tick, at - perp * tick))
+        }
+        return segs
+    }
+
+    /** A spline's control points in content space: the stored ones, or both ends and their midpoint. */
+    fun controlPoints(): List<Pt> =
+        if (points != null) absPoints() else listOf(start, Pt((start.x + end.x) / 2.0, (start.y + end.y) / 2.0), end)
+
+    /** Replace a spline's control points, refitting the box around them. */
+    fun setControlPoints(pts: List<Pt>) {
+        val b = Rect.bounding(pts)
+        start = b.topLeft
+        end = Pt(b.right, b.bottom)
+        points = normalize(pts, b)
+    }
+
+    fun moveControlPoint(index: Int, to: Pt) {
+        val c = controlPoints().toMutableList()
+        if (index !in c.indices) return
+        c[index] = to
+        setControlPoints(c)
+    }
+
+    /** Add a control point on the curve, halfway along its longest span, so the shape stays put. */
+    fun addControlPoint() {
+        val c = controlPoints()
+        val i = (0 until c.size - 1).maxByOrNull { c[it].distanceTo(c[it + 1]) } ?: return
+        setControlPoints(c.take(i + 1) + catmullRom(c, i, 0.5) + c.drop(i + 1))
+    }
+
+    /** Drop the middle point that bends the curve least; a spline keeps at least one. */
+    fun removeControlPoint(): Boolean {
+        val c = controlPoints()
+        if (c.size <= 3) return false
+        val j = (1 until c.size - 1).minByOrNull { Geometry.distancePointToSegment(c[it], c[it - 1], c[it + 1]) } ?: return false
+        setControlPoints(c.filterIndexed { k, _ -> k != j })
+        return true
+    }
+
+    /** The smooth curve through every control point (uniform Catmull-Rom), sampled as a polyline. */
+    internal fun splinePath(): List<Pt> {
+        val c = controlPoints()
+        if (c.size < 3) return c
+        val out = ArrayList<Pt>((c.size - 1) * SPLINE_SAMPLES + 1)
+        for (i in 0 until c.size - 1) {
+            for (s in 0 until SPLINE_SAMPLES) out.add(catmullRom(c, i, s.toDouble() / SPLINE_SAMPLES))
+        }
+        out.add(c.last())
+        return out
+    }
+
+    private fun catmullRom(c: List<Pt>, i: Int, t: Double): Pt {
+        val p0 = c[max(i - 1, 0)]
+        val p1 = c[i]
+        val p2 = c[i + 1]
+        val p3 = c[min(i + 2, c.size - 1)]
+        val t2 = t * t
+        val t3 = t2 * t
+        fun f(a: Double, b: Double, cc: Double, d: Double) =
+            0.5 * (2 * b + (-a + cc) * t + (2 * a - 5 * b + 4 * cc - d) * t2 + (-a + 3 * b - 3 * cc + d) * t3)
+        return Pt(f(p0.x, p1.x, p2.x, p3.x), f(p0.y, p1.y, p2.y, p3.y))
     }
 
     internal fun ellipsePolygon(segments: Int = 48): List<Pt> {
@@ -141,7 +225,8 @@ class ShapeItem(
             ShapeKind.ELLIPSE, ShapeKind.CIRCLE -> r.fillEllipse(b.center, b.w / 2.0, b.h / 2.0, fill)
             ShapeKind.TRIANGLE -> r.fillPolygon(triangleVertices(), fill)
             ShapeKind.POLYGON -> r.fillPolygon(absPoints(), fill)
-            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE -> {}
+            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE,
+            ShapeKind.NUMBER_LINE, ShapeKind.SPLINE -> {}
         }
     }
 
@@ -156,6 +241,8 @@ class ShapeItem(
             ShapeKind.POLYGON -> r.strokePolygon(absPoints(), pen)
             ShapeKind.COORD_AXES -> axesSegments().forEach { r.strokePolyline(it, pen) }
             ShapeKind.POLYLINE, ShapeKind.CURVE -> r.strokePolyline(absPoints(), pen)
+            ShapeKind.NUMBER_LINE -> numberLineSegments().forEach { r.strokePolyline(it, pen) }
+            ShapeKind.SPLINE -> r.strokePolyline(splinePath(), pen)
         }
     }
 
@@ -213,6 +300,8 @@ class ShapeItem(
         return when (shape) {
             ShapeKind.LINE -> Rect.fromPoints(start, end).outset(pad)
             ShapeKind.ARROW -> Rect.bounding(listOf(start, end) + arrowHead()).outset(pad)
+            ShapeKind.NUMBER_LINE -> Rect.bounding(numberLineSegments().flatten().ifEmpty { listOf(start, end) }).outset(pad)
+            ShapeKind.SPLINE -> Rect.bounding(splinePath()).outset(pad)
             else -> box.outset(pad)
         }
     }
@@ -225,7 +314,7 @@ class ShapeItem(
     override fun contains(p: Pt): Boolean {
         val tol = max(strokeWidth / 2.0, HIT_TOLERANCE)
         return when (shape) {
-            ShapeKind.LINE, ShapeKind.ARROW -> Geometry.distancePointToSegment(p, start, end) <= tol
+            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.NUMBER_LINE -> Geometry.distancePointToSegment(p, start, end) <= tol
             ShapeKind.RECTANGLE -> if (fillRgba != null) box.contains(p) else nearRectOutline(p, tol)
             ShapeKind.TRIANGLE -> {
                 val v = triangleVertices()
@@ -241,6 +330,7 @@ class ShapeItem(
             }
             ShapeKind.COORD_AXES -> nearAxes(p, tol)
             ShapeKind.POLYLINE, ShapeKind.CURVE -> nearPolyOutline(absPoints(), p, tol, closed = false)
+            ShapeKind.SPLINE -> nearPolyOutline(splinePath(), p, tol, closed = false)
         }
     }
 
@@ -278,7 +368,7 @@ class ShapeItem(
         if (bounds().distanceTo(p) > radius) return false // cheap AABB reject
         val tol = radius + strokeWidth / 2.0
         return when (shape) {
-            ShapeKind.LINE, ShapeKind.ARROW -> Geometry.distancePointToSegment(p, start, end) <= tol
+            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.NUMBER_LINE -> Geometry.distancePointToSegment(p, start, end) <= tol
             ShapeKind.RECTANGLE ->
                 if (fillRgba != null && box.contains(p)) true else nearRectOutline(p, tol)
             ShapeKind.TRIANGLE -> {
@@ -295,6 +385,7 @@ class ShapeItem(
             }
             ShapeKind.COORD_AXES -> nearAxes(p, tol)
             ShapeKind.POLYLINE, ShapeKind.CURVE -> nearPolyOutline(absPoints(), p, tol, closed = false)
+            ShapeKind.SPLINE -> nearPolyOutline(splinePath(), p, tol, closed = false)
         }
     }
 
@@ -311,7 +402,7 @@ class ShapeItem(
         if (bounds().distanceTo(c) > radius) return null
         if (fillRgba != null) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
         // Axes erase as a unit (disjoint segments don't cut into single-polyline fragments cleanly).
-        if (shape == ShapeKind.COORD_AXES) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
+        if (shape == ShapeKind.COORD_AXES || shape == ShapeKind.NUMBER_LINE) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
         val verts = when (shape) {
             // The arrow clips by its shaft, like its hit tests; a cut arrow loses its head.
             ShapeKind.LINE, ShapeKind.ARROW -> listOf(start, end)
@@ -433,6 +524,10 @@ class ShapeItem(
      */
     override fun applyTransform(t: Affine) {
         strokeWidth *= t.linearScale
+        if (shape == ShapeKind.SPLINE) {
+            setControlPoints(controlPoints().map { t.apply(it) })
+            return
+        }
         // Axes stay upright: transform the two box corners and re-fit, even under a rotation (a
         // rotated coordinate grid isn't representable by the axis-aligned box, and reads oddly).
         if (shape.isEndpointShape || shape == ShapeKind.COORD_AXES || t.isAxisAligned) {
@@ -451,6 +546,7 @@ class ShapeItem(
     /** Content-space vertices of the current outline; used to bake a rotation into a vertex list. */
     private fun currentOutline(): List<Pt> = when (shape) {
         ShapeKind.POLYGON, ShapeKind.POLYLINE, ShapeKind.CURVE -> absPoints()
+        ShapeKind.SPLINE -> splinePath()
         ShapeKind.TRIANGLE -> triangleVertices()
         ShapeKind.ELLIPSE, ShapeKind.CIRCLE -> ellipsePolygon()
         else -> {
@@ -462,6 +558,7 @@ class ShapeItem(
     companion object {
         const val KIND = "shape"
         const val HIT_TOLERANCE = 6.0
+        private const val SPLINE_SAMPLES = 16
 
         /** Build a polygon/polyline from absolute [vertices], stored normalized to their box. */
         fun poly(

@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -139,6 +141,7 @@ private fun FilenSignIn(palette: com.xnotes.ui.theme.Palette, onSignedIn: (Filen
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilenSignedIn(
     editor: Editor,
@@ -169,10 +172,14 @@ private fun FilenSignedIn(
     }
 
     FilenCheckRow("Enable sync", prefs.filenSyncEnabled) { onUpdate(prefs.copy(filenSyncEnabled = it)) }
-    FilenCheckRow("Sync automatically", prefs.filenAutoSync) { onUpdate(prefs.copy(filenAutoSync = it)) }
-    FilenCheckRow("Sync on note close", prefs.filenSyncOnNoteExit) { onUpdate(prefs.copy(filenSyncOnNoteExit = it)) }
-    FilenCheckRow("Sync on app open", prefs.filenSyncOnAppOpen) { onUpdate(prefs.copy(filenSyncOnAppOpen = it)) }
     FilenCheckRow("Only on Wi-Fi", prefs.filenWifiOnly) { onUpdate(prefs.copy(filenWifiOnly = it)) }
+
+    FilenLabel("When to sync")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        CheckChip("Automatically", prefs.filenAutoSync) { onUpdate(prefs.copy(filenAutoSync = !prefs.filenAutoSync)) }
+        CheckChip("On note close", prefs.filenSyncOnNoteExit) { onUpdate(prefs.copy(filenSyncOnNoteExit = !prefs.filenSyncOnNoteExit)) }
+        CheckChip("On app open", prefs.filenSyncOnAppOpen) { onUpdate(prefs.copy(filenSyncOnAppOpen = !prefs.filenSyncOnAppOpen)) }
+    }
 
     FilenLabel("Sync direction")
     OptionDropdown(SYNC_DIRECTIONS, prefs.filenSyncDirection) { onUpdate(prefs.copy(filenSyncDirection = it)) }

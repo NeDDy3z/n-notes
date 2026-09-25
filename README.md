@@ -17,13 +17,20 @@
 n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On top of it:
 
 - **File import**: import images, txt, md, rtf, html, epub, docx, xlsx, and csv as notes.
-- **Filen cloud sync**: back up and sync notes and settings to Filen, with an on-demand Sync now action in the sidebar.
+- **Filen cloud sync**: back up and sync notes and settings to Filen, with an on-demand Sync now action in the sidebar (hold it to open the sync settings).
+- **Sidebar layout**: Recent, Home, Trash and a foldable Pinned group on top, the file tree in the middle, Sync now, Preferences and About pinned to the bottom; Files, Sync now and About can each be hidden in Preferences.
+- **Update check**: check GitHub for a newer n-notes release from the About screen.
 - **Create menu**: the new-note button is now a list to create a note, canvas, folder, or import a file.
 - **Sort button**: moved sorting out into its own dedicated button.
 - **Default page style**: set a default page style in settings, preselected when creating a note.
 - **Tables**: add a table shape and edit it (columns, rows, and per-line sizing).
 - **Image cropping**: crop a selected image with an interactive overlay.
 - **X-Y graph shape**: an x-y coordinate axes shape.
+- **X line shape**: a single number line with an arrowhead and tick marks.
+- **Curve shape**: a smooth line through movable points; add or remove points from the selection three-dots menu.
+- **Move grip**: a small selection gets a pan-icon grip to drag it by, so tiny items can be moved without hitting the resize handles.
+- **Finger tap to select**: with the select tool, a finger tap picks the item under it while a finger drag still pans.
+- **Toolbar hover hints**: hold the stylus over a toolbar button for 3 seconds to see what it does.
 - **Handwriting to text**: convert selected handwriting into an editable text box (Czech and English) from the selection three-dots menu; reopen it later with Edit in the same menu, with font, size, and colour controls docked at the bottom.
 - **Pen shape snapping toggle**: turn "snap held strokes to shapes" on or off directly from the pen settings popup.
 

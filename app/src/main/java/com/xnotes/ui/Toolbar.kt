@@ -58,6 +58,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -67,6 +70,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
@@ -82,6 +88,9 @@ import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -468,10 +477,14 @@ internal fun ToolbarIcon(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val press by animateFloatAsState(if (pressed) 0.85f else 1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium), label = "toolPress")
+    var hoverTip by remember { mutableStateOf(false) }
     Box(
-        Modifier.size(bar.button).clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
+        Modifier.size(bar.button)
+            .stylusHoverTip(contentDescription) { hoverTip = it }
+            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
+        if (hoverTip) HoverTip(contentDescription, bar.button)
         Box(
             Modifier
                 .size(bar.circle)
@@ -488,6 +501,51 @@ internal fun ToolbarIcon(
         }
     }
 }
+
+/** Reports [show] once a stylus has hovered over the element for [HOVER_TIP_MS]; a press or exit hides it again. */
+private fun Modifier.stylusHoverTip(key: Any, show: (Boolean) -> Unit): Modifier = pointerInput(key) {
+    coroutineScope {
+        var pending: Job? = null
+        awaitPointerEventScope {
+            while (true) {
+                val e = awaitPointerEvent()
+                val stylus = e.changes.any { it.type == PointerType.Stylus }
+                when (e.type) {
+                    PointerEventType.Enter, PointerEventType.Move -> if (stylus && pending == null) {
+                        pending = launch { delay(HOVER_TIP_MS); show(true) }
+                    }
+                    PointerEventType.Exit, PointerEventType.Press -> {
+                        pending?.cancel()
+                        pending = null
+                        show(false)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A small label under a toolbar button, naming what it does. */
+@Composable
+private fun HoverTip(text: String, anchor: androidx.compose.ui.unit.Dp) {
+    val palette = LocalPalette.current
+    val offsetY = with(LocalDensity.current) { (anchor + 4.dp).roundToPx() }
+    Popup(alignment = Alignment.TopCenter, offset = IntOffset(0, offsetY), properties = PopupProperties(focusable = false)) {
+        Text(
+            text,
+            color = palette.text.toComposeColor(),
+            fontSize = 12.sp,
+            maxLines = 1,
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.small)
+                .background(palette.menuBg.toComposeColor())
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+private const val HOVER_TIP_MS = 3000L
 
 /** Closes this pane of a split, leaving the other one to fill the window. Shown on both toolbars. */
 @Composable

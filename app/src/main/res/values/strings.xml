@@ -738,6 +738,7 @@
     <string name="pref_default_layout">Default layout</string>
     <string name="pref_switcher_layouts">Layouts in the switcher</string>
     <string name="pref_sidebar_sections">Sidebar sections</string>
+    <string name="sidebar_files">Files</string>
     <string name="pref_home_opens_to">Home opens to</string>
     <string name="last_folder">Last folder</string>
     <string name="recent_and_pinned">Recent &amp; pinned</string>

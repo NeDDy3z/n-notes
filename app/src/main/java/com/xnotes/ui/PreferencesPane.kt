@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -86,6 +88,7 @@ import com.xnotes.settings.MaterialColourMode
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 internal val pageColorPresets = listOf(
@@ -122,6 +125,8 @@ fun PreferencesPane(
     onBackToHome: () -> Unit,
     onImportCodeTheme: () -> Unit = {},
     onImportFont: () -> Unit = {},
+    focusSync: Boolean = false,
+    onSyncFocused: () -> Unit = {},
 ) {
     val palette = LocalPalette.current
     val focusManager = LocalFocusManager.current
@@ -141,6 +146,11 @@ fun PreferencesPane(
     LaunchedEffect(editor.prefsVersion) { prefs = editor.preferences }
 
     val scrollState = rememberScrollState()
+    var syncTop by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(focusSync, syncTop) {
+        val top = syncTop ?: return@LaunchedEffect
+        if (focusSync) { scrollState.animateScrollTo(top); onSyncFocused() }
+    }
     // Which bar the toolbar section is arranging. The two are separate layouts, so the drag state
     // below always belongs to whichever is on screen.
     var canvasTab by remember { mutableStateOf(false) }
@@ -412,7 +422,7 @@ fun PreferencesPane(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ExplorerLayout.entries.forEach { l ->
                     val on = l in prefs.switcherLayouts
-                    ExplorerChip(stringResource(l.labelRes), on, icon = if (on) XnotesIcons.check else XnotesIcons.plus) {
+                    CheckChip(stringResource(l.labelRes), on) {
                         val next = if (on) prefs.switcherLayouts - l else prefs.switcherLayouts + l
                         if (next.isNotEmpty()) updateHome(prefs.copy(switcherLayouts = ExplorerLayout.entries.filter { it in next }))
                     }
@@ -422,11 +432,14 @@ fun PreferencesPane(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 @Composable
                 fun section(label: String, on: Boolean, flip: () -> Preferences) =
-                    ExplorerChip(label, on, icon = if (on) XnotesIcons.check else XnotesIcons.plus) { updateHome(flip()) }
+                    CheckChip(label, on) { updateHome(flip()) }
                 section(stringResource(R.string.recent), prefs.sidebarRecent) { prefs.copy(sidebarRecent = !prefs.sidebarRecent) }
                 section(stringResource(R.string.pinned), prefs.sidebarPinned) { prefs.copy(sidebarPinned = !prefs.sidebarPinned) }
                 section(stringResource(R.string.toolbar_colours), prefs.sidebarColours) { prefs.copy(sidebarColours = !prefs.sidebarColours) }
                 if (prefs.trashDays != 0) section(stringResource(R.string.trash), prefs.sidebarTrash) { prefs.copy(sidebarTrash = !prefs.sidebarTrash) }
+                section(stringResource(R.string.sidebar_files), prefs.sidebarFiles) { prefs.copy(sidebarFiles = !prefs.sidebarFiles) }
+                section("Sync now", prefs.sidebarSync) { prefs.copy(sidebarSync = !prefs.sidebarSync) }
+                section(stringResource(R.string.about), prefs.sidebarAbout) { prefs.copy(sidebarAbout = !prefs.sidebarAbout) }
             }
             FieldLabel(stringResource(R.string.pref_home_opens_to))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -470,7 +483,7 @@ fun PreferencesPane(
                     }
                     var picking by remember { mutableStateOf(false) }
                     Box {
-                        ExplorerChip(stringResource(R.string.name_a_colour), false, icon = XnotesIcons.plus) { picking = true }
+                        CheckChip(stringResource(R.string.name_a_colour), false) { picking = true }
                         DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
                             ColorCodeMenuContent { c -> picking = false; if (c != null) namingColor = c }
                         }
@@ -683,7 +696,7 @@ fun PreferencesPane(
                 },
             )
             HorizontalDivider(color = palette.border.toComposeColor())
-            FilenSyncSection(editor)
+            Box(Modifier.onPlaced { syncTop = it.positionInParent().y.roundToInt() }) { FilenSyncSection(editor) }
             HorizontalDivider(color = palette.border.toComposeColor())
             UpdateSection()
             Spacer(Modifier.size(8.dp))
@@ -778,6 +791,31 @@ private fun CustomMaterialControls(prefs: Preferences, update: (Preferences) -> 
         steps = 19,
         modifier = Modifier.width(280.dp),
     )
+}
+
+/** A chip that toggles membership, marked with a check when on; padded like [Chip] so both are one height. */
+@Composable
+internal fun CheckChip(label: String, on: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    val fg = (if (on) palette.selectionForeground else palette.text).toComposeColor()
+    Row(
+        Modifier
+            .clip(MaterialTheme.shapes.small)
+            .background(if (on) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
+            .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
+            .semantics { this.selected = on }
+            .clickable(onClick = onClick)
+            .padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            if (on) XnotesIcons.check else XnotesIcons.plus, null,
+            tint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor(),
+            modifier = Modifier.size(16.dp),
+        )
+        Text(label, color = fg, fontSize = 14.sp, maxLines = 1, softWrap = false)
+    }
 }
 
 @Composable

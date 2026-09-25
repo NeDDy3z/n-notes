@@ -607,6 +607,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val tableEditing: Boolean get() = tableEditMode
     override fun toggleTableEditMode() = controller.toggleTableEditMode()
 
+    override val selectionSplinePoints: Int get() = controller.singleSelectedSpline()?.controlPoints()?.size ?: 0
+    override fun editSelectionSpline(add: Boolean) = controller.editSelectedSpline(add)
+
     // Gates the Crop action; vector (SVG) sources have no bitmap to bake, so crop is not offered.
     override val selectionIsImage: Boolean get() {
         val img = controller.singleSelectedImage() ?: return false

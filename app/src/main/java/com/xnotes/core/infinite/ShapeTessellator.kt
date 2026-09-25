@@ -48,7 +48,8 @@ object ShapeTessellator {
                 }
             }
             ShapeKind.POLYGON -> b.polygon(shape.absPoints())
-            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE -> Unit
+            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE,
+            ShapeKind.NUMBER_LINE, ShapeKind.SPLINE -> Unit
         }
         return b.build()
     }
@@ -73,8 +74,13 @@ object ShapeTessellator {
             if (head.size == 3) b.polylineRibbon(head, half, closed = false, tolerance = tolerance)
         }
         // Coordinate axes are disjoint runs (axes, arrowheads, ticks), each its own ribbon.
-        if (shape.shape == ShapeKind.COORD_AXES) {
-            for (seg in shape.axesSegments()) {
+        val marks = when (shape.shape) {
+            ShapeKind.COORD_AXES -> shape.axesSegments()
+            ShapeKind.NUMBER_LINE -> shape.numberLineSegments()
+            else -> null
+        }
+        if (marks != null) {
+            for (seg in marks) {
                 if (seg.size >= 2) b.polylineRibbon(seg, half, closed = false, tolerance = tolerance)
             }
         }
@@ -96,8 +102,9 @@ object ShapeTessellator {
             ShapeKind.TRIANGLE -> shape.triangleVertices() to true
             ShapeKind.POLYGON -> shape.absPoints() to true
             // Drawn as multiple ribbons in outlineMesh; the single-path route contributes nothing.
-            ShapeKind.COORD_AXES -> emptyList<Pt>() to false
+            ShapeKind.COORD_AXES, ShapeKind.NUMBER_LINE -> emptyList<Pt>() to false
             ShapeKind.POLYLINE, ShapeKind.CURVE -> shape.absPoints() to false
+            ShapeKind.SPLINE -> shape.splinePath() to false
         }
     }
 

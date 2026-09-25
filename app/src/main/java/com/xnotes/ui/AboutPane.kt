@@ -57,10 +57,8 @@ import kotlinx.coroutines.launch
 // n-notes: this fork. xnotes: the original project it's built on.
 private const val N_REPO_URL = "https://github.com/NeDDy3z/n-notes"
 private const val N_ISSUES_URL = "https://github.com/NeDDy3z/n-notes/issues/new"
-private const val REPO_URL = "https://github.com/shardulvs/xnotes-android"
 private const val SPONSOR_URL = "https://github.com/sponsors/shardulvs"
 private const val ISSUES_URL = "https://github.com/shardulvs/xnotes-android/issues/new"
-private const val LICENSE_URL = "https://github.com/NeDDy3z/n-notes/blob/master/LICENSE"
 private const val MIN_FILL_MS = 120L
 
 /**
@@ -119,6 +117,9 @@ fun AboutPane() {
             }
 
             Spacer(Modifier.height(28.dp))
+            Column(Modifier.fillMaxWidth()) { UpdateSection() }
+
+            Spacer(Modifier.height(28.dp))
             // The fork's own feedback channel: issues land on the n-notes repo.
             Text("Help make n-notes better", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
@@ -152,13 +153,6 @@ fun AboutPane() {
             ) {
                 Text("Enjoying n-notes? ", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                 Text("Star it on GitHub", color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("MIT License", color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(LICENSE_URL) })
-                Text("   ·   ", color = palette.textDim.toComposeColor(), fontSize = 11.sp)
-                Text("xnotes", color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(REPO_URL) })
             }
         }
     }
