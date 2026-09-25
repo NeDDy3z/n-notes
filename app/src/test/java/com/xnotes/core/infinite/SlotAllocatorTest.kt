@@ -57,6 +57,30 @@ class SlotAllocatorTest {
         assertNull(a.grownCapacity(1))
     }
 
+    @Test fun aReservationFitsTheLoadWithAnEighthToSpare() {
+        val a = SlotAllocator(100)
+        val cap = a.reservedCapacity(1000)!!
+        assertEquals(1125, cap)
+        a.grow(cap)
+        repeat(11) { assertNotNull(a.allocate(100)) }
+        assertNull(a.allocate(100))
+    }
+
+    @Test fun aReservationCountsFromTheEnd() {
+        val a = SlotAllocator(100)
+        a.allocate(80)
+        assertEquals(112, a.reservedCapacity(20))
+    }
+
+    @Test fun aReservationNeverShrinks() {
+        val a = SlotAllocator(5000)
+        assertEquals(5000, a.reservedCapacity(1000))
+    }
+
+    @Test fun aReservationPastAnIntIsRefused() {
+        assertNull(SlotAllocator(100).reservedCapacity(Int.MAX_VALUE.toLong()))
+    }
+
     @Test fun aZeroOrNegativeRequestIsRefused() {
         val a = SlotAllocator(10)
         assertNull(a.allocate(0))

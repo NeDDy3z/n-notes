@@ -172,6 +172,19 @@ class GeometryStore {
         outOfMemory = false
     }
 
+    /** Room for [vertices] and [indices] more in one step, so a bulk load does not double its way up. */
+    fun reserve(vertices: Long, indices: Long) {
+        // A reservation that cannot be had is not a failure: the puts behind it grow as they need to.
+        val vertexCap = vertexAllocator.reservedCapacity(vertices)
+        if (vertexCap != null && vertexCap > vertexAllocator.capacity) {
+            resize(vertexMirror, vertexAllocator, vertexCap, VERTEX_STRIDE)?.let { vertexMirror = it }
+        }
+        val indexCap = indexAllocator.reservedCapacity(indices)
+        if (indexCap != null && indexCap > indexAllocator.capacity) {
+            resize(indexMirror, indexAllocator, indexCap, INDEX_STRIDE)?.let { indexMirror = it }
+        }
+    }
+
     // --- GL lifecycle ---
 
     /** Called on the GL thread after a context is created; every previous name is already gone. */

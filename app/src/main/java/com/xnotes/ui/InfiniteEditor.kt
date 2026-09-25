@@ -359,7 +359,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private fun rebuildScene() {
         scene.reset()
         vectorMeshGen.clear()
-        for (item in document.items) pushItem(item)
+        scene.batch { for (item in document.items) pushItem(item) }
         scene.setOrder(document.items)
     }
 

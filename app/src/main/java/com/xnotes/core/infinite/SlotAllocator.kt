@@ -81,6 +81,13 @@ class SlotAllocator(initialCapacity: Int) {
         return if (cap > Int.MAX_VALUE) null else cap.toInt()
     }
 
+    /** Capacity for a bulk load of [count] more slots past [end], an eighth over, or null past an Int. */
+    fun reservedCapacity(count: Long): Int? {
+        val need = bump + count
+        val cap = need + need / 8
+        return if (cap > Int.MAX_VALUE) null else maxOf(capacity.toLong(), cap).toInt()
+    }
+
     /** Pull any free range that now touches the bump pointer back out of the free list. */
     private fun reclaimTail() {
         while (freeOffsets.isNotEmpty()) {
