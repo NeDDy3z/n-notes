@@ -1,0 +1,21 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.pleading",
+  "name": "Pleading paper",
+  "description": "Numbered lines down a ruled left margin, as used for court filings.",
+  "license": "MIT",
+  "tags": ["legal", "lines"],
+  "params": {
+    "lines": { "type": "integer", "default": 28, "min": 20, "max": 40, "label": "Numbered lines" }
+  },
+  "items": [
+    { "type": "vline", "x": "38mm" },
+    { "type": "vline", "x": "39mm" },
+    { "type": "vline", "x": "100% - 12mm" },
+    { "type": "group", "y": "25mm", "h": "100% - 50mm", "children": [
+      { "type": "repeat", "axis": "y", "count": "lines", "children": [
+        { "type": "text", "text": "{i + 1}", "x": "34mm", "y": "100% - 1.5mm", "align": "end", "font": "serif", "size": "3.5mm" }
+      ]}
+    ]}
+  ]
+}

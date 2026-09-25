@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -177,7 +178,7 @@ private fun DetailRow(label: String, value: String) {
 @Composable
 private fun PreviewButton(icon: ImageVector, label: String, filled: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val shape = roundedIf(palette, 22)
+    val shape = MaterialTheme.shapes.extraLarge
     val fg = when {
         !enabled -> palette.textDim.toComposeColor().copy(alpha = 0.5f)
         filled -> palette.onAccent.toComposeColor()
@@ -205,7 +206,7 @@ private fun PreviewButton(icon: ImageVector, label: String, filled: Boolean, ena
 internal fun FilePreviewDialog(b: ExplorerBody, e: BrowseEntry, where: String?, actions: PreviewActions, onDismiss: () -> Unit) {
     val palette = LocalPalette.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        val shape = roundedIf(palette, 16)
+        val shape = MaterialTheme.shapes.large
         Box(
             Modifier
                 .padding(24.dp)

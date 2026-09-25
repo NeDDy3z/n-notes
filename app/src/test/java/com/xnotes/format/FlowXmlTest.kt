@@ -173,4 +173,59 @@ class FlowXmlTest {
         }
         return names
     }
+
+    @Test
+    fun aHeadingRoundTripsItsLevel() {
+        val flow = TextFlow().apply {
+            paragraphs.add(
+                Paragraph(mutableListOf(Run("Title", CharStyle(bold = true, sizePt = 24.0))), headingLevel = 2),
+            )
+        }
+        assertTrue(String(FlowXml.write(flow)).contains("xnotes:heading=\"2\""))
+        assertEquals(2, roundTrip(flow).paragraphs.single().headingLevel)
+    }
+
+    @Test
+    fun aBodyParagraphWritesNoHeadingAttribute() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("body")))) }
+        assertFalse(String(FlowXml.write(flow)).contains("xnotes:heading"))
+        assertEquals(0, roundTrip(flow).paragraphs.single().headingLevel)
+    }
+
+    @Test
+    fun anOutOfRangeHeadingAttributeClampsOnRead() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("x")), headingLevel = 2)) }
+        val xml = String(FlowXml.write(flow)).replace("xnotes:heading=\"2\"", "xnotes:heading=\"99\"")
+        val back = TextFlow().also { FlowXml.readInto(it, xml.toByteArray()) }
+        assertEquals(6, back.paragraphs.single().headingLevel)
+    }
+
+    @Test
+    fun aFormulaSurvivesTheRoundTripAsItsLatex() {
+        val flow = TextFlow().apply {
+            paragraphs.add(
+                Paragraph(
+                    mutableListOf(
+                        Run("mass is "),
+                        Run("E=mc^2", CharStyle(math = true)),
+                        Run("."),
+                    ),
+                ),
+            )
+        }
+        val back = roundTrip(flow)
+        val runs = back.paragraphs[0].runs
+        val formula = runs.first { it.style.math }
+        assertEquals("E=mc^2", formula.text)
+        assertEquals("mass is E=mc^2.", back.plainText())
+        assertFalse(runs.first().style.math)
+        assertFalse(runs.last().style.math)
+    }
+
+    @Test
+    fun ordinaryTextWritesNoMathAttributeAtAll() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("plain")))) }
+        assertFalse("xnotes:math" in FlowXml.write(flow).decodeToString())
+    }
+
 }

@@ -1,0 +1,17 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.isometric",
+  "name": "Isometric grid",
+  "description": "Three families of lines at 30, 90 and 150 degrees, for isometric drawing.",
+  "license": "MIT",
+  "tags": ["grid", "drawing", "isometric"],
+  "params": {
+    "side": { "type": "length", "default": "8mm", "min": "4mm", "max": "25mm", "label": "Triangle side", "role": "spacing" }
+  },
+  "strokeWidth": "0.18mm",
+  "items": [
+    { "type": "hatch", "angle": 90, "period": "side * sin(60)", "extend": true },
+    { "type": "hatch", "angle": 30, "period": "side * sin(60)", "extend": true },
+    { "type": "hatch", "angle": 150, "period": "side * sin(60)", "extend": true }
+  ]
+}

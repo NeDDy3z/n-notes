@@ -160,6 +160,10 @@ object XnotesIcons {
         "m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z",
         "M14 7 17 10", "M5 6v4", "M19 14v4", "M10 2v2", "M7 8H3", "M21 16h-4", "M11 3H9",
     )
+    // Editing a table's structure, drawn as the mode itself looks: a grid with the width rail
+    // under it and the height rail beside it, each running the whole side it resizes.
+    val tableEdit = icon(rect(4.0, 4.0, 12.0, 12.0), "M4 10h12", "M10 4v12", "M20 4v12", "M4 20h12")
+
     // Two sheets, the front one rounded and clear of the viewBox edge. Duplicate is the same
     // picture plus a "+", so the pair reads as one family; bring-to-front is deliberately not a
     // third stack of squares, since three near-identical square glyphs in one bar tell you nothing.

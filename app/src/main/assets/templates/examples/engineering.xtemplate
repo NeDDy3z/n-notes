@@ -1,0 +1,23 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.engineering",
+  "name": "Engineering paper",
+  "description": "Fine squares grouped into heavier blocks, whole blocks only, centred on the sheet.",
+  "license": "MIT",
+  "tags": ["grid", "math", "engineering"],
+  "params": {
+    "minor": { "type": "length", "default": "2mm", "min": "1mm", "max": "5mm", "label": "Small square", "role": "spacing" },
+    "every": { "type": "integer", "default": 5, "min": 2, "max": 10, "label": "Squares per block" }
+  },
+  "items": [
+    { "type": "group", "inset": "10mm", "children": [
+      { "type": "repeat", "axis": "xy", "period": "minor * every", "fit": "center", "children": [
+        { "type": "group", "opacity": 0.45, "strokeWidth": "0.15mm", "children": [
+          { "type": "repeat", "axis": "y", "count": "every", "children": [ { "type": "hline" } ] },
+          { "type": "repeat", "axis": "x", "count": "every", "children": [ { "type": "vline" } ] }
+        ]},
+        { "type": "rect", "strokeWidth": "0.3mm" }
+      ]}
+    ]}
+  ]
+}

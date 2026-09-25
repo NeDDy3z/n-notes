@@ -1,0 +1,21 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.ruled",
+  "name": "Ruled with margin",
+  "description": "Horizontal lines below a header, with a margin line on the left.",
+  "license": "MIT",
+  "tags": ["lines", "writing"],
+  "params": {
+    "spacing": { "type": "length", "default": "8mm", "min": "5mm", "max": "12mm", "label": "Line spacing", "role": "spacing" },
+    "header": { "type": "length", "default": "24mm", "min": "0mm", "max": "60mm", "label": "Header height" },
+    "margin": { "type": "length", "default": "28mm", "min": "0mm", "max": "60mm", "label": "Margin width" }
+  },
+  "items": [
+    { "type": "group", "y": "header", "h": "100% - header", "children": [
+      { "type": "repeat", "axis": "y", "period": "spacing", "children": [
+        { "type": "hline", "y": 0 }
+      ]}
+    ]},
+    { "type": "vline", "x": "margin", "stroke": "accent" }
+  ]
+}

@@ -2,6 +2,7 @@ package com.xnotes.core.text
 
 import com.xnotes.core.FakeTextMeasurer
 import com.xnotes.core.pal.FontFace
+import com.xnotes.core.pal.LineMetrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -130,5 +131,72 @@ class FlowLayoutTest {
         assertEquals(1, layout.breakLines(flow, p, 60.0).size)
         FlowEditor(flow).insertText(FlowPos(0, 5), " plus much more text here")
         assertTrue(layout.breakLines(flow, p, 60.0).size > 1)
+    }
+
+    @Test
+    fun anEmptyHeadingLineStandsAsTallAsItsText() {
+        val p = para("").apply { headingLevel = 1 }
+        val line = layout.breakLines(flowWith(p), p, 200.0).single()
+        assertEquals(24.0, line.ascent, 1e-9)
+        assertEquals(31.2, line.height, 1e-9)
+    }
+
+    @Test
+    fun anEmptyBodyLineKeepsTheDefaultHeight() {
+        val p = para("")
+        assertEquals(15.6, layout.breakLines(flowWith(p), p, 200.0).single().height, 1e-9)
+    }
+
+    @Test
+    fun aHeadingDoesNotChangeHeightWhenItsFirstCharacterLands() {
+        // The caret previews at the heading size, so the empty line has to be that
+        // tall already or the caret sits high until something is typed.
+        val empty = para("").apply { headingLevel = 2 }
+        val typed = para("T", Paragraph.headingStyle(2, TextFlow.DEFAULT_SIZE_PT)).apply { headingLevel = 2 }
+        val before = layout.breakLines(flowWith(empty), empty, 200.0).single()
+        val after = layout.breakLines(flowWith(typed), typed, 200.0).single()
+        assertEquals(after.height, before.height, 1e-9)
+        assertEquals(after.ascent, before.ascent, 1e-9)
+    }
+
+    // --- the caret's pending-style preview ---
+
+    // A 12pt line against the fake measurer: ascent 12.0, descent 3.6, height 15.6.
+    private val held = LineMetrics(ascent = 12.0, descent = 3.6)
+    private val bigger = LineMetrics(ascent = 24.0, descent = 7.2)
+    private val smaller = LineMetrics(ascent = 8.0, descent = 2.4)
+
+    @Test
+    fun aTallerPendingStyleStretchesTheCaretDownTheLineItWillMake() {
+        // "/size 24" on a 12pt line: the line grows to the pending metrics, so the
+        // caret already spans them. The line top does not move, so neither does it.
+        assertEquals(100.0 to 31.2, caretPreviewSpan(100.0, held, bigger))
+    }
+
+    @Test
+    fun aShorterPendingStyleLeavesALineWithGlyphsOnItAlone() {
+        // "/size 8" beside 12pt text: that text holds the line open, so nothing about
+        // it changes. Previewing the small glyph instead dropped the caret 4.0 below
+        // the line top and it jumped back up on the first key.
+        assertEquals(10.0 to 15.6, caretPreviewSpan(10.0, held, smaller))
+    }
+
+    @Test
+    fun anEmptyLineTakesThePendingMetricsWhole() {
+        // Nothing holds a fresh line open, so it becomes exactly what is typed on it,
+        // shrinking for a smaller style as readily as it grows for a bigger one.
+        assertEquals(64.0 to 10.4, caretPreviewSpan(64.0, null, smaller))
+        assertEquals(64.0 to 31.2, caretPreviewSpan(64.0, null, bigger))
+    }
+
+    @Test
+    fun thePreviewIsTheCaretRectTheSettledLineHandsBack() {
+        // The whole point: caretRect is the line box, so the preview has to be the line
+        // box too, or the caret moves the moment the style stops being pending.
+        for (pending in listOf(smaller, held, bigger)) {
+            val grown = LineMetrics(maxOf(held.ascent, pending.ascent), maxOf(held.descent, pending.descent))
+            assertEquals(40.0 to grown.height, caretPreviewSpan(40.0, held, pending))
+            assertEquals(40.0 to pending.height, caretPreviewSpan(40.0, null, pending))
+        }
     }
 }

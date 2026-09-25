@@ -63,7 +63,6 @@ class SettingsTest {
             sidebarVisible = true,
             prefs = Preferences(
                 uiAppearance = "light",
-                accentColor = Rgba(255, 138, 30),
                 defaultPageSize = PageSize.LETTER,
                 defaultPageOrientation = Orientation.LANDSCAPE,
                 pageColor = Rgba(20, 20, 20),
@@ -183,16 +182,19 @@ class SettingsTest {
     @Test fun newNoteStyleRoundTrips() {
         val style = com.xnotes.core.model.PageStyle(
             pageColor = Rgba(255, 250, 230),
-            pattern = com.xnotes.core.model.PagePattern.GRID,
+            template = "0123456789abcdef",
             patternColor = Rgba(100, 120, 140, 80),
             spacing = 48.0,
+            accentColor = Rgba(200, 10, 10, 150),
+            params = mapOf("rows" to 7.0),
+            colors = mapOf("frame" to Rgba(1, 2, 3)),
         )
         val back = Settings.fromJson(Settings(newNoteStyle = style).toJson())
         assertEquals(style, back.newNoteStyle)
     }
 
     @Test fun newNoteStylePartialFieldsStayNull() {
-        val style = com.xnotes.core.model.PageStyle(pattern = com.xnotes.core.model.PagePattern.LINES)
+        val style = com.xnotes.core.model.PageStyle(template = com.xnotes.core.model.PagePattern.LINES.id)
         val back = Settings.fromJson(Settings(newNoteStyle = style).toJson())
         assertEquals(style, back.newNoteStyle)
         assertNull(back.newNoteStyle.pageColor)
@@ -266,42 +268,12 @@ class SettingsTest {
         assertFalse(Preferences().toJson().has("start_fullscreen"))
     }
 
-    @Test fun paletteStyleDefaultsPerMode() {
-        val p = Preferences.fromJson(JSONObject())
-        assertEquals("material", p.systemPaletteStyle)
-        assertEquals("material", p.darkPaletteStyle)
-        assertEquals("material", p.lightPaletteStyle)
-        assertEquals("classic", p.oledPaletteStyle)
-        assertEquals("material", p.paletteStyle)
-        assertEquals("classic", p.copy(uiAppearance = "oled").paletteStyle)
-    }
-
-    @Test fun paletteStyleRoundTrips() {
-        val back = Preferences.fromJson(
-            Preferences(
-                systemPaletteStyle = "classic",
-                darkPaletteStyle = "classic",
-                lightPaletteStyle = "classic",
-                oledPaletteStyle = "material",
-            ).toJson(),
-        )
-        assertEquals("classic", back.systemPaletteStyle)
-        assertEquals("classic", back.darkPaletteStyle)
-        assertEquals("classic", back.lightPaletteStyle)
-        assertEquals("material", back.oledPaletteStyle)
-    }
-
-    @Test fun paletteStyleMalformedFallsBackPerMode() {
-        val o = JSONObject()
-            .put("system_palette_style", "neon")
-            .put("dark_palette_style", "neon")
-            .put("light_palette_style", "neon")
-            .put("oled_palette_style", "neon")
-        val p = Preferences.fromJson(o)
-        assertEquals("material", p.systemPaletteStyle)
-        assertEquals("material", p.darkPaletteStyle)
-        assertEquals("material", p.lightPaletteStyle)
-        assertEquals("classic", p.oledPaletteStyle)
+    @Test fun classicPaletteKeysAreDroppedOnLoad() {
+        val o = JSONObject().put("accent_color", "#ff8a1e").put("oled_palette_style", "classic").put("dark_palette_style", "classic")
+        val json = Preferences.fromJson(o).toJson()
+        for (key in listOf("accent_color", "system_palette_style", "dark_palette_style", "light_palette_style", "oled_palette_style")) {
+            assertFalse(key, json.has(key))
+        }
     }
 
     @Test fun materialDefaultsUseSystemWithFirstPresetsReady() {
@@ -390,8 +362,8 @@ class SettingsTest {
         assertEquals(Rgba(13, 14, 15), backToDual.materialSingleSeed)
     }
 
-    @Test fun firstSingleToneDoesNotInheritDualToneOrClassicAccent() {
-        val dual = Preferences(accentColor = Rgba(1, 2, 3), materialMode = MaterialColourMode.DUAL,
+    @Test fun firstSingleToneDoesNotInheritDualTone() {
+        val dual = Preferences(materialMode = MaterialColourMode.DUAL,
             materialDualSeed = Rgba(4, 5, 6), materialSurfaceSeed = Rgba(7, 8, 9))
         val single = Preferences.fromJson(dual.copy(materialMode = MaterialColourMode.SINGLE).toJson())
         assertEquals(Preferences.DEFAULT_MATERIAL_SINGLE, single.materialSingleSeed)
@@ -406,11 +378,39 @@ class SettingsTest {
                     materialDualSeed = Rgba(0, 128, 0), materialSurfaceSeed = Rgba(0, 0, 128), materialStyle = style)
                 assertEquals(p, Preferences.fromJson(p.toJson()))
                 for (appearance in listOf("light", "dark", "oled", "system")) {
-                    val changed = p.copy(uiAppearance = appearance).withPaletteStyle("classic")
+                    val changed = p.copy(uiAppearance = appearance)
                     assertEquals(changed, Preferences.fromJson(changed.toJson()))
                 }
             }
         }
+    }
+
+    @Test fun materialContrastRoundTripsAndRejectsOutOfRange() {
+        for (level in listOf(-1.0, -0.3, 0.5, 1.0)) {
+            val p = Preferences(materialContrast = level)
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
+        assertEquals(0.0, Preferences.fromJson(JSONObject().put("material_contrast", 1.5)).materialContrast, 0.0)
+    }
+
+    @Test fun cornerStyleRoundTripsAndDefaultsToRounded() {
+        for (style in CornerStyle.entries) {
+            val p = Preferences(cornerStyle = style)
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
+        assertEquals(CornerStyle.ROUNDED, Preferences.fromJson(JSONObject().put("corner_style", "blobby")).cornerStyle)
+    }
+
+    @Test fun toolbarLookRoundTripsAndDefaults() {
+        for (size in ToolbarSize.entries) for (position in ToolbarPosition.entries) for (floating in listOf(false, true)) {
+            val p = Preferences(toolbarLook = ToolbarLook(position, size, floating))
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
+        val junk = JSONObject().put("toolbar_size", "huge").put("toolbar_position", "middle")
+        assertEquals(ToolbarLook(), Preferences.fromJson(junk).toolbarLook)
+        assertFalse(Preferences().toJson().has("toolbar_size"))
+        assertFalse(Preferences().toJson().has("toolbar_position"))
+        assertFalse(Preferences().toJson().has("toolbar_floating"))
     }
 
     @Test fun defaultPresetsRoundTripInEveryMode() {
@@ -420,21 +420,30 @@ class SettingsTest {
         }
     }
 
-    @Test fun withPaletteStyleTouchesOnlyTheActiveMode() {
-        val p = Preferences(
-            uiAppearance = "oled",
-            systemPaletteStyle = "classic",
-            darkPaletteStyle = "classic",
-            lightPaletteStyle = "classic",
-        ).withPaletteStyle("material")
-        assertEquals("material", p.oledPaletteStyle)
-        assertEquals("classic", p.systemPaletteStyle)
-        assertEquals("classic", p.darkPaletteStyle)
-        assertEquals("classic", p.lightPaletteStyle)
-    }
-
     @Test fun startFullscreenRoundTrips() {
         assertEquals(false, Preferences.fromJson(Preferences(startFullscreen = false).toJson()).startFullscreen)
         assertEquals(true, Preferences.fromJson(Preferences(startFullscreen = true).toJson()).startFullscreen)
     }
+
+    @Test fun markdownInputDefaultsOnAndRoundTrips() {
+        assertTrue(Preferences().markdownInput)
+        assertTrue(Settings.fromJson(JSONObject()).prefs.markdownInput)
+        val off = Settings(prefs = Preferences(markdownInput = false))
+        assertFalse(Settings.fromJson(off.toJson()).prefs.markdownInput)
+    }
+
+    @Test fun slashCommandsDefaultsOnAndRoundTrips() {
+        assertTrue(Preferences().slashCommands)
+        assertTrue(Settings.fromJson(JSONObject()).prefs.slashCommands)
+        val off = Settings(prefs = Preferences(slashCommands = false))
+        assertFalse(Settings.fromJson(off.toJson()).prefs.slashCommands)
+    }
+
+    @Test fun theTwoTypingPreferencesAreIndependent() {
+        val s = Settings(prefs = Preferences(markdownInput = false, slashCommands = true))
+        val back = Settings.fromJson(s.toJson()).prefs
+        assertFalse(back.markdownInput)
+        assertTrue(back.slashCommands)
+    }
+
 }

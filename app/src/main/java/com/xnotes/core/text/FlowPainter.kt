@@ -19,6 +19,11 @@ object FlowPainter {
 
     fun paintPage(r: Renderer, frame: FlowFrame, pageIndex: Int, region: Rect) {
         val page = frame.pages.getOrNull(pageIndex) ?: return
+        for (table in page.tables) {
+            if (table.bottom < region.top || table.top > region.bottom) continue
+            paintTableFills(r, table)
+            paintTableRules(r, table)
+        }
         paintCodeChips(r, frame, page.lines, region)
         for (line in page.lines) {
             if (line.bottom < region.top || line.top > region.bottom) continue
@@ -57,6 +62,53 @@ object FlowPainter {
         }
     }
 
+    /** Header row and banded rows (bands count from the first body row). */
+    private fun paintTableFills(r: Renderer, t: TableFrag) {
+        val header = t.headerFill != null
+        for (row in t.rows) {
+            val body = row.row - if (header) 1 else 0
+            val fill = when {
+                header && row.row == 0 -> t.headerFill
+                body >= 0 && body % 2 == 1 -> t.bandFill
+                else -> null
+            } ?: continue
+            r.fillRect(Rect(t.left, row.top, t.right - t.left, row.bottom - row.top), fill)
+        }
+    }
+
+    /**
+     * Rules as filled rects centred on the grid edges. Horizontals run the full
+     * width; verticals stop short of them, so a translucent rule never doubles up
+     * at a crossing.
+     */
+    private fun paintTableRules(r: Renderer, t: TableFrag) {
+        if (t.borders == TableBorders.NONE) return
+        val w = t.lineWidth
+        val half = w / 2.0
+        fun h(y: Double) = r.fillRect(Rect(t.left - half, y - half, t.right - t.left + w, w), t.lineColor)
+        fun v(x: Double) {
+            var y = t.top + half
+            for (row in t.rows) {
+                val end = row.bottom - half
+                if (end > y) r.fillRect(Rect(x - half, y, w, end - y), t.lineColor)
+                y = row.bottom + half
+            }
+        }
+        h(t.top)
+        when (t.borders) {
+            TableBorders.OUTER -> {
+                h(t.bottom)
+                v(t.left)
+                v(t.right)
+            }
+            TableBorders.HORIZONTAL -> for (row in t.rows) h(row.bottom)
+            else -> {
+                for (row in t.rows) h(row.bottom)
+                for (x in t.colXs) v(x)
+            }
+        }
+    }
+
     private fun paintLine(r: Renderer, frame: FlowFrame, line: PlacedLine) {
         for (deco in line.decos) {
             deco.style.highlight?.let {
@@ -68,10 +120,23 @@ object FlowPainter {
                     frame.codeBg ?: CHIP_BG,
                 )
             }
+            // A formula showing its LaTeX: the chip is the only thing telling the
+            // user this is an equation opened up rather than text that lost it.
+            deco.math?.let {
+                r.fillRect(
+                    Rect(deco.x0 - CHIP_PAD, line.top, deco.x1 - deco.x0 + 2 * CHIP_PAD, line.height),
+                    if (it == MathShow.ERROR) MATH_ERROR_BG else MATH_BG,
+                )
+            }
         }
         line.marker?.let { paintMarker(r, frame, line, it) }
         for (seg in line.segs) {
-            r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, inkColor(seg.style, frame))
+            val color = inkColor(seg.style, frame)
+            if (seg.math) {
+                r.drawMath(seg.text, seg.x, line.baseline, seg.font.pointSize, color, seg.style.mathDisplay)
+                continue
+            }
+            r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, color)
         }
         val ascent = line.baseline - line.top
         val descent = line.bottom - line.baseline
@@ -84,6 +149,14 @@ object FlowPainter {
             }
             if (deco.style.strike) {
                 r.fillRect(Rect(deco.x0, line.baseline - ascent * 0.30, deco.x1 - deco.x0, thickness), color)
+            }
+            // LaTeX that would not set is ruled underneath, so a broken formula
+            // reads as broken from across the page and not only by its tint.
+            if (deco.math == MathShow.ERROR) {
+                r.fillRect(
+                    Rect(deco.x0 - CHIP_PAD, line.bottom - thickness, deco.x1 - deco.x0 + 2 * CHIP_PAD, thickness),
+                    MATH_ERROR_RULE,
+                )
             }
         }
     }
@@ -122,6 +195,16 @@ object FlowPainter {
 
     /** Hyperlink ink: an azure that reads on both light and dark paper. */
     val LINK_COLOR = Rgba(90, 156, 255, 255)
+
+    /**
+     * Chips behind a formula showing its source. Both are translucent tints so
+     * they sit on light and dark paper alike, and the cool one is deliberately
+     * not the code grey: opening an equation is a different thing from a code
+     * span, and the warm one says the LaTeX is broken rather than merely open.
+     */
+    val MATH_BG = Rgba(88, 140, 216, 44)
+    val MATH_ERROR_BG = Rgba(214, 74, 68, 52)
+    val MATH_ERROR_RULE = Rgba(214, 74, 68, 190)
 
     const val CODE_PAD = 6.0
     const val CHIP_PAD = 3.0

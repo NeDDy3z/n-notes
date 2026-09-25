@@ -1,5 +1,7 @@
 package com.xnotes.ui.theme
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.xnotes.core.model.Rgba
 import com.xnotes.settings.MaterialStyle
 import org.junit.Assert.assertEquals
@@ -13,6 +15,8 @@ import kotlin.math.pow
 class MaterialSchemeTest {
     private val seeds = listOf(0x800000, 0xf2b8b5, 0xff5733, 0x00e676, 0x0000ff, 0xffff00, 0x000000, 0xffffff, 0x808080)
     private fun rgb(value: Int) = Rgba.fromArgb(value or (0xff shl 24))
+
+    private fun rgba(c: Color) = Rgba.fromArgb(c.toArgb())
 
     private fun luminance(c: Rgba): Double {
         fun linear(v: Int): Double = (v / 255.0).let { if (it <= 0.04045) it / 12.92 else ((it + 0.055) / 1.055).pow(2.4) }
@@ -72,8 +76,21 @@ class MaterialSchemeTest {
         assertEquals(m.error.toComposeColor(), scheme.error)
         assertEquals(m.onError.toComposeColor(), scheme.onError)
         assertEquals(m.primaryFixed.toComposeColor(), scheme.primaryFixed)
+        assertEquals(m.outline.toComposeColor(), scheme.outline)
         assertEquals(p.menuBg.toComposeColor(), scheme.surface)
         assertEquals(rgb(0).toComposeColor(), scheme.background)
+    }
+
+    // An off switch is an outline-coloured thumb and ring on a surfaceContainerHighest track, so
+    // those two roles have to stay apart or the control reads as a blank bar. palette.border is the
+    // muted hairline and lands within 1.03 of the track; the scheme's own outline clears 3.4.
+    @Test fun offSwitchThumbStaysVisibleAgainstItsTrack() {
+        for (seed in seeds) for (style in MaterialStyle.entries) for (appearance in listOf("light", "dark", "oled")) {
+            val m = MaterialColors.seeded(rgb(seed), appearance != "light", style)
+            val scheme = Palette.material(appearance, m).composeColorScheme()
+            val ratio = contrast(rgba(scheme.outline), rgba(scheme.surfaceContainerHighest))
+            assertTrue("$seed $style $appearance thumb $ratio", ratio >= 3.0)
+        }
     }
 
     @Test fun grayscaleIgnoresSeedAndDoesNotRegainHsvTint() {
@@ -81,7 +98,7 @@ class MaterialSchemeTest {
         val b = MaterialColors.seeded(rgb(0x0000ff), true, MaterialStyle.MONOCHROME)
         assertEquals(a, b)
         val p = Palette.material("dark", a)
-        for (color in listOf(p.accent, p.accentDim, p.selectionBackground, p.selectionForeground, p.paper)) {
+        for (color in listOf(p.accent, p.selectionBackground, p.selectionForeground, p.paper)) {
             assertEquals(color.r, color.g)
             assertEquals(color.g, color.b)
         }
@@ -101,6 +118,25 @@ class MaterialSchemeTest {
                 assertEquals(color.r, color.g)
                 assertEquals(color.g, color.b)
             }
+        }
+    }
+
+    @Test fun contrastLevelWidensTextOnSurface() {
+        for (style in MaterialStyle.entries) for (dark in listOf(false, true)) for (seed in seeds) {
+            val ratio = listOf(-1.0, 0.0, 1.0).map {
+                val m = MaterialColors.seeded(rgb(seed), dark, style, contrast = it)
+                contrast(m.onSurfaceVariant, m.surface)
+            }
+            assertTrue("$style dark=$dark seed=${seed.toString(16)} $ratio", ratio[0] <= ratio[1] && ratio[1] < ratio[2])
+        }
+    }
+
+    @Test fun greySurfaceSeedKeepsSurfacesUntinted() {
+        fun neutral(c: Rgba) = c.r == c.g && c.g == c.b
+        for (style in MaterialStyle.entries) for (dark in listOf(false, true)) for (grey in listOf(0x000000, 0x303030, 0x808080, 0xffffff)) {
+            val m = MaterialColors.seeded(rgb(0x2196f3), dark, style, rgb(grey))
+            val roles = listOf(m.background, m.surface, m.surfaceContainer, m.surfaceContainerHighest, m.onSurface, m.surfaceVariant, m.outline)
+            assertTrue("$style dark=$dark grey=${grey.toString(16)} $roles", roles.all(::neutral))
         }
     }
 

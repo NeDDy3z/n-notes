@@ -40,6 +40,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -282,8 +283,9 @@ internal fun ColumnsBody(
                                 items(shown.orEmpty(), key = { it.documentUri }) { e ->
                                     val onPath = e.isDir && next != null && b.editor.browseDocId(e.documentUri) == next
                                     val on = !e.isDir && picked?.documentUri == e.documentUri
+                                    val sel = on || b.host.isSelected(e)
                                     val code = b.colorOf(e)?.let { codeTint(it, palette) }
-                                    val shape = roundedIf(palette, 6)
+                                    val shape = MaterialTheme.shapes.small
                                     Row(
                                         Modifier
                                             .fillMaxWidth()
@@ -291,7 +293,7 @@ internal fun ColumnsBody(
                                             .clip(shape)
                                             .background(
                                                 when {
-                                                    on || b.host.isSelected(e) -> palette.accentAlpha(56).toComposeColor()
+                                                    sel -> palette.selectionBackground.toComposeColor()
                                                     onPath -> palette.surfaceHi.toComposeColor()
                                                     else -> Color.Transparent
                                                 },
@@ -306,10 +308,10 @@ internal fun ColumnsBody(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     ) {
-                                        val fg = (if (on) palette.accent else palette.text).toComposeColor()
+                                        val fg = (if (sel) palette.selectionForeground else palette.text).toComposeColor()
                                         Icon(
                                             kindIcon(b.kind(e)), null,
-                                            tint = if (on) fg else (code ?: palette.textDim.toComposeColor()),
+                                            tint = if (sel) fg else (code ?: palette.textDim.toComposeColor()),
                                             modifier = Modifier.size(18.dp),
                                         )
                                         Text(b.label(e), color = fg, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

@@ -98,6 +98,8 @@ class InfiniteInteraction(
      * release the locked item it landed on, which arrives as the third argument.
      */
     private val onContextMenu: (Pt, Pt, CanvasItem?) -> Unit = { _, _, _ -> },
+    /** Whether copied items or a clipboard image are waiting, so empty canvas has a menu to offer. */
+    private val hasPasteContent: () -> Boolean = { false },
     /** A tool this layer armed by itself, so the chrome can follow: a long-press grab and its end. */
     private val onToolChanged: (Tool) -> Unit = {},
 ) {
@@ -314,6 +316,8 @@ class InfiniteInteraction(
         // stands whatever tool is armed, since no tool can do anything else with one.
         longPressLocked = hit?.takeIf { it.locked }
         if (hit != null && longPressLocked == null && !grabbable) return
+        // Like the paged canvas, empty space only pops the menu when there is something to paste.
+        if (hit == null && !hasPasteContent()) return
         longPressCandidate = hit?.takeUnless { it.locked }
         longPressAt = at
         val r = Runnable { triggerLongPress() }

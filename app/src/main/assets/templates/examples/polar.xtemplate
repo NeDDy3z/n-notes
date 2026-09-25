@@ -1,0 +1,25 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.polar",
+  "name": "Polar grid",
+  "description": "Concentric rings and radial spokes around the centre of the page; every fifth ring and third spoke is darker.",
+  "license": "MIT",
+  "tags": ["math", "grid"],
+  "params": {
+    "ring": { "type": "length", "default": "8mm", "min": "3mm", "max": "25mm", "label": "Ring spacing", "role": "spacing" },
+    "spokes": { "type": "integer", "default": 24, "min": 4, "max": 72, "label": "Spokes" }
+  },
+  "strokeWidth": "0.2mm",
+  "items": [
+    { "type": "group", "inset": "10mm", "children": [
+      { "type": "repeat", "axis": "none", "count": "floor(min(W, H) / 2 / ring)", "children": [
+        { "type": "circle", "cx": "50%", "cy": "50%", "r": "ring * (i + 1)", "opacity": "1 - 0.55 * min(1, mod(i + 1, 5))" }
+      ]},
+      { "type": "repeat", "axis": "none", "count": "spokes", "children": [
+        { "type": "line", "x1": "50%", "y1": "50%", "opacity": "1 - 0.55 * min(1, mod(i, 3))",
+          "x2": "50% + ring * floor(min(W, H) / 2 / ring) * cos(i * 360 / spokes)",
+          "y2": "50% - ring * floor(min(W, H) / 2 / ring) * sin(i * 360 / spokes)" }
+      ]}
+    ]}
+  ]
+}

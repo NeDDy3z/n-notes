@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +54,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -215,13 +213,13 @@ private fun PageThumb(
             bitmap?.let { Image(it, contentDescription = stringResource(R.string.page_n, index + 1), modifier = Modifier.fillMaxSize()) }
 
             if (selected) {
-                Box(Modifier.matchParentSize().background(palette.accent.toComposeColor().copy(alpha = 0.18f)))
+                Box(Modifier.matchParentSize().background(palette.selectionBackground.withAlpha(77).toComposeColor()))
                 Box(
                     Modifier.align(Alignment.TopStart).padding(4.dp).size(20.dp)
                         .clip(CircleShape).background(palette.accent.toComposeColor()),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(XnotesIcons.check, stringResource(R.string.selected), tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(13.dp))
+                    Icon(XnotesIcons.check, stringResource(R.string.selected), tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(13.dp))
                 }
             } else if (!selecting) {
                 // Three-dot menu, on a faint scrim so it reads over any thumbnail.
@@ -242,7 +240,6 @@ private fun PageThumb(
             "%02d".format(index + 1),
             color = (if (current || selected) palette.accent else palette.textDim).toComposeColor(),
             fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
         )
     }
 }
@@ -311,7 +308,7 @@ private fun PageSelectionBar(
         IconButton(onClick = { editor.clearPageSelection() }) {
             Icon(XnotesIcons.close, stringResource(R.string.clear_selection), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp))
         }
-        Text("${editor.pageSelectionCount}", color = palette.text.toComposeColor(), fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+        Text("${editor.pageSelectionCount}", color = palette.text.toComposeColor(), fontSize = 13.sp)
         Spacer(Modifier.weight(1f))
         BarAction(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyPages(editor.selectedPageIndices()) }
         BarAction(XnotesIcons.cut, stringResource(R.string.cut)) { editor.cutPages(editor.selectedPageIndices()) }
@@ -524,7 +521,6 @@ private fun BookmarksTab(editor: Editor) {
                 TextButton(onClick = { editor.addBookmark(label.ifBlank { defaultLabel }); showAdd = false }) { Text(stringResource(R.string.add)) }
             },
             dismissButton = { TextButton(onClick = { showAdd = false }) { Text(stringResource(R.string.cancel)) } },
-            containerColor = palette.menuBg.toComposeColor(),
         )
     }
 }

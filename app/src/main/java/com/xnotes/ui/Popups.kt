@@ -17,14 +17,15 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,12 +33,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
@@ -49,6 +54,7 @@ import com.xnotes.canvas.ViewingMode
 import com.xnotes.core.model.PageEdge
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
@@ -121,7 +127,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(tool.labelRes).uppercase())
+            PopupTitle(stringResource(tool.labelRes))
             // COLOUR override: "Default" follows the toolbar's active ink colour; pick a hue to pin
             // this tool to it regardless of the toolbar selection.
             StyleCaption(stringResource(R.string.caption_colour))
@@ -190,19 +196,21 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
 }
 
 /**
- * Page-styles popup (spec 10): two tabs — "All Pages" (the document-wide override) and "Current
- * Page" — each editing the same controls: paper colour, a ruling (None/Lines/Dots/Grid), its spacing
- * and colour. Every control is tri-state: "Default" leaves the field unset so it inherits the level
- * below (page → document → the global page-colour preference / a built-in default); the global
- * default itself is unchanged here (it lives in Preferences). Like [ToolConfigPopup], the popup holds
- * the edited style locally and pushes each change to the [Editor] (which persists, but never undoes).
- * The All Pages tab also offers making its style the default stamped onto new notes, plus a Reset
- * back to all-Default.
+ * Page-styles popup (spec 10): two tabs, "All Pages" (the document-wide override) and "Current
+ * Page", each editing the paper colour and the template. Controls are tri-state: "Default"
+ * leaves the field unset so it inherits the level below (page, document, then the global
+ * page-colour preference or a built-in default). The All Pages template has no "Default", since
+ * nothing sits below it but None. Customize opens the shown template on a page of its
+ * own, with its colours and parameters. Like [ToolConfigPopup], the popup holds the edited style
+ * locally and pushes each change to the [Editor] (which persists, but never undoes). The All Pages
+ * tab also offers making its style the default stamped onto new notes, plus a Reset back to
+ * all-Default.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
+fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: () -> Unit) {
     var tab by remember { mutableStateOf(0) } // 0 = All Pages, 1 = Current Page
+    var customizing by remember { mutableStateOf(false) }
     var docStyle by remember { mutableStateOf(editor.documentStyle) }
     var pageStyle by remember { mutableStateOf(editor.currentPageStyle) }
     val style = if (tab == 0) docStyle else pageStyle
@@ -217,8 +225,18 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
         } else { pageStyle = next; editor.setCurrentPageStyle(next) }
     }
 
+    // What this level shows with no template of its own: the document's, on the page tab.
+    val inherited = if (tab == 0) PageTemplates.NONE else docStyle.template ?: PageTemplates.NONE
+    val shownKey = style.template ?: inherited
+    val shown = if (shownKey == PageTemplates.NONE) null else editor.templateFor(shownKey)
+    // The level below whose parameters show through, when they belong to the shown template.
+    val lower = docStyle.takeIf { tab == 1 && (it.template == null || PageTemplates.compatible(it.template, shownKey)) }
+    val look = TemplateLook.of(style, if (tab == 1) docStyle else null, LocalPalette.current.paper)
+
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+        if (customizing && shown != null) {
+            TemplateCustomizer(editor, shown, shownKey, tab, style, lower, look, ::apply) { customizing = false }
+        } else Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_styles))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ModeChip(stringResource(R.string.all_pages), tab == 0) { tab = 0 }
@@ -226,7 +244,64 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(12.dp))
-            PageStyleControls(style, inheritFrom = if (tab == 1) docStyle else null) { apply(it) }
+            StyleCaption(stringResource(R.string.caption_page_colour))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                ModeChip(stringResource(R.string.default_choice), style.pageColor == null) { apply(style.copy(pageColor = null)) }
+                pageColorPresets.forEach { c ->
+                    ColorDot(c.toComposeColor(), style.pageColor == c) { apply(style.copy(pageColor = c)) }
+                }
+                ColorPickerDot(
+                    style.pageColor,
+                    custom = style.pageColor != null && style.pageColor !in pageColorPresets,
+                    onPick = { apply(style.copy(pageColor = it)) },
+                    dismissOnPick = false,
+                ) { d, p -> PageColorGridPopup(style.pageColor, d, p) }
+            }
+
+            Spacer(Modifier.size(12.dp))
+            StyleCaption(stringResource(R.string.caption_template))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // With nothing below All Pages, an unset template there already means None.
+                if (tab == 1) ModeChip(stringResource(R.string.default_choice), style.template == null) { apply(style.withTemplate(null, inherited)) }
+                val none = style.template == PageTemplates.NONE || (tab == 0 && style.template == null)
+                ModeChip(stringResource(R.string.none), none) { apply(style.withTemplate(PageTemplates.NONE, inherited)) }
+            }
+            Spacer(Modifier.size(6.dp))
+            val libraryVersion = TemplateLibraryUi.version
+            val choices = remember(libraryVersion, tab) { editor.templateChoices() }
+            TemplateStrip(
+                entries = choices,
+                selected = style.template,
+                pageMm = editor.currentPageMm,
+                ink = look.ink,
+                accent = look.accent,
+                paper = look.paper,
+                onSelect = { apply(style.withTemplate(it, inherited)) },
+                onImport = onImportTemplate,
+                onRemove = { editor.removeTemplate(it) },
+                onKeep = { editor.keepNoteTemplate(it) },
+            )
+            if (shown != null) {
+                Spacer(Modifier.size(6.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        shown.name,
+                        color = LocalPalette.current.text.toComposeColor(),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    )
+                    ModeChip(stringResource(R.string.customize), false) { customizing = true }
+                }
+            }
 
             if (tab == 0) {
                 Spacer(Modifier.size(8.dp))
@@ -242,7 +317,6 @@ fun StylesPopup(editor: Editor, onDismiss: () -> Unit) {
                         Text(
                             stringResource(R.string.default_for_new_notes),
                             color = LocalPalette.current.text.toComposeColor(),
-                            fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
                         )
                     }
@@ -288,11 +362,11 @@ fun PageStyleControls(style: PageStyle, inheritFrom: PageStyle?, onChange: (Page
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        ModeChip(stringResource(R.string.default_choice), style.pattern == null) { onChange(style.copy(pattern = null)) }
-        ModeChip(stringResource(R.string.none), style.pattern == PagePattern.NONE) { onChange(style.copy(pattern = PagePattern.NONE)) }
-        ModeChip(stringResource(R.string.pattern_lines), style.pattern == PagePattern.LINES) { onChange(style.copy(pattern = PagePattern.LINES)) }
-        ModeChip(stringResource(R.string.pattern_dots), style.pattern == PagePattern.DOTS) { onChange(style.copy(pattern = PagePattern.DOTS)) }
-        ModeChip(stringResource(R.string.pattern_grid), style.pattern == PagePattern.GRID) { onChange(style.copy(pattern = PagePattern.GRID)) }
+        ModeChip(stringResource(R.string.default_choice), style.template == null) { onChange(style.withTemplate(null, PageTemplates.NONE)) }
+        ModeChip(stringResource(R.string.none), style.template == PageTemplates.NONE) { onChange(style.withTemplate(PageTemplates.NONE, PageTemplates.NONE)) }
+        ModeChip(stringResource(R.string.pattern_lines), style.template == PagePattern.LINES.id) { onChange(style.withTemplate(PagePattern.LINES.id, PageTemplates.NONE)) }
+        ModeChip(stringResource(R.string.pattern_dots), style.template == PagePattern.DOTS.id) { onChange(style.withTemplate(PagePattern.DOTS.id, PageTemplates.NONE)) }
+        ModeChip(stringResource(R.string.pattern_grid), style.template == PagePattern.GRID.id) { onChange(style.withTemplate(PagePattern.GRID.id, PageTemplates.NONE)) }
     }
 
     Spacer(Modifier.size(12.dp))
@@ -332,6 +406,109 @@ fun PageStyleControls(style: PageStyle, inheritFrom: PageStyle?, onChange: (Page
         },
         valueRange = 0f..100f,
     )
+}
+
+/**
+ * The Styles popup's second page: [t] (keyed [key]) on a style level ([tab] as in [StylesPopup]),
+ * with a live preview, its pattern and accent colours, and every parameter it declares. Reset
+ * clears just these, keeping the level's template and paper colour.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TemplateCustomizer(
+    editor: Editor,
+    t: com.xnotes.core.template.Template,
+    key: String,
+    tab: Int,
+    style: PageStyle,
+    lower: PageStyle?,
+    look: TemplateLook,
+    apply: (PageStyle) -> Unit,
+    onBack: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    val dpi = editor.documentDpi
+    Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Text(
+            stringResource(R.string.back_customize),
+            color = palette.accent.toComposeColor(),
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onBack).padding(vertical = 4.dp),
+        )
+        Text(
+            t.name,
+            color = palette.text.toComposeColor(),
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        StyleCaption(stringResource(if (tab == 0) R.string.all_pages else R.string.current_page))
+        t.description?.let {
+            Spacer(Modifier.size(4.dp))
+            Text(it, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+        }
+
+        Spacer(Modifier.size(12.dp))
+        val numbers = HashMap<String, Double>()
+        lower?.params?.let(numbers::putAll)
+        style.params?.let(numbers::putAll)
+        val spacing = t.spacingParam
+        (style.spacing ?: lower?.spacing)?.let { px -> if (spacing != null) numbers[spacing.name] = px * 25.4 / dpi }
+        val colors = (lower?.colors ?: emptyMap()) + (style.colors ?: emptyMap())
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            TemplatePreview(
+                t, key, editor.currentPageMm, look.ink, look.accent, look.paper,
+                com.xnotes.core.template.TemplateValues(numbers, colors), 112.dp,
+            )
+        }
+
+        Spacer(Modifier.size(12.dp))
+        StyleCaption(stringResource(R.string.caption_pattern_colour))
+        Spacer(Modifier.size(4.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ModeChip(stringResource(R.string.default_choice), style.patternColor == null) { apply(style.copy(patternColor = null)) }
+            ColorPickerDot(
+                style.patternColor?.copy(a = 255), // show the hue at full strength; OPACITY sets the alpha
+                custom = style.patternColor != null,
+                onPick = { apply(style.copy(patternColor = it.copy(a = look.ink.a))) }, // keep current opacity
+                dismissOnPick = false,
+            ) { d, p -> PageColorGridPopup(style.patternColor?.copy(a = 255), d, p) }
+        }
+        Spacer(Modifier.size(12.dp))
+        val opacityPct = look.ink.a * 100f / 255f
+        StyleCaption(stringResource(R.string.caption_opacity_percent, opacityPct.roundToInt()))
+        Slider(
+            value = opacityPct,
+            onValueChange = { pct ->
+                apply(style.copy(patternColor = look.ink.copy(a = (pct / 100f * 255f).roundToInt().coerceIn(0, 255))))
+            },
+            valueRange = 0f..100f,
+        )
+        if (t.usesAccent) {
+            Spacer(Modifier.size(4.dp))
+            StyleCaption(stringResource(R.string.caption_accent_colour))
+            Spacer(Modifier.size(4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.default_choice), style.accentColor == null) { apply(style.copy(accentColor = null)) }
+                ColorPickerDot(
+                    style.accentColor?.copy(a = 255),
+                    custom = style.accentColor != null,
+                    onPick = { apply(style.copy(accentColor = it.copy(a = look.accent.a))) },
+                    dismissOnPick = false,
+                ) { d, p -> PageColorGridPopup(style.accentColor?.copy(a = 255), d, p) }
+            }
+        }
+
+        TemplateParamControls(t, style, lower, dpi, apply)
+
+        Spacer(Modifier.size(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            ModeChip(stringResource(R.string.reset), false) {
+                apply(style.copy(patternColor = null, accentColor = null, spacing = null, params = null, colors = null))
+            }
+        }
+    }
 }
 
 /**
@@ -382,7 +559,7 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.caption_value_percent, stringResource(edge.labelRes).uppercase(), percent.roundToInt()) + if (own == null) stringResource(R.string.default_suffix) else "")
+            StyleCaption(stringResource(R.string.caption_value_percent, stringResource(edge.labelRes), percent.roundToInt()) + if (own == null) stringResource(R.string.default_suffix) else "")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChip(stringResource(R.string.default_choice), own == null) { apply(margins.withEdge(edge, null)) }
                 Slider(
@@ -401,13 +578,89 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
     }
 }
 
+/**
+ * Controls for [t]'s parameters on a page-style level: the spacing parameter on the classic
+ * spacing slider (content px), the others as sliders or colour pickers, each with a Default chip
+ * that falls back to [lower] (the level below, when its values apply) and then the template.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TemplateParamControls(
+    t: com.xnotes.core.template.Template,
+    style: PageStyle,
+    lower: PageStyle?,
+    dpi: Int,
+    apply: (PageStyle) -> Unit,
+) {
+    val k = dpi / 25.4
+    t.spacingParam?.let { sp ->
+        Spacer(Modifier.size(12.dp))
+        val lo = ((sp.min ?: (sp.default / 4)) * k).toFloat()
+        val hi = ((sp.max ?: (sp.default * 4)) * k).toFloat().coerceAtLeast(lo + 1f)
+        val spacing = style.spacing ?: lower?.spacing ?: (sp.default * k)
+        StyleCaption(stringResource(R.string.caption_spacing_px, spacing.roundToInt()) + if (style.spacing == null) stringResource(R.string.default_suffix) else "")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeChip(stringResource(R.string.default_choice), style.spacing == null) { apply(style.copy(spacing = null)) }
+            Slider(
+                value = spacing.toFloat().coerceIn(lo, hi),
+                onValueChange = { apply(style.copy(spacing = it.toDouble())) },
+                valueRange = lo..hi,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+    for (p in t.params) {
+        if (p === t.spacingParam) continue
+        Spacer(Modifier.size(12.dp))
+        val label = p.label ?: p.name.replaceFirstChar { it.uppercase() }
+        if (p.type == com.xnotes.core.template.ParamType.COLOR) {
+            val own = style.colors?.get(p.name)
+            StyleCaption(label)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.default_choice), own == null) {
+                    apply(style.copy(colors = style.colors?.minus(p.name)?.takeIf { it.isNotEmpty() }))
+                }
+                ColorPickerDot(
+                    own,
+                    custom = own != null,
+                    onPick = { apply(style.copy(colors = (style.colors ?: emptyMap()) + (p.name to it))) },
+                    dismissOnPick = false,
+                ) { d, pick -> PageColorGridPopup(own, d, pick) }
+            }
+            continue
+        }
+        val own = style.params?.get(p.name)
+        val value = p.clamp(own ?: lower?.params?.get(p.name) ?: p.default)
+        val lo = p.min ?: if (p.default > 0) p.default / 4 else p.default - 10
+        val hi = (p.max ?: if (p.default > 0) p.default * 4 else p.default + 10).coerceAtLeast(lo + 1e-6)
+        val shown = when (p.type) {
+            com.xnotes.core.template.ParamType.LENGTH -> "%.1f mm".format(value)
+            com.xnotes.core.template.ParamType.INTEGER -> value.roundToInt().toString()
+            else -> "%.2f".format(value).trimEnd('0').trimEnd('.', ',')
+        }
+        StyleCaption("$label  $shown" + if (own == null) stringResource(R.string.default_suffix) else "")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeChip(stringResource(R.string.default_choice), own == null) {
+                apply(style.copy(params = style.params?.minus(p.name)?.takeIf { it.isNotEmpty() }))
+            }
+            val integer = p.type == com.xnotes.core.template.ParamType.INTEGER
+            Slider(
+                value = value.toFloat().coerceIn(lo.toFloat(), hi.toFloat()),
+                onValueChange = { v -> apply(style.copy(params = (style.params ?: emptyMap()) + (p.name to p.clamp(v.toDouble())))) },
+                valueRange = lo.toFloat()..hi.toFloat(),
+                steps = if (integer) ((hi - lo).roundToInt() - 1).coerceIn(0, 200) else 0,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
 @Composable
 internal fun StyleCaption(text: String) {
     Text(
         text,
         color = LocalPalette.current.textDim.toComposeColor(),
-        fontFamily = FontFamily.Monospace,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
     )
 }
 
@@ -426,6 +679,8 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     val vs = editor.viewSettings
     // Same session-sticky rule as the styles popup's "Default for new notes" row.
     var showDefaultRow by remember { mutableStateOf(editor.viewSettings != editor.viewDefaults) }
+    // Unchecking "Default for all notes" goes back to the defaults this popup opened with.
+    val openedDefaults = remember { editor.viewDefaults }
 
     fun apply(new: ViewOverrides) {
         editor.updateViewOverrides(new)
@@ -482,15 +737,14 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                 // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
                     Checkbox(
-                        checked = defaults != ViewSettings() && vs == defaults,
+                        checked = vs == defaults,
                         onCheckedChange = { on ->
-                            editor.updateViewDefaults(if (on) vs else ViewSettings())
+                            editor.updateViewDefaults(if (on) vs else openedDefaults.takeIf { it != vs } ?: ViewSettings())
                         },
                     )
                     Text(
                         stringResource(R.string.default_for_all_notes),
                         color = LocalPalette.current.text.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                     )
                 }
@@ -515,7 +769,6 @@ private fun FilterSpinRow(label: String, value: Int, min: Int, max: Int, onChang
         Text(
             "$value%",
             color = palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(46.dp),
@@ -576,7 +829,6 @@ fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
                 Text(
                     "/ ${editor.pageCount}",
                     color = LocalPalette.current.textDim.toComposeColor(),
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                 )
                 ModeChip(stringResource(R.string.go), selected = true) { go() }
@@ -641,14 +893,13 @@ private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: 
     val palette = LocalPalette.current
     val color = (if (enabled) palette.text else palette.textDim).toComposeColor()
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = color, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(76.dp))
+        Text(label, color = color, fontSize = 12.sp, modifier = Modifier.width(76.dp))
         Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value - 10) }, contentAlignment = Alignment.Center) {
             Text("−", color = color, fontSize = 18.sp)
         }
         Text(
             "$value%",
             color = color,
-            fontFamily = FontFamily.Monospace,
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(52.dp),
@@ -816,7 +1067,7 @@ private fun TableStepperRow(label: String, value: Int, min: Int, max: Int, onCha
 private fun TableStepButton(label: String, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
-        Modifier.size(32.dp).clip(RoundedCornerShape(5.dp)).background(palette.surface.toComposeColor()).clickable(onClick = onClick),
+        Modifier.size(32.dp).clip(MaterialTheme.shapes.extraSmall).background(palette.surface.toComposeColor()).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = palette.text.toComposeColor(), fontSize = 16.sp) }
 }
@@ -839,9 +1090,8 @@ internal fun PopupTitle(text: String) {
     Text(
         text,
         color = LocalPalette.current.accent.toComposeColor(),
-        fontFamily = FontFamily.Monospace,
-        fontWeight = FontWeight.Bold,
-        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
         modifier = Modifier.padding(vertical = 4.dp),
     )
 }
@@ -849,7 +1099,7 @@ internal fun PopupTitle(text: String) {
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.width(220.dp)) {
-        Text(label, color = LocalPalette.current.text.toComposeColor(), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 12.sp)
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
@@ -867,7 +1117,6 @@ internal fun SliderRow(
         Text(
             "$label  ${"%.0f".format(value)}",
             color = (if (enabled) LocalPalette.current.text else LocalPalette.current.textDim).toComposeColor(),
-            fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
         )
         Slider(
@@ -896,16 +1145,16 @@ private fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClic
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(if (selected) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
+            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .clickable(onClick = onClick)
             .padding(8.dp),
     ) {
         Icon(
             icon,
             contentDescription = label,
-            tint = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
+            tint = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
             modifier = Modifier.size(20.dp),
         )
     }
@@ -930,30 +1179,79 @@ internal fun DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
+        offset = LocalMenuOffset.current,
         properties = properties,
         containerColor = palette.menuBg.toComposeColor(),
         border = BorderStroke(1.dp, palette.border.toComposeColor()),
-        content = content,
+    ) {
+        // A menu opened from inside this one hangs off its own row, not beside the rail.
+        CompositionLocalProvider(LocalMenuOffset provides DpOffset.Zero) { content() }
+    }
+}
+
+/**
+ * The app's dialog: material's, pinned to the palette menu surface and given the same hairline
+ * border and 14dp corners the hand-rolled progress dialogs use, so a dialog reads against
+ * same-tone surfaces (the backstage, OLED black) and matches the menus. Shadows material3's
+ * composable for every same-package caller that doesn't import material's directly.
+ */
+@Composable
+internal fun AlertDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: (@Composable () -> Unit)? = null,
+    title: (@Composable () -> Unit)? = null,
+    text: (@Composable () -> Unit)? = null,
+    shape: Shape = MaterialTheme.shapes.large,
+    containerColor: Color = LocalPalette.current.menuBg.toComposeColor(),
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = confirmButton,
+        modifier = modifier.border(1.dp, LocalPalette.current.border.toComposeColor(), shape),
+        dismissButton = dismissButton,
+        title = title,
+        text = text,
+        shape = shape,
+        containerColor = containerColor,
     )
 }
 
 /** A text-label chip for a segmented picker (e.g. the eraser's STROKE/AREA modes). */
+/** A menu row for one of several choices; the current one wears the selection container. */
+@Composable
+internal fun ChoiceMenuItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    trailingIcon: (@Composable (Color) -> Unit)? = null,
+    text: @Composable (Color) -> Unit,
+) {
+    val palette = LocalPalette.current
+    val fg = (if (selected) palette.selectionForeground else palette.text).toComposeColor()
+    DropdownMenuItem(
+        text = { text(fg) },
+        onClick = onClick,
+        trailingIcon = trailingIcon?.let { icon -> { icon(fg) } },
+        modifier = if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier,
+    )
+}
+
 @Composable
 internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(if (selected) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
+            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
         Text(
             label,
-            color = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
+            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
+            fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
         )
     }
@@ -974,28 +1272,14 @@ fun FontMenuItems(
 ) {
     val palette = LocalPalette.current
     if (withDefault) {
-        DropdownMenuItem(
-            text = {
-                Text(
-                    stringResource(R.string.default_choice),
-                    color = (if (current == null) palette.accent else palette.text).toComposeColor(),
-                    fontSize = 14.sp,
-                )
-            },
-            onClick = { onPick(null) },
-        )
+        ChoiceMenuItem(current == null, onClick = { onPick(null) }) { fg ->
+            Text(stringResource(R.string.default_choice), color = fg, fontSize = 14.sp)
+        }
     }
     for (choice in FontCatalog.choices()) {
         if (monoOnly && !choice.mono) continue
-        DropdownMenuItem(
-            text = {
-                Text(
-                    fontLabel(choice.face),
-                    color = (if (choice.face == current) palette.accent else palette.text).toComposeColor(),
-                    style = TextStyle(fontFamily = choice.face.toComposeFamily(), fontSize = 14.sp),
-                )
-            },
-            onClick = { onPick(choice.face) },
-        )
+        ChoiceMenuItem(choice.face == current, onClick = { onPick(choice.face) }) { fg ->
+            Text(fontLabel(choice.face), color = fg, style = TextStyle(fontFamily = choice.face.toComposeFamily(), fontSize = 14.sp))
+        }
     }
 }

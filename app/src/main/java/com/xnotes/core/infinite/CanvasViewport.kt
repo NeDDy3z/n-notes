@@ -33,6 +33,14 @@ class CanvasViewport {
     var minZoom: Double = MIN_ZOOM
     var maxZoom: Double = MAX_ZOOM
 
+    /** Device pixels a floating toolbar covers along each edge; centring and fitting keep clear of it. */
+    var insetLeft: Double = 0.0
+    var insetTop: Double = 0.0
+    var insetRight: Double = 0.0
+    var insetBottom: Double = 0.0
+    private val clearW: Double get() = widthPx - insetLeft - insetRight
+    private val clearH: Double get() = heightPx - insetTop - insetBottom
+
     /** Clamp [zoom] back into the current limits, after the limits themselves moved. */
     fun clampZoom() {
         zoom = zoom
@@ -88,16 +96,16 @@ class CanvasViewport {
 
     /** [zoomAround] the viewport's centre, for keyboard and button zooming. */
     fun zoomAroundCenter(target: Double): Double =
-        zoomAround(widthPx / 2.0, heightPx / 2.0, target)
+        zoomAround(insetLeft + clearW / 2.0, insetTop + clearH / 2.0, target)
 
     /** Put content point ([cx], [cy]) at the viewport centre, leaving zoom alone. */
     fun centerOn(cx: Double, cy: Double) {
-        scrollX = cx - widthPx / (2.0 * zoom)
-        scrollY = cy - heightPx / (2.0 * zoom)
+        scrollX = cx - (insetLeft + clearW / 2.0) / zoom
+        scrollY = cy - (insetTop + clearH / 2.0) / zoom
     }
 
     val centerContent: Pt
-        get() = Pt(scrollX + widthPx / (2.0 * zoom), scrollY + heightPx / (2.0 * zoom))
+        get() = Pt(scrollX + (insetLeft + clearW / 2.0) / zoom, scrollY + (insetTop + clearH / 2.0) / zoom)
 
     /**
      * Frame [rect] with [padPx] device pixels of margin on every side. A degenerate or empty
@@ -105,8 +113,8 @@ class CanvasViewport {
      */
     fun fit(rect: Rect, padPx: Double = DEFAULT_FIT_PAD_PX) {
         if (widthPx <= 0 || heightPx <= 0) return
-        val availW = max(1.0, widthPx - 2 * padPx)
-        val availH = max(1.0, heightPx - 2 * padPx)
+        val availW = max(1.0, clearW - 2 * padPx)
+        val availH = max(1.0, clearH - 2 * padPx)
         if (rect.w > 0.0 && rect.h > 0.0) {
             zoom = min(availW / rect.w, availH / rect.h)
         } else if (rect.w > 0.0) {

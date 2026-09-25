@@ -1,0 +1,16 @@
+{
+  "xtemplate": 1,
+  "id": "com.xnotes.lines",
+  "name": "Lines",
+  "license": "MIT",
+  "params": {
+    "spacing": { "type": "length", "default": "10.837333mm", "min": "2.709333mm", "max": "33.866667mm",
+                 "label": "Spacing", "role": "spacing" }
+  },
+  "strokeWidth": "0.254mm",
+  "items": [
+    { "type": "repeat", "axis": "y", "period": "spacing", "extend": true, "children": [
+      { "type": "hline", "y": 0 }
+    ]}
+  ]
+}

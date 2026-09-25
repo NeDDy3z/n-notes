@@ -6,6 +6,7 @@ import com.xnotes.vendor.materialcolor.dynamiccolor.ColorSpec.SpecVersion
 import com.xnotes.vendor.materialcolor.dynamiccolor.DynamicScheme
 import com.xnotes.vendor.materialcolor.dynamiccolor.DynamicScheme.Platform
 import com.xnotes.vendor.materialcolor.hct.Hct
+import com.xnotes.vendor.materialcolor.palettes.TonalPalette
 import com.xnotes.vendor.materialcolor.scheme.SchemeTonalSpot
 import com.xnotes.vendor.materialcolor.scheme.SchemeVibrant
 import com.xnotes.vendor.materialcolor.scheme.SchemeExpressive
@@ -14,7 +15,9 @@ import com.xnotes.vendor.materialcolor.scheme.SchemeRainbow
 import com.xnotes.vendor.materialcolor.scheme.SchemeFidelity
 import com.xnotes.vendor.materialcolor.scheme.SchemeNeutral
 import com.xnotes.vendor.materialcolor.scheme.SchemeMonochrome
+import com.xnotes.vendor.materialcolor.utils.ColorUtils
 import java.util.Optional
+import kotlin.math.hypot
 
 // Plain colour values keep generation and palette mapping JVM-testable.
 data class MaterialColors(
@@ -68,39 +71,40 @@ data class MaterialColors(
     val onTertiaryFixedVariant: Rgba,
 ) {
     companion object {
-        private const val STANDARD_CONTRAST = 0.0
-
         fun seeded(
             seed: Rgba,
             dark: Boolean,
             style: MaterialStyle = MaterialStyle.TONAL_SPOT,
             surfaceSeed: Rgba? = null,
+            contrast: Double = 0.0,
         ): MaterialColors {
             val spec = SpecVersion.SPEC_2021
             val platform = Platform.PHONE
             fun generate(colour: Rgba): DynamicScheme {
                 val hct = Hct.fromInt(colour.copy(a = 255).toArgb())
                 return when (style) {
-                    MaterialStyle.TONAL_SPOT -> SchemeTonalSpot(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.VIBRANT -> SchemeVibrant(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.FIDELITY -> SchemeFidelity(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.EXPRESSIVE -> SchemeExpressive(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.FRUIT_SALAD -> SchemeFruitSalad(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.RAINBOW -> SchemeRainbow(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.NEUTRAL -> SchemeNeutral(hct, dark, STANDARD_CONTRAST, spec, platform)
-                    MaterialStyle.MONOCHROME -> SchemeMonochrome(hct, dark, STANDARD_CONTRAST, spec, platform)
+                    MaterialStyle.TONAL_SPOT -> SchemeTonalSpot(hct, dark, contrast, spec, platform)
+                    MaterialStyle.VIBRANT -> SchemeVibrant(hct, dark, contrast, spec, platform)
+                    MaterialStyle.FIDELITY -> SchemeFidelity(hct, dark, contrast, spec, platform)
+                    MaterialStyle.EXPRESSIVE -> SchemeExpressive(hct, dark, contrast, spec, platform)
+                    MaterialStyle.FRUIT_SALAD -> SchemeFruitSalad(hct, dark, contrast, spec, platform)
+                    MaterialStyle.RAINBOW -> SchemeRainbow(hct, dark, contrast, spec, platform)
+                    MaterialStyle.NEUTRAL -> SchemeNeutral(hct, dark, contrast, spec, platform)
+                    MaterialStyle.MONOCHROME -> SchemeMonochrome(hct, dark, contrast, spec, platform)
                 }
             }
             val accent = generate(seed)
-            val scheme = if (surfaceSeed == null) accent else {
-                val surfaces = generate(surfaceSeed)
-                // Combine tonal palettes before Material resolves roles and foreground contrast.
-                DynamicScheme(
-                    accent.sourceColorHct, accent.variant, dark, STANDARD_CONTRAST, platform, spec,
-                    accent.primaryPalette, accent.secondaryPalette, accent.tertiaryPalette,
-                    surfaces.neutralPalette, surfaces.neutralVariantPalette, Optional.of(accent.errorPalette),
-                )
-            }
+            val surfaces = if (surfaceSeed == null) accent else generate(surfaceSeed)
+            // Styles tint surfaces at a fixed chroma; never tint beyond the seed's own, so a grey stays grey.
+            val lab = ColorUtils.labFromArgb((surfaceSeed ?: seed).copy(a = 255).toArgb())
+            val maxChroma = hypot(lab[1], lab[2])
+            fun tamed(p: TonalPalette) = if (p.chroma <= maxChroma) p else TonalPalette.fromHueAndChroma(p.hue, maxChroma)
+            // Combine tonal palettes before Material resolves roles and foreground contrast.
+            val scheme = DynamicScheme(
+                accent.sourceColorHct, accent.variant, dark, contrast, platform, spec,
+                accent.primaryPalette, accent.secondaryPalette, accent.tertiaryPalette,
+                tamed(surfaces.neutralPalette), tamed(surfaces.neutralVariantPalette), Optional.of(accent.errorPalette),
+            )
             return MaterialColors(
                 primary = Rgba.fromArgb(scheme.primary),
                 onPrimary = Rgba.fromArgb(scheme.onPrimary),

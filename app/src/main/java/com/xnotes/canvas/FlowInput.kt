@@ -5,6 +5,7 @@ import android.text.Selection
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextWatcher
+import android.util.Log
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedText
@@ -24,7 +25,13 @@ import com.xnotes.core.text.TextFlow
  * properties and never touches the mirror for them, so offsets stay stable.
  * Input restarts on exactly two things: a model-originated text change (undo,
  * paste, empty-line fill) detected by [reconcile]'s text comparison, and a caret
- * move out of a live composing run ([endComposing]).
+ * move out of a live composing run ([endComposing]). A key event's edit (a
+ * hardware key, or a keyboard that sends its backspace as one) is patched into
+ * the mirror the way a text field would take it, with no restart.
+ *
+ * The mirror must read exactly as the model does whenever the IME edits it,
+ * since its offsets are mapped straight onto the model. The watcher checks that
+ * before every edit and resyncs rather than land one where the text has moved.
  */
 class FlowInput(
     private val view: CanvasView,
@@ -46,11 +53,13 @@ class FlowInput(
     private var cursorUpdatesMode = 0
 
     private var pendingOldText = ""
+    private var pendingOldLength = 0
 
     private val watcher = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
             if (suppressWatcher) return
             pendingOldText = s?.subSequence(start, start + count)?.toString().orEmpty()
+            pendingOldLength = s?.length ?: 0
         }
 
         override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {
@@ -66,15 +75,17 @@ class FlowInput(
             val old = pendingOldText
             val new = pendingText
             pendingStart = -1
+            if (!modelHolds(start, old, pendingOldLength)) {
+                // Something edited the model behind the mirror's back: this edit's offsets
+                // no longer name the text the keyboard meant, so drop it and resync.
+                Log.w(TAG, "IME mirror drifted from the flow at $start, resyncing")
+                view.post { resync() }
+                return
+            }
             // Composing IMEs resend the whole word-in-progress on every keystroke; trim
             // the untouched prefix/suffix so only the truly changed core reaches the
             // model, or the resent characters would re-insert under one uniform style.
-            var p = 0
-            val maxPrefix = minOf(old.length, new.length)
-            while (p < maxPrefix && old[p] == new[p]) p++
-            var suf = 0
-            val maxSuffix = minOf(old.length, new.length) - p
-            while (suf < maxSuffix && old[old.length - 1 - suf] == new[new.length - 1 - suf]) suf++
+            val (p, suf) = commonEnds(old, new)
             val insert = new.substring(p, new.length - suf)
             if (old.length - p - suf > 0 || insert.isNotEmpty()) {
                 // Offsets refer to the pre-change text, which is exactly the model's state.
@@ -83,8 +94,16 @@ class FlowInput(
                     flow().posAtGlobal(start + old.length - suf),
                 )
                 applyingFromMirror = true
+                session.mirrorStale = false
                 session.applyReplace(range, insert)
                 applyingFromMirror = false
+            }
+            if (session.mirrorStale) {
+                // A table boundary made the model diverge: keep its caret, rebuild the mirror
+                // once the connection is done with this change.
+                session.mirrorStale = false
+                view.post { resync() }
+                return
             }
             // The connection has already placed the mirror's selection; adopt it as truth.
             val selS = Selection.getSelectionStart(mirror).coerceAtLeast(0)
@@ -97,6 +116,7 @@ class FlowInput(
     init {
         session.imeSync = { onCaretMovedExternally(finishComposing = true) }
         session.onEdited = { reconcile() }
+        session.onTyped = { if (!applyingFromMirror) reconcile(restart = false) }
         session.requestIme = { showIme(restart = false) }
     }
 
@@ -129,16 +149,36 @@ class FlowInput(
     }
 
     /**
-     * The model changed outside the mirror-driven path (undo, paste, fills). When the
-     * texts diverge, rebuild the mirror and restart input; when they still match (a
-     * style-only or mirror-originated change) just re-sync the selection cheaply.
+     * The model changed outside the mirror-driven path (undo, paste, fills, key events).
+     * When the texts diverge, rebuild the mirror and restart input, or with [restart]
+     * off patch just the difference in and report it as a caret move, which is all a
+     * single key's edit needs. When they still match (a style-only or
+     * mirror-originated change) just re-sync the selection cheaply.
      */
-    fun reconcile() {
+    fun reconcile(restart: Boolean = true) {
         if (!session.active) return
-        if (applyingFromMirror || mirror.toString() == flow().plainText()) {
+        if (session.mirrorStale && !applyingFromMirror) {
+            session.mirrorStale = false
+            resync()
+            return
+        }
+        val text = if (applyingFromMirror) null else flow().plainText()
+        if (text == null || text.contentEquals(mirror)) {
             onCaretMovedExternally(finishComposing = false)
             return
         }
+        if (restart) {
+            rebuildMirror()
+            imm()?.restartInput(view)
+            return
+        }
+        patchMirror(text)
+        onCaretMovedExternally(finishComposing = true)
+    }
+
+    /** Rebuild the mirror from the model unconditionally and restart input. */
+    private fun resync() {
+        if (!session.active) return
         rebuildMirror()
         imm()?.restartInput(view)
     }
@@ -178,6 +218,35 @@ class FlowInput(
         val (s, e) = selectionGlobal()
         Selection.setSelection(mirror, s.coerceIn(0, mirror.length), e.coerceIn(0, mirror.length))
         suppressWatcher = false
+    }
+
+    /** Rewrite only the stretch of the mirror that differs from [text], keeping its spans elsewhere. */
+    private fun patchMirror(text: String) {
+        val (p, suf) = commonEnds(mirror, text)
+        suppressWatcher = true
+        mirror.replace(p, mirror.length - suf, text, p, text.length - suf)
+        suppressWatcher = false
+    }
+
+    /** Whether the model is [length] long and reads [old] at global [start], as the mirror did. */
+    private fun modelHolds(start: Int, old: String, length: Int): Boolean {
+        val f = flow()
+        if (f.globalOffset(f.endPos()) != length) return false
+        if (old.isEmpty()) return true
+        val a = f.posAtGlobal(start)
+        val b = f.posAtGlobal(start + old.length)
+        if (a.para != b.para) return f.plainText().regionMatches(start, old, 0, old.length)
+        return f.paragraphs[a.para].plainText().regionMatches(a.offset, old, 0, old.length)
+    }
+
+    /** Lengths of the common prefix of [a] and [b], and of the common suffix beyond it. */
+    private fun commonEnds(a: CharSequence, b: CharSequence): Pair<Int, Int> {
+        val max = minOf(a.length, b.length)
+        var p = 0
+        while (p < max && a[p] == b[p]) p++
+        var s = 0
+        while (s < max - p && a[a.length - 1 - s] == b[b.length - 1 - s]) s++
+        return p to s
     }
 
     private fun selectionGlobal(): Pair<Int, Int> {
@@ -320,4 +389,8 @@ class FlowInput(
 
     /** Forward-delete hook: returns true when a paragraph-property rule consumed the key. */
     var onForwardDeleteSpecial: () -> Boolean = { false }
+
+    private companion object {
+        const val TAG = "xnotes.ime"
+    }
 }

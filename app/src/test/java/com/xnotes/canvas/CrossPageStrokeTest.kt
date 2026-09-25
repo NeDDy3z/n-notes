@@ -3,7 +3,6 @@ package com.xnotes.canvas
 import com.xnotes.core.FakeSurfaceFactory
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.model.Document
-import com.xnotes.core.model.Rgba
 import com.xnotes.ui.theme.Palette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -18,7 +17,7 @@ import org.junit.Test
 class CrossPageStrokeTest {
 
     private fun state(): CanvasState =
-        CanvasState(Document.blank(2), FakeSurfaceFactory(), Palette.forAppearance("dark", Rgba(0, 230, 118))).apply {
+        CanvasState(Document.blank(2), FakeSurfaceFactory(), Palette.DEFAULT).apply {
             viewportW = 1000
             viewportH = 1400
             relayout()

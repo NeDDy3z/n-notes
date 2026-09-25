@@ -5,7 +5,6 @@ import com.xnotes.core.geometry.Affine
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Document
-import com.xnotes.core.model.Rgba
 import com.xnotes.ui.theme.Palette
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -14,7 +13,7 @@ import org.junit.Test
 class RotationMappingTest {
 
     private fun state(rotation: Int, pages: Int = 3): CanvasState =
-        CanvasState(Document.blank(pages), FakeSurfaceFactory(), Palette.forAppearance("dark", Rgba(0, 230, 118))).apply {
+        CanvasState(Document.blank(pages), FakeSurfaceFactory(), Palette.DEFAULT).apply {
             rotationDeg = rotation
             viewportW = 1000
             viewportH = 1400

@@ -32,6 +32,9 @@ data class FrameState(
     val contentBounds: com.xnotes.core.geometry.Rect? = null,
     /** Accent for the minimap's markers, from the app palette. */
     val accent: Rgba = Rgba(0, 230, 118, 255),
+    /** What a floating toolbar covers of the right and bottom edges, which the minimap keeps clear of. */
+    val insetRight: Double = 0.0,
+    val insetBottom: Double = 0.0,
 ) {
     companion object {
         val EMPTY = FrameState(1.0, 0.0, 0.0, 0, 0, CanvasBackground(), Rgba(255, 255, 255, 255))

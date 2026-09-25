@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
@@ -39,6 +38,8 @@ import kotlin.math.roundToInt
  * colour (Auto = follow the theme). Changes apply immediately (live reflow) and
  * are not undoable, matching the page-style precedent. Like the styles popup,
  * the config can be saved as the default stamped onto new notes, or Reset.
+ * Markdown shortcuts and Slash commands sit apart from all that: they are app
+ * preferences, so neither Reset nor the new-note default touches them.
  */
 @Composable
 internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
@@ -92,24 +93,40 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
             SpinField(stringResource(R.string.edge_bottom), m.bottomMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(bottomMm = it))) }
 
             Spacer(Modifier.size(8.dp))
-            if (showNewNoteRow && !config.isEmpty) {
+            // App preferences, not document defaults: Reset and the new-note row skip them.
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
+                Checkbox(checked = editor.markdownInput, onCheckedChange = { editor.setMarkdownInputPref(it) })
+                Text(
+                    stringResource(R.string.markdown_shortcuts),
+                    color = palette.text.toComposeColor(),
+                    fontSize = 13.sp,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
+                Checkbox(checked = editor.slashCommands, onCheckedChange = { editor.setSlashCommandsPref(it) })
+                Text(
+                    stringResource(R.string.slash_commands),
+                    color = palette.text.toComposeColor(),
+                    fontSize = 13.sp,
+                )
+            }
+            if (showNewNoteRow && config != editor.factoryFlow) {
                 // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
                     Checkbox(
-                        checked = !editor.newNoteFlow.isEmpty && config == editor.newNoteFlow,
-                        onCheckedChange = { on -> editor.saveNewNoteFlow(if (on) config else FlowDefaults()) },
+                        checked = editor.newNoteFlow != editor.factoryFlow && config == editor.newNoteFlow,
+                        onCheckedChange = { on -> editor.saveNewNoteFlow(if (on) config else editor.factoryFlow) },
                     )
                     Text(
                         stringResource(R.string.default_for_new_notes),
                         color = palette.text.toComposeColor(),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                     )
                 }
                 Spacer(Modifier.size(4.dp))
             }
             Row(Modifier.align(Alignment.End)) {
-                ModeChip(stringResource(R.string.reset), false) { apply(FlowDefaults()) }
+                ModeChip(stringResource(R.string.reset), false) { apply(editor.factoryFlow) }
             }
         }
     }
@@ -151,7 +168,6 @@ private fun SpinField(label: String, value: Double, min: Double, max: Double, on
             color = palette.text.toComposeColor(),
             fontSize = 14.sp,
             modifier = Modifier.width(30.dp),
-            style = TextStyle(fontFamily = FontFamily.Monospace),
         )
         Box(Modifier.size(34.dp).clickable { onChange((value + 1.0).coerceIn(min, max)) }, contentAlignment = Alignment.Center) {
             Text("+", color = palette.text.toComposeColor(), fontSize = 18.sp)

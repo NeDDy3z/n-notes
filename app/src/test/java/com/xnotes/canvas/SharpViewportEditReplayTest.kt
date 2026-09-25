@@ -47,7 +47,7 @@ class SharpViewportEditReplayTest {
 
     private fun state(page: Page): CanvasState {
         val doc = Document(mutableListOf(page))
-        return CanvasState(doc, factory, Palette.forAppearance("dark", Rgba(0, 230, 118))).apply {
+        return CanvasState(doc, factory, Palette.DEFAULT).apply {
             viewportW = 800
             viewportH = 1000
             maxCachePx = 100.0 // a 200px page is past the cap already at zoom 1

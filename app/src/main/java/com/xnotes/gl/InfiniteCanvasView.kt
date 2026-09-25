@@ -161,6 +161,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
             minimapVisible = minimapVisible,
             contentBounds = contentBounds,
             accent = accent,
+            insetRight = viewport.insetRight,
+            insetBottom = viewport.insetBottom,
         )
         glRenderer.publishRequests = publishRequests
         // In continuous mode the render thread is already drawing every refresh; otherwise ask for

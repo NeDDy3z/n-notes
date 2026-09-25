@@ -93,4 +93,36 @@ class TextFlowTest {
         assertTrue(FlowRange.caret(a).collapsed)
         assertTrue(a < b)
     }
+
+    @Test
+    fun everyHeadingLevelIsBiggerThanTheNextAndBiggerThanBody() {
+        // h5 and h6 both sat at body size once, which made three levels look alike.
+        val body = TextFlow.DEFAULT_SIZE_PT
+        val sizes = (1..Paragraph.MAX_HEADING).map { Paragraph.headingStyle(it, body).sizePt!! }
+        for (i in 0 until sizes.size - 1) {
+            assertTrue("h${i + 1} vs h${i + 2}", sizes[i] > sizes[i + 1])
+        }
+        assertTrue(sizes.last() > body)
+        assertEquals(2.0 * body, sizes.first(), 1e-9)
+    }
+
+    @Test
+    fun factorySizeFitsTheScreenThroughBothCalibrationPoints() {
+        // The shorter sides of the two devices it was tuned on: 1080px at 420dpi, 1440px at 280dpi.
+        assertEquals(30.0, FlowDefaults.sizeForScreen(1080 * 160 / 420.0), 0.0)
+        assertEquals(18.0, FlowDefaults.sizeForScreen(1440 * 160 / 280.0), 0.0)
+        val between = FlowDefaults.sizeForScreen(600.0)
+        assertTrue(between > 18.0 && between < 30.0)
+        assertEquals(12.0, FlowDefaults.sizeForScreen(5000.0), 0.0)
+        assertEquals(36.0, FlowDefaults.sizeForScreen(100.0), 0.0)
+        assertEquals(TextFlow.DEFAULT_SIZE_PT, FlowDefaults.sizeForScreen(0.0), 0.0)
+    }
+
+    @Test
+    fun headingsAreBoldAndScaleWithTheFlowsBaseSize() {
+        val small = Paragraph.headingStyle(3, 10.0).sizePt!!
+        val large = Paragraph.headingStyle(3, 20.0).sizePt!!
+        assertEquals(2.0, large / small, 1e-9)
+        assertTrue(Paragraph.headingStyle(6, 12.0).bold)
+    }
 }

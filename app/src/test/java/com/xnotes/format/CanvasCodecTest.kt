@@ -485,7 +485,7 @@ class CanvasCodecTest {
         )
         val s = doc.items[0] as Stroke
         assertTrue(s.config.taperEnabled)
-        assertEquals(ToolDefaults.DEFAULT_TAPER_TIP, s.config.taperMinFactor, 1e-9)
+        assertEquals(ToolDefaults.LEGACY_TAPER_TIP, s.config.taperMinFactor, 1e-9)
     }
 
     @Test fun legacyHighlightersReloadAtTheHistoricalAlpha() {

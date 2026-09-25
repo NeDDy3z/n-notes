@@ -6,19 +6,22 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import com.xnotes.core.model.Rgba
+import com.xnotes.settings.CornerStyle
 
 /** Convert a core [Rgba] to a Compose [Color]. */
 fun Rgba.toComposeColor(): Color = Color(r, g, b, a)
 
-val LocalPalette = staticCompositionLocalOf { Palette.dark() }
+val LocalPalette = staticCompositionLocalOf { Palette.DEFAULT }
 
 @Composable
-fun XnotesTheme(palette: Palette, content: @Composable () -> Unit) {
+fun XnotesTheme(palette: Palette, corners: CornerStyle = CornerStyle.ROUNDED, content: @Composable () -> Unit) {
+    val shapes = remember(corners) { uiShapes(corners) }
     CompositionLocalProvider(LocalPalette provides palette) {
-        MaterialTheme(colorScheme = palette.composeColorScheme(), content = content)
+        MaterialTheme(colorScheme = palette.composeColorScheme(), shapes = shapes, content = content)
     }
 }
 
@@ -31,8 +34,6 @@ internal fun Palette.composeColorScheme(): ColorScheme {
     val scheme = if (palette.isDark) {
         darkColorScheme(
             primary = accent,
-            onPrimary = palette.bg.toComposeColor(),
-            secondary = accent,
             background = palette.bg.toComposeColor(),
             onBackground = palette.text.toComposeColor(),
             surface = palette.menuBg.toComposeColor(),
@@ -51,8 +52,6 @@ internal fun Palette.composeColorScheme(): ColorScheme {
     } else {
         lightColorScheme(
             primary = accent,
-            onPrimary = Color.White,
-            secondary = accent,
             background = palette.bg.toComposeColor(),
             onBackground = palette.text.toComposeColor(),
             surface = palette.menuBg.toComposeColor(),
@@ -69,7 +68,7 @@ internal fun Palette.composeColorScheme(): ColorScheme {
             surfaceContainerHighest = palette.bg.toComposeColor(),
         )
     }
-    val m = materialColors ?: return scheme
+    val m = materialColors
     return scheme.copy(
         onPrimary = m.onPrimary.toComposeColor(),
         primaryContainer = m.primaryContainer.toComposeColor(),
@@ -90,6 +89,9 @@ internal fun Palette.composeColorScheme(): ColorScheme {
         onError = m.onError.toComposeColor(),
         errorContainer = m.errorContainer.toComposeColor(),
         onErrorContainer = m.onErrorContainer.toComposeColor(),
+        // The scheme's own outline, not palette.border: Material draws switch thumbs and
+        // unfocused text-field borders with it, and the muted hairline makes them invisible.
+        outline = m.outline.toComposeColor(),
         outlineVariant = m.outlineVariant.toComposeColor(),
         scrim = m.scrim.toComposeColor(),
         primaryFixed = m.primaryFixed.toComposeColor(),

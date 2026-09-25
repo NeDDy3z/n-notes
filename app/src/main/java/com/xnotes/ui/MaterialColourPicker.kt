@@ -20,8 +20,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,7 +37,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -154,7 +153,7 @@ internal fun MaterialColourPicker(prefs: Preferences, update: (Preferences) -> U
 private fun SingleColourChoice(preset: ColourPreset, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     val name = stringResource(preset.name)
-    val shape = RoundedCornerShape(8.dp)
+    val shape = MaterialTheme.shapes.small
     Box(
         Modifier.size(singleColourSize).alpha(if (enabled) 1f else 0.4f).clip(shape)
             .border(2.dp, if (selected) palette.accent.toComposeColor() else Color.Transparent, shape)
@@ -162,14 +161,14 @@ private fun SingleColourChoice(preset: ColourPreset, selected: Boolean, enabled:
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(4.dp),
     ) {
-        Box(Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)).background(preset.accent.toComposeColor()))
+        Box(Modifier.size(24.dp).clip(MaterialTheme.shapes.extraSmall).background(preset.accent.toComposeColor()))
     }
 }
 
 @Composable
 private fun PresetChoice(preset: ColourPreset, selected: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val shape = RoundedCornerShape(8.dp)
+    val shape = MaterialTheme.shapes.small
     val foreground = if (selected) palette.selectionForeground else palette.text
     Column(
         modifier.alpha(if (enabled) 1f else 0.4f).clip(shape)
@@ -179,7 +178,7 @@ private fun PresetChoice(preset: ColourPreset, selected: Boolean, enabled: Boole
             .heightIn(min = 48.dp).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(Modifier.fillMaxWidth().height(16.dp).clip(RoundedCornerShape(4.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.fillMaxWidth().height(16.dp).clip(MaterialTheme.shapes.extraSmall), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Box(Modifier.weight(1f).height(16.dp).background(preset.accent.toComposeColor()))
             preset.surface?.let { Box(Modifier.weight(1f).height(16.dp).background(it.toComposeColor())) }
         }
@@ -196,7 +195,7 @@ private fun CustomColourField(
     label: String, colour: Rgba, enabled: Boolean, modifier: Modifier, compact: Boolean = false, onPick: (Rgba) -> Unit,
 ) {
     val palette = LocalPalette.current
-    val shape = RoundedCornerShape(8.dp)
+    val shape = MaterialTheme.shapes.small
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         Row(
@@ -206,7 +205,7 @@ private fun CustomColourField(
                 .heightIn(min = 56.dp).padding(horizontal = 10.dp, vertical = if (compact) 6.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Box(Modifier.size(if (compact) 20.dp else 24.dp).clip(RoundedCornerShape(5.dp)).background(colour.toComposeColor()))
+            Box(Modifier.size(if (compact) 20.dp else 24.dp).clip(MaterialTheme.shapes.extraSmall).background(colour.toComposeColor()))
             if (compact) {
                 Text(label, color = palette.text.toComposeColor(), fontSize = 12.sp, modifier = Modifier.weight(1f))
             } else {
@@ -214,7 +213,7 @@ private fun CustomColourField(
                     Text(label, color = palette.text.toComposeColor(), fontSize = 12.sp)
                     Text(
                         Rgba.toHex(colour).uppercase(),
-                        color = palette.textDim.toComposeColor(), fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        color = palette.textDim.toComposeColor(), fontSize = 12.sp,
                     )
                 }
             }

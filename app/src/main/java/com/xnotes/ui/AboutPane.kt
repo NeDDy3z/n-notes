@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,8 +39,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -133,6 +134,7 @@ fun AboutPane() {
             // The upstream project: bugs/features/sponsorship for xnotes proper.
             Text("Help make xnotes better", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
+            // Three buttons, side by side; each fills with the selection container while pressed.
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -162,12 +164,12 @@ fun AboutPane() {
     }
 }
 
-/** A rectangular link button: line glyph above a label. Inverts to the accent while pressed. */
+/** A link button: line glyph above a label. Fills with the selection container while pressed. */
 @Composable
 private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     val palette = LocalPalette.current
     val interaction = remember { MutableInteractionSource() }
-    // Keep the accent fill visible for a minimum time so even a millisecond tap registers.
+    // Keep the pressed fill visible for a minimum time so even a millisecond tap registers.
     var pressed by remember { mutableStateOf(false) }
     LaunchedEffect(interaction) {
         val scope = this
@@ -192,13 +194,14 @@ private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -
         }
     }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.bg.toComposeColor()
+    val onAccent = palette.selectionForeground.toComposeColor()
     Column(
         Modifier
             .weight(1f)
             .fillMaxHeight()
-            .background(if (pressed) accent else Color.Transparent)
-            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), RectangleShape)
+            .clip(MaterialTheme.shapes.medium)
+            .background(if (pressed) palette.selectionBackground.toComposeColor() else Color.Transparent)
+            .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), MaterialTheme.shapes.medium)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

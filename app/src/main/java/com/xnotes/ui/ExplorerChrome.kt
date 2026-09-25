@@ -26,14 +26,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -90,11 +91,6 @@ internal fun directionLabel(k: ExplorerSortKey, descending: Boolean): String = w
     else -> if (descending) stringResource(R.string.newest_first) else stringResource(R.string.oldest_first)
 }
 
-/** The rounding the classic chrome drops: Material rounds [r], classic keeps corners square. */
-internal fun roundedIf(palette: Palette, r: Int): Shape = if (palette.isMaterial) RoundedCornerShape(r.dp) else RectangleShape
-
-private val CONTROL_SHAPE = RoundedCornerShape(6.dp)
-
 /** A toggle or menu chip in the explorer's chip row and View options; [on] fills it with the accent, and without [labelled] only its icons show. */
 @Composable
 internal fun ExplorerChip(
@@ -107,14 +103,14 @@ internal fun ExplorerChip(
     onClick: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    val fg = (if (on) palette.accent else palette.text).toComposeColor()
-    val iconTint = (if (on) palette.accent else palette.textDim).toComposeColor()
+    val fg = (if (on) palette.selectionForeground else palette.text).toComposeColor()
+    val iconTint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor()
     Row(
         modifier
             .height(32.dp)
-            .clip(CONTROL_SHAPE)
-            .background(if (on) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), CONTROL_SHAPE)
+            .clip(MaterialTheme.shapes.small)
+            .background(if (on) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
+            .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
             .padding(start = if (icon != null) 8.dp else 12.dp, end = if (trailing != null || !labelled) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -185,7 +181,7 @@ internal fun Modifier.liftPadding(lift: () -> Float, pad: Dp): Modifier = layout
 @Composable
 internal fun LayoutSwitcher(layouts: List<ExplorerLayout>, current: ExplorerLayout, lift: () -> Float = { 0f }, onPick: (ExplorerLayout) -> Unit) {
     val palette = LocalPalette.current
-    val shape = roundedIf(palette, 10)
+    val shape = MaterialTheme.shapes.medium
     Row(
         Modifier.height(40.dp).floatingBacking(lift, shape, palette.surface.toComposeColor(), Color.Transparent)
             .clip(shape).border(1.dp, palette.border.toComposeColor(), shape),
@@ -196,11 +192,11 @@ internal fun LayoutSwitcher(layouts: List<ExplorerLayout>, current: ExplorerLayo
                 Modifier
                     .width(42.dp)
                     .height(40.dp)
-                    .background(if (on) palette.accentAlpha(38).toComposeColor() else Color.Transparent)
+                    .background(if (on) palette.selectionBackground.toComposeColor() else Color.Transparent)
                     .clickable { onPick(l) },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(layoutIcon(l), stringResource(l.labelRes), tint = (if (on) palette.accent else palette.textDim).toComposeColor(), modifier = Modifier.size(20.dp))
+                Icon(layoutIcon(l), stringResource(l.labelRes), tint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor(), modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -243,27 +239,32 @@ internal fun SelectionBar(
     actions: @Composable () -> Unit,
 ) {
     val palette = LocalPalette.current
-    val shape = roundedIf(palette, 12)
+    val shape = MaterialTheme.shapes.medium
+    val fg = palette.selectionForeground.toComposeColor()
     Row(
-        // Opaque under its tint, since it stays put while files scroll beneath it.
-        Modifier.fillMaxWidth().height(40.dp).clip(shape).background(palette.bg.toComposeColor())
-            .background(palette.accentAlpha(38).toComposeColor()).then(BlockPointer).padding(start = 4.dp, end = 6.dp),
+        // Opaque under its fill, since it stays put while files scroll beneath it, and edged so the
+        // pinned bar reads as a surface rather than a tint over the ones sliding past.
+        Modifier.fillMaxWidth().height(44.dp).shadow(3.dp, shape)
+            .clip(shape).background(palette.bg.toComposeColor())
+            .background(palette.selectionBackground.toComposeColor())
+            .border(1.dp, fg.copy(alpha = 0.25f), shape)
+            .then(BlockPointer).padding(start = 4.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ExplorerIcon(XnotesIcons.close, stringResource(R.string.clear_selection), palette.accent.toComposeColor(), onClick = onClear)
+        ExplorerIcon(XnotesIcons.close, stringResource(R.string.clear_selection), fg, onClick = onClear)
         val scroll = rememberScrollState()
         SubcomposeLayout(Modifier.weight(1f)) { c ->
             val loose = Constraints(maxHeight = c.maxHeight)
             val counted = subcompose("count") {
-                Text(stringResource(R.string.n_selected, count), color = palette.text.toComposeColor(), fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, end = 10.dp))
+                Text(stringResource(R.string.n_selected, count), color = fg.copy(alpha = 0.75f), fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, end = 10.dp))
             }.first().measure(loose)
             val all = subcompose("all") {
                 if (onSelectAll != null) Text(
                     stringResource(R.string.select_all),
-                    color = palette.accent.toComposeColor(),
+                    color = fg,
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onSelectAll).padding(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onSelectAll).padding(horizontal = 8.dp, vertical = 6.dp),
                 )
             }.firstOrNull()?.measure(loose)
             val tools = subcompose("tools") {
@@ -283,11 +284,21 @@ internal fun SelectionBar(
     }
 }
 
+/** A hairline in the selection bar, setting the destructive action apart from the rest. */
+@Composable
+internal fun SelectionDivider() {
+    val palette = LocalPalette.current
+    Box(
+        Modifier.padding(horizontal = 4.dp).width(1.dp).height(20.dp)
+            .background(palette.selectionForeground.toComposeColor().copy(alpha = 0.25f)),
+    )
+}
+
 /** A small label pinned over a thumbnail: the kind of note, or its page count. */
 @Composable
 internal fun TileBadge(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
-    val shape = roundedIf(palette, 11)
+    val shape = MaterialTheme.shapes.medium
     Row(
         modifier
             .height(22.dp)
@@ -363,7 +374,7 @@ internal fun ViewOptionsContent(
                 color = palette.accent.toComposeColor(),
                 fontSize = 13.5.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onReset).padding(horizontal = 8.dp, vertical = 6.dp),
+                modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onReset).padding(horizontal = 8.dp, vertical = 6.dp),
             )
             ExplorerIcon(XnotesIcons.close, stringResource(R.string.close_view_options), palette.textDim.toComposeColor(), onClick = onClose)
         }
@@ -371,19 +382,19 @@ internal fun ViewOptionsContent(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 layouts.forEach { l ->
                     val on = l == layout
-                    val shape = roundedIf(palette, 12)
+                    val shape = MaterialTheme.shapes.medium
                     Column(
                         Modifier
                             .width(62.dp)
                             .height(62.dp)
                             .clip(shape)
-                            .background(if (on) palette.accentAlpha(48).toComposeColor() else Color.Transparent)
+                            .background(if (on) palette.selectionBackground.toComposeColor() else Color.Transparent)
                             .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), shape)
                             .clickable { onChange(view.copy(layout = l)) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        val tint = (if (on) palette.accent else palette.textDim).toComposeColor()
+                        val tint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor()
                         Icon(layoutIcon(l), null, tint = tint, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.height(5.dp))
                         Text(stringResource(l.labelRes), color = tint, fontSize = 11.5.sp, lineHeight = 14.sp, maxLines = 1)
@@ -478,7 +489,7 @@ internal fun ViewOptionsContent(
 private fun CheckOption(on: Boolean, title: String, hint: String, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).clickable(onClick = onClick).padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onClick).padding(vertical = 2.dp),
         verticalAlignment = Alignment.Top,
     ) {
         RowCheck(on, Modifier.padding(top = 3.dp))

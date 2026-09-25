@@ -37,32 +37,40 @@ import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageStyle
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.snapshot
 import com.xnotes.core.model.insets
-import com.xnotes.core.model.paintMarginPattern
-import com.xnotes.core.model.paintPagePattern
 import com.xnotes.core.model.resolvedPageColor
-import com.xnotes.core.model.resolvedPattern
-import com.xnotes.core.model.resolvedPatternColor
-import com.xnotes.core.model.resolvedSpacing
+import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.CharStyle
+import com.xnotes.core.text.DeadKeyLatch
 import com.xnotes.core.text.FlowDefaults
 import com.xnotes.core.text.FlowEditor
 import com.xnotes.core.text.FlowFrame
 import com.xnotes.core.text.FlowLayout
 import com.xnotes.core.text.FlowMargins
 import com.xnotes.core.text.FlowPainter
+import com.xnotes.platform.TemplateLibrary
 import com.xnotes.core.text.FlowPos
 import com.xnotes.core.text.FlowRange
+import com.xnotes.core.text.InputRules
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.text.ParaAlign
 import com.xnotes.core.text.Paragraph
+import com.xnotes.core.text.SlashCommands
+import com.xnotes.core.text.FlowTable
+import com.xnotes.core.text.TableDefaults
+import com.xnotes.core.text.TableEditor
+import com.xnotes.core.text.TableSnapshot
+import com.xnotes.core.text.TableStyle
+import com.xnotes.core.text.withTableSeparators
 import com.xnotes.core.text.wordBoundary
+import com.xnotes.core.text.MathCaret
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
@@ -71,6 +79,7 @@ import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.DocumentKind
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.format.DocumentCodec
+import com.xnotes.format.SvgColors
 import com.xnotes.format.XNoteFormatException
 import com.xnotes.platform.AndroidImageCodec
 import com.xnotes.platform.AndroidSurfaceFactory
@@ -80,6 +89,8 @@ import com.xnotes.settings.ExplorerView
 import com.xnotes.sync.filen.FilenLocalStore
 import com.xnotes.settings.LiveSettings
 import com.xnotes.settings.Preferences
+import com.xnotes.settings.CornerStyle
+import com.xnotes.settings.ToolbarLook
 import com.xnotes.settings.MaterialColourMode
 import com.xnotes.settings.Settings
 import com.xnotes.settings.SettingsRepository
@@ -184,6 +195,9 @@ data class PendingImport(
     val title: String? = null,
 )
 
+/** How far a multi-file PDF import has got; drives the count in the import dialog. */
+data class ImportProgress(val done: Int, val total: Int)
+
 /** Per-folder colour sidecar: a hidden ".xnote" dir holding "colors.json" (item name -> hex). */
 private const val SIDECAR_DIR = ".xnote"
 private const val SIDECAR_FILE = "colors.json"
@@ -199,6 +213,7 @@ private const val SETTINGS_SAVE_DELAY_MS = 400L
 
 /** How many opened documents Recent remembers. */
 private const val RECENT_MAX = 40
+
 
 /** Recent, shared by both panes of a split so a note opened in either shows up; null until first read from settings. */
 private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xnotes.settings.RecentDoc>?>(null)
@@ -233,6 +248,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private var pdfSource: com.xnotes.platform.PdfSource? = null
 
     private val deviceHasDisplayCutout = com.xnotes.deviceHasDisplayCutout(context)
+
+    /** The flow defaults a new note starts with when none are saved: text sized for this screen. */
+    val factoryFlow = FlowDefaults(sizePt = FlowDefaults.sizeForScreen(com.xnotes.deviceShortSideDp(context)))
 
     /** Whether the OS is in dark mode right now; resolves the "system" appearance. */
     private var systemInDarkMode = (context.resources.configuration.uiMode and
@@ -318,7 +336,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** One flow layout + snapshot: repainted from cache threads, so only the published frame is read. */
     private class PublishedFlow(val frame: FlowFrame, val indexOf: Map<Page, Int>)
-    private val flowLayout = FlowLayout(textMeasurer)
+    private val flowLayout = FlowLayout(textMeasurer, com.xnotes.platform.MathRendering)
 
     private val treeSitter = com.xnotes.platform.TreeSitterHighlighter(appContext)
     private val highlighter: com.xnotes.core.text.CodeHighlighter? =
@@ -342,6 +360,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private var highlightJob: kotlinx.coroutines.Job? = null
 
     @Volatile private var publishedFlow: PublishedFlow? = null
+
+    // Declared this early because the constructor already republishes the flow, which reads them.
+
+    /** The table in structure-edit mode (handles and row/column chrome over it), or null. */
+    var editingTable by mutableStateOf<FlowTable?>(null)
+        private set
+
+    /** Bumped whenever the table chrome must re-place itself (layout or view moved). */
+    var tableChromeTick by mutableStateOf(0)
+        private set
+
+    /** The table whose action bar is up (a long press landed in it), or null. */
+    var tableMenu by mutableStateOf<FlowTable?>(null)
+        private set
     private var publishedFlowStamp = -1L
     private var publishedPageList: List<Page> = emptyList()
     /** Each pane keeps its working session in its own slot, so two open notes never overwrite
@@ -418,6 +450,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         private set
     var palette by mutableStateOf(state.palette)
         private set
+    /** How round the chrome is, [Preferences.cornerStyle]. */
+    var cornerStyle by mutableStateOf(CornerStyle.ROUNDED)
+        private set
+    /** How the toolbar is drawn, [Preferences.toolbarLook]. */
+    var toolbarLook by mutableStateOf(ToolbarLook())
+        private set
     var zoomPercent by mutableStateOf(100)
         private set
 
@@ -475,6 +513,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         private set
     /** True while a committed import is being written off-thread; drives the "Importing…" dialog. */
     var importing by mutableStateOf(false)
+        private set
+    /** PDFs picked together, awaiting a batch import into the current folder; each keeps its own name. */
+    var pendingImports by mutableStateOf<List<PendingImport>>(emptyList())
+        private set
+    /** Files finished so far in a batch import; null for a single-file import. */
+    var importProgress by mutableStateOf<ImportProgress?>(null)
         private set
     /** Flipped by the import dialog's Cancel so the in-flight stream-copy aborts at its next buffer. */
     private val importCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -977,7 +1021,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onFitWidthSnapped = { showZoomLockHint() },
         onFitWidthReleased = { hideZoomLockHint() },
         onSelectionChanged = { selected -> hasSelection = selected; refreshTextBar() },
-        onToolChanged = { t -> tool = t },
+        onToolChanged = { t ->
+            tool = t
+            if (t != Tool.TEXT) {
+                endTableEdit()
+                tableMenu = null
+            }
+        },
         onTextEditStart = { field -> editingField = field; refreshTextBar() },
         onTextEditEnd = { editingField = null; refreshTextBar() },
         onSelectionMenu = { rect -> selectionMenu = rect },
@@ -988,6 +1038,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onHaptic = { runCatching { view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } },
         onTableEditingChanged = { on -> tableEditMode = on },
     )
+
+    /**
+     * Accents from a physical keyboard's dead keys, composed through the layout the user
+     * selected. Declared ahead of [flowText] because its caret callback clears the latch.
+     */
+    private val deadKeys = DeadKeyLatch { accent, ch ->
+        android.view.KeyCharacterMap.getDeadChar(accent, ch)
+    }
 
     val flowText: FlowTextController = FlowTextController(
         state,
@@ -1008,8 +1066,37 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         ctrl.onCaretChanged = {
             flowSelTick++
             flowContextMenu = null
+            deadKeys.clear()
+            // A dismissal only covers the slash it was made against: stepping back onto
+            // or before it means the user is starting over, so the menu may open again.
+            slashDismissed = slashDismissed?.takeIf { d ->
+                val at = ctrl.selection.normalized().start
+                at.para == d.para && at.offset > d.offset
+            }
+            // Typing re-filters the menu, so any arrowed-to row stops meaning anything.
+            slashSelected = -1
+            // Walking out of a formula is what releases the edge it was held at.
+            if (mathHeld >= 0L && !heldMathHoldsCaret()) mathHeld = -1L
+            // Opening or closing a formula changes how the paragraph is shaped,
+            // not just where the caret sits, so the frame has to be laid out
+            // again. Nothing else here does: a caret move cannot otherwise
+            // reshape. The comparison is against what is published rather than
+            // what was last asked for, because an edit lays out before it moves
+            // the caret and can leave a frame behind that neither one matches.
+            if (revealedMathKey() != revealedMath) {
+                republishFlow(invalidate = true)
+                onRender()
+            }
         }
+        ctrl.onSlashEnter = { commitSlashMenu() }
+        ctrl.styleAt = { pos -> mathStyleAt(pos) }
         ctrl.onContextMenu = { viewport -> flowContextMenu = flowMenuAnchor(viewport) }
+        ctrl.gated = { tableEditLive() }
+        ctrl.onTableHold = { table ->
+            tableMenu = table
+            tableChromeTick++
+        }
+        ctrl.onGatedTap = { endTableEdit() }
         ctrl.caretMetricsFor = { style ->
             val flow = state.document.flow
             val para = flow.paragraphs.getOrNull(ctrl.selection.normalized().start.para) ?: Paragraph()
@@ -1078,12 +1165,21 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!flowText.active) return
         val text = clipboardText() ?: return
         val caretSize = flowCaretStyle().sizePt
-        val paras = com.xnotes.core.text.MarkdownParser.parse(text, caretSize ?: flowDefaultSizePt())
+        val paras = com.xnotes.core.text.MarkdownParser.parse(text, caretSize ?: flowDefaultSizePt(), newTableDefaults.style)
         if (caretSize != null) {
             for (p in paras) {
                 for (run in p.runs) {
                     if (run.style.sizePt == null) run.style = run.style.copy(sizePt = caretSize)
                 }
+            }
+        }
+        // Pasted tables arrive with their text, so their columns can be fitted up front.
+        val frame = publishedFlow?.frame
+        val page = frame?.caretRect(flowText.selection.end)?.first ?: 0
+        frame?.pages?.getOrNull(page)?.contentRect?.w?.let { width ->
+            val cells = CellIndex(paras)
+            for (b in cells.tables) {
+                b.table.widths = flowLayout.fitColumns(state.document.flow, b.grid(paras), b.table.style, width)
             }
         }
         insertFlowParagraphs(paras)
@@ -1105,9 +1201,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         )
     }
 
-    /** Splice ready-made paragraphs at the caret as one undo step (rich paste). */
-    private fun insertFlowParagraphs(paras: List<Paragraph>) {
-        if (paras.isEmpty()) return
+    /**
+     * Splice ready-made paragraphs at the caret as one undo step (rich paste). Inside a
+     * table cell they join the cell as plain rich text (a pasted table flattens); in body
+     * text any pasted table gets the empty lines it needs around it.
+     */
+    private fun insertFlowParagraphs(input: List<Paragraph>) {
+        if (input.isEmpty()) return
         flowText.flushBurst()
         val flow = state.document.flow
         val ed = FlowEditor(flow)
@@ -1120,20 +1220,37 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             p = np
         }
         val caretPara = flow.paragraphs.getOrNull(p.para)
+        val cellTable = caretPara?.table
+        var paras: List<Paragraph> = if (cellTable == null) input else input.onEach {
+            it.table = cellTable
+            it.cellStart = false
+            it.list = ListKind.NONE
+            it.checked = false
+            it.codeLang = null
+            it.indent = 0
+        }
         val lastIndex: Int
         when {
             caretPara == null -> {
+                paras = withTableSeparators(paras, null, null)
                 cmds.add(ed.insertParagraphs(0, paras))
                 lastIndex = paras.size - 1
             }
+            cellTable != null && caretPara.length == 0 -> {
+                paras.first().cellStart = caretPara.cellStart
+                cmds.add(ed.replaceParagraphs(p.para, 1, paras))
+                lastIndex = p.para + paras.size - 1
+            }
             caretPara.length == 0 && caretPara.isDefaultStyle() -> {
                 // Pasting on an empty plain line replaces it, so no stray blank stays above.
+                paras = withTableSeparators(paras, flow.paragraphs.getOrNull(p.para - 1), flow.paragraphs.getOrNull(p.para + 1))
                 cmds.add(ed.replaceParagraphs(p.para, 1, paras))
                 lastIndex = p.para + paras.size - 1
             }
             else -> {
                 val (c2, _) = ed.replaceRange(FlowRange.caret(p), "\n")
                 c2?.let(cmds::add)
+                paras = withTableSeparators(paras, flow.paragraphs.getOrNull(p.para), flow.paragraphs.getOrNull(p.para + 1))
                 cmds.add(ed.insertParagraphs(p.para + 1, paras))
                 lastIndex = p.para + paras.size
             }
@@ -1150,6 +1267,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * refresh path so the baked layer and chrome follow.
      */
     private fun onFlowChanged(live: Boolean) {
+        tableMenu = null
         state.document.dirty = true
         republishFlow(invalidate = !live)
         if (live) onRender() else refreshContent()
@@ -1162,6 +1280,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun onFlowSessionChanged(active: Boolean) {
         flowEditingActive = active
+        deadKeys.clear()
         if (active) {
             flowInput.startSession()
         } else {
@@ -1184,7 +1303,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     init {
         view.input = { ev ->
             // Any fresh canvas touch quietly retires the flow action bar and still does its job.
-            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) flowContextMenu = null
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                flowContextMenu = null
+                tableMenu = null
+            }
             controller.onTouch(ev)
         }
         view.onTwoFingerTap = { dispatchTapGesture(preferences.twoFingerTap) }
@@ -1444,19 +1566,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     }
                 }
             }
-            // A ruling covers a blank note page whole; on an imported PDF page it rules the
+            // A template covers a blank note page whole; on an imported PDF page it rules the
             // margins only, so the page itself is never drawn over.
-            val pattern = state.effectivePattern(page)
-            if (pattern != PagePattern.NONE) {
-                val color = state.effectivePatternColor(page)
-                val spacing = state.effectiveSpacing(page)
-                val cover = state.footprint(page)
-                if (pi == null) {
-                    paintPagePattern(renderer, pattern, color, spacing, cover, region)
-                } else {
-                    paintMarginPattern(renderer, pattern, color, spacing, cover, content, region)
-                }
-            }
+            TemplateLibrary.paint(renderer, state.document, page, state.footprint(page), region)
         }
     }
 
@@ -1494,6 +1606,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         flowLayout.codeBackground = { activeCodeTheme().background }
         flowLayout.autoColor = { defaultTextColor() }
+        flowLayout.accentColor = { palette.accent }
+        flowLayout.ruleColor = { tableRuleColor() }
+        flowLayout.revealedMath = { revealedMathIn(it) }
     }
 
     /**
@@ -1573,10 +1688,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val oldFlow = publishedFlow
         val oldPages = publishedPageList
         val frame = flowLayout.layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi)
+        // What this frame actually shows, not what the caller meant it to: an edit
+        // republishes before it moves the caret, so a frame can be laid out against
+        // a caret the edit has already invalidated. Recording the intent instead
+        // let that stale frame stand, because the next check saw nothing new.
+        revealedMath = revealedMathKey()
         val index = HashMap<Page, Int>(doc.pages.size * 2)
         doc.pages.forEachIndexed { i, p -> index[p] = i }
         publishedFlow = PublishedFlow(frame, index)
         publishedFlowStamp = flowStamp()
+        if (editingTable != null || tableMenu != null) tableChromeTick++
         publishedPageList = doc.pages.toList()
         scheduleHighlight()
         if (invalidate) {
@@ -1744,10 +1865,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * small) and safe off-thread (the highlighter is stateless per call).
      */
     private fun themedFlowLayout(flow: com.xnotes.core.text.TextFlow): FlowLayout {
-        val layout = FlowLayout(textMeasurer)
+        val layout = FlowLayout(textMeasurer, com.xnotes.platform.MathRendering)
         val theme = activeCodeTheme()
         layout.codeBackground = { theme.background }
         layout.autoColor = { defaultTextColor() }
+        val accent = palette.accent
+        layout.accentColor = { accent }
+        val rule = tableRuleColor()
+        layout.ruleColor = { rule }
         val hl = highlighter ?: return layout
         val spans = HashMap<Paragraph, List<com.xnotes.core.text.CodeSpan>>()
         var i = 0
@@ -1867,20 +1992,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun resolvedAppearance(p: Preferences): String =
         if (p.uiAppearance == "system") (if (systemInDarkMode) "dark" else "light") else p.uiAppearance
 
-    /** The chrome palette for [p]: Material You (system scheme, accent-seeded below Android 12)
-     *  when the active appearance mode picked the material style, else the classic accent chrome. */
+    /** The chrome palette for [p]: the system scheme (default-seeded below Android 12) or a custom seed. */
     private fun buildPalette(p: Preferences, appearance: String = resolvedAppearance(p)): Palette {
         val dark = appearance != "light"
-        if (p.paletteStyle == "material") {
-            val m = when (p.materialMode) {
-                MaterialColourMode.DUAL -> MaterialColors.seeded(p.materialDualSeed, dark, p.materialStyle, p.materialSurfaceSeed)
-                MaterialColourMode.SINGLE -> MaterialColors.seeded(p.materialSingleSeed, dark, p.materialStyle)
-                MaterialColourMode.SYSTEM -> dynamicMaterialColors(appContext, dark = dark)
-                    ?: MaterialColors.seeded(p.accentColor, dark = dark)
-            }
-            return Palette.material(appearance, m)
+        val m = when (p.materialMode) {
+            MaterialColourMode.DUAL -> MaterialColors.seeded(p.materialDualSeed, dark, p.materialStyle, p.materialSurfaceSeed, p.materialContrast)
+            MaterialColourMode.SINGLE -> MaterialColors.seeded(p.materialSingleSeed, dark, p.materialStyle, contrast = p.materialContrast)
+            MaterialColourMode.SYSTEM -> dynamicMaterialColors(appContext, dark = dark)
+                ?: MaterialColors.seeded(Preferences.DEFAULT_ACCENT, dark = dark)
         }
-        return Palette.forAppearance(appearance, p.accentColor)
+        return Palette.material(appearance, m)
     }
 
     /** The app's theme in its light or dark variant, for the reader; the current mode (OLED included) when it already matches. */
@@ -1908,6 +2029,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun applyPagePrefsToState(p: Preferences) {
         palette = buildPalette(p)
+        cornerStyle = p.cornerStyle
+        toolbarLook = p.toolbarLook
         state.palette = palette
         infiniteOrNull?.applyPalette(palette)
         infiniteOrNull?.applyInputPrefs(
@@ -1933,6 +2056,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.zoomLockPan = p.zoomLockPan
         controller.detectShapes = p.detectShapes
         controller.snapRotation90 = p.snapRotation90
+        flowText.markdownInput = p.markdownInput
+        flowText.slashCommands = p.slashCommands
         controller.penButtonTool = if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER)
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
@@ -1943,6 +2068,35 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .coerceAtLeast(state.minZoom)
         state.clampZoomToLimits()
         state.relayout()
+    }
+
+    /** Whether typed markdown markers convert; the text tool's config popup toggles it. */
+    var markdownInput by mutableStateOf(settings.prefs.markdownInput)
+        private set
+
+    /** Set the Markdown shortcuts preference, applying it to both panes and persisting it. */
+    fun setMarkdownInputPref(on: Boolean) {
+        settings = settings.copy(prefs = settings.prefs.copy(markdownInput = on))
+        settingsRepo.save(settings)
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.markdownInput = on
+            editor.flowText.markdownInput = on
+        }
+    }
+
+    /** Whether "/" opens the command menu; the text tool's config popup toggles it. */
+    var slashCommands by mutableStateOf(settings.prefs.slashCommands)
+        private set
+
+    /** Set the Slash commands preference, applying it to both panes and persisting it. */
+    fun setSlashCommandsPref(on: Boolean) {
+        settings = settings.copy(prefs = settings.prefs.copy(slashCommands = on))
+        settingsRepo.save(settings)
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.slashCommands = on
+            editor.flowText.slashCommands = on
+            if (!on) editor.slashDismissed = null
+        }
     }
 
     /** Set fullscreen and persist it as an explicit choice (used by the toolbar, F11, and the
@@ -1964,7 +2118,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             editor.applyPagePrefsToState(p)
             editor.republishFlow(invalidate = true)
             editor.state.invalidateAllCaches()
-            if (marginChanged) editor.state.fitWidth()
+            if (marginChanged) {
+                if (editor.state.fitHeightActive) editor.state.fitHeight() else editor.state.fitWidth()
+            }
             editor.refreshView()
             editor.prefsVersion++
             editor.view.requestRender()
@@ -1975,6 +2131,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Apply preferences only the home screen reads, without the canvas refresh [applyPreferences] does. */
     fun applyHomePreferences(p: Preferences) {
         settings = settings.copy(prefs = p)
+        cornerStyle = p.cornerStyle
+        toolbarLook = p.toolbarLook
         saveSettingsSoon()
         prefsVersion++
     }
@@ -2134,6 +2292,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun refreshView() {
+        if (editingTable != null || tableMenu != null) tableChromeTick++
         zoomPercent = (state.zoom * 100).roundToInt()
         pageIndex = state.currentPageIndex()
         warmVisibleLinks(pageIndex)
@@ -2208,20 +2367,22 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Save (or, passing an empty style, forget) the All Pages style new notes start with. */
     fun saveNewNoteStyle(style: PageStyle) {
         if (newNoteStyle == style) return
+        // New notes copy their template from the library, so adopt one only this note carries.
+        style.template?.let { if (TemplateLibrary.entry(it) == null) keepNoteTemplate(it) }
         newNoteStyle = style
         settings = settings.copy(newNoteStyle = style)
         settingsRepo.save(settings)
     }
 
-    /** The saved flow defaults stamped onto newly created notes (empty ⇒ app built-ins). */
-    var newNoteFlow by mutableStateOf(settings.newNoteFlow)
+    /** The flow defaults stamped onto newly created notes: the saved ones, else [factoryFlow]. */
+    var newNoteFlow by mutableStateOf(settings.newNoteFlow ?: factoryFlow)
         private set
 
-    /** Save (or, passing empty defaults, forget) the flow defaults new notes start with. */
+    /** Save (or, passing [factoryFlow], forget) the flow defaults new notes start with. */
     fun saveNewNoteFlow(defaults: FlowDefaults) {
         if (newNoteFlow == defaults) return
         newNoteFlow = defaults
-        settings = settings.copy(newNoteFlow = defaults)
+        settings = settings.copy(newNoteFlow = defaults.takeIf { it != factoryFlow })
         settingsRepo.save(settings)
     }
 
@@ -2246,7 +2407,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Stamp the saved new-note defaults (page style + flow config) onto a fresh [doc]. */
     private fun stampNewNoteDefaults(doc: Document): Document {
         doc.style = settings.newNoteStyle
-        settings.newNoteFlow.applyTo(doc.flow)
+        TemplateLibrary.embed(doc, doc.style.template)
+        // A default whose template left the library falls back to the built-in ruling.
+        doc.style.template?.let { key ->
+            if (key != PageTemplates.NONE && !PageTemplates.isBuiltIn(key) && key !in doc.templates) {
+                doc.style = doc.style.withTemplate(null, PageTemplates.NONE)
+            }
+        }
+        (settings.newNoteFlow ?: factoryFlow).applyTo(doc.flow)
         return doc
     }
 
@@ -2254,6 +2422,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun setDocumentStyle(style: PageStyle) {
         val prev = state.document.style
         if (prev == style) return
+        TemplateLibrary.embed(state.document, style.template)
         state.document.style = style
         applyStyleChange(prev, style, state.document.pages.toList())
     }
@@ -2263,6 +2432,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val page = state.document.pages.getOrNull(state.currentPageIndex()) ?: return
         val prev = page.style
         if (prev == style) return
+        TemplateLibrary.embed(state.document, style.template)
         page.style = style
         applyStyleChange(prev, style, listOf(page))
     }
@@ -2310,9 +2480,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * repaints; a ruling change ([pages] are the pages it may affect) rebuilds their background caches.
      */
     private fun applyStyleChange(prev: PageStyle, next: PageStyle, pages: List<Page>) {
-        val rulingChanged = prev.pattern != next.pattern ||
+        val rulingChanged = prev.template != next.template ||
             prev.patternColor != next.patternColor ||
-            prev.spacing != next.spacing
+            prev.spacing != next.spacing ||
+            prev.accentColor != next.accentColor ||
+            prev.params != next.params ||
+            prev.colors != next.colors
         if (rulingChanged) {
             if (pages.size == 1) state.invalidateBackground(pages[0]) else state.invalidateAllBackgrounds()
         } else {
@@ -2330,18 +2503,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper
 
     private fun paintExportRuling(doc: Document, page: Page, r: Renderer) {
-        val pattern = page.resolvedPattern(doc)
-        if (pattern == PagePattern.NONE) return
-        val color = page.resolvedPatternColor(doc)
-        val spacing = page.resolvedSpacing(doc)
-        val content = com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height)
         val cover = exportFootprint(doc, page)
-        // Mirrors the canvas: a blank note page is ruled whole, an imported PDF page only in its margins.
-        if (page.pdfPage == null) {
-            paintPagePattern(r, pattern, color, spacing, cover, cover)
-        } else {
-            paintMarginPattern(r, pattern, color, spacing, cover, content, cover)
-        }
+        TemplateLibrary.paint(r, doc, page, cover, cover)
     }
 
     /** [page]'s whole paper in page space, margins included, resolved against [doc] (export/thumbnails). */
@@ -3409,12 +3572,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             appContext.contentResolver.openInputStream(android.net.Uri.parse(pending.uri))?.let { stageImport(it) }
         }.getOrNull()
         val uri = if (staged == null) null else try {
-            when (pending.kind) {
-                ImportKind.PDF -> createPdfNoteFile(treeUri, parentDocId, rawName, staged)
-                ImportKind.IMAGE -> createImageNoteFile(treeUri, parentDocId, rawName, staged)
-                ImportKind.TEXT -> createTextNoteFile(treeUri, parentDocId, rawName, staged, pending.sourceName, pending.mime)
-                ImportKind.OPEN -> createNoteFileFromFile(treeUri, parentDocId, rawName, staged)
-            }
+            createImportedNoteFile(treeUri, parentDocId, rawName, staged, pending)
         } finally {
             staged.delete()
         }
@@ -3423,6 +3581,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         return uri
     }
+
+    private fun createImportedNoteFile(treeUri: String, parentDocId: String, rawName: String, staged: java.io.File, item: PendingImport): String? =
+        when (item.kind) {
+            ImportKind.PDF -> createPdfNoteFile(treeUri, parentDocId, rawName, staged)
+            ImportKind.IMAGE -> createImageNoteFile(treeUri, parentDocId, rawName, staged)
+            ImportKind.TEXT -> createTextNoteFile(treeUri, parentDocId, rawName, staged, item.sourceName, item.mime)
+            ImportKind.OPEN -> createNoteFileFromFile(treeUri, parentDocId, rawName, staged)
+        }
 
     /** Commits the pending import off the main thread while driving the "Importing…" dialog via
      *  [importing]. Returns the new note's URI, or null on failure/cancel. On cancel [pendingImport]
@@ -3435,6 +3601,48 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 commitImport(treeUri, parentDocId, rawName)
             }
         } finally {
+            importing = false
+        }
+    }
+
+    /** Queues a multi-file PDF pick; the explorer commits it into whichever folder it is showing. */
+    fun requestImports(items: List<PendingImport>) {
+        pendingImports = items
+    }
+
+    /** Imports every queued PDF into [parentDocId] one at a time; returns how many landed. Each file
+     *  is staged to its own temp, written into its `.xnote`, then dropped before the next is opened,
+     *  so a batch costs the same memory as a single import however long the list is. Names come from
+     *  the source files. Cancel stops after the file in flight, discarding only that one; whatever
+     *  already landed stays. [importProgress] drives the dialog's count. IO — runs off-thread. */
+    suspend fun commitImportsAsync(treeUri: String, parentDocId: String): Int {
+        val items = pendingImports
+        if (items.isEmpty()) return 0
+        importCancelled.set(false)
+        importing = true
+        importProgress = ImportProgress(0, items.size)
+        return try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                var done = 0
+                for (item in items) {
+                    if (importCancelled.get()) break
+                    val staged = runCatching {
+                        appContext.contentResolver.openInputStream(android.net.Uri.parse(item.uri))?.let { stageImport(it) }
+                    }.getOrNull()
+                    if (staged != null) {
+                        try {
+                            if (createImportedNoteFile(treeUri, parentDocId, item.defaultName, staged, item) != null) done++
+                        } finally {
+                            staged.delete()
+                        }
+                    }
+                    importProgress = ImportProgress(done, items.size)
+                }
+                done
+            }
+        } finally {
+            pendingImports = emptyList()
+            importProgress = null
             importing = false
         }
     }
@@ -5360,6 +5568,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val sub = Document(dpi = state.document.dpi, pdfFile = state.document.pdfFile)
         sub.pages.addAll(pages) // share the page objects; export only reads them
         sub.style = state.document.style // carry the note's "all pages" style into the subset export
+        sub.templates = state.document.templates
         // A private source per export — see [exportPdf]: the canvas's cache thread may be
         // touching the live [pdfSource], and PdfRenderer can't be shared across threads. The
         // shared PDF file is read-only and owned by the open document, so closing src won't delete it.
@@ -5408,7 +5617,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!preview) color?.let { settings = settings.rememberColor(it) }
     }
 
-    fun escape() = controller.escape()
+    fun escape() {
+        if (editingTable != null) endTableEdit() else controller.escape()
+    }
 
     fun toggleSidebar() {
         sidebarVisible = !sidebarVisible
@@ -5481,7 +5692,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val ctrl = e.isCtrlPressed
         val shift = e.isShiftPressed
         when {
-            e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE -> flowText.endSession()
+            // Escape backs out of the slash menu first; a second one ends the session.
+            e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE ->
+                if (slashQuery() != null) dismissSlashMenu() else flowText.endSession()
             ctrl && shift && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> redo()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> undo()
             ctrl && shift && e.keyCode == android.view.KeyEvent.KEYCODE_X ->
@@ -5506,17 +5719,24 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 flowText.applyReplace(flowText.selection, "\n")
             e.keyCode == android.view.KeyEvent.KEYCODE_DEL -> flowDeleteKey(forward = false)
             e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> flowDeleteKey(forward = true)
-            e.keyCode == android.view.KeyEvent.KEYCODE_TAB -> flowText.applyReplace(flowText.selection, "\t")
+            e.keyCode == android.view.KeyEvent.KEYCODE_TAB ->
+                if (!flowTabCell(back = shift) && !flowTabIndent(back = shift)) {
+                    flowText.applyReplace(flowText.selection, "\t")
+                }
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT -> flowMoveHorizontal(-1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> flowMoveHorizontal(1, shift)
-            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> flowMoveVertical(-1, shift)
-            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> flowMoveVertical(1, shift)
+            // With the menu open the arrows walk it; Shift still means select text.
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ->
+                if (shift || !moveSlashSelection(-1)) flowMoveVertical(-1, shift)
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ->
+                if (shift || !moveSlashSelection(1)) flowMoveVertical(1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_MOVE_HOME -> flowLineEdge(start = true, extend = shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_MOVE_END -> flowLineEdge(start = false, extend = shift)
             else -> {
                 val ch = e.unicodeChar
                 if (ch == 0 || e.isAltPressed) return false
-                flowText.applyReplace(flowText.selection, String(Character.toChars(ch)))
+                val typed = deadKeys.accept(ch) ?: return true // a dead key waiting for its letter
+                flowText.applyReplace(flowText.selection, typed)
             }
         }
         return true
@@ -5623,13 +5843,213 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /** Toggle the paragraph(s) into [kind], or back to plain text when already that kind. */
-    fun flowToggleList(kind: ListKind) {
-        val target = if (flowCaretParagraph()?.list == kind) ListKind.NONE else kind
+    fun flowToggleList(kind: ListKind) =
+        flowSetList(if (flowCaretParagraph()?.list == kind) ListKind.NONE else kind)
+
+    /** Put the paragraph(s) into [target] outright; the slash menu asks, it does not toggle. */
+    fun flowSetList(target: ListKind) {
         flowParaOp {
             it.list = target
             if (target != ListKind.CHECK) it.checked = false
             if (target != ListKind.NONE) it.codeLang = null
         }
+    }
+
+    /**
+     * Make the selected paragraph(s) heading [level], or body text at 0. The runs
+     * carry the size, so they are restyled alongside the paragraph flag; this is
+     * also the path that keeps headings reachable with markdown shortcuts off.
+     */
+    fun flowSetHeading(level: Int) {
+        if (!flowText.active) return
+        val flow = state.document.flow
+        val sel = flowText.selection.normalized()
+        val last = sel.end.para.coerceAtMost(flow.paragraphs.size - 1)
+        if (sel.start.para > last) return
+        // Read before the flag moves: only a paragraph that *was* a heading gets its
+        // runs reset, so choosing Body never strips hand-applied bold from body text.
+        val were = (sel.start.para..last).map { flow.paragraphs[it].headingLevel > 0 }
+        if (level == 0 && were.none { it }) return
+        flowText.flushBurst()
+        val ed = FlowEditor(flow)
+        val cmds = mutableListOf<Command>()
+        val style = if (level > 0) Paragraph.headingStyle(level, flow.defaultSizePt) else null
+        ed.setParaStyle(sel) { it.headingLevel = level }?.let { cmds += it }
+        for (i in sel.start.para..last) {
+            val para = flow.paragraphs[i]
+            if (para.length == 0 || para.table != null) continue
+            if (style == null && !were[i - sel.start.para]) continue
+            ed.setCharStyle(FlowRange(FlowPos(i, 0), FlowPos(i, para.length))) {
+                it.copy(bold = style != null, sizePt = style?.sizePt)
+            }?.let { cmds += it }
+        }
+        flowText.commitEdit(ed.combined(cmds), null)
+        if (sel.collapsed) flowText.pendingStyle = style ?: CharStyle.DEFAULT
+        flowSelTick++
+    }
+
+    // --- the slash command menu ---
+
+    /** The slash whose menu the user dismissed, so it stays shut until they move off it. */
+    internal var slashDismissed: FlowPos? = null
+
+    /** Row the arrow keys have picked, or -1 while the highlight is still implicit. */
+    var slashSelected by mutableStateOf(-1)
+        private set
+
+    /**
+     * The open slash query, or null. Read straight off the flow during composition,
+     * so the menu tracks the caret with no state to keep in step; [flowSelTick] and
+     * [contentVersion] are what make the read happen again.
+     */
+    fun slashQuery(): SlashCommands.Query? {
+        if (!slashCommands || !flowText.active) return null
+        val sel = flowText.selection
+        if (!sel.collapsed) return null
+        val q = SlashCommands.queryAt(state.document.flow, sel.start) ?: return null
+        val d = slashDismissed
+        if (d != null && d.para == q.para && d.offset == q.slash) return null
+        return q
+    }
+
+    /** The caret's viewport rect, which the menu hangs under. */
+    fun slashAnchor(): Rect? = flowText.caretViewportRect()
+
+    /** The canvas viewport in px, so chrome anchored to a point can keep itself on screen. */
+    fun viewportSize(): Pt = Pt(state.viewportW.toDouble(), state.viewportH.toDouble())
+
+    /**
+     * What a floating toolbar covers of this pane's pages, in px per edge. The fits, page jumps and
+     * scroll range keep clear of it, and whatever sat at the clear area's corner stays there.
+     */
+    fun setToolbarCover(left: Double, top: Double, right: Double, bottom: Double) {
+        val st = state
+        if (st.insetLeft == left && st.insetTop == top && st.insetRight == right && st.insetBottom == bottom) return
+        val widthChanged = left + right != st.insetLeft + st.insetRight
+        st.scrollX -= left - st.insetLeft
+        st.scrollY -= top - st.insetTop
+        st.insetLeft = left
+        st.insetTop = top
+        st.insetRight = right
+        st.insetBottom = bottom
+        if (widthChanged && st.didInitialFit) st.reflowFitWidthForResize()
+        st.clampScroll()
+        refreshView()
+        view.requestRender()
+    }
+
+    /** Shut the menu for the slash it is on, leaving the typed text alone. */
+    fun dismissSlashMenu() {
+        val q = slashQuery() ?: return
+        slashDismissed = FlowPos(q.para, q.slash)
+        slashSelected = -1
+        flowSelTick++
+    }
+
+    /**
+     * The entry Enter would commit. Arrowing to a row arms it outright; until then
+     * the top ready row is armed, but only once a keyword is under way, so a bare
+     * "/" still breaks the line rather than running whatever happens to be first.
+     */
+    fun slashArmed(query: SlashCommands.Query, entries: List<SlashCommands.Entry>): SlashCommands.Entry? {
+        entries.getOrNull(slashSelected)?.let { return it }
+        if (query.text.isEmpty()) return null
+        return entries.firstOrNull { SlashCommands.ready(query, it) }
+    }
+
+    /** Arrow the menu's highlight by [delta], wrapping; false when no menu is open. */
+    private fun moveSlashSelection(delta: Int): Boolean {
+        val query = slashQuery() ?: return false
+        val count = SlashCommands.candidates(query).size
+        if (count == 0) return false
+        val from = if (slashSelected in 0 until count) slashSelected else if (delta > 0) -1 else 0
+        slashSelected = ((from + delta) % count + count) % count
+        flowSelTick++
+        return true
+    }
+
+    /**
+     * Enter while the menu is open commits its first ready entry; true when it did.
+     * A bare "/" commits nothing, so ending a line on a slash still just breaks it.
+     */
+    private fun commitSlashMenu(): Boolean {
+        val q = slashQuery() ?: return false
+        val entry = slashArmed(q, SlashCommands.candidates(q)) ?: return false
+        return runSlash(q, entry)
+    }
+
+    /**
+     * Run [entry] against [q]: the query text is deleted first, as its own undo step,
+     * then the command applies to the clean paragraph. Arguments are validated before
+     * anything is deleted, so a bad one leaves the typed text where the user can fix it.
+     */
+    fun runSlash(q: SlashCommands.Query, entry: SlashCommands.Entry): Boolean {
+        if (!flowText.active || !SlashCommands.ready(q, entry)) return false
+        val arg = q.arg
+        val size = if (entry.kind == SlashCommands.Kind.SIZE) arg.toDoubleOrNull() ?: return false else 0.0
+        val color = if (entry.kind == SlashCommands.Kind.COLOR) SvgColors.parse(arg) ?: return false else null
+        val stamp = when (entry.kind) {
+            SlashCommands.Kind.DATE -> dateStamp(java.time.format.FormatStyle.MEDIUM, time = false)
+            SlashCommands.Kind.TIME -> dateStamp(java.time.format.FormatStyle.SHORT, time = true)
+            else -> null
+        }
+        flowText.flushBurst()
+        // The IME still holds the query text the strip is about to remove.
+        flowText.mirrorStale = true
+        val flow = state.document.flow
+        val (cmd, caret) = if (stamp != null) {
+            SlashCommands.replace(flow, q, stamp)
+        } else {
+            SlashCommands.strip(flow, q)
+        }
+        // The strip rides along with whatever the command does next, so the pair is a
+        // single undo: one step puts the whole query back as the text that was typed.
+        flowText.placeCaret(caret)
+        flowText.pendingPrefix = cmd
+        slashDismissed = null
+        when (entry.kind) {
+            SlashCommands.Kind.HEADING -> flowSetHeading(entry.level)
+            SlashCommands.Kind.BODY -> flowSetHeading(0)
+            SlashCommands.Kind.BULLET -> flowSetList(ListKind.BULLET)
+            SlashCommands.Kind.ORDERED -> flowSetList(ListKind.ORDERED)
+            SlashCommands.Kind.TODO -> flowSetList(ListKind.CHECK)
+            SlashCommands.Kind.CODE -> flowSetCodeLanguage(slashCodeLanguage(arg))
+            SlashCommands.Kind.TABLE -> slashInsertTable(arg)
+            SlashCommands.Kind.SIZE -> flowSetChar { it.copy(sizePt = size.coerceIn(6.0, 96.0)) }
+            SlashCommands.Kind.COLOR -> flowSetCharColor(color)
+            SlashCommands.Kind.MATH -> flowInsertMath(arg)
+            SlashCommands.Kind.DATE, SlashCommands.Kind.TIME -> Unit
+        }
+        // A command that changed nothing (already a bullet, say) leaves the strip
+        // unpushed, so push it alone rather than lose the undo for it.
+        flowText.pendingPrefix?.let { leftover ->
+            flowText.pendingPrefix = null
+            flowText.commitEdit(leftover, null)
+        }
+        flowSelTick++
+        return true
+    }
+
+    /** Today's date or the time, in the reader's locale. */
+    private fun dateStamp(style: java.time.format.FormatStyle, time: Boolean): String {
+        val fmt = if (time) {
+            java.time.format.DateTimeFormatter.ofLocalizedTime(style)
+        } else {
+            java.time.format.DateTimeFormatter.ofLocalizedDate(style)
+        }
+        return java.time.LocalDateTime.now().format(fmt)
+    }
+
+    /** The language "/code xyz" means: a known token, else whatever the bar last used. */
+    private fun slashCodeLanguage(arg: String): String =
+        codeLanguageChoices().firstOrNull { it.equals(arg, ignoreCase = true) } ?: lastCodeLanguage()
+
+    /** "/table 3x4" sizes the grid; anything unparsed falls back to the saved default. */
+    private fun slashInsertTable(arg: String) {
+        val m = Regex("^(\\d{1,2})\\s*[x×*]\\s*(\\d{1,2})$").find(arg.trim())
+        val rows = m?.groupValues?.get(1)?.toIntOrNull() ?: newTableDefaults.rows
+        val cols = m?.groupValues?.get(2)?.toIntOrNull() ?: newTableDefaults.cols
+        flowInsertTable(rows, cols, newTableDefaults.style)
     }
 
     /** Toggle the paragraph(s) into code lines in the last-used language, or back to plain. */
@@ -5696,6 +6116,180 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     fun flowIndent(delta: Int) = flowParaOp { it.indent += delta }
+
+    /** Tab inside a list item nests it (Shift un-nests) rather than typing a tab. */
+    private fun flowTabIndent(back: Boolean): Boolean {
+        val para = flowCaretParagraph() ?: return false
+        if (para.list == ListKind.NONE) return false
+        if (back && para.indent == 0) return true
+        flowIndent(if (back) -1 else 1)
+        return true
+    }
+
+    // --- flow tables ---
+
+    /** The size and look new tables start from (factory values = nothing saved). */
+    var newTableDefaults by mutableStateOf(settings.newTable)
+        private set
+
+    /** Save (or, passing factory values, forget) what the insert dialog starts from. */
+    fun saveNewTableDefaults(d: TableDefaults) {
+        if (newTableDefaults == d) return
+        newTableDefaults = d
+        settings = settings.copy(newTable = d)
+        settingsRepo.save(settings)
+    }
+
+    /** A table's Auto rule colour: a grey, lighter on dark paper and darker on light paper. */
+    fun tableRuleColor(): Rgba = if (palette.isDark) Rgba(140, 140, 140) else Rgba(100, 100, 100)
+
+    /** The table the caret or selection start sits in, or null. */
+    fun flowCaretTable(): FlowTable? = flowCaretParagraph()?.table
+
+    /** Insert an empty table at the caret (never inside another table) as one undo step. */
+    fun flowInsertTable(rows: Int, cols: Int, style: TableStyle) {
+        if (!flowText.active) return
+        flowText.flushBurst()
+        val (cmd, caret) = TableEditor(state.document.flow).insertTable(
+            flowText.selection.normalized().end,
+            rows.coerceIn(1, TableDefaults.MAX_ROWS),
+            cols.coerceIn(1, TableDefaults.MAX_COLS),
+            style.clamped(),
+        ) ?: return
+        flowText.commitEdit(cmd, caret)
+        flowText.requestIme() // the dialog took the keyboard; the new first cell wants it back
+        flowSelTick++
+    }
+
+    /** The table whose style dialog is open (from its long-press menu), or null. */
+    var tableStyling by mutableStateOf<FlowTable?>(null)
+        private set
+
+    fun openTableStyle(table: FlowTable) {
+        dismissTableMenus()
+        tableStyling = table
+    }
+
+    fun dismissTableMenu() {
+        tableMenu = null
+    }
+
+    /** Both action bars go when a table action runs. */
+    private fun dismissTableMenus() {
+        flowContextMenu = null
+        tableMenu = null
+    }
+
+    fun closeTableStyle() {
+        tableStyling = null
+        flowReshowIme()
+    }
+
+    /** A dialog took the keyboard from a live caret: give it back. */
+    fun flowReshowIme() {
+        if (flowText.active) flowText.requestIme()
+    }
+
+    /**
+     * Enter structure-edit mode on [table]. The caret session ends (keyboard away,
+     * cells not writable) but the flow stays lifted out of the page caches, so the
+     * live previews of width and height drags repaint without re-baking a page.
+     */
+    fun startTableEdit(table: FlowTable) {
+        dismissTableMenus()
+        flowText.endSession()
+        editingTable = table
+        setFlowLifted(true)
+        tableChromeTick++
+    }
+
+    fun endTableEdit() {
+        if (editingTable == null) return
+        editingTable = null
+        if (!flowText.active) setFlowLifted(false)
+    }
+
+    private fun setFlowLifted(lifted: Boolean) {
+        if (state.flowLifted == lifted) return
+        state.flowLifted = lifted
+        publishedFlow?.frame?.pagesWithLines()?.forEach { i ->
+            state.document.pages.getOrNull(i)?.let(state::invalidatePage)
+        }
+        onRender()
+    }
+
+    /** True while [editingTable] is still in the document (undo can take it away). */
+    private fun tableEditLive(): Boolean {
+        val t = editingTable ?: return false
+        if (CellIndex(state.document.flow.paragraphs).blockOf(t) != null) return true
+        endTableEdit()
+        return false
+    }
+
+    /** [table]'s page slices in the published layout (page index attached). */
+    fun tableFrags(table: FlowTable): List<Pair<Int, com.xnotes.core.text.TableFrag>> =
+        publishedFlow?.frame?.fragsOf(table).orEmpty()
+
+    /** A page-local rect on page [pageIndex] in viewport px, or null when that page is not laid out. */
+    fun pageRectToViewport(pageIndex: Int, r: Rect): Rect? {
+        if (state.pageRects.getOrNull(pageIndex) == null) return null
+        val c = state.fromPageSpaceRect(pageIndex, r)
+        val tl = state.contentToViewport(Pt(c.left, c.top))
+        val br = state.contentToViewport(Pt(c.right, c.bottom))
+        return Rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y)
+    }
+
+    /** Viewport px per content px. */
+    val viewZoom: Double get() = state.zoom
+
+    /** Apply one table edit as its own undo step; edit mode ends if the table went away. */
+    private fun tableEdit(build: (TableEditor) -> Pair<Command, FlowPos?>?) {
+        flowText.flushBurst()
+        val (cmd, caret) = build(TableEditor(state.document.flow)) ?: return
+        flowText.commitEdit(cmd, caret)
+        tableEditLive()
+        tableChromeTick++
+        flowSelTick++
+    }
+
+    fun tableInsertRow(table: FlowTable, at: Int) = tableEdit { it.insertRow(table, at) }
+    fun tableInsertCol(table: FlowTable, at: Int) = tableEdit { it.insertCol(table, at) }
+    fun tableDeleteRow(table: FlowTable, row: Int) = tableEdit { it.deleteRow(table, row) }
+    fun tableDeleteCol(table: FlowTable, col: Int) = tableEdit { it.deleteCol(table, col) }
+    fun tableMoveRow(table: FlowTable, from: Int, to: Int) = tableEdit { ed -> ed.moveRow(table, from, to)?.let { it to null } }
+    fun tableMoveCol(table: FlowTable, from: Int, to: Int) = tableEdit { ed -> ed.moveCol(table, from, to)?.let { it to null } }
+
+    fun tableDelete(table: FlowTable) {
+        dismissTableMenus()
+        tableEdit { it.deleteTable(table) }
+        endTableEdit()
+    }
+
+    /** Show [snapshot] on [table] without an undo step (a drag or the style popup in progress). */
+    fun tablePreview(table: FlowTable, snapshot: TableSnapshot) {
+        if (table.snapshot() == snapshot) return
+        snapshot.applyTo(table)
+        state.document.flow.touch()
+        state.document.dirty = true
+        republishFlow(invalidate = !state.flowLifted)
+        onRender()
+    }
+
+    /** Close a preview begun at [before]: the table's current state lands as one undo step. */
+    fun tableCommitPreview(table: FlowTable, before: TableSnapshot) {
+        val after = table.snapshot()
+        if (after == before) return
+        before.applyTo(table)
+        tableEdit { ed -> ed.setSnapshot(table, after)?.let { it to null } }
+    }
+
+    /** The magic wand: column widths that even out the cell heights across each row. */
+    fun tableAutoFit(table: FlowTable) {
+        dismissTableMenus()
+        val frag = tableFrags(table).firstOrNull()?.second ?: return
+        val widths = flowLayout.fitColumns(state.document.flow, table, frag.right - frag.left)
+        tableEdit { ed -> ed.setSnapshot(table, table.snapshot().copy(widths = widths))?.let { it to null } }
+    }
 
     // --- flow document config (the text tool's popup: margins + defaults; not undoable) ---
 
@@ -5780,9 +6374,228 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         fontsChanged()
     }
 
+    /** Adopt [bytes] as a user page template, reporting the outcome as a message. */
+    fun importTemplate(bytes: ByteArray) {
+        if (bytes.size > com.xnotes.format.TemplateReader.MAX_BYTES) {
+            message = appContext.getString(R.string.err_import_template, appContext.getString(R.string.template_too_large))
+            return
+        }
+        runCatching { TemplateLibrary.import(String(bytes, Charsets.UTF_8)) }
+            .onSuccess {
+                message = appContext.getString(R.string.template_imported, it.template.name)
+                TemplateLibraryUi.version++
+            }
+            .onFailure { message = appContext.getString(R.string.err_import_template, it.message ?: "") }
+    }
+
+    /** Forget an imported template. Notes that use it keep drawing it from their own copy. */
+    fun removeTemplate(key: String) {
+        TemplateLibrary.remove(key)
+        TemplateLibraryUi.version++
+    }
+
+    /** Add a template this note carries, but the library lacks, to the library. */
+    fun keepNoteTemplate(key: String) {
+        state.document.templates[key]?.let { importTemplate(it.toByteArray(Charsets.UTF_8)) }
+    }
+
+    /** The templates to offer: the library's, then any this note carries that the library lacks. */
+    fun templateChoices(): List<TemplateLibrary.Entry> {
+        val lib = TemplateLibrary.all()
+        val known = lib.mapTo(HashSet()) { it.key }
+        val carried = state.document.templates.mapNotNull { (key, text) ->
+            if (key in known) return@mapNotNull null
+            val t = TemplateLibrary.template(state.document, key) ?: return@mapNotNull null
+            TemplateLibrary.Entry(key, t, text, TemplateLibrary.Source.NOTE)
+        }
+        return lib + carried.sortedBy { it.template.name.lowercase() }
+    }
+
+    fun templateFor(key: String): com.xnotes.core.template.Template? = TemplateLibrary.template(state.document, key)
+
+    /** The note's resolution: content px per inch, for turning template mm into the style's px. */
+    val documentDpi: Int get() = state.document.dpi
+
+    /** The current page's size in mm, for template previews. */
+    val currentPageMm: Pair<Double, Double>
+        get() {
+            val p = state.document.pages.getOrNull(state.currentPageIndex()) ?: return 210.0 to 297.0
+            val k = 25.4 / state.document.dpi
+            return p.width * k to p.height * k
+        }
+
     fun removeCustomFont(face: FontFace) {
         com.xnotes.platform.FontCatalog.removeCustomFont(face)
         fontsChanged()
+    }
+
+    /**
+     * The bar's equation control: selected text becomes the formula it spells,
+     * since that is the LaTeX the user already wrote. With nothing selected
+     * there is nothing to set, so it says so rather than leaving a placeholder
+     * the caret has already stepped out of.
+     */
+    fun flowToggleMath() {
+        if (!flowText.active) return
+        val sel = flowText.selection.normalized()
+        if (sel.collapsed) {
+            say(appContext.getString(R.string.select_latex_first))
+            return
+        }
+        val on = !flowCaretStyle().math
+        flowText.flushBurst()
+        flowText.commitEdit(
+            FlowEditor(state.document.flow).setCharStyle(sel) { it.copy(math = on) },
+            null,
+        )
+        flowSelTick++
+    }
+
+    /**
+     * Put [latex] in at the caret as a formula, drawn as one straight away. The
+     * caret lands against its closing edge, which is outside it, so the next key
+     * types beside the equation rather than into its LaTeX. the caret
+     * lands against its closing edge, which is where the source would otherwise
+     * open, and the next key types beside it rather than into it.
+     */
+    fun flowInsertMath(latex: String) {
+        if (!flowText.active) return
+        val text = latex.trim()
+        if (text.isEmpty() || '\n' in text) return
+        flowText.flushBurst()
+        flowText.mirrorStale = true
+        val at = flowText.selection.normalized().start
+        val (cmd, caret) = FlowEditor(state.document.flow).insertText(at, text, CharStyle(math = true))
+        flowText.commitEdit(cmd, caret)
+        flowText.pendingStyle = CharStyle.DEFAULT
+        flowSelTick++
+    }
+
+    /**
+     * The formula open in the frame that is currently published, packed as
+     * paragraph and offset, or -1. Set by [republishFlow] from the state it
+     * actually laid out, so a caret move can tell whether what is on screen still
+     * matches where the caret is.
+     */
+    private var revealedMath = -1L
+
+    /**
+     * The formula an arrow key stepped into at one of its edges, or -1. A formula's
+     * edge offset is two places at once: beside the equation, and at the very end
+     * (or start) of its LaTeX. Nothing in the position tells them apart, so which
+     * one the caret is at is where it came from, and this is that memory.
+     */
+    private var mathHeld = -1L
+
+    private fun packMath(para: Int, start: Int): Long = (para.toLong() shl 32) or start.toLong()
+
+    /**
+     * Which formula the caret is inside right now, as a single comparable value,
+     * so a caret move can tell whether the paragraph needs shaping again. Inside
+     * means strictly within it, or at an edge the caret was stepped onto.
+     */
+    private fun revealedMathKey(): Long {
+        if (!flowText.active) return -1L
+        val sel = flowText.selection.normalized()
+        // Selecting over a formula is not editing it, and a drag whose end walks
+        // through one would otherwise re-shape the flow on every pointer move.
+        if (!sel.collapsed) return -1L
+        val para = state.document.flow.paragraphs.getOrNull(sel.start.para) ?: return -1L
+        val held = if ((mathHeld ushr 32).toInt() == sel.start.para) (mathHeld and 0xFFFFFFFFL).toInt() else -1
+        val start = MathCaret.revealed(para, sel.start.offset, held)
+        return if (start < 0) -1L else packMath(sel.start.para, start)
+    }
+
+    /** The math run the caret is inside, as its char offset into [para], or -1. */
+    private fun revealedMathIn(para: Paragraph): Int {
+        val key = revealedMathKey()
+        if (key < 0L) return -1
+        if (state.document.flow.paragraphs.getOrNull((key ushr 32).toInt()) !== para) return -1
+        return (key and 0xFFFFFFFFL).toInt()
+    }
+
+    /** True while the caret still lies within the formula [mathHeld] names. */
+    private fun heldMathHoldsCaret(): Boolean {
+        if (mathHeld < 0L) return false
+        val sel = flowText.selection
+        if (!sel.collapsed || (mathHeld ushr 32).toInt() != sel.start.para) return false
+        val para = state.document.flow.paragraphs.getOrNull(sel.start.para) ?: return false
+        return MathCaret.holds(para, sel.start.offset, (mathHeld and 0xFFFFFFFFL).toInt())
+    }
+
+    /**
+     * Spend an arrow press stepping into the formula the caret is standing at the
+     * edge of, instead of moving past it. Going left that edge is its end, going
+     * right its start, so either way the press lands the caret at the near end of
+     * the LaTeX with the source open. True when the press was spent doing it.
+     */
+    private fun stepIntoMath(delta: Int): Boolean {
+        if (!flowText.active) return false
+        val sel = flowText.selection
+        if (!sel.collapsed) return false
+        val para = state.document.flow.paragraphs.getOrNull(sel.start.para) ?: return false
+        val start = MathCaret.edgeAt(para, sel.start.offset, delta)
+        if (start < 0) return false
+        val key = packMath(sel.start.para, start)
+        // Already inside: the press belongs to walking through the LaTeX.
+        if (mathHeld == key) return false
+        settleMathEdge(key)
+        return true
+    }
+
+    /**
+     * Spend an arrow press stepping back out of the formula the caret is held in,
+     * when the press would otherwise carry it past the far edge. The caret stays
+     * where it is and the formula is drawn again, so leaving reads the same way
+     * round as arriving did. True when the press was spent doing it.
+     */
+    private fun stepOutOfMath(delta: Int): Boolean {
+        if (mathHeld < 0L || !flowText.active) return false
+        val sel = flowText.selection
+        if (!sel.collapsed || (mathHeld ushr 32).toInt() != sel.start.para) return false
+        val para = state.document.flow.paragraphs.getOrNull(sel.start.para) ?: return false
+        val held = (mathHeld and 0xFFFFFFFFL).toInt()
+        if (MathCaret.exitAt(para, sel.start.offset, delta, held) < 0) return false
+        settleMathEdge(-1L)
+        return true
+    }
+
+    /**
+     * Take up [held] and lay the paragraph out for it. Crossing a formula's edge
+     * changes what the caret means as surely as moving it does, so the armed
+     * style goes the way [FlowTextController.placeCaret] sends it: a caret that
+     * has just stepped into a formula must type into the formula, not carry in
+     * the style that was waiting for it to type beside one.
+     */
+    private fun settleMathEdge(held: Long) {
+        mathHeld = held
+        flowText.pendingStyle = null
+        republishFlow(invalidate = true)
+        flowSelTick++
+        onRender()
+    }
+
+    /**
+     * The style typing at [pos] must take, or null to let the flow decide. Only
+     * the held edge needs saying: everywhere else the run under the caret already
+     * answers it, and this is the one place position alone cannot.
+     */
+    private fun mathStyleAt(pos: FlowPos): CharStyle? {
+        if (mathHeld < 0L || (mathHeld ushr 32).toInt() != pos.para) return null
+        val para = state.document.flow.paragraphs.getOrNull(pos.para) ?: return null
+        return MathCaret.heldStyle(para, pos.offset, (mathHeld and 0xFFFFFFFFL).toInt())
+    }
+
+    /**
+     * The maths renderer arrived. Until it does every formula measures as its own
+     * source, so anything already on screen has to re-shape now that it will set.
+     */
+    fun refreshFlowMath() {
+        if (state.document.flow.paragraphs.none { p -> p.runs.any { it.style.math } }) return
+        state.document.flow.reshapeAll()
+        republishFlow(invalidate = true)
+        state.invalidateAllCaches()
+        onRender()
     }
 
     /** Font resolution moved under open content: re-shape, re-bake, re-list. */
@@ -5812,7 +6625,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val sel = flowText.selection.normalized()
         if (sel.collapsed) return
         val flow = state.document.flow
-        val text = flow.plainText().substring(flow.globalOffset(sel.start), flow.globalOffset(sel.end))
+        val text = CellIndex(flow.paragraphs).textOf(flow.paragraphs, sel)
         val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager ?: return
         cm.setPrimaryClip(android.content.ClipData.newPlainText("xnotes text", text))
@@ -5820,23 +6633,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * Backspace at the start of an EMPTY code line strips the code property (the
-     * line becomes plain text) instead of deleting anything. Also the only way out
-     * for an empty code line at the very start of the document, where there is no
-     * preceding character to merge into. Returns true when it applied.
+     * Backspace at the start of a paragraph strips one block property (an empty
+     * code line, a list marker, a heading, then an indent) instead of deleting
+     * anything: see [InputRules.forBackspace]. Also the only way out for an empty
+     * code line at the very start of the document, where there is no preceding
+     * character to merge into. At a table edge it never merges across: a cell's
+     * first line stays put, and the line after a table steps into its last cell.
+     * Returns true when it applied.
      */
     fun flowBackspaceSpecial(): Boolean {
         if (!flowText.active) return false
         val sel = flowText.selection.normalized()
         if (!sel.collapsed || sel.start.offset != 0) return false
         val flow = state.document.flow
-        val para = flow.paragraphs.getOrNull(sel.start.para) ?: return false
-        if (para.codeLang == null || para.length != 0) return false
+        if (sel.start.para !in flow.paragraphs.indices) return false
+        val rule = InputRules.forBackspace(flow, sel.start)
+            ?: return flowTableEdge(sel.start.para, forward = false)
         flowText.flushBurst()
-        flowText.commitEdit(
-            FlowEditor(flow).setParaStyle(FlowRange.caret(sel.start)) { it.codeLang = null },
-            sel.start,
-        )
+        val result = InputRules.apply(flow, sel.start, rule)
+        flowText.commitEdit(result.command, result.caret)
+        flowText.pendingStyle = result.pending
         return true
     }
 
@@ -5854,6 +6670,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val flow = state.document.flow
         val para = flow.paragraphs.getOrNull(sel.start.para) ?: return false
         if (sel.start.offset < para.length) return false
+        if (flowTableEdge(sel.start.para, forward = true)) return true
         if (para.list != ListKind.NONE || para.codeLang != null) return false
         val next = flow.paragraphs.getOrNull(sel.start.para + 1) ?: return false
         if (next.list == ListKind.NONE && next.codeLang == null) return false
@@ -5861,6 +6678,48 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val range = FlowRange(FlowPos(sel.start.para, para.length), FlowPos(sel.start.para + 1, 0))
         val (cmd, caret) = FlowEditor(flow).replaceRange(range, "", adoptEndProps = true)
         flowText.commitEdit(cmd, caret)
+        return true
+    }
+
+    /**
+     * A delete at the edge of paragraph [p] that would merge across a table boundary:
+     * refused at a cell's own edge, turned into a step into the table from the body
+     * line beside it. Returns true when the key is spent.
+     */
+    private fun flowTableEdge(p: Int, forward: Boolean): Boolean {
+        val flow = state.document.flow
+        val cells = CellIndex(flow.paragraphs)
+        val block = cells.blockAt(p)
+        if (block != null) {
+            val cell = cells.cellAt(p)
+            return p == if (forward) block.cellLastPara(cell) else block.cellFirstPara(cell)
+        }
+        val neighbour = if (forward) p + 1 else p - 1
+        if (!cells.inTable(neighbour)) return false
+        flowText.placeCaret(FlowPos(neighbour, if (forward) 0 else flow.paragraphs[neighbour].length))
+        return true
+    }
+
+    /**
+     * Tab / Shift+Tab in a table: select the next / previous cell's text; Tab in the
+     * last cell appends a row. False outside tables (the key types a tab).
+     */
+    private fun flowTabCell(back: Boolean): Boolean {
+        val flow = state.document.flow
+        val cells = CellIndex(flow.paragraphs)
+        val p = flowText.selection.end.para
+        val block = cells.blockAt(p) ?: return false
+        val target = cells.cellAt(p) + if (back) -1 else 1
+        if (target < 0) return true
+        flowText.flushBurst()
+        if (target >= block.cellCount) {
+            val (cmd, caret) = TableEditor(flow).insertRow(block.table, block.rows) ?: return true
+            flowText.commitEdit(cmd, caret)
+            return true
+        }
+        val last = block.cellLastPara(target)
+        flowText.setSelection(FlowRange(FlowPos(block.cellFirstPara(target), 0), FlowPos(last, flow.paragraphs[last].length)))
+        flowText.ensureCaretVisible()
         return true
     }
 
@@ -5872,6 +6731,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             flowText.applyReplace(sel, "")
             return
         }
+        // Deleting into a drawn formula opens it first. The key travels the same
+        // way an arrow does, so it steps onto the edge the same way: otherwise it
+        // would eat a character of LaTeX with nothing on screen to show for it,
+        // and the equation would quietly become a different one.
+        if (stepIntoMath(if (forward) 1 else -1)) return
         val flow = state.document.flow
         val g = flow.globalOffset(sel.start)
         val range = if (forward) {
@@ -5885,6 +6749,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun flowMoveHorizontal(delta: Int, extend: Boolean) {
+        // A formula's edges are stepped onto, not over: one press to come out of
+        // the source, one to go in. Out is tried first, or a caret held at an edge
+        // shared with the next formula would step straight from one into the other.
+        if (!extend && stepOutOfMath(delta)) return
+        if (!extend && stepIntoMath(delta)) return
         val flow = state.document.flow
         val g = (flow.globalOffset(flowText.selection.end) + delta)
             .coerceIn(0, flow.globalOffset(flow.endPos()))

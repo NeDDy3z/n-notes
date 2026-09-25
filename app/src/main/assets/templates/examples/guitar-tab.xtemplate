@@ -1,0 +1,27 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.guitar-tab",
+  "name": "Guitar tablature",
+  "description": "Six-line tab staves with bar lines at both ends and a TAB clef.",
+  "license": "MIT",
+  "tags": ["music", "guitar"],
+  "params": {
+    "gap": { "type": "length", "default": "3mm", "min": "2mm", "max": "5mm", "label": "String spacing", "role": "spacing" }
+  },
+  "items": [
+    { "type": "group", "inset": ["15mm", "12mm"], "children": [
+      { "type": "repeat", "axis": "y", "period": "gap * 10", "fit": "space", "children": [
+        { "type": "repeat", "axis": "none", "count": 6, "children": [
+          { "type": "hline", "y": "gap * (2 + i)" }
+        ]},
+        { "type": "vline", "x": 0, "y1": "gap * 2", "y2": "gap * 7" },
+        { "type": "vline", "x": "100%", "y1": "gap * 2", "y2": "gap * 7" },
+        { "type": "group", "font": "serif", "weight": "bold", "size": "gap * 1.3", "align": "middle", "baseline": "middle", "children": [
+          { "type": "text", "text": "T", "x": "gap * 1.4", "y": "gap * 3" },
+          { "type": "text", "text": "A", "x": "gap * 1.4", "y": "gap * 4.5" },
+          { "type": "text", "text": "B", "x": "gap * 1.4", "y": "gap * 6" }
+        ]}
+      ]}
+    ]}
+  ]
+}

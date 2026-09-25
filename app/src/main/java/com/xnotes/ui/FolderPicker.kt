@@ -13,9 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -85,7 +84,7 @@ internal fun FolderPickerDialog(
                                 Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
-                                    .clip(RoundedCornerShape(6.dp))
+                                    .clip(MaterialTheme.shapes.small)
                                     .clickable(enabled = !off) { path.add(id to f.name) }
                                     .alpha(if (off) 0.4f else 1f)
                                     .padding(horizontal = 8.dp),
@@ -106,6 +105,5 @@ internal fun FolderPickerDialog(
             TextButton(onClick = { onPick(here) }, enabled = !blocked(here)) { Text(confirmLabel) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-        containerColor = palette.menuBg.toComposeColor(),
     )
 }

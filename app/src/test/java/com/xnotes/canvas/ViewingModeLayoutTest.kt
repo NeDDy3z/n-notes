@@ -2,7 +2,6 @@ package com.xnotes.canvas
 
 import com.xnotes.core.FakeSurfaceFactory
 import com.xnotes.core.model.Document
-import com.xnotes.core.model.Rgba
 import com.xnotes.ui.theme.Palette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -12,7 +11,7 @@ import org.junit.Test
 class ViewingModeLayoutTest {
 
     private fun state(pages: Int, mode: ViewingMode): CanvasState =
-        CanvasState(Document.blank(pages), FakeSurfaceFactory(), Palette.forAppearance("dark", Rgba(0, 230, 118))).apply {
+        CanvasState(Document.blank(pages), FakeSurfaceFactory(), Palette.DEFAULT).apply {
             viewingMode = mode
             viewportW = 1000
             viewportH = 1400

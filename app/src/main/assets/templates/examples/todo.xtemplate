@@ -1,0 +1,20 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.todo",
+  "name": "Checklist",
+  "description": "Rows with a tick box each, stretched slightly so the rows fill the page exactly.",
+  "license": "MIT",
+  "tags": ["planner", "lists"],
+  "params": {
+    "row": { "type": "length", "default": "9mm", "min": "6mm", "max": "14mm", "label": "Row height", "role": "spacing" }
+  },
+  "items": [
+    { "type": "text", "text": "To do", "x": "15mm", "y": "18mm", "size": "5mm", "weight": "bold" },
+    { "type": "group", "inset": ["25mm", "15mm", "15mm", "15mm"], "children": [
+      { "type": "repeat", "axis": "y", "period": "row", "fit": "round", "children": [
+        { "type": "rect", "y": "50% - 2.25mm", "w": "4.5mm", "h": "4.5mm", "rx": "0.8mm" },
+        { "type": "hline", "y": "100%", "x1": "8mm" }
+      ]}
+    ]}
+  ]
+}

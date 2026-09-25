@@ -9,6 +9,8 @@ import com.xnotes.core.pal.FontSpec
 import com.xnotes.core.pal.ImageCodec
 import com.xnotes.core.pal.ImageSize
 import com.xnotes.core.pal.LineMetrics
+import com.xnotes.core.pal.MathBox
+import com.xnotes.core.pal.MathTypesetter
 import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.RasterSurface
 import com.xnotes.core.pal.Renderer
@@ -76,6 +78,16 @@ class FakeRenderer : Renderer {
     override fun drawTextRun(text: String, x: Double, baseline: Double, font: FontSpec, color: Rgba) {
         ops += "drawTextRun:$text@$x,$baseline"
     }
+    override fun drawMath(
+        latex: String,
+        x: Double,
+        baseline: Double,
+        sizePt: Double,
+        color: Rgba,
+        display: Boolean,
+    ) {
+        ops += "drawMath${if (display) "Display" else ""}:$latex@$x,$baseline"
+    }
 }
 
 /** A bitmap-less raster surface for tests. */
@@ -123,6 +135,32 @@ class FakeTextMeasurer(private val perPointLineHeight: Double = 1.3) : TextMeasu
 
     companion object {
         const val ADVANCE_PER_POINT = 0.6
+    }
+}
+
+/**
+ * A typesetter whose formulas set [scale] times as wide as the same characters
+ * would as text and [tall] times as high, so a test can tell a drawn box from
+ * the source behind it. [rejects] refuses those strings, the way a real one
+ * refuses LaTeX it cannot parse.
+ */
+class FakeMathTypesetter(
+    private val scale: Double = 2.0,
+    private val tall: Double = 3.0,
+    private val rejects: Set<String> = emptySet(),
+    private val ready: Boolean = true,
+) : MathTypesetter {
+    override fun ready(): Boolean = ready
+
+    override fun measure(latex: String, sizePt: Double, display: Boolean): MathBox? {
+        if (latex.isEmpty() || latex in rejects) return null
+        // Display form sets half again as large, so a test can see which it got.
+        val grow = if (display) 1.5 else 1.0
+        return MathBox(
+            width = latex.length * sizePt * FakeTextMeasurer.ADVANCE_PER_POINT * scale * grow,
+            ascent = sizePt * tall * grow,
+            descent = sizePt * 0.3,
+        )
     }
 }
 

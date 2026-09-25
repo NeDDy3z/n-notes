@@ -1,5 +1,6 @@
 package com.xnotes.core.text
 
+import com.xnotes.core.FakeMathTypesetter
 import com.xnotes.core.FakeTextMeasurer
 import com.xnotes.core.geometry.Pt
 import org.junit.Assert.assertEquals
@@ -154,4 +155,108 @@ class FlowPaginationTest {
         assertEquals(7.2 + FlowFrame.NEWLINE_TAIL, rects[0].second.w, 1e-9)
         assertEquals(7.2, rects[1].second.w, 1e-9)
     }
+    // --- tall boxes: equations ---
+    //
+    // The fake typesetter sets a formula three times the text ascent, so at the
+    // 12pt default an inline one is 39.6 tall and a display one 57.6, against a
+    // 15.6 line and a 50-high page. That makes an inline formula taller than the
+    // space left under one line of text, and a display formula taller than the
+    // whole page, which are the two cases pagination has to survive.
+
+    private val mathLayout = FlowLayout(FakeTextMeasurer(), FakeMathTypesetter())
+
+    private fun mathFlow(vararg paras: Pair<String, CharStyle>): TextFlow = TextFlow().apply {
+        margins = FlowMargins(0.0, 0.0, 0.0, 0.0)
+        paras.forEach { (text, style) -> paragraphs.add(Paragraph(mutableListOf(Run(text, style)))) }
+    }
+
+    private val plain = CharStyle.DEFAULT
+    private val inlineMath = CharStyle(math = true)
+    private val displayMath = CharStyle(math = true, mathDisplay = true)
+
+    @Test
+    fun aFormulaTallerThanTheSpaceLeftMovesToTheNextPage() {
+        // 15.6 + 39.6 = 55.2, past the 50 the page has.
+        val flow = mathFlow("text" to plain, "x^2" to inlineMath)
+        val frame = mathLayout.layout(flow, pages(2), 150)
+        assertEquals(1, frame.pages[0].lines.size)
+        assertEquals(1, frame.pages[1].lines.size)
+        assertEquals(1, frame.pages[1].lines[0].paraIndex)
+        assertEquals(0.0, frame.pages[1].lines[0].top, 1e-9)
+    }
+
+    @Test(timeout = 5_000)
+    fun aFormulaTallerThanThePageIsPlacedWhereItIsRatherThanBumpedOn() {
+        // 57.6 against a 50-high page: no page can hold it, so bumping it to the
+        // next one only leaves a blank page behind and loses it off the end. It
+        // goes down where it stands and overflows instead. Deleting the
+        // "y > rect.top" half of the page-break test is what this catches.
+        val flow = mathFlow("x^2" to displayMath)
+        val frame = mathLayout.layout(flow, pages(2), 150)
+        assertEquals(1, frame.pages[0].lines.size)
+        assertEquals(0.0, frame.pages[0].lines[0].top, 1e-9)
+        assertTrue(frame.pages[0].lines[0].bottom > frame.pages[0].contentRect.bottom)
+        assertTrue(frame.pages[1].lines.isEmpty())
+        assertEquals(0, frame.extraPagesNeeded)
+    }
+
+    @Test(timeout = 5_000)
+    fun anOversizedFormulaAfterTextTakesOneNewPageAndNoMore() {
+        val flow = mathFlow("text" to plain, "x^2" to displayMath)
+        val frame = mathLayout.layout(flow, pages(3), 150)
+        assertEquals(setOf(0, 1), frame.pagesWithLines())
+        assertEquals(1, frame.pages[1].lines.size)
+        assertEquals(0, frame.extraPagesNeeded)
+    }
+
+    @Test(timeout = 5_000)
+    fun textCarriesOnPastAnOverflowingFormula() {
+        val flow = mathFlow("x^2" to displayMath, "after" to plain)
+        val frame = mathLayout.layout(flow, pages(2), 150)
+        assertEquals(listOf(0), frame.pages[0].lines.map { it.paraIndex })
+        assertEquals(listOf(1), frame.pages[1].lines.map { it.paraIndex })
+    }
+
+    @Test(timeout = 5_000)
+    fun aRunOfOversizedFormulasTakesOnePageEachAndTerminates() {
+        val flow = mathFlow(*Array(4) { "x^2" to displayMath })
+        val frame = mathLayout.layout(flow, pages(2), 150)
+        assertEquals(1, frame.pages[0].lines.size)
+        assertEquals(1, frame.pages[1].lines.size)
+        // Two more had nowhere to go, and the count of them has to stay finite.
+        assertEquals(2, frame.extraPagesNeeded)
+    }
+
+    @Test(timeout = 5_000)
+    fun aFormulaWiderThanThePageOverflowsRatherThanDisappearing() {
+        // Ten characters set 216 wide against a 100 page, and it cannot be split.
+        val flow = mathFlow("abcdefghij" to inlineMath)
+        val frame = mathLayout.layout(flow, pages(2), 150)
+        val lines = frame.pages[0].lines
+        assertEquals(1, lines.size)
+        assertEquals(0, lines[0].startChar)
+        assertEquals(10, lines[0].endChar)
+        assertTrue(lines[0].xs.last() > frame.pages[0].contentRect.right)
+    }
+
+    @Test(timeout = 5_000)
+    fun anOversizedFormulaAcrossNarrowingPagesStillTerminates() {
+        // Pages of different widths send a paragraph back to be re-broken. A
+        // formula cannot be re-broken, so this is where a rebreak loop would show.
+        val flow = mathFlow("text" to plain, "abcdefghij" to inlineMath, "tail" to plain)
+        val boxes = listOf(PageBox(100.0, 50.0), PageBox(60.0, 50.0), PageBox(100.0, 50.0))
+        val frame = mathLayout.layout(flow, boxes, 150)
+        assertEquals(setOf(0, 1, 2), frame.pagesWithLines())
+        assertEquals(10, frame.pages[1].lines[0].endChar)
+    }
+
+    @Test
+    fun paginationIsUntouchedWhenNothingIsAFormula() {
+        // The same flow through the math-aware layout paginates exactly as before.
+        val flow = flowOf(*Array(8) { "" })
+        val frame = mathLayout.layout(flow, pages(3), 150)
+        assertEquals(listOf(3, 3, 2), frame.pages.map { it.lines.size })
+        assertEquals(0, frame.extraPagesNeeded)
+    }
+
 }

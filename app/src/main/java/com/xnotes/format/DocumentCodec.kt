@@ -10,6 +10,7 @@ import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PagePattern
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PageStyle
@@ -180,6 +181,10 @@ class DocumentCodec(
         if (!doc.flow.isEmpty || !com.xnotes.core.text.FlowDefaults.of(doc.flow).isEmpty) {
             zos.putDeflated(FlowXml.ENTRY_NAME, FlowXml.write(doc.flow))
         }
+        // The templates the styles name ride along, so the note draws the same without them installed.
+        for ((key, text) in usedTemplates(doc)) {
+            zos.putDeflated("$TEMPLATE_DIR$key$TEMPLATE_EXT", text.toByteArray(Charsets.UTF_8))
+        }
         // The manifest streams straight into the deflater: a dense note's JSON is never
         // materialized as an org.json DOM, a String, or a byte[] (three copies per save).
         zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
@@ -190,6 +195,14 @@ class DocumentCodec(
         zos.closeEntry()
         timing?.deflateMs = probe.nanos / 1_000_000L
         timing?.manifestBytes = probe.bytes
+    }
+
+    /** The embedded templates [doc]'s styles name, in key order; built-in rulings need none. */
+    internal fun usedTemplates(doc: Document): List<Pair<String, String>> {
+        val keys = sortedSetOf<String>()
+        doc.style.template?.let { keys.add(it) }
+        for (page in doc.pages) page.style.template?.let { keys.add(it) }
+        return keys.mapNotNull { k -> doc.templates[k]?.let { k to it } }
     }
 
     /**
@@ -424,12 +437,32 @@ class DocumentCodec(
             j.name("page_color")
             writeRgba(j, it)
         }
-        s.pattern?.let { j.name("pattern").value(it.id) }
+        s.template?.let { t ->
+            // Built-in rulings keep the old "pattern" name, so older builds still draw them.
+            if (t == PageTemplates.NONE || PageTemplates.isBuiltIn(t)) j.name("pattern").value(t) else j.name("template").value(t)
+        }
         s.patternColor?.let {
             j.name("pattern_color")
             writeRgba(j, it)
         }
         s.spacing?.let { j.name("spacing").value(it) }
+        s.accentColor?.let {
+            j.name("accent_color")
+            writeRgba(j, it)
+        }
+        s.params?.takeIf { it.isNotEmpty() }?.let { params ->
+            j.name("params").beginObject()
+            for ((k, v) in params.toSortedMap()) j.name(k).value(v)
+            j.endObject()
+        }
+        s.colors?.takeIf { it.isNotEmpty() }?.let { colors ->
+            j.name("colors").beginObject()
+            for ((k, v) in colors.toSortedMap()) {
+                j.name(k)
+                writeRgba(j, v)
+            }
+            j.endObject()
+        }
         j.endObject()
     }
 
@@ -458,6 +491,7 @@ class DocumentCodec(
     ): Document {
         var manifest: ParsedManifest? = null
         var flowBytes: ByteArray? = null
+        val templates = HashMap<String, String>()
         val imageFiles = HashMap<String, File>()
         var pdfFile: File? = null
         ZipInputStream(input).use { zis ->
@@ -501,6 +535,10 @@ class DocumentCodec(
                         }
                     } else if (name == FlowXml.ENTRY_NAME) {
                         flowBytes = zis.readBytes()
+                    } else if (name.startsWith(TEMPLATE_DIR) && name.endsWith(TEMPLATE_EXT)) {
+                        val key = name.substring(TEMPLATE_DIR.length, name.length - TEMPLATE_EXT.length)
+                        val bytes = readAtMost(zis, TemplateReader.MAX_BYTES)
+                        if (TEMPLATE_KEY.matches(key) && bytes != null) templates[key] = String(bytes, Charsets.UTF_8)
                     }
                     // Anything else is an asset from a newer version: skipped, never buffered.
                 }
@@ -514,6 +552,7 @@ class DocumentCodec(
 
         val doc = Document(dpi = m.dpi)
         doc.created = m.created
+        doc.templates = templates
         doc.style = m.style
         doc.margins = m.margins
 
@@ -904,9 +943,8 @@ class DocumentCodec(
             rgba = c?.rgba ?: def.rgba,
             speedStrength = c?.speedStrength ?: def.speedStrength,
             taperEnabled = c?.let { it.taperEnabled ?: ((it.taperLength ?: 0.0) > 0.0) } ?: def.taperEnabled,
-            // Absent on legacy taper strokes -> the current default tip, so old tapers reload
-            // tapered rather than as a sharp point.
-            taperMinFactor = c?.taperMinFactor ?: ToolDefaults.DEFAULT_TAPER_TIP,
+            // Absent on legacy taper strokes -> the legacy tip, so old tapers reload tapered.
+            taperMinFactor = c?.taperMinFactor ?: ToolDefaults.LEGACY_TAPER_TIP,
             neon = c?.neon ?: def.neon,
             neonStrength = c?.neonStrength ?: def.neonStrength,
             dashLength = c?.dashLength ?: def.dashLength,
@@ -1016,21 +1054,52 @@ class DocumentCodec(
             return PageStyle()
         }
         var pageColor: Rgba? = null
-        var pattern: PagePattern? = null
+        var pattern: String? = null
+        var template: String? = null
         var patternColor: Rgba? = null
         var spacing: Double? = null
+        var accent: Rgba? = null
+        var params: Map<String, Double>? = null
+        var colors: Map<String, Rgba>? = null
         p.beginObject()
         while (p.hasNext()) {
             when (p.nextName()) {
                 "page_color" -> pageColor = rgbaOrNull(p)
-                "pattern" -> pattern = PagePattern.fromId(stringOrNull(p))
+                "pattern" -> pattern = PagePattern.fromId(stringOrNull(p))?.id
+                "template" -> template = stringOrNull(p)?.takeIf { TEMPLATE_KEY.matches(it) }
                 "pattern_color" -> patternColor = rgbaOrNull(p)
                 "spacing" -> spacing = doubleOrNull(p)
+                "accent_color" -> accent = rgbaOrNull(p)
+                "params" -> params = namedValues(p) { doubleOrNull(it) }
+                "colors" -> colors = namedValues(p) { rgbaOrNull(it) }
                 else -> p.skipValue()
             }
         }
         p.endObject()
-        return PageStyle(pageColor = pageColor, pattern = pattern, patternColor = patternColor, spacing = spacing)
+        return PageStyle(
+            pageColor = pageColor,
+            template = template ?: pattern,
+            patternColor = patternColor,
+            spacing = spacing,
+            accentColor = accent,
+            params = params,
+            colors = colors,
+        )
+    }
+
+    private fun <T> namedValues(p: JsonPull, value: (JsonPull) -> T?): Map<String, T>? {
+        if (p.peek() != JsonPull.Token.BEGIN_OBJECT) {
+            p.skipValue()
+            return null
+        }
+        val out = LinkedHashMap<String, T>()
+        p.beginObject()
+        while (p.hasNext()) {
+            val k = p.nextName()
+            value(p)?.let { out[k] = it }
+        }
+        p.endObject()
+        return out.takeIf { it.isNotEmpty() }
     }
 
     private fun parseMargins(p: JsonPull): PageMargins {
@@ -1208,11 +1277,29 @@ class DocumentCodec(
         private const val SIMPLIFIED_SINCE = 43
 
         private const val NOT_XNOTE = "Not an xnotes document"
+
+        private const val TEMPLATE_DIR = "templates/"
+        private const val TEMPLATE_EXT = ".xtemplate"
+
+        /** What a template key may look like: it becomes part of a zip entry name. */
+        val TEMPLATE_KEY = Regex("[A-Za-z0-9._-]{1,64}")
     }
 }
 
 /** What the explorer shows about a note without loading it. */
 class NotePeek(val pages: Int, val hasPdf: Boolean, val created: Long?)
+
+/** Up to [limit] bytes of [input], or null when it holds more (the rest is left unread). */
+private fun readAtMost(input: InputStream, limit: Int): ByteArray? {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(16 * 1024)
+    while (true) {
+        val n = input.read(buf)
+        if (n < 0) return out.toByteArray()
+        if (out.size() + n > limit) return null
+        out.write(buf, 0, n)
+    }
+}
 
 private fun ZipOutputStream.putDeflated(name: String, data: ByteArray) {
     val entry = ZipEntry(name).apply { method = ZipEntry.DEFLATED }

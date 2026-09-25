@@ -2,10 +2,12 @@ package com.xnotes.core.history
 
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
+import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.Run
+import com.xnotes.core.text.TableSnapshot
 import com.xnotes.core.text.TextFlow
 
 /**
@@ -20,6 +22,9 @@ class ParaSnapshot private constructor(
     private val list: ListKind,
     private val checked: Boolean,
     private val codeLang: String?,
+    private val table: FlowTable?,
+    private val cellStart: Boolean,
+    private val headingLevel: Int,
 ) {
     fun applyTo(para: Paragraph) {
         para.runs.clear()
@@ -30,6 +35,9 @@ class ParaSnapshot private constructor(
         para.list = list
         para.checked = checked
         para.codeLang = codeLang
+        para.table = table
+        para.cellStart = cellStart
+        para.headingLevel = headingLevel
         para.touch()
     }
 
@@ -37,13 +45,16 @@ class ParaSnapshot private constructor(
     fun matches(para: Paragraph): Boolean =
         align == para.align && indent == para.indent && list == para.list &&
             checked == para.checked && codeLang == para.codeLang &&
+            table === para.table && cellStart == para.cellStart &&
+            headingLevel == para.headingLevel &&
             runs.size == para.runs.size &&
             runs.indices.all { runs[it].text == para.runs[it].text && runs[it].style == para.runs[it].style }
 
     companion object {
         fun of(para: Paragraph): ParaSnapshot = ParaSnapshot(
             para.runs.map { it.deepCopy() },
-            para.align, para.indent, para.list, para.checked, para.codeLang,
+            para.align, para.indent, para.list, para.checked, para.codeLang, para.table, para.cellStart,
+            para.headingLevel,
         )
     }
 }
@@ -90,6 +101,24 @@ class FlowSplice(
     private fun replace(count: Int, with: List<Paragraph>) {
         repeat(count.coerceAtMost(flow.paragraphs.size - index)) { flow.paragraphs.removeAt(index) }
         flow.paragraphs.addAll(index.coerceIn(0, flow.paragraphs.size), with)
+        flow.touch()
+    }
+}
+
+/** A table's geometry or look changed (widths, row heights, style), as before/after snapshots. */
+class FlowTableEdit(
+    private val flow: TextFlow,
+    private val table: FlowTable,
+    private val before: TableSnapshot,
+    private val after: TableSnapshot,
+) : Command {
+    override fun redo() {
+        after.applyTo(table)
+        flow.touch()
+    }
+
+    override fun undo() {
+        before.applyTo(table)
         flow.touch()
     }
 }

@@ -13,19 +13,6 @@ class MaterialPaletteTest {
     private fun luminance(c: Rgba): Double =
         (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255.0
 
-    @Test fun classicPalettesAreNotMaterial() {
-        assertFalse(Palette.dark().isMaterial)
-        assertFalse(Palette.light().isMaterial)
-        assertFalse(Palette.oled().isMaterial)
-    }
-
-    @Test fun materialPalettesFlagThemselves() {
-        val m = MaterialColors.seeded(seed, dark = true)
-        assertTrue(Palette.material("dark", m).isMaterial)
-        assertTrue(Palette.material("oled", m).isMaterial)
-        assertTrue(Palette.material("light", MaterialColors.seeded(seed, dark = false)).isMaterial)
-    }
-
     @Test fun materialAppearanceMapping() {
         val dark = MaterialColors.seeded(seed, dark = true)
         val light = MaterialColors.seeded(seed, dark = false)

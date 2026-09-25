@@ -1,7 +1,6 @@
 package com.xnotes.ui
 
 import android.content.Context
-import android.graphics.Typeface
 import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
@@ -30,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,7 +48,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -360,9 +359,9 @@ private fun ColorFooter(current: Rgba, onColor: (Rgba) -> Unit) {
             Box(
                 Modifier
                     .size(30.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .background(current.toComposeColor())
-                    .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(4.dp)),
+                    .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall),
             )
             HexField(current, onColor, Modifier.weight(1f))
         }
@@ -378,7 +377,7 @@ private fun ColorFooter(current: Rgba, onColor: (Rgba) -> Unit) {
 private fun HexField(current: Rgba, onColor: (Rgba) -> Unit, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
     FieldFrame(modifier) {
-        Text("#", color = palette.textDim.toComposeColor(), fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        Text("#", color = palette.textDim.toComposeColor(), fontSize = 13.sp)
         NativeField(
             value = Rgba.toHex(current).removePrefix("#").uppercase(),
             onText = { raw -> if (raw.length == 6) Rgba.fromHex("#$raw")?.let { onColor(it.copy(a = 255)) } },
@@ -393,7 +392,7 @@ private fun HexField(current: Rgba, onColor: (Rgba) -> Unit, modifier: Modifier 
 private fun ChannelField(label: String, value: Int, modifier: Modifier = Modifier, onChange: (Int) -> Unit) {
     val palette = LocalPalette.current
     FieldFrame(modifier) {
-        Text(label, color = palette.textDim.toComposeColor(), fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp)
         NativeField(
             value = value.toString(),
             onText = { raw -> raw.toIntOrNull()?.let { onChange(it.coerceIn(0, 255)) } },
@@ -436,7 +435,6 @@ internal fun NativeField(
                 includeFontPadding = false
                 isSingleLine = true
                 setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f)
-                typeface = Typeface.MONOSPACE
                 inputType = if (numeric) {
                     InputType.TYPE_CLASS_NUMBER
                 } else {
@@ -500,9 +498,9 @@ internal fun FieldFrame(modifier: Modifier = Modifier, content: @Composable RowS
     val palette = LocalPalette.current
     Row(
         modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(palette.surface.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) { content() }
@@ -513,17 +511,16 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(if (selected) palette.accentAlpha(48).toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
+            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
         Text(
             label,
-            color = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
+            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
+            fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
         )
     }
@@ -534,8 +531,7 @@ private fun Caption(text: String) {
     Text(
         text,
         color = LocalPalette.current.textDim.toComposeColor(),
-        fontFamily = FontFamily.Monospace,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
         modifier = Modifier.padding(vertical = 2.dp),
     )
 }

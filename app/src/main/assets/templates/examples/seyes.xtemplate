@@ -1,0 +1,28 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.seyes",
+  "name": "Seyes",
+  "description": "French school ruling: a heavy line every 8 mm with three fine lines between, vertical lines every 8 mm and a margin.",
+  "license": "MIT",
+  "tags": ["lines", "writing", "school"],
+  "params": {
+    "unit": { "type": "length", "default": "2mm", "min": "1.5mm", "max": "3mm", "label": "Fine line spacing", "role": "spacing" },
+    "margin": { "type": "length", "default": "32mm", "min": "10mm", "max": "60mm", "label": "Margin width" }
+  },
+  "items": [
+    { "type": "group", "y": "20mm", "h": "100% - 30mm", "children": [
+      { "type": "repeat", "axis": "y", "period": "unit * 4", "children": [
+        { "type": "hline", "y": 0, "strokeWidth": "0.3mm" },
+        { "type": "repeat", "axis": "none", "count": 3, "children": [
+          { "type": "hline", "y": "unit * (i + 1)", "strokeWidth": "0.15mm", "opacity": 0.5 }
+        ]}
+      ]},
+      { "type": "group", "x": "margin", "w": "100% - margin", "children": [
+        { "type": "repeat", "axis": "x", "period": "unit * 4", "children": [
+          { "type": "vline", "x": 0, "strokeWidth": "0.15mm", "opacity": 0.5 }
+        ]}
+      ]}
+    ]},
+    { "type": "vline", "x": "margin", "stroke": "accent", "strokeWidth": "0.35mm" }
+  ]
+}

@@ -12,17 +12,15 @@ import org.json.JSONObject
  */
 data class Preferences(
     val uiAppearance: String = "system", // "system" (follows OS dark/light) | "dark" | "light" | "oled"
-    val accentColor: Rgba = DEFAULT_ACCENT,
-    /** Chrome palette per appearance mode: "classic" (accent-derived) | "material". */
-    val systemPaletteStyle: String = "material",
-    val darkPaletteStyle: String = "material",
-    val lightPaletteStyle: String = "material",
-    val oledPaletteStyle: String = "classic",
-    val materialMode: MaterialColourMode = MaterialColourMode.SYSTEM,
+    val materialMode: MaterialColourMode = MaterialColourMode.DUAL,
     val materialSingleSeed: Rgba = DEFAULT_MATERIAL_SINGLE,
     val materialDualSeed: Rgba = DEFAULT_MATERIAL_DUAL,
     val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
+    /** Material contrast level, -1 (reduced) .. 0 (standard) .. 1 (high). */
+    val materialContrast: Double = 0.0,
     val materialSurfaceSeed: Rgba = DEFAULT_MATERIAL_SURFACE,
+    val cornerStyle: CornerStyle = CornerStyle.ROUNDED,
+    val toolbarLook: ToolbarLook = ToolbarLook(),
     val hideWindowDecoration: Boolean = false,
     val pageColor: Rgba? = null, // null ⇒ follow theme paper
     val pageTemplatePdf: String? = null,
@@ -99,6 +97,10 @@ data class Preferences(
     val filenSyncOnAppOpen: Boolean = false,
     /** Which way notes flow: "both", "up" (local to Filen), "down" (Filen to local), "off". */
     val filenSyncDirection: String = "both",
+    /** Whether typed markdown markers (# - ** `) convert the text as you write. */
+    val markdownInput: Boolean = true,
+    /** Whether typing "/" at a word start opens the command menu. */
+    val slashCommands: Boolean = true,
     /** Layouts the explorer header's switcher offers, in switcher order. */
     val switcherLayouts: List<ExplorerLayout> = ExplorerLayout.entries,
     val sidebarRecent: Boolean = true,
@@ -135,31 +137,8 @@ data class Preferences(
             defaultPageSize.pixels(defaultPageOrientation, dpi)
         }
 
-    /** The palette style of the active appearance mode. */
-    val paletteStyle: String get() = paletteStyleFor(uiAppearance)
-
-    fun paletteStyleFor(appearance: String): String = when (appearance) {
-        "light" -> lightPaletteStyle
-        "oled" -> oledPaletteStyle
-        "dark" -> darkPaletteStyle
-        else -> systemPaletteStyle
-    }
-
-    /** Set the palette style of the active appearance mode, leaving the other modes alone. */
-    fun withPaletteStyle(style: String): Preferences = when (uiAppearance) {
-        "light" -> copy(lightPaletteStyle = style)
-        "oled" -> copy(oledPaletteStyle = style)
-        "dark" -> copy(darkPaletteStyle = style)
-        else -> copy(systemPaletteStyle = style)
-    }
-
     fun toJson(): JSONObject = JSONObject()
         .put("ui_appearance", uiAppearance)
-        .put("accent_color", Rgba.toHex(accentColor))
-        .put("system_palette_style", systemPaletteStyle)
-        .put("dark_palette_style", darkPaletteStyle)
-        .put("light_palette_style", lightPaletteStyle)
-        .put("oled_palette_style", oledPaletteStyle)
         .put("hide_window_decoration", hideWindowDecoration)
         .put("page_color", pageColor?.let { Rgba.toHex(it) } ?: JSONObject.NULL)
         .put("page_template_pdf", pageTemplatePdf ?: JSONObject.NULL)
@@ -201,9 +180,14 @@ data class Preferences(
                 MaterialColourMode.DUAL -> put("material_seed", Rgba.toHex(materialDualSeed)).put("material_dual_tone", true)
             }
             if (materialStyle != MaterialStyle.TONAL_SPOT) put("material_style", materialStyle.id)
+            if (materialContrast != 0.0) put("material_contrast", materialContrast)
             if (materialMode == MaterialColourMode.DUAL || materialSurfaceSeed != DEFAULT_MATERIAL_SURFACE) {
                 put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
             }
+            if (cornerStyle != CornerStyle.ROUNDED) put("corner_style", cornerStyle.id)
+            if (toolbarLook.position != ToolbarPosition.TOP) put("toolbar_position", toolbarLook.position.id)
+            if (toolbarLook.size != ToolbarSize.REGULAR) put("toolbar_size", toolbarLook.size.id)
+            if (toolbarLook.floating) put("toolbar_floating", true)
             startFullscreen?.let { put("start_fullscreen", it) }
             codeThemePath?.let { put("code_theme_path", it) }
             codeThemeName?.let { put("code_theme_name", it) }
@@ -218,6 +202,8 @@ data class Preferences(
             put("filen_sync_on_note_exit", filenSyncOnNoteExit)
             put("filen_sync_on_app_open", filenSyncOnAppOpen)
             put("filen_sync_direction", filenSyncDirection)
+            put("markdown_input", markdownInput)
+            put("slash_commands", slashCommands)
         }
         .put("switcher_layouts", org.json.JSONArray().apply { switcherLayouts.forEach { put(it.id) } })
         .put("sidebar_recent", sidebarRecent)
@@ -260,8 +246,6 @@ data class Preferences(
             val zoomLockPan = o.optString("zoom_lock_pan", "single").let { if (it == "double" || it == "none") it else "single" }
             val tapActions = setOf("none", "undo", "redo", "toggle_pan", "toggle_eraser", "toggle_previous")
             fun tapAction(key: String) = o.optString(key, "none").let { if (it in tapActions) it else "none" }
-            fun paletteStyle(key: String, default: String) =
-                o.optString(key, default).let { if (it == "classic" || it == "material") it else default }
             val legacySeed = Rgba.fromHex(o.optString("material_seed"))
             val legacyDual = o.optBoolean("material_dual_tone", false)
             val materialMode = MaterialColourMode.fromId(o.optString("material_mode")) ?: when {
@@ -272,19 +256,21 @@ data class Preferences(
             val legacyDualAccent = legacySeed ?: Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT
             return Preferences(
                 uiAppearance = appearance,
-                accentColor = Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT,
-                systemPaletteStyle = paletteStyle("system_palette_style", "material"),
-                darkPaletteStyle = paletteStyle("dark_palette_style", "material"),
-                lightPaletteStyle = paletteStyle("light_palette_style", "material"),
-                oledPaletteStyle = paletteStyle("oled_palette_style", "classic"),
                 materialMode = materialMode,
                 materialSingleSeed = Rgba.fromHex(o.optString("material_single_seed"))
                     ?: legacySeed?.takeIf { !legacyDual } ?: DEFAULT_MATERIAL_SINGLE,
                 materialDualSeed = Rgba.fromHex(o.optString("material_dual_seed"))
                     ?: if (legacyDual) legacyDualAccent else DEFAULT_MATERIAL_DUAL,
                 materialStyle = MaterialStyle.fromId(o.optString("material_style")),
+                materialContrast = o.optDouble("material_contrast", 0.0).takeIf { it in -1.0..1.0 } ?: 0.0,
                 materialSurfaceSeed = Rgba.fromHex(o.optString("material_surface_seed"))
                     ?: if (legacyDual && !o.has("material_mode")) Rgba(33, 150, 243, 255) else DEFAULT_MATERIAL_SURFACE,
+                cornerStyle = CornerStyle.fromId(o.optString("corner_style")),
+                toolbarLook = ToolbarLook(
+                    position = ToolbarPosition.fromId(o.optString("toolbar_position")),
+                    size = ToolbarSize.fromId(o.optString("toolbar_size")),
+                    floating = o.optBoolean("toolbar_floating", false),
+                ),
                 hideWindowDecoration = o.optBoolean("hide_window_decoration", false),
                 pageColor = if (o.isNull("page_color")) null else Rgba.fromHex(o.optString("page_color")),
                 pageTemplatePdf = if (o.isNull("page_template_pdf")) null else o.optString("page_template_pdf").ifEmpty { null },
@@ -334,6 +320,8 @@ data class Preferences(
                 filenSyncOnAppOpen = o.optBoolean("filen_sync_on_app_open", false),
                 filenSyncDirection = o.optString("filen_sync_direction", "both")
                     .let { if (it == "up" || it == "down" || it == "off") it else "both" },
+                markdownInput = o.optBoolean("markdown_input", true),
+                slashCommands = o.optBoolean("slash_commands", true),
                 switcherLayouts = o.optJSONArray("switcher_layouts")?.let { a ->
                     (0 until a.length()).mapNotNull { ExplorerLayout.fromId(a.optString(it)) }.distinct()
                 } ?: ExplorerLayout.entries,

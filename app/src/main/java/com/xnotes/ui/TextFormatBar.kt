@@ -32,15 +32,18 @@ import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,8 +57,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +70,7 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.Paragraph
 import com.xnotes.core.tools.Tool
 import com.xnotes.platform.FontCatalog
 import com.xnotes.ui.icons.XnotesIcons
@@ -78,9 +83,10 @@ import kotlin.math.roundToInt
  * legacy box edit is open). Sits as the last child of the editor column, so the
  * adjustResize window floats it directly above the soft keyboard. Controls, in
  * order: checkbox item, font colour, highlight, font face, size, bold/italic/
- * underline/strikethrough, ordered and unordered lists, code block (tap toggles,
- * long-press picks the language), alignment (cycles), indent, outdent. Centred
- * when it fits, scrollable when it does not.
+ * underline/strikethrough, heading level, ordered and unordered lists, code block
+ * (tap toggles, long-press picks the language), table, alignment (cycles), indent,
+ * outdent. Inside a table cell the heading, list, code, table and indent controls
+ * disable. Centred when it fits, scrollable when it does not.
  */
 @Composable
 fun TextFormatBar(editor: Editor) {
@@ -90,6 +96,8 @@ fun TextFormatBar(editor: Editor) {
     editor.contentVersion
     val style = editor.flowCaretStyle()
     val para = editor.flowCaretParagraph()
+    val inCell = para?.table != null
+    var tableDialog by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -100,7 +108,7 @@ fun TextFormatBar(editor: Editor) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK) {
+        BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK, enabled = !inCell) {
             editor.flowToggleList(ListKind.CHECK)
         }
         BarDivider()
@@ -117,22 +125,30 @@ fun TextFormatBar(editor: Editor) {
         LinkButton(editor, style.link)
 
         BarDivider()
-        BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED) {
+        HeadingButton(editor, para?.headingLevel ?: 0, enabled = !inCell)
+        BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED, enabled = !inCell) {
             editor.flowToggleList(ListKind.ORDERED)
         }
-        BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET) {
+        BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET, enabled = !inCell) {
             editor.flowToggleList(ListKind.BULLET)
         }
-        CodeBlockButton(editor, para?.codeLang)
+        CodeBlockButton(editor, para?.codeLang, enabled = !inCell)
+        BarIcon(Icons.Filled.Functions, stringResource(R.string.equation), active = style.math, enabled = editor.flowEditingActive) {
+            editor.flowToggleMath()
+        }
+        BarIcon(Icons.Outlined.TableChart, stringResource(R.string.insert_table), enabled = editor.flowEditingActive && !inCell) {
+            tableDialog = true
+        }
         BarDivider()
         BarIcon(alignIcon(para?.align ?: ParaAlign.LEFT), stringResource(R.string.alignment), active = para != null && para.align != ParaAlign.LEFT) {
             editor.flowCycleAlign()
         }
-        BarIcon(Icons.AutoMirrored.Filled.FormatIndentIncrease, stringResource(R.string.indent)) { editor.flowIndent(1) }
+        BarIcon(Icons.AutoMirrored.Filled.FormatIndentIncrease, stringResource(R.string.indent), enabled = !inCell) { editor.flowIndent(1) }
         BarIcon(Icons.AutoMirrored.Filled.FormatIndentDecrease, stringResource(R.string.outdent), enabled = (para?.indent ?: 0) > 0) {
             editor.flowIndent(-1)
         }
     }
+    if (tableDialog) TableDialog(editor, null) { tableDialog = false }
 }
 
 private fun alignIcon(align: ParaAlign): ImageVector = when (align) {
@@ -152,11 +168,78 @@ private fun shortLangLabel(lang: String): String = when (lang) {
     else -> lang.take(4)
 }
 
+/**
+ * Heading level: a bare H, gaining its number while one is on, so the button reads
+ * the same either way. Material has no H glyph (only Title, a T), and a letter that
+ * turns into H2 beats an icon that does. A tap opens the level menu rather than
+ * toggling, since no one level is the obvious default, and each entry trails its
+ * markdown marker so the bar also teaches the shortcut it duplicates.
+ */
+@Composable
+private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
+    val palette = LocalPalette.current
+    var menuOpen by remember { mutableStateOf(false) }
+    // The letter carries no meaning for a screen reader, so name the control instead.
+    val label = stringResource(R.string.heading)
+    Box {
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .clickable(enabled = enabled) { menuOpen = true }
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            val tint = when {
+                !enabled -> palette.disabled
+                level > 0 -> palette.accent
+                else -> palette.textDim
+            }
+            Text(
+                if (level > 0) "H$level" else "H",
+                color = tint.toComposeColor(),
+                fontSize = if (level > 0) 12.sp else 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            for (n in 0..Paragraph.MAX_HEADING) {
+                ChoiceMenuItem(
+                    n == level,
+                    text = { fg ->
+                        Text(
+                            if (n == 0) stringResource(R.string.body_text) else stringResource(R.string.heading_n, n),
+                            color = fg,
+                            fontSize = 14.sp,
+                            fontWeight = if (n > 0) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    trailingIcon = if (n > 0 && editor.markdownInput) {
+                        { fg ->
+                            Text(
+                                "#".repeat(n),
+                                color = fg.copy(alpha = 0.72f),
+                                fontSize = 12.sp,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        editor.flowSetHeading(n)
+                        menuOpen = false
+                    },
+                )
+            }
+        }
+    }
+}
+
 /** Code block: tap toggles it like a list, long-press picks the block's language.
  *  While on, the icon gives way to the active language's short form. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CodeBlockButton(editor: Editor, lang: String?) {
+private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
     val palette = LocalPalette.current
     var menuOpen by remember { mutableStateOf(false) }
     Box {
@@ -165,6 +248,7 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
                 .size(44.dp)
                 .clip(CircleShape)
                 .combinedClickable(
+                    enabled = enabled,
                     onClick = { editor.flowToggleCode() },
                     onLongClick = { menuOpen = true },
                 ),
@@ -176,13 +260,12 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
                     color = palette.accent.toComposeColor(),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    style = TextStyle(fontFamily = FontFamily.Monospace),
                 )
             } else {
                 Icon(
                     Icons.Filled.Code,
                     contentDescription = stringResource(R.string.code_block),
-                    tint = palette.textDim.toComposeColor(),
+                    tint = if (enabled) palette.textDim.toComposeColor() else palette.disabled.toComposeColor(),
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -194,11 +277,12 @@ private fun CodeBlockButton(editor: Editor, lang: String?) {
                 else -> lang
             }
             for (token in editor.codeLanguageChoices()) {
-                DropdownMenuItem(
-                    text = {
+                ChoiceMenuItem(
+                    token == current,
+                    text = { fg ->
                         Text(
                             if (token == "plain") stringResource(R.string.code_plain) else token,
-                            color = (if (token == current) palette.accent else palette.text).toComposeColor(),
+                            color = fg,
                             fontSize = 14.sp,
                         )
                     },
@@ -255,7 +339,7 @@ private fun BarIcon(
 ) {
     val palette = LocalPalette.current
     val tint = when {
-        !enabled -> com.xnotes.ui.theme.Palette.DISABLED_ICON.toComposeColor()
+        !enabled -> palette.disabled.toComposeColor()
         active -> palette.accent.toComposeColor()
         else -> palette.textDim.toComposeColor()
     }
@@ -329,9 +413,9 @@ private fun HighlightButton(editor: Editor, current: Rgba?) {
             Box(
                 Modifier
                     .size(26.dp)
-                    .clip(RoundedCornerShape(7.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background((current ?: palette.panel).toComposeColor())
-                    .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(7.dp)),
+                    .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -368,7 +452,7 @@ private fun FontFaceButton(editor: Editor, current: FontFace?) {
         Row(
             modifier = Modifier
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(8.dp))
+                .clip(MaterialTheme.shapes.small)
                 .clickable { open = true }
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -404,7 +488,6 @@ private fun SizeStepper(size: Double, onDelta: (Double) -> Unit) {
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(26.dp),
-            style = TextStyle(fontFamily = FontFamily.Monospace),
         )
         Box(Modifier.size(36.dp).clip(CircleShape).clickable { onDelta(1.0) }, contentAlignment = Alignment.Center) {
             Icon(XnotesIcons.plus, stringResource(R.string.larger), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))

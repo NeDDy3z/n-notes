@@ -1,0 +1,15 @@
+{
+  "xtemplate": 1,
+  "id": "com.xnotes.dots",
+  "name": "Dots",
+  "license": "MIT",
+  "params": {
+    "spacing": { "type": "length", "default": "10.837333mm", "min": "2.709333mm", "max": "33.866667mm",
+                 "label": "Spacing", "role": "spacing" }
+  },
+  "items": [
+    { "type": "repeat", "axis": "xy", "period": "spacing", "extend": true, "children": [
+      { "type": "dot", "r": "0.338667mm" }
+    ]}
+  ]
+}

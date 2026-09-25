@@ -2,9 +2,12 @@ package com.xnotes
 
 import android.content.Context
 import android.content.Intent
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.DisplayMetrics
+import android.view.Display
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -44,11 +47,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,7 +68,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,6 +90,7 @@ import com.xnotes.R
 import com.xnotes.ui.CanvasToastPill
 import com.xnotes.ui.Editor
 import com.xnotes.ui.Toolbar
+import com.xnotes.ui.ToolbarAround
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.XnotesTheme
@@ -93,6 +98,8 @@ import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.hrm.latex.renderer.export.rememberLatexExporter
+import com.hrm.latex.renderer.measure.rememberLatexMeasurer
 
 /** Minimum time the launch loader stays up, so its animation is briefly seen even
  *  when the session restores instantly. */
@@ -109,6 +116,17 @@ internal fun deviceHasDisplayCutout(context: Context): Boolean {
             (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
     }.getOrNull()
     return display?.cutout != null
+}
+
+/** The whole screen's shorter side in dp, the same in any orientation, window or split; 0 if unknown. */
+internal fun deviceShortSideDp(context: Context): Double {
+    val metrics = runCatching {
+        DisplayMetrics().also {
+            @Suppress("DEPRECATION")
+            context.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY).getRealMetrics(it)
+        }
+    }.getOrNull() ?: return 0.0
+    return minOf(metrics.widthPixels, metrics.heightPixels) / metrics.density.toDouble()
 }
 
 /** The standard touch action an old One UI S-Pen-button code stands in for, or -1 for anything else. */
@@ -131,6 +149,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.xnotes.platform.FontCatalog.init(this)
+        com.xnotes.platform.TemplateLibrary.init(this)
         setTheme(com.xnotes.R.style.Theme_Xnotes) // leave the dark launch/splash theme behind
         applyFullscreen(!deviceHasDisplayCutout(this)) // provisional; reconciled once the editor loads prefs
         pendingPdfImport = pdfImportUri(intent)
@@ -149,21 +168,23 @@ class MainActivity : ComponentActivity() {
                 ready = true
                 ed.prewarmBackstage() // warm recents/explorer caches so the first backstage open is instant
             }
-            XnotesTheme(ed.palette) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (ready) EditorScreen(
-                        ed,
-                        fullscreen = ed.fullscreen,
-                        onToggleFullscreen = ed::toggleFullscreen,
-                        importPdfUri = pendingPdfImport,
-                        onImportConsumed = { pendingPdfImport = null },
-                    )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = !ready,
-                        enter = androidx.compose.animation.EnterTransition.None,
-                        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(280)),
-                    ) {
-                        com.xnotes.ui.XnotesLoader()
+            XnotesTheme(ed.palette, ed.cornerStyle) {
+                CompositionLocalProvider(com.xnotes.ui.LocalToolbarLook provides ed.toolbarLook) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (ready) EditorScreen(
+                            ed,
+                            fullscreen = ed.fullscreen,
+                            onToggleFullscreen = ed::toggleFullscreen,
+                            importPdfUri = pendingPdfImport,
+                            onImportConsumed = { pendingPdfImport = null },
+                        )
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !ready,
+                            enter = androidx.compose.animation.EnterTransition.None,
+                            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(280)),
+                        ) {
+                            com.xnotes.ui.XnotesLoader()
+                        }
                     }
                 }
             }
@@ -258,6 +279,15 @@ private fun EditorScreen(
 ) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
+    // The LaTeX renderer resolves its fonts through the composition, so this is the
+    // only place it can be built; the flow reaches it through MathRendering after.
+    val mathMeasurer = rememberLatexMeasurer()
+    val mathExporter = rememberLatexExporter()
+    val mathDensity = LocalDensity.current
+    LaunchedEffect(mathMeasurer, mathExporter, mathDensity) {
+        com.xnotes.platform.MathRendering.install(mathMeasurer, mathExporter, mathDensity)
+        editor.refreshFlowMath()
+    }
     // Backstage is the root of the stack; the editor is pushed on top only when a note is open
     // (editor.noteOpen). Every launch starts on backstage.
     var backstageView by remember { mutableStateOf(com.xnotes.ui.BackstageView.HOME) }
@@ -302,18 +332,25 @@ private fun EditorScreen(
         }
     }
 
-    // "Import file" remembers the picked file and shows the name dialog at once; the (possibly large)
-    // copy + conversion into the .xnote happens at Save, under the "Importing…" loader, so the dialog
-    // isn't delayed. The format (pdf / image / text) is classified from the picked file here.
-    val importPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { u ->
+    // "Import file" takes one file or many. One remembers the pick and shows the name dialog at once, with
+    // the (possibly large) copy + conversion happening at Save under the "Importing…" loader. Many skips
+    // naming (each note takes its source file's name) and the explorer imports them one at a time. The
+    // format (pdf / image / text) is classified from each picked file here.
+    val importPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        fun pendingOf(u: android.net.Uri): com.xnotes.ui.PendingImport {
             val name = displayNameOf(resolver, u) ?: "Document"
             val mime = runCatching { resolver.getType(u) }.getOrNull() ?: ""
-            val stem = com.xnotes.core.util.Paths.stem(name)
             val kind = com.xnotes.ui.ImportKind.classify(name, mime)
-            editor.requestImport(kind, stem, u.toString(), name, mime)
+            return com.xnotes.ui.PendingImport(kind, com.xnotes.core.util.Paths.stem(name), u.toString(), name, mime)
+        }
+        when {
+            uris.isEmpty() -> Unit
+            uris.size == 1 -> pendingOf(uris[0]).let { editor.requestImport(it.kind, it.defaultName, it.uri, it.sourceName, it.mime) }
+            else -> editor.requestImports(uris.map(::pendingOf))
+        }
+        if (uris.isNotEmpty()) {
             backstageView = com.xnotes.ui.BackstageView.HOME
-            editor.goHomeAll() // land on backstage to name/place the pending import
+            editor.goHomeAll() // land on backstage to name the single pick, or to run the batch
         }
     }
     // Exact MIME types the "Import file" picker offers, so it only shows files we can actually
@@ -427,6 +464,16 @@ private fun EditorScreen(
             runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }
                 .getOrNull()
                 ?.let { editor.importCodeTheme(it, displayNameOf(resolver, uri)) }
+                ?: run { editor.message = context.getString(R.string.err_read_file) }
+        }
+    }
+
+    // A user page template (.xtemplate), checked and stored in the template library.
+    val importTemplateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }
+                .getOrNull()
+                ?.let { editor.importTemplate(it) }
                 ?: run { editor.message = context.getString(R.string.err_read_file) }
         }
     }
@@ -826,6 +873,7 @@ private fun EditorScreen(
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
+                onImportTemplate = { importTemplateLauncher.launch(arrayOf("*/*")) },
                 onSharePages = { pane, pages, asPdf -> sharePages(pane, pages, asPdf) },
                 onSavePagesAsPdf = { pane, pages -> savePagesAsPdf(pane, pages) },
                 onSavePagesAsImages = { pane, pages -> savePagesAsImages(pane, pages) },
@@ -860,7 +908,7 @@ private fun EditorScreen(
         val shareSuffix = remember(shareUri) {
             shareUri?.let { kindOf(it).suffix } ?: com.xnotes.core.util.DocumentKind.NOTE.suffix
         }
-        androidx.compose.material3.AlertDialog(
+        com.xnotes.ui.AlertDialog(
             onDismissRequest = { showShareChooser = false; pendingShareUri = null },
             title = { androidx.compose.material3.Text(stringResource(R.string.share_note)) },
             text = { androidx.compose.material3.Text(stringResource(R.string.share_as, shareUri?.let { stemOf(it) } ?: "")) },
@@ -884,7 +932,7 @@ private fun EditorScreen(
     guardAction?.let { request ->
         val guarded = request.editor
         val action = request.action
-        androidx.compose.material3.AlertDialog(
+        com.xnotes.ui.AlertDialog(
             onDismissRequest = { guardAction = null },
             title = { androidx.compose.material3.Text(stringResource(R.string.unsaved_changes)) },
             text = { androidx.compose.material3.Text(stringResource(R.string.unsaved_changes_prompt, guarded.title)) },
@@ -920,7 +968,10 @@ private fun EditorScreen(
         })
     }
     if (editor.importing) {
-        PdfImportDialog(isPdf = editor.pendingImport?.kind != com.xnotes.ui.ImportKind.OPEN, onCancel = { editor.cancelImportInProgress() }) // the stream-copy stops at its next buffer
+        // A batch counts files, so it gets a determinate ring; a single import has nothing to count.
+        val batch = editor.importProgress
+        if (batch != null) PdfImportBatchDialog(batch.done, batch.total) { editor.cancelImportInProgress() }
+        else PdfImportDialog(isPdf = editor.pendingImport?.kind != com.xnotes.ui.ImportKind.OPEN, onCancel = { editor.cancelImportInProgress() }) // the stream-copy stops at its next buffer
     }
     // Tapping a note reads it off-thread (editor.opening). Only show the spinner once the read has run
     // long enough to matter, so opening a small note never flashes a dialog; a big PDF gets the loader.
@@ -984,6 +1035,7 @@ private class PaneActions(
     val onInsertImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onAddStickers: () -> Unit,
+    val onImportTemplate: () -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
     val onSavePagesAsPdf: (Editor, List<Int>) -> Unit,
     val onSavePagesAsImages: (Editor, List<Int>) -> Unit,
@@ -1140,59 +1192,73 @@ private fun EditorPane(
         }
         if (editor.canvasOpen) {
             val canvas = editor.infinite
-            com.xnotes.ui.InfiniteToolbar(
-                canvas,
-                onOpenBackstage = actions.onOpenBackstage,
-                onInsertImage = { actions.onInsertCanvasImage(editor, null) },
-                onClosePane = onClose,
-            )
-            Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-                AndroidView(
-                    factory = { detached(canvas.surfaces) },
-                    modifier = Modifier.fillMaxSize(),
-                    update = { canvas.view.publish() },
+            val bar: @Composable () -> Unit = {
+                com.xnotes.ui.InfiniteToolbar(
+                    canvas,
+                    onOpenBackstage = actions.onOpenBackstage,
+                    onInsertImage = { actions.onInsertCanvasImage(editor, null) },
+                    onClosePane = onClose,
                 )
-                com.xnotes.ui.SelectionMenu(canvas)
-                com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
-                com.xnotes.ui.CanvasDebugOverlay(canvas)
-                CanvasToastPill(canvas)
+            }
+            ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
+                Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
+                    AndroidView(
+                        factory = { detached(canvas.surfaces) },
+                        modifier = Modifier.fillMaxSize(),
+                        update = { canvas.view.publish() },
+                    )
+                    floatingBar()
+                    com.xnotes.ui.SelectionMenu(canvas)
+                    com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
+                    com.xnotes.ui.CanvasDebugOverlay(canvas)
+                    CanvasToastPill(canvas)
+                }
             }
         } else {
-            Toolbar(
-                editor,
-                onToggleFullscreen = actions.onToggleFullscreen,
-                onOpenBackstage = actions.onOpenBackstage,
-                onInsertImage = { actions.onInsertImage(editor, null) },
-                onAddStickers = actions.onAddStickers,
-                onClosePane = onClose,
-            )
-            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                if (editor.sidebarVisible) {
-                    com.xnotes.ui.SidePanel(
-                        editor,
-                        onSharePages = { pages, asPdf -> actions.onSharePages(editor, pages, asPdf) },
-                        onSavePagesAsPdf = { pages -> actions.onSavePagesAsPdf(editor, pages) },
-                        onSavePagesAsImages = { pages -> actions.onSavePagesAsImages(editor, pages) },
-                    )
-                }
-                Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
-                    AndroidView(
-                        factory = { detached(editor.surfaces) },
-                        modifier = Modifier.fillMaxSize(),
-                        update = { editor.view.requestRender() }, // repaint on (re)attach so a push never flashes blank
-                    )
-                    editor.editingField?.let { field ->
-                        com.xnotes.ui.TextEditorOverlay(editor, field)
+            val bar: @Composable () -> Unit = {
+                Toolbar(
+                    editor,
+                    onToggleFullscreen = actions.onToggleFullscreen,
+                    onOpenBackstage = actions.onOpenBackstage,
+                    onInsertImage = { actions.onInsertImage(editor, null) },
+                    onAddStickers = actions.onAddStickers,
+                    onClosePane = onClose,
+                    onImportTemplate = actions.onImportTemplate,
+                )
+            }
+            ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->
+                Row(modifier = Modifier.fillMaxSize()) {
+                    if (editor.sidebarVisible) {
+                        com.xnotes.ui.SidePanel(
+                            editor,
+                            onSharePages = { pages, asPdf -> actions.onSharePages(editor, pages, asPdf) },
+                            onSavePagesAsPdf = { pages -> actions.onSavePagesAsPdf(editor, pages) },
+                            onSavePagesAsImages = { pages -> actions.onSavePagesAsImages(editor, pages) },
+                        )
                     }
-                    com.xnotes.ui.SelectionMenu(editor)
-                    com.xnotes.ui.ScreenshotMenu(editor)
-                    com.xnotes.ui.CropMenu(editor)
-                    com.xnotes.ui.TextStyleBar(editor)
-                    com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
-                    com.xnotes.ui.FlowEditMenu(editor)
-                    ZoomLockHint(editor)
-                    RefiningPdfHint(editor)
-                    CanvasToastPill(editor)
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+                        AndroidView(
+                            factory = { detached(editor.surfaces) },
+                            modifier = Modifier.fillMaxSize(),
+                            update = { editor.view.requestRender() }, // repaint on (re)attach so a push never flashes blank
+                        )
+                        editor.editingField?.let { field ->
+                            com.xnotes.ui.TextEditorOverlay(editor, field)
+                        }
+                        floatingBar()
+                        com.xnotes.ui.SelectionMenu(editor)
+                        com.xnotes.ui.ScreenshotMenu(editor)
+                        com.xnotes.ui.CropMenu(editor)
+                        com.xnotes.ui.TextStyleBar(editor)
+                        com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
+                        com.xnotes.ui.FlowEditMenu(editor)
+                        com.xnotes.ui.SlashMenu(editor)
+                        com.xnotes.ui.FlowTableMenu(editor)
+                        com.xnotes.ui.TableChrome(editor)
+                        ZoomLockHint(editor)
+                        RefiningPdfHint(editor)
+                        CanvasToastPill(editor)
+                    }
                 }
             }
             // Last children of the resized column: ride directly above the soft keyboard.
@@ -1300,9 +1366,9 @@ private fun PdfExportDialog(done: Int, total: Int, counting: String, onCancel: (
     androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
                 .padding(horizontal = 32.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1366,9 +1432,9 @@ internal fun SpinnerDialog(title: String, onCancel: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
                 .padding(horizontal = 32.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1404,9 +1470,9 @@ private fun SavingDialog() {
     ) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
                 .padding(horizontal = 32.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1435,6 +1501,50 @@ private fun PdfImportDialog(isPdf: Boolean, onCancel: () -> Unit) =
     SpinnerDialog(if (isPdf) "Importing…" else "Importing note…", onCancel)
 
 /**
+ * Determinate "Importing PDFs…" dialog for a multi-file import: a ring filled by files finished plus
+ * a running "%d of %d imported" line, so the count stays visible for the whole batch. Cancel stops
+ * after the file in flight and keeps the ones already imported. Styled to match [PdfExportDialog].
+ */
+@Composable
+private fun PdfImportBatchDialog(done: Int, total: Int, onCancel: () -> Unit) {
+    val palette = LocalPalette.current
+    val fraction = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else 0f
+    androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
+        Column(
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.large)
+                .background(palette.surface.toComposeColor())
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large)
+                .padding(horizontal = 32.dp, vertical = 26.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    progress = { fraction },
+                    modifier = Modifier.fillMaxSize(),
+                    color = palette.accent.toComposeColor(),
+                    trackColor = palette.border.toComposeColor(),
+                    strokeWidth = 4.dp,
+                )
+                Text("$done/$total", color = palette.text.toComposeColor(), fontSize = 15.sp)
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.importing_pdfs), color = palette.text.toComposeColor(), fontSize = 15.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.import_progress, done, total),
+                color = palette.textDim.toComposeColor(),
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(14.dp))
+            androidx.compose.material3.TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.cancel), color = palette.accent.toComposeColor())
+            }
+        }
+    }
+}
+
+/**
  * Subtle, non-blocking hint shown bottom-right while a dark-mode PDF's embedded-image colours are
  * still being parsed by the up-front background sweep ([Editor.isRefiningPdf]). The pages are already
  * visible; this just shows a `k/N` progress bar so the user can keep scrolling and drawing while the
@@ -1445,7 +1555,7 @@ private fun BoxScope.RefiningPdfHint(editor: Editor) {
     val palette = LocalPalette.current
     AnimatedVisibility(
         visible = editor.isRefiningPdf,
-        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+        modifier = Modifier.align(Alignment.BottomEnd).padding(com.xnotes.ui.LocalToolbarCover.current).padding(12.dp),
         enter = fadeIn(),
         exit = fadeOut(),
     ) {
@@ -1457,9 +1567,9 @@ private fun BoxScope.RefiningPdfHint(editor: Editor) {
             // wraps to two tidy lines under it.
             modifier = Modifier
                 .width(190.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             androidx.compose.material3.LinearProgressIndicator(
@@ -1476,7 +1586,6 @@ private fun BoxScope.RefiningPdfHint(editor: Editor) {
             Text(
                 stringResource(R.string.refining_pdf_colours, done, total),
                 color = palette.textDim.toComposeColor(),
-                fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
             )
         }
@@ -1514,15 +1623,15 @@ private fun BoxScope.ZoomLockHint(editor: Editor) {
     val locked = editor.zoomLocked
     AnimatedVisibility(
         visible = visible,
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+        modifier = Modifier.align(Alignment.TopCenter).padding(com.xnotes.ui.LocalToolbarCover.current).padding(top = 8.dp),
         enter = fadeIn(),
         exit = fadeOut(),
     ) {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(6.dp))
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
                 .clickable { editor.toggleZoomLock(); armToken++ }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,

@@ -1,0 +1,20 @@
+{
+  "xtemplate": 1,
+  "id": "xtemplate.examples.storyboard",
+  "name": "Storyboard",
+  "description": "16:9 frames with ruled lines beneath; two columns on a tall page and three on a wide one.",
+  "license": "MIT",
+  "tags": ["film", "drawing"],
+  "items": [
+    { "type": "group", "inset": ["12mm", "10mm"], "children": [
+      { "type": "repeat", "axis": "xy", "count": ["max(2, round(W / 100mm))", "max(2, round(H / 90mm))"], "children": [
+        { "type": "rect", "x": "3mm", "y": "3mm", "strokeWidth": "0.4mm",
+          "w": "min(W - 6mm, (H - 20mm) * 16 / 9)", "h": "min((W - 6mm) * 9 / 16, H - 20mm)" },
+        { "type": "group", "x": "3mm", "y": "min((W - 6mm) * 9 / 16, H - 20mm) + 4mm",
+          "w": "100% - 6mm", "h": "100% - min((W - 6mm) * 9 / 16, H - 20mm) - 6mm", "children": [
+          { "type": "repeat", "axis": "y", "period": "6mm", "children": [ { "type": "hline", "y": "100%", "opacity": 0.6 } ] }
+        ]}
+      ]}
+    ]}
+  ]
+}

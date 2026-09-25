@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,17 +51,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -87,8 +88,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -156,7 +155,6 @@ import androidx.compose.material.icons.filled.Sync
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
-import com.xnotes.ui.theme.Palette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -347,7 +345,7 @@ private fun BackstageContent(
                 exit = if (animateClose) fadeOut(animationSpec = tween(SIDEBAR_ANIM_MS)) else ExitTransition.None,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                Box(Modifier.fillMaxSize().background(Color(0x99000000)).clickable { dismissDrawer() })
+                Box(Modifier.fillMaxSize().background(palette.materialColors.scrim.withAlpha(82).toComposeColor()).clickable { dismissDrawer() })
             }
             AnimatedVisibility(
                 visible = drawerOpen,
@@ -579,16 +577,16 @@ private fun Command(icon: ImageVector, label: String, selected: Boolean = false,
         Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .then(if (selected) Modifier.background(palette.accentAlpha(38).toComposeColor()) else Modifier)
+            .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = label, tint = palette.accent.toComposeColor(), modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = label, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(16.dp))
         Text(
             label,
-            color = if (selected) palette.accent.toComposeColor() else palette.text.toComposeColor(),
+            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
             fontSize = 15.sp,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             modifier = Modifier.weight(1f),
@@ -602,22 +600,22 @@ private fun Command(icon: ImageVector, label: String, selected: Boolean = false,
 @Composable
 private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val pill = if (palette.isMaterial) RoundedCornerShape(16.dp) else RectangleShape
+    val pill = MaterialTheme.shapes.large
     Column(
         Modifier.width(RAIL_WIDTH).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(top = 6.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             Modifier.size(width = 56.dp, height = 32.dp).clip(pill)
-                .background(if (selected) palette.accentAlpha(38).toComposeColor() else Color.Transparent),
+                .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.height(4.dp))
         Text(
             label,
-            color = (if (selected) palette.accent else palette.text).toComposeColor(),
+            color = palette.text.toComposeColor(),
             fontSize = 11.sp,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
@@ -651,7 +649,7 @@ private fun ColorCommand(color: Rgba, name: String, selected: Boolean, onClick: 
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .then(if (selected) Modifier.background(palette.accentAlpha(38).toComposeColor()) else Modifier)
+                .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
                 .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
                 .padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -662,7 +660,7 @@ private fun ColorCommand(color: Rgba, name: String, selected: Boolean, onClick: 
             Spacer(Modifier.width(16.dp))
             Text(
                 name,
-                color = (if (selected) palette.accent else palette.text).toComposeColor(),
+                color = (if (selected) palette.selectionForeground else palette.text).toComposeColor(),
                 fontSize = 15.sp,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                 maxLines = 1,
@@ -705,16 +703,16 @@ private fun PinnedCommand(label: String, selected: Boolean, onClick: () -> Unit,
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .then(if (selected) Modifier.background(palette.accentAlpha(38).toComposeColor()) else Modifier)
+                .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
                 .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
                 .padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(XnotesIcons.folder, null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(20.dp))
+            Icon(XnotesIcons.folder, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(16.dp))
             Text(
                 label,
-                color = (if (selected) palette.accent else palette.text).toComposeColor(),
+                color = (if (selected) palette.selectionForeground else palette.text).toComposeColor(),
                 fontSize = 15.sp,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                 maxLines = 1,
@@ -741,23 +739,21 @@ private fun SortOption(
     descending: Boolean,
     onPick: (ExplorerSortKey, Boolean) -> Unit,
 ) {
-    val palette = LocalPalette.current
     val active = key == activeKey
-    val tint = (if (active) palette.accent else palette.text).toComposeColor()
-    DropdownMenuItem(
-        text = { Text(label, color = tint) },
+    ChoiceMenuItem(
+        active,
+        onClick = { if (active) onPick(key, !descending) else onPick(key, key != ExplorerSortKey.NAME) },
         trailingIcon = if (active) {
-            {
+            { fg ->
                 Icon(
                     if (descending) XnotesIcons.arrowDown else XnotesIcons.arrowUp,
                     if (descending) stringResource(R.string.sort_descending) else stringResource(R.string.sort_ascending),
-                    tint = tint,
+                    tint = fg,
                     modifier = Modifier.size(18.dp),
                 )
             }
         } else null,
-        onClick = { if (active) onPick(key, !descending) else onPick(key, key != ExplorerSortKey.NAME) },
-    )
+    ) { fg -> Text(label, color = fg) }
 }
 
 // --- home pane: the folder explorer ---
@@ -834,8 +830,6 @@ private fun HomePane(
                 FloatingActionButton(
                     onClick = { createMenuOpen = true },
                     shape = CircleShape,
-                    containerColor = palette.accent.toComposeColor(),
-                    contentColor = palette.onAccent.toComposeColor(),
                 ) {
                     Icon(XnotesIcons.edit, stringResource(R.string.create_new), modifier = Modifier.size(24.dp))
                 }
@@ -877,6 +871,8 @@ private fun ExplorerSection(
             }
             Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.weight(1f))
+                EmptyIllustration(EmptyArt.PAGES)
+                Spacer(Modifier.height(20.dp))
                 Text(stringResource(R.string.choose_folder_hint), color = palette.textDim.toComposeColor(), fontSize = 14.sp, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1299,23 +1295,29 @@ private fun ExplorerSection(
     // A failed operation shows in the app's snackbar, which stays in view however far the files are scrolled.
     LaunchedEffect(opError) { opError?.let { editor.say(it); opError = null } }
     val empty = when {
-        colorFilter != null && colorResults == null -> stringResource(R.string.finding)
-        colorFilter != null && colorResults!!.isEmpty() -> stringResource(R.string.nothing_this_colour)
-        searching && results == null -> stringResource(R.string.searching)
-        searching && results!!.isEmpty() -> stringResource(R.string.no_notes_match, trimmed)
-        showRecent && recents == null -> stringResource(R.string.loading)
-        showRecent && recents!!.isEmpty() -> stringResource(R.string.recent_empty)
-        source == null -> stringResource(R.string.loading)
+        colorFilter != null && colorResults == null -> EmptyState(stringResource(R.string.finding))
+        colorFilter != null && colorResults!!.isEmpty() -> EmptyState(stringResource(R.string.nothing_this_colour), EmptyArt.SEARCH)
+        searching && results == null -> EmptyState(stringResource(R.string.searching))
+        searching && results!!.isEmpty() -> EmptyState(stringResource(R.string.no_notes_match, trimmed), EmptyArt.SEARCH)
+        showRecent && recents == null -> EmptyState(stringResource(R.string.loading))
+        showRecent && recents!!.isEmpty() -> EmptyState(stringResource(R.string.recent_empty), EmptyArt.RECENT)
+        source == null -> EmptyState(stringResource(R.string.loading))
         layout == ExplorerLayout.COLUMNS -> null
-        source.isEmpty() -> if (layout == ExplorerLayout.TIMELINE) stringResource(R.string.nothing_here_yet) else stringResource(R.string.folder_empty)
-        arranged.isNullOrEmpty() -> when (val k = kindFilter) {
-            null -> stringResource(R.string.nothing_to_show)
-            EntryKind.PDF -> stringResource(R.string.no_pdf_notes_here)
-            EntryKind.FOLDER -> stringResource(R.string.kind_no_folders)
-            EntryKind.NOTE -> stringResource(R.string.kind_no_notes)
-            EntryKind.CANVAS -> stringResource(R.string.kind_no_canvases)
-            EntryKind.FILE -> stringResource(R.string.kind_no_read_only_files)
-        }
+        source.isEmpty() -> EmptyState(
+            if (layout == ExplorerLayout.TIMELINE) stringResource(R.string.nothing_here_yet) else stringResource(R.string.folder_empty),
+            EmptyArt.PAGES, offersCreate = true,
+        )
+        arranged.isNullOrEmpty() -> EmptyState(
+            when (kindFilter) {
+                null -> stringResource(R.string.nothing_to_show)
+                EntryKind.PDF -> stringResource(R.string.no_pdf_notes_here)
+                EntryKind.FOLDER -> stringResource(R.string.kind_no_folders)
+                EntryKind.NOTE -> stringResource(R.string.kind_no_notes)
+                EntryKind.CANVAS -> stringResource(R.string.kind_no_canvases)
+                EntryKind.FILE -> stringResource(R.string.kind_no_read_only_files)
+            },
+            EmptyArt.SEARCH,
+        )
         else -> null
     }
     // Files scroll under the header except in Columns and the empty states, which keep it over plain background.
@@ -1339,10 +1341,9 @@ private fun ExplorerSection(
                                 ExplorerChip(if (view.timelineByCreated) stringResource(R.string.sort_created) else stringResource(R.string.sort_modified), true, icon = XnotesIcons.sort, trailing = XnotesIcons.chevronDown, labelled = labelled) { byOpen = true }
                                 DropdownMenu(expanded = byOpen, onDismissRequest = { byOpen = false }) {
                                     listOf(true to stringResource(R.string.sort_created), false to stringResource(R.string.sort_modified)).forEach { (created, label) ->
-                                        DropdownMenuItem(
-                                            text = { Text(label, color = (if (created == view.timelineByCreated) palette.accent else palette.text).toComposeColor()) },
-                                            onClick = { byOpen = false; setView(view.copy(timelineByCreated = created)) },
-                                        )
+                                        ChoiceMenuItem(created == view.timelineByCreated, onClick = { byOpen = false; setView(view.copy(timelineByCreated = created)) }) { fg ->
+                                            Text(label, color = fg)
+                                        }
                                     }
                                 }
                             }
@@ -1364,10 +1365,9 @@ private fun ExplorerSection(
                                 ExplorerChip(stringResource(view.groupBy.chipRes), grouped, icon = XnotesIcons.layers, trailing = XnotesIcons.chevronDown, labelled = labelled) { groupOpen = true }
                                 DropdownMenu(expanded = groupOpen, onDismissRequest = { groupOpen = false }) {
                                     GroupBy.entries.forEach { g ->
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(g.labelRes), color = (if (g == view.groupBy) palette.accent else palette.text).toComposeColor()) },
-                                            onClick = { groupOpen = false; setView(view.copy(groupBy = g)) },
-                                        )
+                                        ChoiceMenuItem(g == view.groupBy, onClick = { groupOpen = false; setView(view.copy(groupBy = g)) }) { fg ->
+                                            Text(stringResource(g.labelRes), color = fg)
+                                        }
                                     }
                                 }
                             }
@@ -1378,11 +1378,9 @@ private fun ExplorerSection(
                             ExplorerChip(k?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), k != null, icon = XnotesIcons.filter, trailing = XnotesIcons.chevronDown, labelled = labelled) { kindOpen = true }
                             DropdownMenu(expanded = kindOpen, onDismissRequest = { kindOpen = false }) {
                                 (listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS, EntryKind.FILE)).forEach { option ->
-                                    val on = option == kindFilter
-                                    DropdownMenuItem(
-                                        text = { Text(option?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), color = (if (on) palette.accent else palette.text).toComposeColor()) },
-                                        onClick = { kindOpen = false; kindFilter = option },
-                                    )
+                                    ChoiceMenuItem(option == kindFilter, onClick = { kindOpen = false; kindFilter = option }) { fg ->
+                                        Text(option?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), color = fg)
+                                    }
                                 }
                             }
                         }
@@ -1542,7 +1540,11 @@ private fun ExplorerSection(
                 empty != null && !shelves -> Column(Modifier.fillMaxSize()) {
                     Spacer(Modifier.height(EXPLORER_HEADER))
                     chipRow(48.dp)
-                    EmptyPane(empty)
+                    EmptyPane(empty.text, empty.art, if (!empty.offersCreate) null else { {
+                        PrimaryButton(XnotesIcons.edit, stringResource(R.string.new_note_menu)) { onCreateMode(CreateMode.FILE) }
+                        PrimaryButton(XnotesIcons.canvas, stringResource(R.string.new_canvas_menu)) { onCreateMode(CreateMode.CANVAS) }
+                        PrimaryButton(XnotesIcons.importDoc, stringResource(R.string.import_pdf), onClick = calls.importPdf)
+                    } })
                 }
                 layout == ExplorerLayout.GRID -> GridBody(body, gridState, gridColumns(screenWidthDp, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
                 layout == ExplorerLayout.GALLERY -> GalleryBody(body, galleryState, galleryColumns(screenWidthDp, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
@@ -1623,7 +1625,7 @@ private fun ExplorerSection(
                                 if (!recents.isNullOrEmpty()) {
                                     Text(
                                         stringResource(R.string.clear), color = palette.accent.toComposeColor(), fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(4.dp)).clickable { editor.clearRecents() }.padding(horizontal = 6.dp, vertical = 4.dp),
+                                        modifier = Modifier.padding(start = 6.dp).clip(MaterialTheme.shapes.extraSmall).clickable { editor.clearRecents() }.padding(horizontal = 6.dp, vertical = 4.dp),
                                     )
                                 }
                             } else if (filter != null) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1637,7 +1639,7 @@ private fun ExplorerSection(
                                 Icon(
                                     XnotesIcons.home, stringResource(R.string.top_folder),
                                     tint = (if (stack.isEmpty()) palette.accent else palette.textDim).toComposeColor(),
-                                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)).clickable { stack.clear(); clearUp() },
+                                    modifier = Modifier.size(18.dp).clip(MaterialTheme.shapes.extraSmall).clickable { stack.clear(); clearUp() },
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Crumb(rootName ?: stringResource(R.string.folder), current = stack.isEmpty()) { stack.clear(); clearUp() }
@@ -1697,27 +1699,41 @@ private fun ExplorerSection(
             if (selection.isNotEmpty()) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 SelectionBar(selection.size, onClear = { selection.clear() }, onSelectAll = { selection.clear(); selection.addAll(arranged.orEmpty()) }) {
                     val files = selection.filterNot { it.isDir }
-                    if (selection.size == 1) ExplorerIcon(XnotesIcons.edit, stringResource(R.string.rename), palette.accent.toComposeColor()) { renaming = selection.first(); selection.clear() }
+                    val fg = palette.selectionForeground.toComposeColor()
+                    if (selection.size == 1) ExplorerIcon(XnotesIcons.edit, stringResource(R.string.rename), fg) { renaming = selection.first(); selection.clear() }
                     val pair = files.map { it.documentUri }.distinct().takeIf { it.size == 2 && files.size == selection.size }
-                    if (pair != null) ExplorerIcon(XnotesIcons.split, stringResource(R.string.open_side_by_side), palette.accent.toComposeColor()) { selection.clear(); calls.openSplit(pair[0], pair[1]) }
-                    ExplorerIcon(XnotesIcons.moveToFolder, stringResource(R.string.move_to_folder), palette.accent.toComposeColor()) { moving = selection.toList() }
-                    ExplorerIcon(XnotesIcons.copy, stringResource(R.string.copy), palette.accent.toComposeColor()) { clipboard = ClipItem(selection.toList(), false); selection.clear() }
-                    ExplorerIcon(XnotesIcons.cut, stringResource(R.string.cut), palette.accent.toComposeColor()) { clipboard = ClipItem(selection.toList(), true); selection.clear() }
+                    if (pair != null) ExplorerIcon(XnotesIcons.split, stringResource(R.string.open_side_by_side), fg) { selection.clear(); calls.openSplit(pair[0], pair[1]) }
+                    ExplorerIcon(XnotesIcons.moveToFolder, stringResource(R.string.move_to_folder), fg) { moving = selection.toList() }
+                    ExplorerIcon(XnotesIcons.copy, stringResource(R.string.copy), fg) { clipboard = ClipItem(selection.toList(), false); selection.clear() }
+                    ExplorerIcon(XnotesIcons.cut, stringResource(R.string.cut), fg) { clipboard = ClipItem(selection.toList(), true); selection.clear() }
                     var colorsOpen by remember { mutableStateOf(false) }
                     Box {
-                        ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), palette.accent.toComposeColor()) { colorsOpen = true }
+                        ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), fg) { colorsOpen = true }
                         DropdownMenu(expanded = colorsOpen, onDismissRequest = { colorsOpen = false }) {
                             ColorCodeMenuContent { c -> colorsOpen = false; recolor(selection.toList(), c); selection.clear() }
                         }
                     }
-                    ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.accent.toComposeColor(), enabled = files.size == selection.size && files.none { ReaderKind.isReadable(it.name) }) {
+                    ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), fg, enabled = files.size == selection.size && files.none { ReaderKind.isReadable(it.name) }) {
                         val uris = files.map { it.documentUri }
                         selection.clear()
                         if (uris.size == 1) calls.shareFile(uris[0]) else calls.shareFiles(uris)
                     }
-                    ExplorerIcon(XnotesIcons.trash, if (prefs.trashDays == 0) stringResource(R.string.delete) else stringResource(R.string.move_to_trash), palette.accent.toComposeColor()) { remove(selection.toList()) }
+                    SelectionDivider()
+                    ExplorerIcon(XnotesIcons.trash, if (prefs.trashDays == 0) stringResource(R.string.delete) else stringResource(R.string.move_to_trash), palette.danger.toComposeColor()) { remove(selection.toList()) }
                 }
             }
+        }
+    }
+
+    // A multi-file pick gets no name prompt: it imports straight into the folder on screen, one file
+    // at a time, taking each note's name from its source. This runs here because the explorer is
+    // where the target folder is known. Cancelling keeps whatever already landed.
+    val pendingImports = editor.pendingImports
+    LaunchedEffect(pendingImports) {
+        if (pendingImports.isNotEmpty()) {
+            val n = editor.commitImportsAsync(root, currentDocId)
+            refreshKey++
+            if (n > 0) editor.message = context.resources.getQuantityString(R.plurals.imported_pdfs, n, n)
         }
     }
 
@@ -1878,7 +1894,6 @@ private fun ExplorerSection(
                 }) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.cancel)) } },
-            containerColor = palette.menuBg.toComposeColor(),
         )
     }
 }
@@ -1979,7 +1994,7 @@ internal fun Crumb(text: String, current: Boolean, onClick: () -> Unit) {
         color = (if (current) palette.text else palette.textDim).toComposeColor(),
         fontSize = 14.sp,
         maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onClick).padding(horizontal = 2.dp, vertical = 2.dp),
+        modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onClick).padding(horizontal = 2.dp, vertical = 2.dp),
     )
 }
 
@@ -2062,14 +2077,6 @@ internal fun Modifier.colorHatch(color: Color): Modifier = drawBehind {
     }
 }
 
-/** Material chrome rounds the backstage cards; the classic accent chrome keeps them squared. */
-internal fun cardShape(palette: Palette): Shape =
-    if (palette.isMaterial) RoundedCornerShape(12.dp) else RectangleShape
-
-/** Slightly tighter rounding for the compact folder chips. */
-internal fun chipShape(palette: Palette): Shape =
-    if (palette.isMaterial) RoundedCornerShape(8.dp) else RectangleShape
-
 /** Step each deeper card down-and-right by this much so the stack reads as a tidy pile. */
 private val DRAG_STACK_STEP = 8.dp
 
@@ -2101,7 +2108,7 @@ private fun DragPreview(editor: Editor, items: List<BrowseEntry>, sizePx: IntSiz
 private fun StackedNoteCard(editor: Editor, entry: BrowseEntry, modifier: Modifier) {
     val palette = LocalPalette.current
     val thumb = editor.cachedNoteTile(entry.documentUri)
-    val shape = cardShape(palette)
+    val shape = MaterialTheme.shapes.medium
     Column(modifier.clip(shape).background(palette.bg.toComposeColor()).border(1.dp, palette.accent.toComposeColor(), shape)) {
         Box(Modifier.fillMaxWidth().weight(1f).background(palette.paper.toComposeColor())) {
             if (thumb != null) {
@@ -2211,7 +2218,7 @@ private fun NameDialog(
                 singleLine = true,
                 isError = error != null,
                 placeholder = placeholder?.let { { Text(it) } },
-                supportingText = error?.let { { Text(it, color = Color(0xFFE5534B)) } },
+                supportingText = error?.let { { Text(it) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { confirm() }),
                 modifier = Modifier
@@ -2235,18 +2242,17 @@ private fun NameDialog(
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
         },
-        containerColor = palette.menuBg.toComposeColor(),
     )
 }
 
 private const val PRESS_FILL_MS = 120L
 
-/** Line glyph above a label in a bordered box; inverts to the accent while pressed. Matches the About pane buttons. */
+/** Line glyph above a label in a bordered box; fills with the selection container while pressed. Matches the About pane buttons. */
 @Composable
 private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val palette = LocalPalette.current
     val interaction = remember { MutableInteractionSource() }
-    // Keep the accent fill visible for a minimum time so even a millisecond tap registers.
+    // Keep the pressed fill visible for a minimum time so even a millisecond tap registers.
     var pressed by remember { mutableStateOf(false) }
     LaunchedEffect(interaction) {
         val scope = this
@@ -2271,12 +2277,12 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
         }
     }
     val accent = palette.accent.toComposeColor()
-    val onAccent = palette.onAccent.toComposeColor()
-    val shape = cardShape(palette)
+    val onAccent = palette.selectionForeground.toComposeColor()
+    val shape = MaterialTheme.shapes.medium
     Column(
         modifier
             .clip(shape)
-            .background(if (pressed) accent else Color.Transparent)
+            .background(if (pressed) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), shape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 22.dp),
@@ -2294,10 +2300,33 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
     }
 }
 
+/** What an empty explorer body says, the picture above it, and whether it offers to make something. */
+private class EmptyState(val text: String, val art: EmptyArt? = null, val offersCreate: Boolean = false)
+
+/** An empty body: a picture, what is (not) here, and ways to fill it; scrolls when the window is short. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun EmptyPane(text: String) {
-    Box(Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.Center) {
-        Text(text, color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp)
+internal fun EmptyPane(text: String, art: EmptyArt? = null, actions: (@Composable FlowRowScope.() -> Unit)? = null) {
+    BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (art != null) {
+                EmptyIllustration(art)
+                Spacer(Modifier.height(20.dp))
+            }
+            Text(text, color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 360.dp))
+            if (actions != null) {
+                Spacer(Modifier.height(20.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = actions,
+                )
+            }
+        }
     }
 }
 
@@ -2360,9 +2389,9 @@ private fun SyncConflictBanner() {
         Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(palette.accentAlpha(28).toComposeColor())
-            .border(1.dp, palette.accentAlpha(90).toComposeColor(), RoundedCornerShape(10.dp))
+            .border(1.dp, palette.accentAlpha(90).toComposeColor(), MaterialTheme.shapes.medium)
             .padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
