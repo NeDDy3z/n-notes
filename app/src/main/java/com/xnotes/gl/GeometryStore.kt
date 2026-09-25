@@ -59,6 +59,10 @@ class GeometryStore {
     val usedVertices: Int get() = vertexAllocator.used
     val usedIndices: Int get() = indexAllocator.used
 
+    /** Set once a buffer could not grow, so an item was left undrawn; cleared with the store. */
+    var outOfMemory = false
+        private set
+
     /** Bytes the GPU holds for this store, which is the mirror's size on both sides. */
     val gpuBytes: Long
         get() = vertexAllocator.capacity.toLong() * VERTEX_STRIDE +
@@ -78,17 +82,15 @@ class GeometryStore {
         if (mesh.isEmpty) return null
         val vCount = mesh.vertexCount
         val iCount = mesh.indices.size
-        val vOffset = vertexAllocator.allocate(vCount) ?: run {
-            growVertices(vCount)
-            vertexAllocator.allocate(vCount) ?: return null
-        }
-        val iOffset = indexAllocator.allocate(iCount) ?: run {
-            growIndices(iCount)
-            indexAllocator.allocate(iCount) ?: run {
+        val vOffset = vertexAllocator.allocate(vCount)
+            ?: (if (growVertices(vCount)) vertexAllocator.allocate(vCount) else null)
+            ?: return null
+        val iOffset = indexAllocator.allocate(iCount)
+            ?: (if (growIndices(iCount)) indexAllocator.allocate(iCount) else null)
+            ?: run {
                 vertexAllocator.free(vOffset, vCount)
                 return null
             }
-        }
 
         val r = color.r.toByte()
         val g = color.g.toByte()
@@ -159,6 +161,7 @@ class GeometryStore {
     fun clear() {
         vertexAllocator.reset()
         indexAllocator.reset()
+        outOfMemory = false
     }
 
     // --- GL lifecycle ---
@@ -256,26 +259,36 @@ class GeometryStore {
 
     // --- internals ---
 
-    private fun growVertices(need: Int) {
-        val cap = vertexAllocator.grownCapacity(need) ?: return
-        val next = allocate(cap * VERTEX_STRIDE)
-        vertexMirror.clear()
-        next.put(vertexMirror)
-        next.clear()
-        vertexMirror = next
-        vertexAllocator.grow(cap)
-        fullUpload = true
+    private fun growVertices(need: Int): Boolean {
+        val cap = vertexAllocator.grownCapacity(need)
+        val next = cap?.let { resize(vertexMirror, vertexAllocator, it, VERTEX_STRIDE) }
+        if (next == null) outOfMemory = true else vertexMirror = next
+        return next != null
     }
 
-    private fun growIndices(need: Int) {
-        val cap = indexAllocator.grownCapacity(need) ?: return
-        val next = allocate(cap * INDEX_STRIDE)
-        indexMirror.clear()
-        next.put(indexMirror)
+    private fun growIndices(need: Int): Boolean {
+        val cap = indexAllocator.grownCapacity(need)
+        val next = cap?.let { resize(indexMirror, indexAllocator, it, INDEX_STRIDE) }
+        if (next == null) outOfMemory = true else indexMirror = next
+        return next != null
+    }
+
+    /** [mirror] copied into a buffer of [cap] slots, or null when the device cannot spare one. */
+    private fun resize(mirror: ByteBuffer, allocator: SlotAllocator, cap: Int, stride: Int): ByteBuffer? {
+        val bytes = cap.toLong() * stride
+        if (bytes > Int.MAX_VALUE) return null
+        // One big request failing leaves the heap as it was, so the canvas can carry on without it.
+        val next = try {
+            allocate(bytes.toInt())
+        } catch (e: OutOfMemoryError) {
+            return null
+        }
+        mirror.clear()
+        next.put(mirror)
         next.clear()
-        indexMirror = next
-        indexAllocator.grow(cap)
+        allocator.grow(cap)
         fullUpload = true
+        return next
     }
 
     private fun markVertexDirty(offset: Int, count: Int) {

@@ -148,6 +148,11 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     /** Runs a decode off the render thread; installed by the host. */
     var decodeOn: (Runnable) -> Unit = { it.run() }
+
+    /** Told on the render thread when committed items start or stop being left out for memory. */
+    var onOutOfMemory: ((Boolean) -> Unit)? = null
+    private var reportedOutOfMemory = false
+
     private var contextGen = -1
 
     /** Reused per frame so drawing allocates nothing. */
@@ -954,7 +959,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
 
     private fun drainEdits() {
         while (true) {
-            when (val edit = pending.poll() ?: return) {
+            when (val edit = pending.poll() ?: break) {
                 is Edit.Upsert -> applyUpsert(edit)
                 is Edit.Wet -> applyWet(edit)
                 is Edit.Lift -> applyLift(edit)
@@ -963,6 +968,15 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
                 Edit.Reset -> applyReset()
             }
         }
+        reportMemory()
+    }
+
+    private fun reportMemory() {
+        val short = store.outOfMemory
+        if (short == reportedOutOfMemory) return
+        reportedOutOfMemory = short
+        if (short) Log.w(TAG, "geometry buffers could not grow; some items are not drawn")
+        onOutOfMemory?.invoke(short)
     }
 
     private fun applyUpsert(edit: Edit.Upsert) {
