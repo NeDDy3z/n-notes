@@ -1,12 +1,17 @@
 package com.xnotes.gl
 
 import android.opengl.GLES30
+import android.os.Build
+import android.os.SharedMemory
+import android.system.ErrnoException
 import com.xnotes.core.infinite.CanvasProjection
 import com.xnotes.core.infinite.MeshData
 import com.xnotes.core.infinite.SlotAllocator
 import com.xnotes.core.model.Rgba
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /** Where a mesh lives inside the shared buffers. */
 class BufferSlice(
@@ -34,6 +39,9 @@ class BufferSlice(
  * and can be thrown away and rebuilt.
  */
 class GeometryStore {
+
+    /** Mirrors mapped from shared memory, which can be handed back the moment they are replaced. */
+    private val mapped: MutableSet<ByteBuffer> = Collections.newSetFromMap(IdentityHashMap())
 
     private var vertexMirror: ByteBuffer = allocate(INITIAL_VERTICES * VERTEX_STRIDE)
     private var indexMirror: ByteBuffer = allocate(INITIAL_INDICES * INDEX_STRIDE)
@@ -193,17 +201,15 @@ class GeometryStore {
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
         GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, ibo)
         if (fullUpload) {
-            vertexMirror.position(0)
-            vertexMirror.limit(vertexAllocator.capacity * VERTEX_STRIDE)
-            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, vertexMirror.limit(), vertexMirror, GLES30.GL_DYNAMIC_DRAW)
-            indexMirror.position(0)
-            indexMirror.limit(indexAllocator.capacity * INDEX_STRIDE)
-            GLES30.glBufferData(GLES30.GL_ELEMENT_ARRAY_BUFFER, indexMirror.limit(), indexMirror, GLES30.GL_DYNAMIC_DRAW)
-            vertexMirror.clear()
-            indexMirror.clear()
+            // Upload only the part in use: reading a shared mirror's untouched pages would commit them.
+            val vertexBytes = vertexAllocator.capacity * VERTEX_STRIDE
+            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, vertexBytes, null, GLES30.GL_DYNAMIC_DRAW)
+            val indexBytes = indexAllocator.capacity * INDEX_STRIDE
+            GLES30.glBufferData(GLES30.GL_ELEMENT_ARRAY_BUFFER, indexBytes, null, GLES30.GL_DYNAMIC_DRAW)
             fullUpload = false
             clearDirty()
-            return true
+            markVertexDirty(0, vertexAllocator.end)
+            markIndexDirty(0, indexAllocator.end)
         }
         if (vertexDirtyLo < vertexDirtyHi) {
             vertexMirror.position(vertexDirtyLo)
@@ -283,9 +289,11 @@ class GeometryStore {
         } catch (e: OutOfMemoryError) {
             return null
         }
-        mirror.clear()
+        mirror.position(0)
+        mirror.limit(allocator.end * stride)
         next.put(mirror)
         next.clear()
+        free(mirror)
         allocator.grow(cap)
         fullUpload = true
         return next
@@ -312,8 +320,24 @@ class GeometryStore {
         indexDirtyHi = 0
     }
 
-    private fun allocate(bytes: Int): ByteBuffer =
-        ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
+    /** Mirror memory, mapped outside the Java heap where it can be: a direct buffer is heap on Android. */
+    private fun allocate(bytes: Int): ByteBuffer {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            try {
+                val buffer = SharedMemory.create(SHARED_NAME, bytes).use { it.mapReadWrite() }
+                mapped.add(buffer)
+                return buffer.order(ByteOrder.nativeOrder())
+            } catch (e: ErrnoException) {
+                // No shared memory to be had, so the heap it is.
+            }
+        }
+        return ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
+    }
+
+    private fun free(buffer: ByteBuffer) {
+        if (!mapped.remove(buffer)) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) SharedMemory.unmap(buffer)
+    }
 
     companion object {
         /** Content pixels a chunk spans; see [CanvasProjection], which the shader agrees with. */
@@ -333,6 +357,8 @@ class GeometryStore {
 
         private const val INITIAL_VERTICES = 8192
         private const val INITIAL_INDICES = 24576
+
+        private const val SHARED_NAME = "xnotes-geometry"
 
         /** Chunk index a content coordinate falls in, clamped to what a short can hold. */
         fun chunkIndex(v: Double): Double = CanvasProjection.chunkIndex(v)
