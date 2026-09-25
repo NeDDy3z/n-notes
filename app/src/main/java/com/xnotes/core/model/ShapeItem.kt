@@ -9,6 +9,7 @@ import com.xnotes.core.pal.Renderer
 import com.xnotes.core.tools.ShapeKind
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -41,6 +42,8 @@ class ShapeItem(
     var dashed: Boolean = false,
     var dashLength: Double = 10.0,
     var dashGap: Double = 8.0,
+    /** Clockwise turn in radians about the box centre; only [ShapeKind.COORD_AXES] uses it. */
+    var angle: Double = 0.0,
 ) : CanvasItem, Resizable {
 
     override val kind = KIND
@@ -86,9 +89,16 @@ class ShapeItem(
     /**
      * X-Y coordinate axes as a set of disjoint polylines: the two axes crossing at the box centre,
      * an arrowhead on the positive (right/top) end of each, and evenly spaced tick marks. Each entry
-     * is one stroked run.
+     * is one stroked run, turned by [angle].
      */
     internal fun axesSegments(): List<List<Pt>> {
+        val upright = uprightAxesSegments()
+        if (angle == 0.0) return upright
+        val turn = Affine.rotateAbout(box.center, angle)
+        return upright.map { seg -> seg.map { turn.apply(it) } }
+    }
+
+    private fun uprightAxesSegments(): List<List<Pt>> {
         val b = box
         val cx = b.centerX
         val cy = b.centerY
@@ -302,6 +312,7 @@ class ShapeItem(
             ShapeKind.ARROW -> Rect.bounding(listOf(start, end) + arrowHead()).outset(pad)
             ShapeKind.NUMBER_LINE -> Rect.bounding(numberLineSegments().flatten().ifEmpty { listOf(start, end) }).outset(pad)
             ShapeKind.SPLINE -> Rect.bounding(splinePath()).outset(pad)
+            ShapeKind.COORD_AXES -> Rect.bounding(axesSegments().flatten()).outset(pad)
             else -> box.outset(pad)
         }
     }
@@ -336,9 +347,9 @@ class ShapeItem(
 
     /** Near either main axis line (the ticks/heads are cosmetic; the axes carry the hit). */
     private fun nearAxes(p: Pt, tol: Double): Boolean {
-        val b = box
-        return Geometry.distancePointToSegment(p, Pt(b.left, b.centerY), Pt(b.right, b.centerY)) <= tol ||
-            Geometry.distancePointToSegment(p, Pt(b.centerX, b.top), Pt(b.centerX, b.bottom)) <= tol
+        val (x, y) = axesSegments()
+        return Geometry.distancePointToSegment(p, x[0], x[1]) <= tol ||
+            Geometry.distancePointToSegment(p, y[0], y[1]) <= tol
     }
 
     private fun nearRectOutline(p: Pt, tol: Double): Boolean {
@@ -361,6 +372,12 @@ class ShapeItem(
     }
 
     override fun centroid(): Pt = bounds().center
+
+    override fun outlinePoints(): List<Pt> = when (shape) {
+        ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.NUMBER_LINE -> listOf(start, end)
+        ShapeKind.COORD_AXES -> axesSegments().take(2).flatten()
+        else -> currentOutline()
+    }
 
     /** True if an eraser circle of [radius] at (cx,cy) touches the shape's geometry. */
     override fun intersectsCircle(cx: Double, cy: Double, radius: Double): Boolean {
@@ -504,7 +521,7 @@ class ShapeItem(
         }
     }
 
-    override fun snapshotGeometry(): GeometrySnapshot = ShapeSnapshot(shape, start, end, points, strokeWidth)
+    override fun snapshotGeometry(): GeometrySnapshot = ShapeSnapshot(shape, start, end, points, strokeWidth, angle)
 
     override fun restoreGeometry(snap: GeometrySnapshot) {
         if (snap !is ShapeSnapshot) return
@@ -513,6 +530,7 @@ class ShapeItem(
         end = snap.end
         points = snap.points
         strokeWidth = snap.strokeWidth
+        angle = snap.angle
     }
 
     /**
@@ -528,9 +546,11 @@ class ShapeItem(
             setControlPoints(controlPoints().map { t.apply(it) })
             return
         }
-        // Axes stay upright: transform the two box corners and re-fit, even under a rotation (a
-        // rotated coordinate grid isn't representable by the axis-aligned box, and reads oddly).
-        if (shape.isEndpointShape || shape == ShapeKind.COORD_AXES || t.isAxisAligned) {
+        if (shape == ShapeKind.COORD_AXES) {
+            applyAxesTransform(t)
+            return
+        }
+        if (shape.isEndpointShape || t.isAxisAligned) {
             start = t.apply(start)
             end = t.apply(end)
             return
@@ -541,6 +561,19 @@ class ShapeItem(
         start = bb.topLeft
         end = Pt(bb.right, bb.bottom)
         points = normalize(verts, bb)
+    }
+
+    /** Like [ImageItem.applyTransform]: scale the upright box along its own axes about the mapped centre, and add the turn to [angle]. */
+    private fun applyAxesTransform(t: Affine) {
+        val b = box
+        val c = t.apply(b.center)
+        val ca = cos(angle)
+        val sa = sin(angle)
+        val w = b.w * hypot(t.a * ca + t.c * sa, t.b * ca + t.d * sa)
+        val h = b.h * hypot(-t.a * sa + t.c * ca, -t.b * sa + t.d * ca)
+        start = Pt(c.x - w / 2.0, c.y - h / 2.0)
+        end = Pt(c.x + w / 2.0, c.y + h / 2.0)
+        angle += t.rotationAngle
     }
 
     /** Content-space vertices of the current outline; used to bake a rotation into a vertex list. */
@@ -608,4 +641,5 @@ private data class ShapeSnapshot(
     val end: Pt,
     val points: List<Pt>?,
     val strokeWidth: Double,
+    val angle: Double,
 ) : GeometrySnapshot

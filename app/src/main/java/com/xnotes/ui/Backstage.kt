@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
@@ -62,6 +63,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -228,6 +230,9 @@ fun Backstage(
     // window already runs edge-to-edge with the system bars hidden (MainActivity.applyFullscreen).
     BackstageContent(editor, compact, view, onSelectView, calls, onExitApp, onImportCodeTheme, onImportFont)
 }
+
+/** How far a swipe right on Home travels before it opens the sidebar. */
+private val SIDEBAR_SWIPE = 64.dp
 
 /** Width at or above which the sidebar is a persistent pane rather than a drawer. */
 private const val COMPACT_WIDTH_DP = 600
@@ -851,13 +856,44 @@ private fun HomePane(
     val palette = LocalPalette.current
     val focusManager = LocalFocusManager.current
     val prefs = remember(editor.prefsVersion) { editor.preferences }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
     // A tap on empty space anywhere in the pane drops focus from the search field, dismissing it
     // (children like tiles and buttons consume their own taps, so this only fires "outside").
-    Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }) {
+    // A swipe right brings in the sidebar; scrolling children claim their own horizontal drags first.
+    Box(
+        Modifier.fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
+            .pointerInput(onShowSidebar) {
+                val trigger = SIDEBAR_SWIPE.toPx()
+                var dragged = 0f
+                detectHorizontalDragGestures(onDragStart = { dragged = 0f }) { change, dx ->
+                    change.consume()
+                    dragged += dx
+                    if (dragged > trigger) {
+                        dragged = Float.NEGATIVE_INFINITY
+                        onShowSidebar()
+                    }
+                }
+            },
+    ) {
         Column(Modifier.fillMaxSize()) {
             // Filen sync heads-up when a note was changed on two devices; renders nothing otherwise.
             SyncConflictBanner()
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            // Pulling down from the top syncs with Filen when it is set up, then lists the folder again.
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = {
+                    refreshing = true
+                    scope.launch {
+                        if (com.xnotes.sync.filen.FilenSyncManager.isConfigured(ctx)) com.xnotes.sync.filen.FilenSyncManager.syncNow(ctx)
+                        editor.relistTree()
+                        refreshing = false
+                    }
+                },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 ExplorerSection(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, link)
             }
         }

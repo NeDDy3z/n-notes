@@ -572,6 +572,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var treeVersion by mutableStateOf(0)
         private set
 
+    /** Has the explorer list again after files changed on disk behind it (a sync, say). */
+    fun relistTree() {
+        treeVersion++
+    }
+
     override var toastText by mutableStateOf<String?>(null)
         private set
     override var toastToken by mutableStateOf(0)

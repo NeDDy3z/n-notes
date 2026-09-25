@@ -340,6 +340,7 @@ data class Settings(
             .put("erase_mode", c.eraseMode.id)
             .put("switch_back_after_erase", c.switchBackAfterErase)
             .put("switch_back_after_select", c.switchBackAfterSelect)
+            .put("select_whole_items", c.selectWholeItems)
             .put("straight_line", c.straightLine)
             .put("scale", c.scale)
             .put("highlighter_alpha", c.highlighterAlpha)
@@ -365,6 +366,7 @@ data class Settings(
                 eraseMode = EraseMode.fromId(o.optString("erase_mode", d.eraseMode.id)),
                 switchBackAfterErase = o.optBoolean("switch_back_after_erase", d.switchBackAfterErase),
                 switchBackAfterSelect = o.optBoolean("switch_back_after_select", d.switchBackAfterSelect),
+                selectWholeItems = o.optBoolean("select_whole_items", d.selectWholeItems),
                 straightLine = o.optBoolean("straight_line", d.straightLine),
                 scale = o.optBoolean("scale", d.scale),
                 highlighterAlpha = o.optDouble("highlighter_alpha", d.highlighterAlpha),

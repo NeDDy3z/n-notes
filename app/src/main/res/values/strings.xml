@@ -60,6 +60,8 @@
     <string name="caption_tip_width">Tip width percentage</string>
     <string name="caption_width">Width</string>
     <string name="caption_scale">Scale</string>
+    <string name="caption_snap_to_shapes">Snap to shapes</string>
+    <string name="caption_select_whole_items">Only fully enclosed items</string>
     <string name="caption_dash">Dash</string>
     <string name="caption_gap">Gap</string>
     <string name="caption_intensity">Intensity</string>

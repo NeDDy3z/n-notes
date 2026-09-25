@@ -614,6 +614,11 @@ class Stroke(
         return g.bodyContains(p)
     }
 
+    override fun outlinePoints(): List<Pt> {
+        val s = pts
+        return List(s.n) { Pt(s.ox + s.xa[it], s.oy + s.ya[it]) }
+    }
+
     /** Mean of the sample positions. */
     override fun centroid(): Pt {
         val s = pts

@@ -406,6 +406,7 @@ class DocumentCodec(
             j.name("dash_length").value(s.dashLength)
             j.name("dash_gap").value(s.dashGap)
         }
+        if (s.angle != 0.0) j.name("angle").value(s.angle)
         if (s.locked) j.name("locked").value(true)
         s.link?.let { j.name("link").value(it) }
         j.endObject()
@@ -979,6 +980,7 @@ class DocumentCodec(
             dashed = s.dashed,
             dashLength = s.dashLength,
             dashGap = s.dashGap,
+            angle = s.angle,
         )
     }
 

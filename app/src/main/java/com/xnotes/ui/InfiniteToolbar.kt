@@ -70,7 +70,7 @@ fun InfiniteToolbar(
     var shapeOpen by remember { mutableStateOf(false) }
     var waypointsOpen by remember { mutableStateOf(false) }
     var penOpen by remember { mutableStateOf<Tool?>(null) }
-    var selectOpen by remember { mutableStateOf(false) }
+    var selectOpen by remember { mutableStateOf<Tool?>(null) }
     // Which swatch has the colour picker open, as on the paged bar: tapping the armed swatch again
     // opens it, so the five colours are both the ink and the way to change it.
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
@@ -96,7 +96,7 @@ fun InfiniteToolbar(
                                     when {
                                         tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
                                         tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
-                                        tool == Tool.SELECT && editor.tool == tool -> selectOpen = true
+                                        (tool == Tool.SELECT || tool == Tool.LASSO) && editor.tool == tool -> selectOpen = tool
                                         tool.isStroke && editor.tool == tool -> penOpen = tool
                                         else -> editor.armTool(tool)
                                     }
@@ -105,7 +105,7 @@ fun InfiniteToolbar(
                                 // controls, same wording, same ranges, and they cannot drift apart.
                                 if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
                                 if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
-                                if (tool == Tool.SELECT && selectOpen) SelectConfigPopup(editor) { selectOpen = false }
+                                if (selectOpen == tool) SelectConfigPopup(editor, tool) { selectOpen = null }
                                 if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
                             }
                         }

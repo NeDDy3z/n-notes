@@ -168,7 +168,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
             ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
             // Global dwell shape detection (holding the pen still). Off for the highlighter, which never dwells.
             if (tool.isStroke && tool != Tool.HIGHLIGHTER) {
-                ToggleRow("SNAP TO SHAPES", snapShapes) { snapShapes = it; editor.snapHeldToShapes = it }
+                ToggleRow(stringResource(R.string.caption_snap_to_shapes), snapShapes) { snapShapes = it; editor.snapHeldToShapes = it }
             }
             if (tool == Tool.DASHED) {
                 SliderRow(stringResource(R.string.caption_dash), dashLen, 2f..40f) { dashLen = it; emit() }
@@ -949,20 +949,24 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     }
 }
 
-/** Select-tool configuration popup: just a SWITCH BACK toggle, mirroring the eraser's. */
+/** Select/lasso configuration popup: whether a selection needs items fully inside it, plus the select tool's SWITCH BACK. */
 @Composable
-fun SelectConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
-    val base = remember { editor.toolConfig(Tool.SELECT) }
+fun SelectConfigPopup(editor: ToolPopupHost, tool: Tool = Tool.SELECT, onDismiss: () -> Unit) {
+    val base = remember { editor.toolConfig(tool) }
     var switchBack by remember { mutableStateOf(base.switchBackAfterSelect) }
+    var whole by remember { mutableStateOf(base.selectWholeItems) }
 
-    fun emit() = editor.updateToolConfig(Tool.SELECT, base.copy(switchBackAfterSelect = switchBack))
+    fun emit() = editor.updateToolConfig(tool, base.copy(switchBackAfterSelect = switchBack, selectWholeItems = whole))
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_select))
+            PopupTitle(stringResource(if (tool == Tool.LASSO) R.string.tool_lasso else R.string.title_select))
+            ToggleRow(stringResource(R.string.caption_select_whole_items), whole) { whole = it; emit() }
             // Re-arm the previous pen/highlighter once a selection action (move, resize, delete,
             // cut, copy, duplicate) finishes, so a quick edit doesn't strand you in select.
-            ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
+            if (tool == Tool.SELECT) {
+                ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
+            }
         }
     }
 }

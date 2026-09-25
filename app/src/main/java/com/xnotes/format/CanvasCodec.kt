@@ -263,6 +263,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             j.name("dash_length").value(s.dashLength)
             j.name("dash_gap").value(s.dashGap)
         }
+        if (s.angle != 0.0) j.name("angle").value(s.angle)
         if (s.locked) j.name("locked").value(true)
         j.endObject()
     }
@@ -631,6 +632,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             dashed = s.dashed,
             dashLength = s.dashLength,
             dashGap = s.dashGap,
+            angle = s.angle,
         )
     }
 

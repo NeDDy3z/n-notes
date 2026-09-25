@@ -753,7 +753,7 @@ class InfiniteInteraction(
         val rect = bandRect
         bandRect = null
         if (sel != null && rect != null && (rect.w > 1e-6 || rect.h > 1e-6)) {
-            sel.select(SelectionMath.bandMembers(itemsIn(rect), rect))
+            sel.select(SelectionMath.bandMembers(itemsIn(rect), rect, configFor(Tool.SELECT).selectWholeItems))
         }
         onSelectionChanged()
         requestRender()
@@ -786,7 +786,7 @@ class InfiniteInteraction(
         val sel = selection()
         if (sel != null && lassoPoints.size >= 3) {
             val bounds = Rect.bounding(lassoPoints)
-            sel.select(SelectionMath.lassoMembers(itemsIn(bounds), lassoPoints.toList()))
+            sel.select(SelectionMath.lassoMembers(itemsIn(bounds), lassoPoints.toList(), configFor(Tool.LASSO).selectWholeItems))
         }
         lassoPoints.clear()
         onSelectionChanged()

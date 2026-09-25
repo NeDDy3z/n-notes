@@ -79,6 +79,8 @@ class ImageItem(
 
     override fun centroid(): Pt = rect.center
 
+    override fun outlinePoints(): List<Pt> = corners()
+
     override fun intersectsCircle(cx: Double, cy: Double, radius: Double): Boolean =
         rect.distanceTo(unturn(Pt(cx, cy))) <= radius
 

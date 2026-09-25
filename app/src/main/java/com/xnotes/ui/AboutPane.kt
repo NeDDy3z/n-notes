@@ -117,9 +117,6 @@ fun AboutPane() {
             }
 
             Spacer(Modifier.height(28.dp))
-            Column(Modifier.fillMaxWidth()) { UpdateSection() }
-
-            Spacer(Modifier.height(28.dp))
             // The fork's own feedback channel: issues land on the n-notes repo.
             Text("Help make n-notes better", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
