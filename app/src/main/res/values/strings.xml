@@ -435,6 +435,8 @@
     <string name="image_png">Image (PNG)</string>
     <string name="back_save_as">"‹  Save as"</string>
     <string name="add_page">Add page</string>
+    <string name="add_landscape_page">Add landscape page</string>
+    <string name="add_portrait_page">Add portrait page</string>
     <string name="erase_page">Erase page</string>
     <string name="share_ellipsis">Share…</string>
     <string name="save_as_ellipsis">Save as…</string>

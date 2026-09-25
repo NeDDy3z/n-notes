@@ -24,6 +24,7 @@ n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On t
 - **Create menu**: the new-note button is now a list to create a note, canvas, folder, or import a file.
 - **Sort button**: moved sorting out into its own dedicated button.
 - **Default page style**: set a default page style in settings, preselected when creating a note.
+- **Mixed page orientation**: add a landscape page after a portrait one (or the other way round) from the page menu, for example under an imported PDF; PDF export keeps each page's orientation.
 - **Tables**: add a table shape and edit it (columns, rows, and per-line sizing).
 - **Image cropping**: crop a selected image with an interactive overlay.
 - **X-Y graph shape**: an x-y coordinate axes shape that can be rotated.

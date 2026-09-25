@@ -5366,10 +5366,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * note stays uniform (falling back to A4 portrait). Undoable; relayouts and refreshes. Returns
      * the new page's final index.
      */
-    private fun insertBlankPageAt(index: Int, refIndex: Int): Int {
+    private fun insertBlankPageAt(index: Int, refIndex: Int, turned: Boolean = false): Int {
         val pages = state.document.pages
         val ref = pages.getOrNull(refIndex) ?: pages.getOrNull(index) ?: pages.lastOrNull()
-        val (w, h) = if (ref != null) ref.width to ref.height else PageSize.A4.pixels(Orientation.PORTRAIT, state.document.dpi)
+        val (rw, rh) = if (ref != null) ref.width to ref.height else PageSize.A4.pixels(Orientation.PORTRAIT, state.document.dpi)
+        val (w, h) = if (turned) rh to rw else rw to rh
         val at = index.coerceIn(0, pages.size)
         val page = Page(w, h)
         controller.clearSelection() // inserting shifts later page indices; drop any stale item selection
@@ -5425,10 +5426,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     // --- side-panel page operations (operate on explicit page indices) ---
 
-    /** Insert a blank page right after [index] (sized from it) and reveal it. */
-    fun insertPageAfter(index: Int) {
-        goToPage(insertBlankPageAt(index + 1, index))
+    /** Insert a blank page right after [index] (sized from it, or its other orientation when [turned]) and reveal it. */
+    fun insertPageAfter(index: Int, turned: Boolean = false) {
+        goToPage(insertBlankPageAt(index + 1, index, turned))
     }
+
+    /** Whether the page at [index] is wider than it is tall. */
+    fun isLandscapePage(index: Int): Boolean = pageAt(index)?.let { it.width > it.height } == true
 
     /** Clear all of a page's items but keep the page (and its PDF/template background). Undoable. */
     fun erasePage(index: Int) {
