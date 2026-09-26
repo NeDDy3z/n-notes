@@ -30,6 +30,9 @@ n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On t
 - **X-Y graph shape**: an x-y coordinate axes shape that can be rotated.
 - **X line shape**: a single number line with an arrowhead and tick marks.
 - **Curve shape**: a smooth line through movable points; add or remove points from the selection three-dots menu.
+- **Function curves**: swipe the shape picker to its second page for x^2, x^(1/2), ln x, e^x, sin x and cos x; retype the function (for example sin(2x)) and its x range with Edit function in the selection three-dots menu.
+- **New shapes stay selected**: a freshly drawn shape or table stays selected, so it can be moved or resized straight away without drawing another one.
+- **Plain text to equation**: select maths typed as plain text (lim x->0 sin(x)/x, int_0^1 x^2 dx, d/dx x^2, dy/dx, x^(1/2)) and tap the equation button to turn it into a formula; /equation converts the same way.
 - **Move grip**: a small selection gets a pan-icon grip to drag it by, so tiny items can be moved without hitting the resize handles.
 - **Finger tap to select**: with the select tool, a finger tap picks the item under it while a finger drag still pans.
 - **Whole or partial selection**: the select and lasso tools can take only fully enclosed items or anything they touch.

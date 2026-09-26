@@ -11,6 +11,7 @@ import com.xnotes.core.history.FlowEditParagraph
 import com.xnotes.core.history.History
 import com.xnotes.core.history.ParaSnapshot
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.caretPreviewSpan
 import com.xnotes.core.text.CharStyle
@@ -676,7 +677,7 @@ class FlowTextController(
                 }
             }
             val w = (FlowFrame.CARET_WIDTH / state.zoom).coerceAtLeast(0.75)
-            r.fillRect(state.fromPageSpaceRect(pi, Rect(cr.left - w / 2.0, top, w, height)), accent)
+            r.fillRect(state.fromPageSpaceRect(pi, Rect(cr.left - w / 2.0, top, w, height)), Rgba.SELECTION)
         }
     }
 

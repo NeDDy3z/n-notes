@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,6 +43,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +56,7 @@ import com.xnotes.canvas.PdfColorFilter
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.PageEdge
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
@@ -983,6 +989,7 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     var dashed by remember { mutableStateOf(editor.hostShapeConfig.dashed) }
     var dashLen by remember { mutableStateOf(editor.hostShapeConfig.dashLength.toFloat()) }
     var gapLen by remember { mutableStateOf(editor.hostShapeConfig.dashGap.toFloat()) }
+    var function by remember { mutableStateOf(editor.hostShapeConfig.function) }
 
     fun emit() = editor.updateShapeConfig(
         ShapeConfig(
@@ -995,18 +1002,46 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             dashed = dashed,
             dashLength = dashLen.toDouble(),
             dashGap = gapLen.toDouble(),
+            function = function,
         ),
     )
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(284.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_shape))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ShapeKind.DRAW_TOOL_KINDS.forEach { k ->
-                    KindChip(shapeIcon(k), k.id, selected = kind == k) { kind = k; emit() }
+            // Swipe between the geometric shapes and the function curves; the dots show which page is up.
+            val pager = rememberPagerState(initialPage = if (kind == ShapeKind.FUNCTION) 1 else 0) { 2 }
+            HorizontalPager(pager, Modifier.height(78.dp), verticalAlignment = Alignment.Top) { page ->
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (page == 0) {
+                        ShapeKind.DRAW_TOOL_KINDS.forEach { k ->
+                            KindChip(shapeIcon(k), k.id, selected = kind == k) { kind = k; emit() }
+                        }
+                    } else {
+                        FunctionSpec.PRESETS.forEach { f ->
+                            FunctionChip(functionLabel(f.expr), selected = kind == ShapeKind.FUNCTION && function == f.expr) {
+                                kind = ShapeKind.FUNCTION
+                                function = f.expr
+                                emit()
+                            }
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.Center) {
+                repeat(pager.pageCount) { i ->
+                    Box(
+                        Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                (if (pager.currentPage == i) LocalPalette.current.accent else LocalPalette.current.border).toComposeColor(),
+                            ),
+                    )
                 }
             }
             SliderRow(stringResource(R.string.caption_width), width, 1f..20f) { width = it; emit() }
@@ -1136,6 +1171,7 @@ internal fun SliderRow(
 /** Glyph shown in the shape-kind picker for each [ShapeKind]. */
 private fun shapeIcon(kind: ShapeKind): ImageVector = when (kind) {
     ShapeKind.LINE, ShapeKind.POLYLINE, ShapeKind.CURVE -> XnotesIcons.shapeLine
+    ShapeKind.FUNCTION -> XnotesIcons.shapeSpline
     ShapeKind.ARROW -> XnotesIcons.shapeArrow
     ShapeKind.RECTANGLE -> XnotesIcons.shapeRect
     ShapeKind.ELLIPSE -> XnotesIcons.shapeEllipse
@@ -1144,6 +1180,40 @@ private fun shapeIcon(kind: ShapeKind): ImageVector = when (kind) {
     ShapeKind.COORD_AXES -> XnotesIcons.shapeAxes
     ShapeKind.NUMBER_LINE -> XnotesIcons.shapeNumberLine
     ShapeKind.SPLINE -> XnotesIcons.shapeSpline
+}
+
+private fun functionLabel(expr: String): String = when (expr) {
+    "x^2" -> "x\u00B2"
+    "x^(1/2)" -> "\u221Ax"
+    "ln(x)" -> "ln x"
+    "e^x" -> "e\u02E3"
+    "sin(x)" -> "sin x"
+    "cos(x)" -> "cos x"
+    else -> expr
+}
+
+/** A text chip for a function-curve preset, the same size and colours as [KindChip]. */
+@Composable
+private fun FunctionChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier
+            .clip(MaterialTheme.shapes.extraSmall)
+            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
+            .clickable(onClick = onClick)
+            .height(36.dp)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
+            fontSize = 14.sp,
+            fontFamily = FontFamily.Serif,
+            fontStyle = FontStyle.Italic,
+        )
+    }
 }
 
 @Composable

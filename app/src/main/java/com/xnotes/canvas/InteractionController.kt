@@ -29,6 +29,7 @@ import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.DrawStyle
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.history.ReplaceImage
@@ -608,7 +609,7 @@ class InteractionController(
             // While something is selected, the stylus grabs that selection (resize on a handle,
             // move on the body) instead of inking through it, matching the finger. Off the
             // selection it falls through to draw and dismisses the selection (see beginDraw).
-            hasSelection && drawingIsStylus && (tool.isStroke || tool == Tool.SHAPE) &&
+            hasSelection && (drawingIsStylus && tool.isStroke || tool == Tool.SHAPE || tool == Tool.TABLE) &&
                 fingerHitsSelection(content) -> Tool.SELECT
             // A finger may grab/resize the ACTIVE selection even when finger-draw is off;
             // off the selection it still pans.
@@ -2068,6 +2069,7 @@ class InteractionController(
             kind, startLocal, startLocal, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY, fill,
             shapeConfig.neon, shapeConfig.neonStrength,
             dashed = shapeConfig.dashed, dashLength = shapeConfig.dashLength, dashGap = shapeConfig.dashGap,
+            function = if (kind == ShapeKind.FUNCTION) FunctionSpec.preset(shapeConfig.function) else null,
         )
         shapePageIndex = pageIndex
         mode = PointerMode.SHAPE
@@ -2122,6 +2124,7 @@ class InteractionController(
             history.push(AddItem(page, shape))
             state.document.dirty = true
             onContentChanged()
+            selectSingle(pi, shape)
         }
         pendingShape = null
         shapePageIndex = null
@@ -2648,6 +2651,23 @@ class InteractionController(
         onContentChanged()
         refreshSelectionMenu()
         requestRender()
+    }
+
+    fun singleSelectedFunction(): ShapeItem? =
+        (selection.singleOrNull()?.item as? ShapeItem)?.takeIf { it.shape == ShapeKind.FUNCTION }
+
+    /** Replot the selected function curve as one undoable edit; false when [spec] cannot be drawn. */
+    fun setSelectedFunction(spec: FunctionSpec): Boolean {
+        val fn = singleSelectedFunction() ?: return false
+        val before = fn.snapshotGeometry()
+        if (!fn.setFunction(spec)) return false
+        history.push(TransformItems(listOf(fn), listOf(before), listOf(fn.snapshotGeometry())))
+        state.document.dirty = true
+        selObb = selectionObb()
+        onContentChanged()
+        refreshSelectionMenu()
+        requestRender()
+        return true
     }
 
     fun clearSelection() {

@@ -28,6 +28,7 @@ import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
 import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
@@ -62,6 +63,7 @@ import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.text.ParaAlign
 import com.xnotes.core.text.Paragraph
+import com.xnotes.core.text.PlainMath
 import com.xnotes.core.text.SlashCommands
 import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.TableDefaults
@@ -614,6 +616,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override val selectionSplinePoints: Int get() = controller.singleSelectedSpline()?.controlPoints()?.size ?: 0
     override fun editSelectionSpline(add: Boolean) = controller.editSelectedSpline(add)
+
+    override val selectionFunction: FunctionSpec? get() = controller.singleSelectedFunction()?.function
+    override fun setSelectionFunction(spec: FunctionSpec): Boolean = controller.setSelectedFunction(spec)
 
     // Gates the Crop action; vector (SVG) sources have no bitmap to bake, so crop is not offered.
     override val selectionIsImage: Boolean get() {
@@ -6442,10 +6447,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * The bar's equation control: selected text becomes the formula it spells,
-     * since that is the LaTeX the user already wrote. With nothing selected
-     * there is nothing to set, so it says so rather than leaving a placeholder
-     * the caret has already stepped out of.
+     * The bar's equation control: selected text becomes the formula it spells.
+     * Plain maths ("lim x->0 sin(x)/x") is rewritten as LaTeX first; text that
+     * already is LaTeX is kept. With nothing selected there is nothing to set,
+     * so it says so rather than leaving a placeholder the caret has already
+     * stepped out of.
      */
     fun flowToggleMath() {
         if (!flowText.active) return
@@ -6456,6 +6462,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         val on = !flowCaretStyle().math
         flowText.flushBurst()
+        if (on && sel.start.para == sel.end.para) {
+            val plain = state.document.flow.paragraphs[sel.start.para].plainText().substring(sel.start.offset, sel.end.offset)
+            // Spaces around the selection stay outside the formula, as plain text.
+            val from = sel.start.offset + (plain.length - plain.trimStart().length)
+            val to = sel.end.offset - (plain.length - plain.trimEnd().length)
+            if (to > from) {
+                val range = FlowRange(FlowPos(sel.start.para, from), FlowPos(sel.start.para, to))
+                val ed = FlowEditor(state.document.flow)
+                val style = ed.styleAtRangeStart(range).copy(math = true)
+                val (cmd, caret) = ed.replaceRange(range, PlainMath.toLatex(plain.trim()), style)
+                flowText.mirrorStale = true
+                flowText.commitEdit(cmd, caret)
+                flowText.pendingStyle = CharStyle.DEFAULT
+                flowSelTick++
+                return
+            }
+        }
         flowText.commitEdit(
             FlowEditor(state.document.flow).setCharStyle(sel) { it.copy(math = on) },
             null,
@@ -6472,7 +6495,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     fun flowInsertMath(latex: String) {
         if (!flowText.active) return
-        val text = latex.trim()
+        val text = PlainMath.toLatex(latex)
         if (text.isEmpty() || '\n' in text) return
         flowText.flushBurst()
         flowText.mirrorStale = true

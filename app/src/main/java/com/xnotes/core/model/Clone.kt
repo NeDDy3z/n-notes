@@ -13,7 +13,7 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
     is ImageItem -> ImageItem(image, rect, orientation, angle)
     is TextItem -> TextItem(pos, width, height, text, rgba, pointSize, face, bold, italic, underline, strike, align, measurer)
     is ShapeItem ->
-        ShapeItem(shape, start, end, strokeRgba, strokeWidth, fillRgba, neon, neonStrength, points?.toList(), dashed, dashLength, dashGap, angle)
+        ShapeItem(shape, start, end, strokeRgba, strokeWidth, fillRgba, neon, neonStrength, points?.toList(), dashed, dashLength, dashGap, angle, function)
     is TableItem ->
         TableItem(rect, colFractions.toList(), rowFractions.toList(), strokeRgba, strokeWidth)
     else -> this

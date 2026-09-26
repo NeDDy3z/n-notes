@@ -44,7 +44,13 @@ class ShapeItem(
     var dashGap: Double = 8.0,
     /** Clockwise turn in radians about the box centre; only [ShapeKind.COORD_AXES] uses it. */
     var angle: Double = 0.0,
+    /** What a [ShapeKind.FUNCTION] plots; its sampled curve lives in [points]. */
+    var function: FunctionSpec? = null,
 ) : CanvasItem, Resizable {
+
+    init {
+        if (shape == ShapeKind.FUNCTION && points == null) points = function?.normalizedSamples()
+    }
 
     override val kind = KIND
     override val resizable = true
@@ -235,7 +241,7 @@ class ShapeItem(
             ShapeKind.ELLIPSE, ShapeKind.CIRCLE -> r.fillEllipse(b.center, b.w / 2.0, b.h / 2.0, fill)
             ShapeKind.TRIANGLE -> r.fillPolygon(triangleVertices(), fill)
             ShapeKind.POLYGON -> r.fillPolygon(absPoints(), fill)
-            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE,
+            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE, ShapeKind.FUNCTION,
             ShapeKind.NUMBER_LINE, ShapeKind.SPLINE -> {}
         }
     }
@@ -250,7 +256,7 @@ class ShapeItem(
             ShapeKind.TRIANGLE -> r.strokePolygon(triangleVertices(), pen)
             ShapeKind.POLYGON -> r.strokePolygon(absPoints(), pen)
             ShapeKind.COORD_AXES -> axesSegments().forEach { r.strokePolyline(it, pen) }
-            ShapeKind.POLYLINE, ShapeKind.CURVE -> r.strokePolyline(absPoints(), pen)
+            ShapeKind.POLYLINE, ShapeKind.CURVE, ShapeKind.FUNCTION -> r.strokePolyline(absPoints(), pen)
             ShapeKind.NUMBER_LINE -> numberLineSegments().forEach { r.strokePolyline(it, pen) }
             ShapeKind.SPLINE -> r.strokePolyline(splinePath(), pen)
         }
@@ -340,7 +346,7 @@ class ShapeItem(
                 if (fillRgba != null) Geometry.pointInPolygon(v, p) else nearPolyOutline(v, p, tol)
             }
             ShapeKind.COORD_AXES -> nearAxes(p, tol)
-            ShapeKind.POLYLINE, ShapeKind.CURVE -> nearPolyOutline(absPoints(), p, tol, closed = false)
+            ShapeKind.POLYLINE, ShapeKind.CURVE, ShapeKind.FUNCTION -> nearPolyOutline(absPoints(), p, tol, closed = false)
             ShapeKind.SPLINE -> nearPolyOutline(splinePath(), p, tol, closed = false)
         }
     }
@@ -401,7 +407,7 @@ class ShapeItem(
                 if (fillRgba != null && Geometry.pointInPolygon(v, p)) true else nearPolyOutline(v, p, tol)
             }
             ShapeKind.COORD_AXES -> nearAxes(p, tol)
-            ShapeKind.POLYLINE, ShapeKind.CURVE -> nearPolyOutline(absPoints(), p, tol, closed = false)
+            ShapeKind.POLYLINE, ShapeKind.CURVE, ShapeKind.FUNCTION -> nearPolyOutline(absPoints(), p, tol, closed = false)
             ShapeKind.SPLINE -> nearPolyOutline(splinePath(), p, tol, closed = false)
         }
     }
@@ -521,7 +527,7 @@ class ShapeItem(
         }
     }
 
-    override fun snapshotGeometry(): GeometrySnapshot = ShapeSnapshot(shape, start, end, points, strokeWidth, angle)
+    override fun snapshotGeometry(): GeometrySnapshot = ShapeSnapshot(shape, start, end, points, strokeWidth, angle, function)
 
     override fun restoreGeometry(snap: GeometrySnapshot) {
         if (snap !is ShapeSnapshot) return
@@ -531,6 +537,15 @@ class ShapeItem(
         points = snap.points
         strokeWidth = snap.strokeWidth
         angle = snap.angle
+        function = snap.function
+    }
+
+    /** Plot [spec] in the current box instead; false (and unchanged) when it cannot be drawn. */
+    fun setFunction(spec: FunctionSpec): Boolean {
+        val pts = spec.normalizedSamples() ?: return false
+        function = spec
+        points = pts
+        return true
     }
 
     /**
@@ -558,6 +573,7 @@ class ShapeItem(
         val verts = currentOutline().map { t.apply(it) }
         val bb = Rect.bounding(verts)
         shape = if (shape.isClosed) ShapeKind.POLYGON else ShapeKind.POLYLINE
+        function = null
         start = bb.topLeft
         end = Pt(bb.right, bb.bottom)
         points = normalize(verts, bb)
@@ -578,7 +594,7 @@ class ShapeItem(
 
     /** Content-space vertices of the current outline; used to bake a rotation into a vertex list. */
     private fun currentOutline(): List<Pt> = when (shape) {
-        ShapeKind.POLYGON, ShapeKind.POLYLINE, ShapeKind.CURVE -> absPoints()
+        ShapeKind.POLYGON, ShapeKind.POLYLINE, ShapeKind.CURVE, ShapeKind.FUNCTION -> absPoints()
         ShapeKind.SPLINE -> splinePath()
         ShapeKind.TRIANGLE -> triangleVertices()
         ShapeKind.ELLIPSE, ShapeKind.CIRCLE -> ellipsePolygon()
@@ -642,4 +658,5 @@ private data class ShapeSnapshot(
     val points: List<Pt>?,
     val strokeWidth: Double,
     val angle: Double,
+    val function: FunctionSpec?,
 ) : GeometrySnapshot

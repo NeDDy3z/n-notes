@@ -6,6 +6,7 @@ import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.infinite.InfiniteDocument
 import com.xnotes.core.infinite.Waypoint
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.PagePattern
@@ -264,6 +265,11 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             j.name("dash_gap").value(s.dashGap)
         }
         if (s.angle != 0.0) j.name("angle").value(s.angle)
+        s.function?.let {
+            j.name("function").value(it.expr)
+            j.name("function_from").value(it.from)
+            j.name("function_to").value(it.to)
+        }
         if (s.locked) j.name("locked").value(true)
         j.endObject()
     }
@@ -509,6 +515,9 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
         var dashed = false
         var dashLength = 10.0
         var dashGap = 8.0
+        var function: String? = null
+        var functionFrom = 0.0
+        var functionTo = 0.0
     }
 
     /** Stroke config fields as written; null = absent, so defaults resolve exactly as before. */
@@ -560,6 +569,9 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
                 "dashed" -> s.dashed = boolOr(p, false)
                 "dash_length" -> s.dashLength = doubleOr(p, 10.0)
                 "dash_gap" -> s.dashGap = doubleOr(p, 8.0)
+                "function" -> s.function = stringOr(p, "")
+                "function_from" -> s.functionFrom = doubleOr(p, 0.0)
+                "function_to" -> s.functionTo = doubleOr(p, 0.0)
                 "locked" -> s.locked = boolOr(p, false)
                 else -> p.skipValue()
             }
@@ -618,7 +630,7 @@ class CanvasCodec(private val imageCodec: ImageCodec) {
             return ShapeItem.poly(
                 kind, verts, strokeRgba, s.strokeWidth, s.fillRgba, s.neon, s.neonStrength,
                 s.dashed, s.dashLength, s.dashGap,
-            )
+            ).also { shape -> s.function?.let { shape.function = FunctionSpec(it, s.functionFrom, s.functionTo) } }
         }
         return ShapeItem(
             shape = kind,

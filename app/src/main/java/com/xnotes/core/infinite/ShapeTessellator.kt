@@ -48,7 +48,7 @@ object ShapeTessellator {
                 }
             }
             ShapeKind.POLYGON -> b.polygon(shape.absPoints())
-            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE,
+            ShapeKind.LINE, ShapeKind.ARROW, ShapeKind.COORD_AXES, ShapeKind.POLYLINE, ShapeKind.CURVE, ShapeKind.FUNCTION,
             ShapeKind.NUMBER_LINE, ShapeKind.SPLINE -> Unit
         }
         return b.build()
@@ -103,7 +103,7 @@ object ShapeTessellator {
             ShapeKind.POLYGON -> shape.absPoints() to true
             // Drawn as multiple ribbons in outlineMesh; the single-path route contributes nothing.
             ShapeKind.COORD_AXES, ShapeKind.NUMBER_LINE -> emptyList<Pt>() to false
-            ShapeKind.POLYLINE, ShapeKind.CURVE -> shape.absPoints() to false
+            ShapeKind.POLYLINE, ShapeKind.CURVE, ShapeKind.FUNCTION -> shape.absPoints() to false
             ShapeKind.SPLINE -> shape.splinePath() to false
         }
     }

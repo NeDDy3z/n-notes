@@ -14,7 +14,8 @@ enum class ShapeKind(val id: String) {
     POLYLINE("polyline"),
     CURVE("curve"),
     NUMBER_LINE("numberline"),
-    SPLINE("spline");
+    SPLINE("spline"),
+    FUNCTION("function");
 
     /** Closed shapes are stroked and optionally filled; open shapes never fill. */
     val isClosed: Boolean get() = this == RECTANGLE || this == ELLIPSE || this == CIRCLE || this == TRIANGLE || this == POLYGON
@@ -46,6 +47,8 @@ data class ShapeConfig(
     val dashed: Boolean = false,
     val dashLength: Double = 10.0,
     val dashGap: Double = 8.0,
+    /** The preset plotted when [shape] is [ShapeKind.FUNCTION]. */
+    val function: String = "x^2",
 ) {
     companion object {
         /** Default reduced opacity applied to the ink colour when a closed shape is filled. */

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import com.xnotes.canvas.EditingField
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.platform.FontCatalog
 import com.xnotes.ui.theme.LocalPalette
@@ -207,7 +208,7 @@ fun TextEditorOverlay(editor: Editor, field: EditingField) {
                     com.xnotes.core.pal.HAlign.LEFT -> TextAlign.Start
                 },
             ),
-            cursorBrush = SolidColor(palette.accent.toComposeColor()),
+            cursorBrush = SolidColor(Rgba.SELECTION.toComposeColor()),
         )
     }) { measurables, constraints ->
         val placeable = measurables[0].measure(Constraints())

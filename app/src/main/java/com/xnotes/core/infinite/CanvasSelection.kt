@@ -11,6 +11,7 @@ import com.xnotes.core.history.Command
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.GeometrySnapshot
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.tools.ShapeKind
@@ -115,6 +116,19 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         doc.itemsChanged(items)
         refreshBox()
         return OnCanvas(doc, TransformItems(items, listOf(before), listOf(sp.snapshotGeometry())), items)
+    }
+
+    /** The lone selected function curve, or null. */
+    fun function(): ShapeItem? = (items.singleOrNull() as? ShapeItem)?.takeIf { it.shape == ShapeKind.FUNCTION }
+
+    /** Replot the lone function curve, returning the undo step, or null when [spec] cannot be drawn. */
+    fun editFunction(spec: FunctionSpec): Command? {
+        val fn = function() ?: return null
+        val before = fn.snapshotGeometry()
+        if (!fn.setFunction(spec)) return null
+        doc.itemsChanged(items)
+        refreshBox()
+        return OnCanvas(doc, TransformItems(items, listOf(before), listOf(fn.snapshotGeometry())), items)
     }
 
     /** Which handle [p] lands on, within [tolerance] content pixels, or null. */

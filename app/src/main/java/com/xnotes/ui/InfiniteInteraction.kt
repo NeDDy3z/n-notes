@@ -18,6 +18,7 @@ import com.xnotes.core.infinite.EraseSession
 import com.xnotes.core.infinite.LiftTransform
 import com.xnotes.core.infinite.OverlayTessellator
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
@@ -268,8 +269,8 @@ class InfiniteInteraction(
             // While something is selected, a press on it grabs it rather than inking through it,
             // and a finger may grab it even with finger-draw off. Both are the paged canvas's
             // rules; without them a selection could only be handled by a stylus.
-            onSelection && (tool.isStroke || tool == Tool.SHAPE) &&
-                toolType != MotionEvent.TOOL_TYPE_FINGER -> Tool.SELECT
+            onSelection && tool.isStroke && toolType != MotionEvent.TOOL_TYPE_FINGER -> Tool.SELECT
+            onSelection && tool == Tool.SHAPE -> Tool.SELECT
             toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff &&
                 onSelection -> Tool.SELECT
             toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff -> Tool.PAN
@@ -904,6 +905,7 @@ class InfiniteInteraction(
             cfg.shape, at, at, ink, cfg.strokeWidth * InteractionController.SHAPE_PEN_PARITY, fill,
             cfg.neon, cfg.neonStrength,
             dashed = cfg.dashed, dashLength = cfg.dashLength, dashGap = cfg.dashGap,
+            function = if (cfg.shape == ShapeKind.FUNCTION) FunctionSpec.preset(cfg.function) else null,
         )
         mode = CanvasPointerMode.SHAPE
         setInteractive(false, false)
@@ -932,6 +934,9 @@ class InfiniteInteraction(
         // A tap makes no shape; only a real drag commits one.
         if (shape != null && shape.start.distanceTo(shape.end) > InteractionController.SHAPE_MIN_DRAG) {
             onCommitShape(shape)
+            // Left selected so it can be moved or resized straight away, as a snapped shape is.
+            selection()?.select(listOf(shape))
+            onSelectionChanged()
         }
         requestRender()
     }

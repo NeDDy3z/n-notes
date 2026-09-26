@@ -32,6 +32,7 @@ import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.infinite.Waypoint
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.DrawStyle
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.deepCopy
@@ -505,6 +506,17 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         markDirty()
         refresh()
         publishOverlay()
+    }
+
+    override val selectionFunction: FunctionSpec? get() = selection.function()?.function
+
+    override fun setSelectionFunction(spec: FunctionSpec): Boolean {
+        val command = selection.editFunction(spec) ?: return false
+        history.push(command)
+        markDirty()
+        refresh()
+        publishOverlay()
+        return true
     }
 
     // Crop is a paged-note image action; not offered on the infinite canvas.

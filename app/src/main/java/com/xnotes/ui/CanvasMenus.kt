@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.xnotes.R
 import com.xnotes.core.model.DrawStyle
+import com.xnotes.core.model.FunctionCurve
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.Rgba
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -83,6 +85,12 @@ interface SelectionMenuHost {
 
     /** Add a control point to the selected spline, or remove one (it keeps at least one in the middle). */
     fun editSelectionSpline(add: Boolean)
+
+    /** What the lone selected function curve plots, or null when the selection is not one. */
+    val selectionFunction: FunctionSpec?
+
+    /** Replot the selected function curve; false when [spec] does not parse or has no values. */
+    fun setSelectionFunction(spec: FunctionSpec): Boolean
 
     /** True when the selection is a single image (shows the Crop action). */
     val selectionIsImage: Boolean
@@ -140,6 +148,7 @@ fun SelectionMenu(host: SelectionMenuHost) {
     var overflowOpen by remember { mutableStateOf(false) }
     var styleOpen by remember { mutableStateOf(false) }
     var linkDialogOpen by remember { mutableStateOf(false) }
+    var functionDialogOpen by remember { mutableStateOf(false) }
 
     val barHeightPx = with(density) { 48.dp.toPx() }
     val barWidthPx = with(density) { (6 * 46).dp.toPx() }
@@ -197,6 +206,12 @@ fun SelectionMenu(host: SelectionMenuHost) {
                         onClick = { host.editSelectionSpline(add = false); splinePoints = host.selectionSplinePoints },
                     )
                 }
+                if (host.selectionFunction != null) {
+                    DropdownMenuItem(
+                        text = { Text("Edit function") },
+                        onClick = { overflowOpen = false; functionDialogOpen = true },
+                    )
+                }
                 if (host.selectionIsText) {
                     DropdownMenuItem(
                         text = { Text("Edit") },
@@ -230,6 +245,14 @@ fun SelectionMenu(host: SelectionMenuHost) {
                 // Closing settles any preview the slider left open.
                 SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
             }
+            val function = host.selectionFunction
+            if (functionDialogOpen && function != null) {
+                FunctionDialog(
+                    initial = function,
+                    onConfirm = { if (host.setSelectionFunction(it)) functionDialogOpen = false },
+                    onDismiss = { functionDialogOpen = false },
+                )
+            }
             if (linkDialogOpen) {
                 LinkDialog(
                     initial = host.selectionLink ?: "",
@@ -240,6 +263,73 @@ fun SelectionMenu(host: SelectionMenuHost) {
             }
         }
     }
+}
+
+/**
+ * Retype what a function curve plots, e.g. sin(2x) or x^3 - x, and over which x range. The range
+ * fields take expressions too, so "2pi" works. Save stays disabled until the curve can be drawn.
+ */
+@Composable
+private fun FunctionDialog(initial: FunctionSpec, onConfirm: (FunctionSpec) -> Unit, onDismiss: () -> Unit) {
+    var expr by remember { mutableStateOf(initial.expr) }
+    var from by remember { mutableStateOf(formatBound(initial.from)) }
+    var to by remember { mutableStateOf(formatBound(initial.to)) }
+    val spec = run {
+        val a = FunctionCurve.constant(from) ?: return@run null
+        val b = FunctionCurve.constant(to) ?: return@run null
+        FunctionSpec(expr.trim(), a, b).takeIf { it.normalizedSamples() != null }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Function") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = expr,
+                    onValueChange = { expr = it },
+                    singleLine = true,
+                    label = { Text("y =") },
+                    isError = spec == null,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = from,
+                        onValueChange = { from = it },
+                        singleLine = true,
+                        label = { Text("x from") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = to,
+                        onValueChange = { to = it },
+                        singleLine = true,
+                        label = { Text("x to") },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = spec != null, onClick = { spec?.let(onConfirm) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/** A range bound as the user would type it: multiples of pi as "2pi", the rest trimmed. */
+private fun formatBound(v: Double): String {
+    val k = v / Math.PI
+    val rounded = Math.round(k * 2) / 2.0
+    if (v != 0.0 && kotlin.math.abs(k - rounded) < 1e-9) {
+        return when (rounded) {
+            1.0 -> "pi"
+            -1.0 -> "-pi"
+            else -> "${rounded.toString().removeSuffix(".0")}pi"
+        }
+    }
+    return v.toString().removeSuffix(".0")
 }
 
 /**

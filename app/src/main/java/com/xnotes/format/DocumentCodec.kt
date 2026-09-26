@@ -5,6 +5,7 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Orientation
@@ -407,6 +408,11 @@ class DocumentCodec(
             j.name("dash_gap").value(s.dashGap)
         }
         if (s.angle != 0.0) j.name("angle").value(s.angle)
+        s.function?.let {
+            j.name("function").value(it.expr)
+            j.name("function_from").value(it.from)
+            j.name("function_to").value(it.to)
+        }
         if (s.locked) j.name("locked").value(true)
         s.link?.let { j.name("link").value(it) }
         j.endObject()
@@ -813,6 +819,9 @@ class DocumentCodec(
         var dashed = false
         var dashLength = 10.0
         var dashGap = 8.0
+        var function: String? = null
+        var functionFrom = 0.0
+        var functionTo = 0.0
         var tableCols: List<Double>? = null
         var tableRows: List<Double>? = null
     }
@@ -879,6 +888,9 @@ class DocumentCodec(
                 "dashed" -> s.dashed = boolOr(p, false)
                 "dash_length" -> s.dashLength = doubleOr(p, 10.0)
                 "dash_gap" -> s.dashGap = doubleOr(p, 8.0)
+                "function" -> s.function = stringOr(p, "")
+                "function_from" -> s.functionFrom = doubleOr(p, 0.0)
+                "function_to" -> s.functionTo = doubleOr(p, 0.0)
                 "cols" -> s.tableCols = doubleListOrNull(p)
                 "rows" -> s.tableRows = doubleListOrNull(p)
                 "locked" -> s.locked = boolOr(p, false)
@@ -966,7 +978,7 @@ class DocumentCodec(
             return ShapeItem.poly(
                 kind, verts, strokeRgba, s.strokeWidth, s.fillRgba, s.neon, s.neonStrength,
                 s.dashed, s.dashLength, s.dashGap,
-            )
+            ).also { shape -> s.function?.let { shape.function = FunctionSpec(it, s.functionFrom, s.functionTo) } }
         }
         return ShapeItem(
             shape = kind,
