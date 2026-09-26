@@ -104,6 +104,12 @@ interface SelectionMenuHost {
     /** Reopen the text editor on the selected text box. */
     fun editSelectionText()
 
+    /** The LaTeX of the lone selected formula box, or null when the selection is not one. */
+    val selectionMath: String?
+
+    /** Replace the selected formula's LaTeX; false when it does not set. */
+    fun setSelectionMath(latex: String): Boolean
+
     /** True when exactly one item is selected (it can carry a hyperlink). */
     val selectionCanLink: Boolean
 
@@ -118,6 +124,12 @@ interface SelectionMenuHost {
 
     /** Recognize the selected handwriting and replace it with a text box (async). */
     fun convertSelectionToText()
+
+    /** True when the handwritten-maths add-on is downloaded (shows Convert to math). */
+    val canConvertToMath: Boolean
+
+    /** Recognize the selected handwriting as a formula and replace it with a formula box (async). */
+    fun convertSelectionToMath()
 
     /** The colour and width of every selected stroke/shape, for the restyle popup to open on. */
     fun selectionStyles(): List<DrawStyle>
@@ -149,6 +161,7 @@ fun SelectionMenu(host: SelectionMenuHost) {
     var styleOpen by remember { mutableStateOf(false) }
     var linkDialogOpen by remember { mutableStateOf(false) }
     var functionDialogOpen by remember { mutableStateOf(false) }
+    var mathDialogOpen by remember { mutableStateOf(false) }
 
     val barHeightPx = with(density) { 48.dp.toPx() }
     val barWidthPx = with(density) { (6 * 46).dp.toPx() }
@@ -215,7 +228,8 @@ fun SelectionMenu(host: SelectionMenuHost) {
                 if (host.selectionIsText) {
                     DropdownMenuItem(
                         text = { Text("Edit") },
-                        onClick = { overflowOpen = false; host.editSelectionText() },
+                        // A formula is edited as its LaTeX source, not in the text box editor.
+                        onClick = { overflowOpen = false; if (host.selectionMath != null) mathDialogOpen = true else host.editSelectionText() },
                     )
                 }
                 if (host.selectionIsImage) {
@@ -229,6 +243,12 @@ fun SelectionMenu(host: SelectionMenuHost) {
                         text = { Text("Convert to text") },
                         onClick = { overflowOpen = false; host.convertSelectionToText() },
                     )
+                    if (host.canConvertToMath) {
+                        DropdownMenuItem(
+                            text = { Text("Convert to math") },
+                            onClick = { overflowOpen = false; host.convertSelectionToMath() },
+                        )
+                    }
                 }
                 if (host.selectionCanLink) {
                     DropdownMenuItem(
@@ -244,6 +264,14 @@ fun SelectionMenu(host: SelectionMenuHost) {
             if (styleOpen) {
                 // Closing settles any preview the slider left open.
                 SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
+            }
+            val latex = host.selectionMath
+            if (mathDialogOpen && latex != null) {
+                LatexDialog(
+                    initial = latex,
+                    onConfirm = { if (host.setSelectionMath(it)) mathDialogOpen = false },
+                    onDismiss = { mathDialogOpen = false },
+                )
             }
             val function = host.selectionFunction
             if (functionDialogOpen && function != null) {
@@ -311,6 +339,30 @@ private fun FunctionDialog(initial: FunctionSpec, onConfirm: (FunctionSpec) -> U
         },
         confirmButton = {
             TextButton(enabled = spec != null, onClick = { spec?.let(onConfirm) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/** Edit a formula box's LaTeX. Save stays on the dialog when the renderer cannot set the result. */
+@Composable
+private fun LatexDialog(initial: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Formula") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("LaTeX") },
+                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text.trim()) }) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

@@ -2198,6 +2198,12 @@ class InteractionController(
         val page = state.document.pages[pi]
         val existing = page.items.lastOrNull { it is TextItem && it.contains(local) } as? TextItem
         if (existing != null) {
+            // A formula is edited as LaTeX from its selection menu, so a tap selects it instead.
+            if (existing.math) {
+                selectSingle(pi, existing)
+                mode = PointerMode.IDLE
+                return
+            }
             startEditing(existing, pi, isNew = false)
             return
         }
@@ -2556,6 +2562,25 @@ class InteractionController(
         state.document.dirty = true
     }
 
+    /** Retype the selected formula box's LaTeX as one undoable edit; false (unchanged) when it will not set. */
+    fun setSelectedMath(latex: String): Boolean {
+        val item = singleSelectedText()?.takeIf { it.math } ?: return false
+        val old = item.text
+        item.text = latex
+        if (item.mathBox() == null) {
+            item.text = old
+            return false
+        }
+        item.mathBox()?.let { item.width = it.width }
+        history.push(EditText(item, old, latex))
+        state.document.dirty = true
+        selObb = selectionObb()
+        onContentChanged()
+        refreshSelectionMenu()
+        requestRender()
+        return true
+    }
+
     /** Reopen the editor on the single selected text box (from the selection menu Edit action). */
     fun editSelectedText() {
         val sel = selection.singleOrNull() ?: return
@@ -2592,6 +2617,23 @@ class InteractionController(
         val maxW = (pageRight - sel.bounds.left - 8.0).coerceAtLeast(40.0)
         val width = sel.bounds.w.coerceIn(40.0, maxW)
         val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), width, 0.0, text, inkColor, textPointSize, textFace, measurer = textMeasurer)
+        swapInk(page, strokes, box)
+    }
+
+    /** Replace the selected handwriting with a formula box set about as tall as the writing was. */
+    fun replaceInkWithMath(sel: InkSelection, latex: String) {
+        val page = state.document.pages.getOrNull(sel.pageIndex) ?: return
+        val strokes = sel.strokes.filter { s -> page.items.any { it === s } }
+        if (strokes.isEmpty()) return
+        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), sel.bounds.w, 0.0, latex, inkColor, textPointSize, textFace, measurer = textMeasurer, math = true)
+        box.mathBox()?.let { m ->
+            if (m.height > 0.0) box.pointSize = (textPointSize * sel.bounds.h / m.height).coerceIn(textPointSize, textPointSize * 6.0)
+        }
+        box.mathBox()?.let { box.width = it.width }
+        swapInk(page, strokes, box)
+    }
+
+    private fun swapInk(page: Page, strokes: List<CanvasItem>, box: TextItem) {
         val removals = strokes.map { page to (it as CanvasItem) }
         for (s in strokes) page.items.remove(s)
         page.items.add(box)

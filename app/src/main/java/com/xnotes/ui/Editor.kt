@@ -29,6 +29,7 @@ import com.xnotes.core.history.History
 import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.FunctionSpec
+import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
@@ -630,6 +631,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val selectionIsText: Boolean get() = controller.singleSelectedText() != null
     override fun editSelectionText() = controller.editSelectedText()
 
+    override val selectionMath: String? get() = controller.singleSelectedText()?.takeIf { it.math }?.text
+    override fun setSelectionMath(latex: String): Boolean = controller.setSelectedMath(latex)
+
     override val selectionCanLink: Boolean get() = controller.singleSelectedItem() != null
     override val selectionLink: String? get() = controller.singleSelectedItem()?.link
     override fun setSelectionLink(url: String?) = controller.setSelectedLink(url?.trim()?.ifEmpty { null })
@@ -653,6 +657,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 return@launch
             }
             controller.replaceInkWithText(sel, text)
+        }
+    }
+
+    override val canConvertToMath: Boolean get() = com.xnotes.platform.MathOcr.isInstalled(appContext)
+
+    override fun convertSelectionToMath() {
+        val sel = controller.inkSelection() ?: return
+        android.widget.Toast.makeText(appContext, "Recognizing math...", android.widget.Toast.LENGTH_SHORT).show()
+        autosaveScope.launch {
+            val latex = try {
+                withContext(Dispatchers.Default) { com.xnotes.platform.MathOcr.recognize(appContext, sel.strokes, sel.bounds) }
+            } catch (e: Throwable) {
+                android.widget.Toast.makeText(appContext, "Math recognition failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (latex.isBlank()) {
+                android.widget.Toast.makeText(appContext, "No math recognized", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            controller.replaceInkWithMath(sel, latex)
         }
     }
 
@@ -6626,7 +6650,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * source, so anything already on screen has to re-shape now that it will set.
      */
     fun refreshFlowMath() {
-        if (state.document.flow.paragraphs.none { p -> p.runs.any { it.style.math } }) return
+        val flowMath = state.document.flow.paragraphs.any { p -> p.runs.any { it.style.math } }
+        val boxMath = state.document.pages.any { page -> page.items.any { it is TextItem && it.math } }
+        if (!flowMath && !boxMath) return
         state.document.flow.reshapeAll()
         republishFlow(invalidate = true)
         state.invalidateAllCaches()

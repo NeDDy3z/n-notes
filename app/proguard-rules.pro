@@ -28,3 +28,7 @@
 # back to Enum.name(). Keep the core enums whole so renaming can never change a name written to, or
 # read back from, a saved document — the .xnote format must stay forward/backward compatible.
 -keep enum com.xnotes.core.** { *; }
+
+# --- ONNX Runtime (handwritten maths add-on) ----------------------------------------------------
+# The native library calls back into its Java classes through JNI by name.
+-keep class ai.onnxruntime.** { *; }

@@ -18,7 +18,7 @@ n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On t
 
 - **File import**: import images, txt, md, rtf, html, epub, docx, xlsx, and csv as notes.
 - **Filen cloud sync**: back up and sync notes and settings to Filen, with an on-demand Sync now action in the sidebar (hold it to open the sync settings), or pull down on Home to sync.
-- **Sidebar layout**: Recent, Home, Trash and a foldable Pinned group on top, the file tree in the middle, Sync now, Preferences and About pinned to the bottom; Files, Sync now and About can each be hidden in Preferences.
+- **Sidebar layout**: Recent, Home, Trash and a foldable Pinned group on top, the file tree in the middle, Sync now, Preferences and About pinned to the bottom; Files, Sync now and About can each be hidden in Preferences. The collapsed sidebar shows Sync now too.
 - **Update check**: check GitHub for a newer n-notes release from Preferences.
 - **Home swipes**: swipe right on Home to open the sidebar.
 - **Create menu**: the new-note button is now a list to create a note, canvas, folder, or import a file.
@@ -37,6 +37,7 @@ n-notes is a fork of [xnotes](https://github.com/shardulvs/xnotes-android). On t
 - **Finger tap to select**: with the select tool, a finger tap picks the item under it while a finger drag still pans.
 - **Whole or partial selection**: the select and lasso tools can take only fully enclosed items or anything they touch.
 - **Handwriting to text**: convert selected handwriting into an editable text box (Czech and English) from the selection three-dots menu; reopen it later with Edit in the same menu, with font, size, and colour controls docked at the bottom.
+- **Handwriting to math**: an optional on-device add-on (downloaded and deleted in Preferences, under OCR) adds Convert to math to the selection three-dots menu, which turns handwritten formulas, fractions, exponents and integrals included, into a typeset formula; Edit in the same menu opens its LaTeX.
 - **Pen shape snapping toggle**: turn "snap held strokes to shapes" on or off directly from the pen settings popup.
 
 ## Versioning

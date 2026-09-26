@@ -540,6 +540,7 @@ private fun BackstageRail(modifier: Modifier, nav: SidebarNav, onExpand: () -> U
                 }
             }
         }
+        if (nav.showSync) FilenSyncRailItem(nav.onSyncSettings)
         RailItem(XnotesIcons.sliders, stringResource(R.string.preferences), selected = nav.view == BackstageView.PREFERENCES) { nav.onSelectView(BackstageView.PREFERENCES) }
         if (nav.showAbout) RailItem(XnotesIcons.info, stringResource(R.string.about), selected = nav.view == BackstageView.ABOUT) { nav.onSelectView(BackstageView.ABOUT) }
     }
@@ -2413,6 +2414,18 @@ private fun FilenSyncNowCommand(onOpenSettings: () -> Unit) {
     val status by com.xnotes.sync.filen.FilenSyncManager.status.collectAsState()
     val scope = rememberCoroutineScope()
     Command(Icons.Filled.Sync, if (status.running) "Syncing..." else "Sync now", onLongClick = onOpenSettings) {
+        if (!status.running) scope.launch { com.xnotes.sync.filen.FilenSyncManager.syncNow(ctx) }
+    }
+}
+
+/** [FilenSyncNowCommand] for the collapsed rail: tap syncs, hold opens the sync settings. */
+@Composable
+private fun FilenSyncRailItem(onOpenSettings: () -> Unit) {
+    val ctx = LocalContext.current
+    if (!com.xnotes.sync.filen.FilenSyncManager.isConfigured(ctx)) return
+    val status by com.xnotes.sync.filen.FilenSyncManager.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    RailItem(Icons.Filled.Sync, if (status.running) "Syncing..." else "Sync now", selected = status.running, onLongClick = onOpenSettings) {
         if (!status.running) scope.launch { com.xnotes.sync.filen.FilenSyncManager.syncNow(ctx) }
     }
 }

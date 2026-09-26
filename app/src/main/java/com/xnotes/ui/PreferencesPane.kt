@@ -27,11 +27,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -39,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +61,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -79,6 +83,7 @@ import com.xnotes.settings.ExplorerLayout
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.NameTemplate
+import com.xnotes.platform.MathOcr
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.MaterialStyle
 import com.xnotes.settings.CornerStyle
@@ -317,6 +322,8 @@ fun PreferencesPane(
                 Chip("Czech", prefs.ocrLanguage == "cs") { update(prefs.copy(ocrLanguage = "cs")) }
                 Chip("English", prefs.ocrLanguage == "en") { update(prefs.copy(ocrLanguage = "en")) }
             }
+            FieldLabel("Handwritten math (Convert to math)")
+            MathAddonControls()
 
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle(stringResource(R.string.pref_new_notes))
@@ -736,6 +743,58 @@ fun PreferencesPane(
             }
             delay(16L)
         }
+    }
+}
+
+/**
+ * Download or delete the handwritten-maths model. It is too big to bundle, so the selection
+ * menu only offers Convert to math once it is here.
+ */
+@Composable
+private fun MathAddonControls() {
+    val context = LocalContext.current
+    val palette = LocalPalette.current
+    LaunchedEffect(Unit) { MathOcr.refresh(context) }
+    val state by MathOcr.state.collectAsState()
+    var confirmDelete by remember { mutableStateOf(false) }
+    val sizeMb = MathOcr.DOWNLOAD_BYTES / 1_000_000
+    Text(
+        "An on-device model that turns selected handwritten formulas into LaTeX. Download it once; it works offline after.",
+        color = palette.textDim.toComposeColor(),
+        fontSize = 12.sp,
+    )
+    if (!MathOcr.supported) {
+        Text("Not available for this device's processor.", color = palette.text.toComposeColor(), fontSize = 12.sp)
+        return
+    }
+    when (val s = state) {
+        MathOcr.State.Missing ->
+            TextButton(onClick = { MathOcr.startDownload(context) }) { Text("Download ($sizeMb MB)", fontSize = 13.sp) }
+        is MathOcr.State.Downloading -> {
+            LinearProgressIndicator(progress = { s.done.toFloat() / s.total }, modifier = Modifier.width(280.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${s.done / 1_000_000} of ${s.total / 1_000_000} MB", color = palette.text.toComposeColor(), fontSize = 12.sp)
+                TextButton(onClick = { MathOcr.cancelDownload(context) }) { Text(stringResource(R.string.cancel), fontSize = 13.sp) }
+            }
+        }
+        MathOcr.State.Installed ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Downloaded", color = palette.text.toComposeColor(), fontSize = 12.sp)
+                TextButton(onClick = { confirmDelete = true }) { Text("Delete", fontSize = 13.sp) }
+            }
+        is MathOcr.State.Failed -> {
+            Text("Download failed: ${s.message}", color = palette.danger.toComposeColor(), fontSize = 12.sp)
+            TextButton(onClick = { MathOcr.startDownload(context) }) { Text("Retry", fontSize = 13.sp) }
+        }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete the math model?") },
+            text = { Text("Convert to math goes away until you download it again ($sizeMb MB).") },
+            confirmButton = { TextButton(onClick = { MathOcr.delete(context); confirmDelete = false }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 }
 

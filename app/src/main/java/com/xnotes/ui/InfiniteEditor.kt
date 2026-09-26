@@ -534,6 +534,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     override val selectionHasInk: Boolean get() = false
     override fun convertSelectionToText() {}
+    override val canConvertToMath: Boolean get() = false
+    override val selectionMath: String? get() = null
+    override fun setSelectionMath(latex: String): Boolean = false
+    override fun convertSelectionToMath() {}
 
     override fun unlockItem(item: CanvasItem) {
         if (!item.locked) return

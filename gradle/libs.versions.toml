@@ -16,6 +16,7 @@ mlkitDigitalInk = "18.1.0"
 commonmark = "0.30.0"
 kxml2 = "2.3.0"
 latex = "1.5.0-kt2.1.0"
+onnxruntime = "1.30.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -47,6 +48,7 @@ commonmark-autolink = { group = "org.commonmark", name = "commonmark-ext-autolin
 latex-base = { group = "io.github.huarangmeng", name = "latex-base", version.ref = "latex" }
 latex-parser = { group = "io.github.huarangmeng", name = "latex-parser", version.ref = "latex" }
 latex-renderer = { group = "io.github.huarangmeng", name = "latex-renderer", version.ref = "latex" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

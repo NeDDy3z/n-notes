@@ -6,6 +6,8 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.FontSpec
 import com.xnotes.core.pal.HAlign
+import com.xnotes.core.pal.MathBox
+import com.xnotes.core.pal.MathTypesetter
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.TextFlags
 import com.xnotes.core.pal.TextMeasurer
@@ -31,6 +33,8 @@ class TextItem(
     var strike: Boolean = false,
     var align: HAlign = HAlign.LEFT,
     private val measurer: TextMeasurer,
+    /** [text] is LaTeX, drawn as a formula (the handwritten-maths add-on makes these). */
+    var math: Boolean = false,
 ) : CanvasItem, Resizable {
 
     override val kind = KIND
@@ -47,10 +51,20 @@ class TextItem(
     /** Height the current text needs at the current width (empty ⇒ one line). */
     fun contentHeight(): Double = measurer.measure(text.ifEmpty { " " }, font, width, flags()).h
 
-    override fun bounds(): Rect = Rect(pos.x, pos.y, width, maxOf(height, contentHeight()))
+    /** The formula's size, or null when this is not maths or the LaTeX cannot be set (then it shows as text). */
+    fun mathBox(): MathBox? = if (math && text.isNotEmpty()) mathTypesetter?.measure(text, pointSize, display = true) else null
+
+    override fun bounds(): Rect {
+        mathBox()?.let { return Rect(pos.x, pos.y, it.width, it.height) }
+        return Rect(pos.x, pos.y, width, maxOf(height, contentHeight()))
+    }
 
     override fun paint(r: Renderer) {
         if (text.isEmpty()) return
+        mathBox()?.let {
+            r.drawMath(text, pos.x, pos.y + it.ascent, pointSize, rgba, display = true)
+            return
+        }
         r.drawText(text, bounds(), font, rgba, flags())
     }
 
@@ -98,6 +112,9 @@ class TextItem(
 
     companion object {
         const val KIND = "text"
+
+        /** Sets formula boxes; installed by the app once the LaTeX renderer exists. */
+        var mathTypesetter: MathTypesetter? = null
         const val DEFAULT_WIDTH = 300.0
         const val DEFAULT_POINT_SIZE = 13.0
         val DEFAULT_FACE = FontFace.MONO

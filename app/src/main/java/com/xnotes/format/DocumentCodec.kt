@@ -374,6 +374,7 @@ class DocumentCodec(
         if (t.underline) j.name("underline").value(true)
         if (t.strike) j.name("strike").value(true)
         if (t.align != com.xnotes.core.pal.HAlign.LEFT) j.name("align").value(t.align.name.lowercase())
+        if (t.math) j.name("math").value(true)
         if (t.locked) j.name("locked").value(true)
         t.link?.let { j.name("link").value(it) }
         j.endObject()
@@ -804,6 +805,7 @@ class DocumentCodec(
         var fontFace = ""
         var textBold = false
         var textItalic = false
+        var textMath = false
         var textUnderline = false
         var textStrike = false
         var textAlign = "left"
@@ -873,6 +875,7 @@ class DocumentCodec(
                 "font_face" -> s.fontFace = stringOr(p, "")
                 "bold" -> s.textBold = boolOr(p, false)
                 "italic" -> s.textItalic = boolOr(p, false)
+                "math" -> s.textMath = boolOr(p, false)
                 "underline" -> s.textUnderline = boolOr(p, false)
                 "strike" -> s.textStrike = boolOr(p, false)
                 "align" -> s.textAlign = stringOr(p, "left")
@@ -932,6 +935,7 @@ class DocumentCodec(
                         else -> com.xnotes.core.pal.HAlign.LEFT
                     },
                     measurer = textMeasurer,
+                    math = s.textMath,
                 ),
             )
             ShapeItem.KIND -> items.add(buildShape(s))

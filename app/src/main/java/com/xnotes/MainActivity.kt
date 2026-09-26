@@ -286,6 +286,7 @@ private fun EditorScreen(
     val mathDensity = LocalDensity.current
     LaunchedEffect(mathMeasurer, mathExporter, mathDensity) {
         com.xnotes.platform.MathRendering.install(mathMeasurer, mathExporter, mathDensity)
+        com.xnotes.core.model.TextItem.mathTypesetter = com.xnotes.platform.MathRendering
         editor.refreshFlowMath()
     }
     // Backstage is the root of the stack; the editor is pushed on top only when a note is open
