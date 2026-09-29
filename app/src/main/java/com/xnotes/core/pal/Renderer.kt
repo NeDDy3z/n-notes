@@ -199,6 +199,24 @@ interface Renderer {
     val writesText: Boolean get() = false
 
     /**
+     * A list bullet: a dot of [radius] at [center], on a line whose baseline is at
+     * [baseline] and whose text is set in [font]. A backend writing real text makes it
+     * a glyph that copies as "•"; everything else just paints the dot.
+     */
+    fun drawBullet(center: Pt, radius: Double, baseline: Double, font: FontSpec, color: Rgba) =
+        fillCircle(center, radius, color)
+
+    /**
+     * A checklist box outlined [stroke] wide, filled inside when [checked]. A backend
+     * writing real text makes it a glyph that copies as "☐" or "☑".
+     */
+    fun drawCheckbox(box: Rect, stroke: Double, checked: Boolean, baseline: Double, font: FontSpec, color: Rgba) {
+        strokeRect(box, Pen(color, width = stroke, cosmetic = false))
+        // Checked state is a solid inner fill: legible on any paper without knowing it.
+        if (checked) fillRect(box.outset(-box.w * 0.25), color)
+    }
+
+    /**
      * Draw the formula [latex] sets at [sizePt], its left edge at [x] and its own
      * baseline on [baseline] so it sits on the line like a word. The backend that
      * draws this must be the one behind [MathTypesetter], which already measured

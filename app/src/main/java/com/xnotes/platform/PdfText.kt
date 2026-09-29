@@ -83,6 +83,16 @@ internal class PdfText(private val doc: PDDocument) {
         return Run(out, offsets.toDoubleArray())
     }
 
+    /**
+     * A glyph drawing [body] (glyph space, 1000 units per em, no colour of its own) that reads
+     * as [text]: a list bullet or checkbox, which the screen paints as shapes. [key] names its
+     * geometry, so every bullet of one size shares a glyph.
+     */
+    fun markGlyph(key: String, text: String, width: Double, bbox: DoubleArray, body: () -> String): Glyph {
+        val face = faces.getOrPut(MARKS) { Face(MARKS, "Marks", MARK_ASCENT, MARK_DESCENT) }
+        return glyph(face, "m", key) { GlyphDef(text, width, bbox, body(), image = null) }
+    }
+
     /** Write every font's glyph programs, widths and character map. Call once, before saving. */
     fun finish() {
         for (face in faces.values) for (font in face.fonts) font.finish(doc)
@@ -130,10 +140,9 @@ internal class PdfText(private val doc: PDDocument) {
             }
             var e = c + 1
             while (e < bounds.size - 1 && !isColour(word.substring(bounds[e], bounds[e + 1]))) e++
-            val piece = word.substring(bounds[c], bounds[e])
             var width = 0.0
             for (m in from + bounds[c] until from + bounds[e]) width += adv[m]
-            out += wordGlyph(font, face, paint, piece, width)
+            out += wordGlyph(face, paint, word.substring(bounds[c], bounds[e]), width)
             offsets += offsetOf(bounds[c])
             c = e
         }
@@ -194,8 +203,8 @@ internal class PdfText(private val doc: PDDocument) {
             }
         }
 
-    private fun wordGlyph(font: FontSpec, face: Face, paint: TextPaint, word: String, widthPx: Double): Glyph {
-        // Captured at the size it is shown at, so the glyphs inside it sit exactly as on screen.
+    private fun wordGlyph(face: Face, paint: TextPaint, word: String, widthPx: Double): Glyph {
+        // Captured at the size it is shown at, so the glyphs inside it sit at the screen's own advances.
         val size = PdfNumbers.format(paint.textSize.toDouble(), 2)
         return glyph(face, "w$size", word) {
             val def = outlineGlyph(paint, word, paint.textSize, widthPx) ?: blankGlyph(paint, word, widthPx)
@@ -327,6 +336,13 @@ internal class PdfText(private val doc: PDDocument) {
         private const val TOLERANCE_EM = 0.0005f
 
         const val IMAGE_NAME = "Im"
+
+        /** The face list markers live in; no font id can collide with it. */
+        private const val MARKS = "\u0000marks"
+
+        // A marker font's nominal line metrics, in glyph units, for readers sizing a selection.
+        private const val MARK_ASCENT = 800.0
+        private const val MARK_DESCENT = 200.0
 
         private fun isBlank(c: Char): Boolean = c == ' ' || c == '\t' || c == ' ' || Character.isWhitespace(c)
 

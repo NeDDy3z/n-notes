@@ -252,6 +252,63 @@ internal class PdfBoxRenderer(
 
     override val writesText: Boolean get() = true
 
+    // A bullet is a glyph of its own, so selecting a list copies "•" where the dot is.
+    override fun drawBullet(center: Pt, radius: Double, baseline: Double, font: FontSpec, color: Rgba) {
+        val sizePx = font.pointSize * AndroidText.POINTS_TO_PX
+        val k = 1000.0 / sizePx
+        val r = radius * k
+        val cy = (baseline - center.y) * k
+        val key = "bullet ${PdfNumbers.format(r, 1)} ${PdfNumbers.format(cy, 1)}"
+        val glyph = ctx.text.markGlyph(key, "•", 2 * r, doubleArrayOf(0.0, cy - r, 2 * r, cy + r)) {
+            StringBuilder().also { ellipseOps(it, r, cy, r) }.append("f\n").toString()
+        }
+        showRun(PdfText.Run(listOf(glyph), doubleArrayOf(0.0)), center.x - radius, baseline, sizePx, color)
+    }
+
+    // A checkbox glyph: its outline as an even-odd ring, plus the inner square when checked.
+    override fun drawCheckbox(box: Rect, stroke: Double, checked: Boolean, baseline: Double, font: FontSpec, color: Rgba) {
+        val sizePx = font.pointSize * AndroidText.POINTS_TO_PX
+        val k = 1000.0 / sizePx
+        val outer = box.outset(stroke / 2.0)
+        val inner = box.outset(-stroke / 2.0)
+        val mark = box.outset(-box.w * 0.25)
+        fun rect(sb: StringBuilder, rc: Rect) {
+            for (v in doubleArrayOf((rc.left - outer.left) * k, (baseline - rc.bottom) * k, rc.w * k, rc.h * k)) {
+                PdfNumbers.append(sb, v, 1)
+                sb.append(' ')
+            }
+            sb.append("re\n")
+        }
+        val key = "box ${PdfNumbers.format(box.w * k, 1)} ${PdfNumbers.format(stroke * k, 1)} " +
+            "${PdfNumbers.format((baseline - box.bottom) * k, 1)} $checked"
+        val bbox = doubleArrayOf(0.0, (baseline - outer.bottom) * k, outer.w * k, (baseline - outer.top) * k)
+        val glyph = ctx.text.markGlyph(key, if (checked) "☑" else "☐", outer.w * k, bbox) {
+            StringBuilder().also { sb ->
+                rect(sb, outer)
+                if (inner.w > 0.0 && inner.h > 0.0) rect(sb, inner)
+                if (checked) rect(sb, mark)
+                sb.append("f*\n")
+            }.toString()
+        }
+        showRun(PdfText.Run(listOf(glyph), doubleArrayOf(0.0)), outer.left, baseline, sizePx, color)
+    }
+
+    /** A closed ellipse at ([cx], [cy]) with radii [rx] (and [ry]) in whatever space [sb] is in. */
+    private fun ellipseOps(sb: StringBuilder, rx: Double, cy: Double, ry: Double, cx: Double = rx) {
+        val k = 0.5522847498307936
+        fun p(x: Double, y: Double) {
+            PdfNumbers.append(sb, x, 1)
+            sb.append(' ')
+            PdfNumbers.append(sb, y, 1)
+            sb.append(' ')
+        }
+        p(cx + rx, cy); sb.append("m\n")
+        p(cx + rx, cy + ry * k); p(cx + rx * k, cy + ry); p(cx, cy + ry); sb.append("c\n")
+        p(cx - rx * k, cy + ry); p(cx - rx, cy + ry * k); p(cx - rx, cy); sb.append("c\n")
+        p(cx - rx, cy - ry * k); p(cx - rx * k, cy - ry); p(cx, cy - ry); sb.append("c\n")
+        p(cx + rx * k, cy - ry); p(cx + rx, cy - ry * k); p(cx + rx, cy); sb.append("c\nh\n")
+    }
+
     override fun drawMath(latex: String, x: Double, baseline: Double, sizePt: Double, color: Rgba, display: Boolean) {
         val (bmp, box) = MathRendering.formulaBitmap(latex, sizePt, color, display) ?: return
         placeBitmap(bmp, Rect(x, baseline - box.ascent, box.width, box.height), multiply = false)

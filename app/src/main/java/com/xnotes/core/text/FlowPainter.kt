@@ -3,7 +3,6 @@ package com.xnotes.core.text
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Rgba
-import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.Renderer
 
 /**
@@ -179,7 +178,7 @@ object FlowPainter {
                 val radius = (ascent * 0.16).coerceIn(2.0, 6.0)
                 val cx = m.rect.right - FlowLayout.MARKER_GAP - radius
                 val cy = line.baseline - ascent * 0.32
-                r.fillCircle(Pt(cx, cy), radius, color)
+                r.drawBullet(Pt(cx, cy), radius, line.baseline, m.font, color)
             }
             ListKind.ORDERED -> {
                 m.text?.let { r.drawTextRun(it, m.textX, line.baseline, m.font, color) }
@@ -187,12 +186,12 @@ object FlowPainter {
             ListKind.CHECK -> {
                 val side = (ascent * 0.85).coerceIn(8.0, 26.0)
                 val box = Rect(m.rect.right - FlowLayout.MARKER_GAP - side, line.baseline - side, side, side)
-                r.strokeRect(box, Pen(color, width = (side / 9.0).coerceAtLeast(1.2), cosmetic = false))
-                // Checked state is a solid inner fill: legible on any paper without knowing it.
-                if (m.checked) r.fillRect(box.outset(-side * 0.25), color)
+                r.drawCheckbox(box, (side / 9.0).coerceAtLeast(1.2), m.checked, line.baseline, m.font, color)
             }
-            ListKind.NONE -> {}
+            ListKind.NONE -> return
         }
+        // Copied, a marker is followed by a real space, so "• item" does not read "•item".
+        if (r.writesText) r.drawTextRun(" ", m.rect.right - FlowLayout.MARKER_GAP, line.baseline, m.font, color)
     }
 
     /** Code line/chip backgrounds: neutral translucent grey, legible on light and dark paper. */
