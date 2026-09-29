@@ -336,9 +336,10 @@ internal class PdfBoxRenderer(
         p(cx + rx * k, cy - ry); p(cx + rx, cy - ry * k); p(cx + rx, cy); sb.append("c\nh\n")
     }
 
+    // A formula is one glyph: vector outlines on the page, its LaTeX when copied.
     override fun drawMath(latex: String, x: Double, baseline: Double, sizePt: Double, color: Rgba, display: Boolean) {
-        val (bmp, box) = MathRendering.formulaBitmap(latex, sizePt, color, display) ?: return
-        placeBitmap(bmp, Rect(x, baseline - box.ascent, box.width, box.height), multiply = false)
+        val glyph = ctx.text.formulaGlyph(latex, sizePt, color, display) ?: return
+        showRun(PdfText.Run(listOf(glyph), doubleArrayOf(0.0)), x, baseline, sizePt * AndroidText.POINTS_TO_PX, color)
     }
 
     // Real text through the export's Type 3 fonts: each glyph pinned to the x the screen draws it at.

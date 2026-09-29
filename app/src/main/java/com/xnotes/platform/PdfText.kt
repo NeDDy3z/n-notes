@@ -21,7 +21,9 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.font.PDType3Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontSpec
+import com.xnotes.core.pal.MathBox
 import com.xnotes.core.pdf.PdfNumbers
 import com.xnotes.core.pdf.ToUnicode
 import kotlin.math.abs
@@ -91,6 +93,76 @@ internal class PdfText(private val doc: PDDocument) {
     fun markGlyph(key: String, text: String, width: Double, bbox: DoubleArray, body: () -> String): Glyph {
         val face = faces.getOrPut(MARKS) { Face(MARKS, "Marks", MARK_ASCENT, MARK_DESCENT) }
         return glyph(face, "m", key) { GlyphDef(text, width, bbox, body(), image = null) }
+    }
+
+    /**
+     * A formula as one glyph that reads as its LaTeX, `$…$` (display `$$…$$`), so copying an
+     * equation pastes back into a note as one. Its drawing is the LaTeX library's own, captured as
+     * outlines; when the capture cannot take all of it, the formula's bitmap stands in. Null when
+     * the LaTeX does not set.
+     */
+    fun formulaGlyph(latex: String, sizePt: Double, color: Rgba, display: Boolean): Glyph? {
+        val box = MathRendering.measure(latex, sizePt, display) ?: return null
+        val sizePx = sizePt * AndroidText.POINTS_TO_PX
+        val face = faces.getOrPut(MATHS) { Face(MATHS, "Math", MARK_ASCENT, MARK_DESCENT) }
+        val key = "$display ${PdfNumbers.format(sizePx, 2)} ${color.toArgb()} $latex"
+        return glyph(face, "f", key) {
+            val text = if (display) "\$\$$latex\$\$" else "\$$latex\$"
+            val k = 1000.0 / sizePx
+            outlineFormula(latex, sizePt, color, display, box, k, text)
+                ?: imageFormula(latex, sizePt, color, display, box, k, text)
+                ?: GlyphDef(text, box.width * k, doubleArrayOf(0.0, 0.0, 0.0, 0.0), "", image = null)
+        }
+    }
+
+    private fun outlineFormula(latex: String, sizePt: Double, color: Rgba, display: Boolean, box: MathBox, k: Double, text: String): GlyphDef? {
+        val cap = OutlineCapture()
+        if (!MathRendering.drawVector(cap, latex, sizePt, color, display) || cap.incomplete || cap.shapes.isEmpty()) return null
+        val own = color.toArgb() and 0xFFFFFF
+        val uniform = cap.shapes.all { (it.argb and 0xFFFFFF) == own }
+        val body = StringBuilder(1024)
+        val tolerance = (1000.0 / k).toFloat() * TOLERANCE_EM
+        var last = 0
+        var llx = Double.MAX_VALUE
+        var lly = Double.MAX_VALUE
+        var urx = -Double.MAX_VALUE
+        var ury = -Double.MAX_VALUE
+        val r = RectF()
+        for ((i, shape) in cap.shapes.withIndex()) {
+            val path = shape.path
+            path.offset(0f, -box.ascent.toFloat())
+            if (!uniform && (i == 0 || shape.argb != last)) {
+                for (c in intArrayOf(shape.argb shr 16, shape.argb shr 8, shape.argb)) {
+                    PdfNumbers.append(body, (c and 0xFF) / 255.0, 3)
+                    body.append(' ')
+                }
+                body.append("rg\n")
+                last = shape.argb
+            }
+            if (!PathOps.append(body, path, k, tolerance)) continue
+            body.append(if (path.fillType == Path.FillType.EVEN_ODD) "f*\n" else "f\n")
+            path.computeBounds(r, true)
+            llx = min(llx, r.left * k)
+            urx = max(urx, r.right * k)
+            lly = min(lly, -r.bottom * k)
+            ury = max(ury, -r.top * k)
+        }
+        if (urx < llx) return null
+        return GlyphDef(text, box.width * k, doubleArrayOf(llx, lly, urx, ury), body.toString(), image = null, colored = !uniform)
+    }
+
+    private fun imageFormula(latex: String, sizePt: Double, color: Rgba, display: Boolean, box: MathBox, k: Double, text: String): GlyphDef? {
+        val (bmp, _) = MathRendering.formulaBitmap(latex, sizePt, color, display) ?: return null
+        val image = LosslessFactory.createFromImage(doc, bmp)
+        val body = StringBuilder()
+        body.append("q ")
+        PdfNumbers.append(body, box.width * k, 2)
+        body.append(" 0 0 ")
+        PdfNumbers.append(body, box.height * k, 2)
+        body.append(" 0 ")
+        PdfNumbers.append(body, -box.descent * k, 2)
+        body.append(" cm /").append(IMAGE_NAME).append(" Do Q\n")
+        return GlyphDef(text, box.width * k, null, body.toString(), image)
     }
 
     /** Write every font's glyph programs, widths and character map. Call once, before saving. */
@@ -337,8 +409,9 @@ internal class PdfText(private val doc: PDDocument) {
 
         const val IMAGE_NAME = "Im"
 
-        /** The face list markers live in; no font id can collide with it. */
+        /** The faces list markers and formulas live in; no font id can collide with them. */
         private const val MARKS = "\u0000marks"
+        private const val MATHS = "\u0000maths"
 
         // A marker font's nominal line metrics, in glyph units, for readers sizing a selection.
         private const val MARK_ASCENT = 800.0
@@ -369,7 +442,8 @@ internal class PdfText(private val doc: PDDocument) {
 
 /**
  * What one glyph is before its font is written: the text it reads as, its advance and box in
- * glyph units, and the drawing after its `d0`/`d1` line. A glyph with an [image] is coloured.
+ * glyph units, and the drawing after its `d0`/`d1` line. A [colored] glyph sets its own colours
+ * (an image, a formula in several colours); any other takes the colour the text is shown in.
  */
 internal class GlyphDef(
     val text: String,
@@ -377,6 +451,7 @@ internal class GlyphDef(
     val bbox: DoubleArray?,
     val body: String,
     val image: PDImageXObject?,
+    val colored: Boolean = image != null,
 )
 
 /**
@@ -430,10 +505,14 @@ internal class Type3Font(private val name: String, private val ascent: Double, p
             differences.add(COSName.getPDFName(glyphName))
             val proc = StringBuilder(def.body.length + 48)
             PdfNumbers.append(proc, def.width, 2)
-            if (def.image != null) {
+            if (def.colored) {
                 proc.append(" 0 d0\n")
-                images.setItem(COSName.getPDFName("${PdfText.IMAGE_NAME}$code"), def.image)
-                proc.append(def.body.replace("/${PdfText.IMAGE_NAME} Do", "/${PdfText.IMAGE_NAME}$code Do"))
+                if (def.image != null) {
+                    images.setItem(COSName.getPDFName("${PdfText.IMAGE_NAME}$code"), def.image)
+                    proc.append(def.body.replace("/${PdfText.IMAGE_NAME} Do", "/${PdfText.IMAGE_NAME}$code Do"))
+                } else {
+                    proc.append(def.body)
+                }
             } else {
                 val b = def.bbox ?: doubleArrayOf(0.0, 0.0, 0.0, 0.0)
                 proc.append(" 0")

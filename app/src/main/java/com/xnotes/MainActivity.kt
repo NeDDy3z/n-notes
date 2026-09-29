@@ -276,8 +276,10 @@ private fun EditorScreen(
     val mathMeasurer = rememberLatexMeasurer()
     val mathExporter = rememberLatexExporter()
     val mathDensity = LocalDensity.current
-    LaunchedEffect(mathMeasurer, mathExporter, mathDensity) {
-        com.xnotes.platform.MathRendering.install(mathMeasurer, mathExporter, mathDensity)
+    val mathText = androidx.compose.ui.text.rememberTextMeasurer()
+    val mathFonts = com.xnotes.platform.LatexInternals.defaultFonts()
+    LaunchedEffect(mathMeasurer, mathExporter, mathDensity, mathText, mathFonts) {
+        com.xnotes.platform.MathRendering.install(mathMeasurer, mathExporter, mathDensity, mathText, mathFonts)
         editor.refreshFlowMath()
     }
     // Backstage is the root of the stack; the editor is pushed on top only when a note is open
