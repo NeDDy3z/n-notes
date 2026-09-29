@@ -1,8 +1,14 @@
 package com.xnotes.platform
 
 import android.graphics.Bitmap
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSInteger
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionURI
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.util.Matrix
@@ -17,6 +23,7 @@ import com.xnotes.core.pal.RasterSurface
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.TextFlags
 import com.xnotes.core.pdf.GlyphPlacement
+import com.xnotes.core.pdf.LinkFinder
 import com.xnotes.core.pdf.PdfNumbers
 import kotlin.math.abs
 import kotlin.math.cos
@@ -41,6 +48,7 @@ import com.xnotes.core.pal.BlendMode as PalBlend
 internal class PdfBoxRenderer(
     private val cs: PDPageContentStream,
     private val ctx: PdfExportContext,
+    private val page: PDPage,
     ox: Double,
     oy: Double,
     s: Double,
@@ -255,6 +263,17 @@ internal class PdfBoxRenderer(
     override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {
         if (text.isEmpty()) return
         val layout = AndroidText.layout(text, rect.w.toInt(), AndroidText.textPaint(font))
+        for (link in LinkFinder.find(text)) {
+            for (line in layout.getLineForOffset(link.start)..layout.getLineForOffset(link.end - 1)) {
+                val a = maxOf(link.start, layout.getLineStart(line))
+                val b = minOf(link.end, layout.getLineEnd(line))
+                if (b <= a) continue
+                val x0 = minOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
+                val x1 = maxOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
+                val top = layout.getLineTop(line).toDouble()
+                addLink(Rect(rect.left + x0, rect.top + top, (x1 - x0).toDouble(), layout.getLineBottom(line) - top), link.uri)
+            }
+        }
         for (line in 0 until layout.lineCount) {
             val start = layout.getLineStart(line)
             var end = layout.getLineEnd(line)
@@ -340,6 +359,22 @@ internal class PdfBoxRenderer(
     override fun drawMath(latex: String, x: Double, baseline: Double, sizePt: Double, color: Rgba, display: Boolean) {
         val glyph = ctx.text.formulaGlyph(latex, sizePt, color, display) ?: return
         showRun(PdfText.Run(listOf(glyph), doubleArrayOf(0.0)), x, baseline, sizePt * AndroidText.POINTS_TO_PX, color)
+    }
+
+    /**
+     * Make [rect] (content space) open [uri] when clicked, drawing nothing: an address in the text
+     * looks exactly as it does on screen, and the link lies over it.
+     */
+    fun addLink(rect: Rect, uri: String) {
+        if (rect.w <= 0.0 || rect.h <= 0.0) return
+        val link = PDAnnotationLink()
+        link.rectangle = PDRectangle(ux(rect.left), uy(rect.bottom), (rect.w * abs(sx)).toFloat(), (rect.h * abs(sy)).toFloat())
+        link.action = PDActionURI().apply { this.uri = uri }
+        link.border = COSArray().apply { repeat(3) { add(COSInteger.ZERO) } }
+        link.contents = uri
+        val annots = page.annotations
+        annots.add(link)
+        page.annotations = annots
     }
 
     // Real text through the export's Type 3 fonts: each glyph pinned to the x the screen draws it at.

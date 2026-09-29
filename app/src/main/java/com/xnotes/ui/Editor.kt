@@ -1663,9 +1663,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * Flow painters for a PDF export of [doc]: a private layout pass over its own pages
+     * The flow layer for a PDF export of [doc]: a private layout pass over its own pages
      * (exports run off-thread and may target transient/subset documents, so the published
-     * on-screen snapshot is never reused). Pages foreign to [doc] paint nothing.
+     * on-screen snapshot is never reused). Pages foreign to [doc] carry no flow.
      */
     private fun flowExportHooks(doc: Document): com.xnotes.platform.PdfExporter.FlowExport {
         if (doc.flow.isEmpty) return com.xnotes.platform.PdfExporter.FlowExport.NONE
@@ -1673,10 +1673,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi)
         val index = HashMap<Page, Int>(doc.pages.size * 2)
         doc.pages.forEachIndexed { i, p -> index[p] = i }
-        return com.xnotes.platform.PdfExporter.FlowExport(
-            paint = { page, r, region -> index[page]?.let { FlowPainter.paintPage(r, frame, it, region) } },
-            bounds = { page -> index[page]?.let { frame.pageFlowBounds(it) } },
-        )
+        return com.xnotes.platform.PdfExporter.FlowExport(doc.flow, frame) { index[it] }
     }
 
     /**

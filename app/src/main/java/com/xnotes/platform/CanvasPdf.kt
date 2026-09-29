@@ -70,7 +70,7 @@ object CanvasPdfExporter {
                 cs.setNonStrokingColor(paperColor.r / 255f, paperColor.g / 255f, paperColor.b / 255f)
                 cs.addRect(0f, 0f, wPts, hPts)
                 cs.fill()
-                if (!paintContent(cs, ctx, doc, items, layout, hPts, onProgress, isCancelled)) return
+                if (!paintContent(cs, ctx, page, doc, items, layout, hPts, onProgress, isCancelled)) return
             }
             ctx.finish()
             // PdfBox writes a file token by token; buffered, that is a few large writes, not many tiny ones.
@@ -86,6 +86,7 @@ object CanvasPdfExporter {
     private fun paintContent(
         cs: PDPageContentStream,
         ctx: PdfExportContext,
+        pdfPage: PDPage,
         doc: InfiniteDocument,
         items: List<CanvasItem>,
         layout: CanvasPdfLayout.Layout,
@@ -97,7 +98,7 @@ object CanvasPdfExporter {
         val s = layout.scale
         // Map the cover's top-left corner onto the page's, in the (translate + axis scale) form
         // PdfBoxRenderer takes: user = (ox + x·s, oy − y·s).
-        val r = PdfBoxRenderer(cs, ctx, -cover.left * s, hPts + cover.top * s, s)
+        val r = PdfBoxRenderer(cs, ctx, pdfPage, -cover.left * s, hPts + cover.top * s, s)
         paintRuling(doc, r, layout)
         items.forEachIndexed { index, item ->
             if (isCancelled()) return false

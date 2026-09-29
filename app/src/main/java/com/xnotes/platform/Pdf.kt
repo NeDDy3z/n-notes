@@ -21,6 +21,11 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.insets
 import com.xnotes.core.pal.Renderer
+import com.xnotes.core.pdf.FlowLinks
+import com.xnotes.core.pdf.PlacedLink
+import com.xnotes.core.text.FlowFrame
+import com.xnotes.core.text.FlowPainter
+import com.xnotes.core.text.TextFlow
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.OutputStream
@@ -68,17 +73,32 @@ object PdfImporter {
 object PdfExporter {
 
     /**
-     * How the exporter draws the flow-text layer: [paint] renders a page-local region
-     * and [bounds] gives a page's flow extent (null = no flow there). A vector page hands
-     * [paint] the PDF renderer itself, so the flow lands as real text; the raster
-     * fallbacks hand it a bitmap canvas.
+     * The flow-text layer of an export: the flow, its layout over the document's pages, and which
+     * of those pages a page of the export is ([indexOf] is null for a page the flow never reached,
+     * or one foreign to the layout). A vector page paints it straight into the PDF renderer, so
+     * it lands as real text; the raster fallbacks paint it into a bitmap canvas.
      */
     class FlowExport(
-        val paint: (Page, Renderer, Rect) -> Unit,
-        val bounds: (Page) -> Rect?,
+        val flow: TextFlow,
+        val frame: FlowFrame,
+        private val indexOf: (Page) -> Int?,
     ) {
+        /** Paint [page]'s share of the flow, page-local, where it meets [region]. */
+        fun paint(page: Page, r: Renderer, region: Rect) {
+            val i = indexOf(page) ?: return
+            FlowPainter.paintPage(r, frame, i, region)
+        }
+
+        /** [page]'s flow extent, or null when there is no flow on it. */
+        fun bounds(page: Page): Rect? = indexOf(page)?.let { frame.pageFlowBounds(it) }
+
+        /** The links on [page], line by line. */
+        fun links(page: Page): List<PlacedLink> = indexOf(page)?.let { byPage[it] }.orEmpty()
+
+        private val byPage: Map<Int, List<PlacedLink>> by lazy { FlowLinks.place(flow, frame).groupBy { it.page } }
+
         companion object {
-            val NONE = FlowExport({ _, _, _ -> }, { null })
+            val NONE = FlowExport(TextFlow(), FlowFrame.EMPTY) { null }
         }
     }
 
@@ -247,7 +267,7 @@ object PdfExporter {
         val oy = (crop.lowerLeftY + crop.height).toDouble()
         growPageBox(pdfPage, crop, ins, s)
         PDPageContentStream(ctx.doc, pdfPage, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
-            paintItems(cs, ctx, page, ins, ox, oy, s, paintRuling, flow)
+            paintItems(cs, ctx, pdfPage, page, ins, ox, oy, s, paintRuling, flow)
         }
     }
 
@@ -276,16 +296,17 @@ object PdfExporter {
             cs.addRect(0f, 0f, wPts, hPts)
             cs.fill()
             // Page space starts inside the paper by the left/top margins.
-            paintItems(cs, ctx, page, ins, ox = ins.left * s, oy = hPts - ins.top * s, s, paintRuling, flow)
+            paintItems(cs, ctx, pdfPage, page, ins, ox = ins.left * s, oy = hPts - ins.top * s, s, paintRuling, flow)
         }
     }
 
     /** Draw a page's ruling (behind ink), the flow text, then its items in z-order. */
-    private fun paintItems(cs: PDPageContentStream, ctx: PdfExportContext, page: Page, ins: PageInsets, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
-        val renderer = PdfBoxRenderer(cs, ctx, ox, oy, s)
+    private fun paintItems(cs: PDPageContentStream, ctx: PdfExportContext, pdfPage: PDPage, page: Page, ins: PageInsets, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+        val renderer = PdfBoxRenderer(cs, ctx, pdfPage, ox, oy, s)
         val cover = footprintOf(page, ins)
         paintRuling(page, renderer) // page ruling sits behind the ink
         flow.paint(page, renderer, cover)
+        for (link in flow.links(page)) renderer.addLink(link.rect, link.uri)
         for (item in page.items) {
             if (PdfItemRaster.needsRaster(item)) {
                 val raster = PdfItemRaster.item(item, cover) ?: continue
