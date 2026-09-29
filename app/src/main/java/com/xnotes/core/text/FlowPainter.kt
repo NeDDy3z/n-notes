@@ -12,8 +12,8 @@ import com.xnotes.core.pal.Renderer
  * call from any thread against the immutable frame. Draw order per line: code
  * chip, highlight/inline-code backgrounds, list marker, text runs, then
  * underline/strike so decorations sit over their glyphs. Translucent fills use
- * plain colour alpha; every backend that paints flow text rasterizes (PDF
- * export receives the flow pre-rendered), so no layer tricks are needed.
+ * plain colour alpha, which the PDF backend carries as real transparency, so no
+ * layer tricks are needed.
  */
 object FlowPainter {
 
@@ -130,13 +130,24 @@ object FlowPainter {
             }
         }
         line.marker?.let { paintMarker(r, frame, line, it) }
+        // A backend writing real text gets the spaces too, each in reading order before the word
+        // after it: a reader copies in content order, so trailing them all behind would scramble it.
+        var next = line.startChar
         for (seg in line.segs) {
             val color = seg.style.color ?: frame.defaultColor
+            if (r.writesText) {
+                for (k in next until seg.start) r.drawTextRun(" ", line.caretX(k), line.baseline, seg.font, color)
+                next = seg.end
+            }
             if (seg.math) {
                 r.drawMath(seg.text, seg.x, line.baseline, seg.font.pointSize, color, seg.style.mathDisplay)
                 continue
             }
             r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, color)
+        }
+        // A blank line inside a code block has to exist in the copy, or the code pastes back squashed.
+        if (r.writesText && line.codeLine && line.segs.isEmpty()) {
+            r.drawTextRun(" ", line.caretX(line.startChar), line.baseline, line.font, frame.defaultColor)
         }
         val ascent = line.baseline - line.top
         val descent = line.bottom - line.baseline

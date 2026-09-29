@@ -198,8 +198,35 @@ internal class PdfText(private val doc: PDDocument) {
         // Captured at the size it is shown at, so the glyphs inside it sit exactly as on screen.
         val size = PdfNumbers.format(paint.textSize.toDouble(), 2)
         return glyph(face, "w$size", word) {
-            outlineGlyph(paint, word, paint.textSize, widthPx) ?: blankGlyph(paint, word, widthPx)
+            val def = outlineGlyph(paint, word, paint.textSize, widthPx) ?: blankGlyph(paint, word, widthPx)
+            GlyphDef(visualOrder(word), def.width, def.bbox, def.body, def.image)
         }
+    }
+
+    /**
+     * What a right-to-left [word] must read as in the file. PDF text is stored in visual order
+     * and readers reverse right-to-left runs back into typing order, so a word made of right-to-
+     * left letters is written reversed. Anything with digits or left-to-right letters in it keeps
+     * its order, since a reader would not reverse those parts.
+     */
+    private fun visualOrder(word: String): String {
+        var rtl = false
+        var i = 0
+        while (i < word.length) {
+            val cp = word.codePointAt(i)
+            when (Character.getDirectionality(cp)) {
+                Character.DIRECTIONALITY_RIGHT_TO_LEFT, Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC -> rtl = true
+                Character.DIRECTIONALITY_LEFT_TO_RIGHT,
+                Character.DIRECTIONALITY_EUROPEAN_NUMBER,
+                Character.DIRECTIONALITY_ARABIC_NUMBER,
+                -> return word
+            }
+            i += Character.charCount(cp)
+        }
+        if (!rtl) return word
+        val cps = word.codePoints().toArray()
+        cps.reverse()
+        return String(cps, 0, cps.size)
     }
 
     private inline fun glyph(face: Face, kind: String, text: String, make: () -> GlyphDef): Glyph =

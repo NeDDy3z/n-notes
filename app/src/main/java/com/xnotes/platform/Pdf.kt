@@ -55,9 +55,10 @@ object PdfImporter {
  * The imported PDF background stays **vector** — its pages are copied straight into the output via
  * PdfBox, never rasterized — so a 4 MB source no longer balloons into a 100 MB export. Annotations
  * are drawn on top: plain ink, shapes and inserted images become real vector/image objects through
- * [PdfBoxRenderer]; only effect-heavy items (neon glow, the highlighter's multiply blend,
- * translucent ink) and text boxes are rasterized in place — cropped to their own box, drawn at the
- * right z-order, and (for the highlighter) composited with Multiply so they still tint what's below.
+ * [PdfBoxRenderer], and the typed flow becomes real, selectable text. Only effect-heavy items (neon
+ * glow, the highlighter's multiply blend, translucent ink) and text boxes are rasterized in place:
+ * cropped to their own box, drawn at the right z-order, and (for the highlighter) composited with
+ * Multiply so they still tint what's below.
  *
  * Fallbacks keep it correct everywhere: a source page with a non-zero `/Rotate` is written as one
  * upright full-page raster (overlay coordinates for rotated pages aren't handled yet), and if PdfBox
@@ -67,8 +68,9 @@ object PdfExporter {
 
     /**
      * How the exporter draws the flow-text layer: [paint] renders a page-local region
-     * and [bounds] gives a page's flow extent (null = no flow there). Flow text exports
-     * as raster, like TextItems, so [paint] only ever receives raster renderers.
+     * and [bounds] gives a page's flow extent (null = no flow there). A vector page hands
+     * [paint] the PDF renderer itself, so the flow lands as real text; the raster
+     * fallbacks hand it a bitmap canvas.
      */
     class FlowExport(
         val paint: (Page, Renderer, Rect) -> Unit,
@@ -100,11 +102,13 @@ object PdfExporter {
         isCancelled: () -> Boolean = { false },
         flow: FlowExport = FlowExport.NONE,
     ) {
+        // Text fonts read PdfBox's glyph list, which only loads once the resource loader is set up.
+        PDFBoxResourceLoader.init(context.applicationContext)
         val file = doc.pdfFile
         // Cap PdfBox's in-RAM scratch to a few tens of MB and spill the rest to temp files in the
         // cache dir, so a large source PDF can't exhaust the heap while it's parsed/written.
         val mem = MemoryUsageSetting.setupMixed(SCRATCH_MAIN_MEM_BYTES).setTempDir(context.cacheDir)
-        val srcDoc = if (file != null) loadSource(context, file, mem) else null
+        val srcDoc = if (file != null) loadSource(file, mem) else null
         // A PDF background we can't parse with PdfBox: keep the working framework rasterizer.
         if (file != null && srcDoc == null) {
             exportRasterized(doc, source, out, paperColor, paintRuling, onProgress, isCancelled, flow)
@@ -117,8 +121,7 @@ object PdfExporter {
         }
     }
 
-    private fun loadSource(context: Context, file: File, mem: MemoryUsageSetting): PDDocument? = try {
-        PDFBoxResourceLoader.init(context.applicationContext)
+    private fun loadSource(file: File, mem: MemoryUsageSetting): PDDocument? = try {
         PDDocument.load(file, mem) // file-backed + scratch-capped: never reads the whole PDF into RAM
     } catch (_: Throwable) {
         null
@@ -269,15 +272,12 @@ object PdfExporter {
         }
     }
 
-    /** Draw a page's ruling (behind ink), the flow text (raster), then its items in z-order. */
+    /** Draw a page's ruling (behind ink), the flow text, then its items in z-order. */
     private fun paintItems(cs: PDPageContentStream, ctx: PdfExportContext, page: Page, ins: PageInsets, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
         val renderer = PdfBoxRenderer(cs, ctx, ox, oy, s)
         val cover = footprintOf(page, ins)
         paintRuling(page, renderer) // page ruling sits behind the ink
-        rasterizeFlow(page, cover, flow)?.let { raster ->
-            renderer.drawItemBitmap(raster.bmp, raster.rect, multiply = false)
-            raster.bmp.recycle()
-        }
+        flow.paint(page, renderer, cover)
         for (item in page.items) {
             if (PdfItemRaster.needsRaster(item)) {
                 val raster = PdfItemRaster.item(item, cover) ?: continue
@@ -355,12 +355,6 @@ object PdfExporter {
             val p = ((written * 1000) / estTotal).toInt().coerceIn(0, 999)
             if (p != last) { last = p; onPermille(p) }
         }
-    }
-
-    /** Render the page's flow text, cropped to its extent, into a transparent bitmap (like an item). */
-    private fun rasterizeFlow(page: Page, cover: Rect, flow: FlowExport): PdfItemRaster.Raster? {
-        val fb = flow.bounds(page) ?: return null
-        return PdfItemRaster.region(fb, cover, multiply = false) { r, crop -> flow.paint(page, r, crop) }
     }
 
     /**

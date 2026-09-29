@@ -4,6 +4,7 @@ import com.xnotes.core.FakeRenderer
 import com.xnotes.core.FakeTextMeasurer
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.pal.Renderer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -115,5 +116,42 @@ class FlowPainterTest {
         val ops = paint(frameOf(flow), Rect(0.0, 0.0, 200.0, 10.0)).ops
         assertTrue(ops.any { it.startsWith("drawTextRun:one@") })
         assertFalse(ops.any { it.startsWith("drawTextRun:two@") })
+    }
+
+    /** A backend that writes real text, recording like [FakeRenderer]. */
+    private class TextWriter(val inner: FakeRenderer = FakeRenderer()) : Renderer by inner {
+        override val writesText: Boolean get() = true
+    }
+
+    private fun write(frame: FlowFrame): List<String> {
+        val r = TextWriter()
+        FlowPainter.paintPage(r, frame, 0, Rect(0.0, 0.0, 200.0, 100.0))
+        return r.inner.ops.filter { it.startsWith("drawTextRun:") }
+    }
+
+    @Test
+    fun aTextWriterGetsEachSpaceInReadingOrder() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("ab  cd")))) }
+        val runs = write(frameOf(flow))
+        assertEquals(listOf("ab", " ", " ", "cd"), runs.map { it.substringAfter(':').substringBefore('@') })
+        val xs = runs.map { it.substringAfter('@').substringBefore(',').toDouble() }
+        listOf(0.0, 14.4, 21.6, 28.8).forEachIndexed { i, x -> assertEquals(x, xs[i], 1e-9) }
+    }
+
+    @Test
+    fun theScreenNeverSeesSpaces() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("ab  cd")))) }
+        assertFalse(paint(frameOf(flow)).ops.any { it.startsWith("drawTextRun: @") })
+    }
+
+    @Test
+    fun codeIndentationAndBlankLinesReachATextWriter() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("  x")), codeLang = ""))
+            paragraphs.add(Paragraph(mutableListOf(Run("")), codeLang = ""))
+            paragraphs.add(Paragraph(mutableListOf(Run("y")), codeLang = ""))
+        }
+        val runs = write(frameOf(flow)).map { it.substringBefore('@') }
+        assertEquals(listOf("drawTextRun: ", "drawTextRun: ", "drawTextRun:x", "drawTextRun: ", "drawTextRun:y"), runs)
     }
 }

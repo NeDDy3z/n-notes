@@ -140,6 +140,17 @@ object MathRendering : MathTypesetter {
     }
 
     /**
+     * The bitmap [draw] blits for [latex] and the box it fills, for a backend that places the
+     * image itself. The bitmap belongs to the cache: callers copy it and never recycle it.
+     */
+    fun formulaBitmap(latex: String, sizePt: Double, color: Rgba, display: Boolean): Pair<Bitmap, MathBox>? {
+        val e = engine ?: return null
+        val box = measure(latex, sizePt, display) ?: return null
+        val bmp = raster(e, source(latex, display), sizePt, color, box) ?: return null
+        return bmp to box
+    }
+
+    /**
      * What actually goes to the renderer. Display form is asked for in LaTeX's own
      * terms rather than a render flag, so it is the same string the user would
      * have written by hand and the measurement and the raster cannot disagree.

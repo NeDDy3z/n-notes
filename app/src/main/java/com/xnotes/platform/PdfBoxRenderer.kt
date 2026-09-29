@@ -250,6 +250,13 @@ internal class PdfBoxRenderer(
         // Text boxes are rasterized by the exporter for now. TODO: embed selectable PDF text instead.
     }
 
+    override val writesText: Boolean get() = true
+
+    override fun drawMath(latex: String, x: Double, baseline: Double, sizePt: Double, color: Rgba, display: Boolean) {
+        val (bmp, box) = MathRendering.formulaBitmap(latex, sizePt, color, display) ?: return
+        placeBitmap(bmp, Rect(x, baseline - box.ascent, box.width, box.height), multiply = false)
+    }
+
     // Real text through the export's Type 3 fonts: each glyph pinned to the x the screen draws it at.
     override fun drawTextRun(text: String, x: Double, baseline: Double, font: FontSpec, color: Rgba) {
         if (text.isEmpty()) return

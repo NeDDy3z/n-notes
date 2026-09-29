@@ -186,10 +186,17 @@ interface Renderer {
      * Draw a single pre-positioned line fragment with its left edge at [x] and its
      * baseline at [baseline] (content space, no wrapping). The flow-text painter
      * places these from [TextMeasurer.advances] prefix sums, so the two must share
-     * one paint. Default is a no-op for backends that never see flow text (PDF
-     * vector export receives it pre-rasterized).
+     * one paint. Default is a no-op for backends that never see flow text.
      */
     fun drawTextRun(text: String, x: Double, baseline: Double, font: FontSpec, color: Rgba) {}
+
+    /**
+     * True for a backend that writes real text a reader can select and copy (PDF
+     * export). Painters then also hand it what the screen never draws: the spaces
+     * between words, as runs of their own, so copied text keeps its word breaks
+     * and a code block its indentation.
+     */
+    val writesText: Boolean get() = false
 
     /**
      * Draw the formula [latex] sets at [sizePt], its left edge at [x] and its own
