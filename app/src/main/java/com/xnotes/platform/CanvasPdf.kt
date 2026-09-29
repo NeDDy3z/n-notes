@@ -58,6 +58,7 @@ object CanvasPdfExporter {
         onProgress(0, items.size)
         val mem = MemoryUsageSetting.setupMixed(SCRATCH_MAIN_MEM_BYTES).setTempDir(context.cacheDir)
         val outDoc = PDDocument(mem)
+        val ctx = PdfExportContext(outDoc)
         try {
             val wPts = layout.widthPoints.toFloat()
             val hPts = layout.heightPoints.toFloat()
@@ -67,8 +68,9 @@ object CanvasPdfExporter {
                 cs.setNonStrokingColor(paperColor.r / 255f, paperColor.g / 255f, paperColor.b / 255f)
                 cs.addRect(0f, 0f, wPts, hPts)
                 cs.fill()
-                if (!paintContent(cs, PdfExportContext(outDoc), doc, items, layout, hPts, onProgress, isCancelled)) return
+                if (!paintContent(cs, ctx, doc, items, layout, hPts, onProgress, isCancelled)) return
             }
+            ctx.finish()
             outDoc.save(out)
         } finally {
             outDoc.runCatching { close() }

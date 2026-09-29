@@ -16,6 +16,8 @@ import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.RasterSurface
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.TextFlags
+import com.xnotes.core.pdf.GlyphPlacement
+import com.xnotes.core.pdf.PdfNumbers
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -248,6 +250,58 @@ internal class PdfBoxRenderer(
         // Text boxes are rasterized by the exporter for now. TODO: embed selectable PDF text instead.
     }
 
+    // Real text through the export's Type 3 fonts: each glyph pinned to the x the screen draws it at.
+    override fun drawTextRun(text: String, x: Double, baseline: Double, font: FontSpec, color: Rgba) {
+        if (text.isEmpty()) return
+        val run = ctx.text.shape(text, font)
+        if (run.glyphs.isNotEmpty()) showRun(run, x, baseline, font.pointSize * AndroidText.POINTS_TO_PX, color)
+    }
+
+    /**
+     * Write [run] as one text object with its origin at ([x], [baseline]) in content space, in a
+     * font of [sizePx] content px. Glyphs of one run can live in several of the export's fonts, so
+     * the font is switched wherever the next glyph needs another; the pen carries across.
+     */
+    private fun showRun(run: PdfText.Run, x: Double, baseline: Double, sizePx: Double, color: Rgba) = translucent(color) {
+        val size = (sizePx * abs(sy)).toFloat()
+        cs.beginText()
+        setFill(color)
+        cs.setTextMatrix(Matrix((abs(sx) / abs(sy)).toFloat(), 0f, 0f, 1f, ux(x), uy(baseline)))
+        val widths = DoubleArray(run.glyphs.size) { run.glyphs[it].width }
+        val adj = GlyphPlacement.adjustments(widths, run.offsets, sizePx)
+        val sb = StringBuilder(run.glyphs.size * 4 + 16)
+        var font: Type3Font? = null
+        var inHex = false
+        for ((i, g) in run.glyphs.withIndex()) {
+            if (g.font !== font) {
+                if (font != null) {
+                    if (inHex) sb.append('>')
+                    sb.append("] TJ\n")
+                    cs.appendRawCommands(sb.toString())
+                    sb.setLength(0)
+                }
+                cs.setFont(g.font.pd, size)
+                font = g.font
+                sb.append('[')
+                inHex = false
+            }
+            if (adj[i] != 0.0) {
+                if (inHex) sb.append('>')
+                sb.append(' ')
+                PdfNumbers.append(sb, adj[i], 1)
+                sb.append(' ')
+                inHex = false
+            }
+            if (!inHex) sb.append('<')
+            inHex = true
+            sb.append(HEX[g.code shr 4]).append(HEX[g.code and 15])
+        }
+        if (inHex) sb.append('>')
+        sb.append("] TJ\n")
+        cs.appendRawCommands(sb.toString())
+        cs.endText()
+    }
+
     private fun placeBitmap(bmp: Bitmap, dest: Rect, multiply: Boolean) {
         if (bmp.isRecycled || dest.w <= 0.0 || dest.h <= 0.0) return
         val img = LosslessFactory.createFromImage(doc, bmp)
@@ -316,6 +370,8 @@ internal class PdfBoxRenderer(
     companion object {
         /** Long-edge cap (px) for an exported image XObject: keeps detail without ballooning the PDF. */
         private const val EXPORT_CAP_PX = 4096
+
+        private const val HEX = "0123456789ABCDEF"
 
         // Vector images rasterize at 4 px per PDF point (288 dpi), a print-quality density.
         private const val VECTOR_EXPORT_SCALE = 4.0

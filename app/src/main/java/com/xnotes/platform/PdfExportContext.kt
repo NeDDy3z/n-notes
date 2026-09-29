@@ -11,7 +11,15 @@ import kotlin.math.roundToInt
  */
 internal class PdfExportContext(val doc: PDDocument) {
 
+    /** The export's text fonts, filled as pages set text and written out by [finish]. */
+    val text = PdfText(doc)
+
     private val states = HashMap<Pair<Int, BlendMode?>, PDExtendedGraphicsState>()
+
+    /** Complete everything built up while drawing. Call once, after the last page and before saving. */
+    fun finish() {
+        text.finish()
+    }
 
     /**
      * A graphics state setting fill and stroke opacity to [alpha], and the blend to [blend] when

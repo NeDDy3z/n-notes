@@ -164,6 +164,7 @@ object PdfExporter {
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return
+            ctx.finish()
             // Page work is near-instant on this path, so all the time is in writing the PDF — one
             // opaque PdfBox call. Report it as byte progress (output ≈ the source PDF's size) so the
             // dialog keeps moving instead of freezing at "done". total = -1 marks the writing phase.
@@ -199,6 +200,7 @@ object PdfExporter {
                 onProgress(index + 1, total)
             }
             if (isCancelled()) return
+            ctx.finish()
             outDoc.save(out)
         } finally {
             outDoc.runCatching { close() }
