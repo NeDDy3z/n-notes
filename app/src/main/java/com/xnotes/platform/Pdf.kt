@@ -21,6 +21,7 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.insets
 import com.xnotes.core.pal.Renderer
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.OutputStream
 import kotlin.math.ceil
@@ -81,6 +82,9 @@ object PdfExporter {
         }
     }
 
+    /** Write buffer between PdfBox and the output file. */
+    private const val WRITE_BUFFER = 1 shl 16
+
     /** Cap on PdfBox's in-RAM scratch buffers during export; the rest spills to temp files so a large
      *  source PDF can't exhaust the heap. Small/medium exports stay fully in memory (fast). */
     private const val SCRATCH_MAIN_MEM_BYTES = 32L * 1024 * 1024
@@ -104,6 +108,8 @@ object PdfExporter {
     ) {
         // Text fonts read PdfBox's glyph list, which only loads once the resource loader is set up.
         PDFBoxResourceLoader.init(context.applicationContext)
+        // PdfBox writes a file token by token; buffered, that is a few large writes, not many tiny ones.
+        val sink = BufferedOutputStream(out, WRITE_BUFFER)
         val file = doc.pdfFile
         // Cap PdfBox's in-RAM scratch to a few tens of MB and spill the rest to temp files in the
         // cache dir, so a large source PDF can't exhaust the heap while it's parsed/written.
@@ -111,14 +117,16 @@ object PdfExporter {
         val srcDoc = if (file != null) loadSource(file, mem) else null
         // A PDF background we can't parse with PdfBox: keep the working framework rasterizer.
         if (file != null && srcDoc == null) {
-            exportRasterized(doc, source, out, paperColor, paintRuling, onProgress, isCancelled, flow)
+            exportRasterized(doc, source, sink, paperColor, paintRuling, onProgress, isCancelled, flow)
+            sink.flush()
             return
         }
         try {
-            exportVector(doc, srcDoc, source, out, paperColor, paintRuling, onProgress, isCancelled, mem, flow)
+            exportVector(doc, srcDoc, source, sink, paperColor, paintRuling, onProgress, isCancelled, mem, flow)
         } finally {
             srcDoc?.runCatching { close() }
         }
+        sink.flush()
     }
 
     private fun loadSource(file: File, mem: MemoryUsageSetting): PDDocument? = try {

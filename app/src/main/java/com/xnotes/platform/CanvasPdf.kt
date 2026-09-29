@@ -16,6 +16,7 @@ import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.paintPagePattern
 import com.xnotes.core.pal.Renderer
+import java.io.BufferedOutputStream
 import java.io.OutputStream
 
 /**
@@ -71,7 +72,10 @@ object CanvasPdfExporter {
                 if (!paintContent(cs, ctx, doc, items, layout, hPts, onProgress, isCancelled)) return
             }
             ctx.finish()
-            outDoc.save(out)
+            // PdfBox writes a file token by token; buffered, that is a few large writes, not many tiny ones.
+            val sink = BufferedOutputStream(out, 1 shl 16)
+            outDoc.save(sink)
+            sink.flush()
         } finally {
             outDoc.runCatching { close() }
         }
