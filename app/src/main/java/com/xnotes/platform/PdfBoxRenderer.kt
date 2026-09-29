@@ -246,8 +246,35 @@ internal class PdfBoxRenderer(
      */
     fun drawItemBitmap(bmp: Bitmap, dest: Rect, multiply: Boolean) = placeBitmap(bmp, dest, multiply)
 
+    /**
+     * A text box, as real text: laid out by the same [AndroidText.layout] the screen draws it with,
+     * then written a word and a space at a time where that layout puts them. Asking the layout for
+     * each position, rather than summing advances, keeps tab stops and right-to-left lines where
+     * the screen has them.
+     */
     override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {
-        // Text boxes are rasterized by the exporter for now. TODO: embed selectable PDF text instead.
+        if (text.isEmpty()) return
+        val layout = AndroidText.layout(text, rect.w.toInt(), AndroidText.textPaint(font))
+        for (line in 0 until layout.lineCount) {
+            val start = layout.getLineStart(line)
+            var end = layout.getLineEnd(line)
+            while (end > start && text[end - 1].isWhitespace()) end--
+            val baseline = rect.top + layout.getLineBaseline(line)
+            fun leftOf(a: Int, b: Int): Double =
+                rect.left + minOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b)).toDouble()
+            var i = start
+            while (i < end) {
+                if (text[i] == ' ' || text[i] == '\t') {
+                    drawTextRun(" ", leftOf(i, i + 1), baseline, font, color)
+                    i++
+                    continue
+                }
+                var j = i
+                while (j < end && text[j] != ' ' && text[j] != '\t') j++
+                drawTextRun(text.substring(i, j), leftOf(i, j), baseline, font, color)
+                i = j
+            }
+        }
     }
 
     override val writesText: Boolean get() = true

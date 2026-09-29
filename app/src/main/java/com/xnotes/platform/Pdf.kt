@@ -56,10 +56,10 @@ object PdfImporter {
  * The imported PDF background stays **vector** — its pages are copied straight into the output via
  * PdfBox, never rasterized — so a 4 MB source no longer balloons into a 100 MB export. Annotations
  * are drawn on top: plain ink, shapes and inserted images become real vector/image objects through
- * [PdfBoxRenderer], and the typed flow becomes real, selectable text. Only effect-heavy items (neon
- * glow, the highlighter's multiply blend, translucent ink) and text boxes are rasterized in place:
- * cropped to their own box, drawn at the right z-order, and (for the highlighter) composited with
- * Multiply so they still tint what's below.
+ * [PdfBoxRenderer], and the typed flow and text boxes become real, selectable text. Only
+ * effect-heavy items (neon glow, the highlighter's multiply blend, translucent ink) are rasterized
+ * in place: cropped to their own box, drawn at the right z-order, and (for the highlighter)
+ * composited with Multiply so they still tint what's below.
  *
  * Fallbacks keep it correct everywhere: a source page with a non-zero `/Rotate` is written as one
  * upright full-page raster (overlay coordinates for rotated pages aren't handled yet), and if PdfBox
