@@ -146,6 +146,7 @@ object PdfExporter {
         // re-encoded, and no second copy of the document is built. This is the case for "import a PDF
         // and draw on it", so the common big-PDF export is both fast and low-memory.
         if (srcDoc != null && canAnnotateSourceInPlace(doc, srcDoc)) {
+            val ctx = PdfExportContext(srcDoc)
             val n = srcDoc.numberOfPages
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
@@ -154,10 +155,10 @@ object PdfExporter {
                     // Flow text counts as content too: a typed-only page must still annotate, and so
                     // must a margined one — its extra paper is written by growing the page's boxes.
                     if (page.items.isNotEmpty() || flow.bounds(page) != null || !ins.isZero) {
-                        annotatePage(srcDoc, srcDoc.getPage(index), page, ins, s, paintRuling, flow)
+                        annotatePage(ctx, srcDoc.getPage(index), page, ins, s, paintRuling, flow)
                     }
                 } else {
-                    vectorBlankPage(srcDoc, page, ins, s, paperColor, paintRuling, flow) // a blank note page appended after the PDF
+                    vectorBlankPage(ctx, page, ins, s, paperColor, paintRuling, flow) // a blank note page appended after the PDF
                 }
                 PdfItemRaster.releaseInkGeometry(page.items)
                 onProgress(index + 1, total)
@@ -179,6 +180,7 @@ object PdfExporter {
         // Fallback: pages were reordered/deleted, or a source page is rotated, or it's a pure note —
         // rebuild a fresh document. Scratch is capped (see [mem]) so this can't exhaust the heap either.
         val outDoc = PDDocument(mem)
+        val ctx = PdfExportContext(outDoc)
         try {
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
@@ -187,11 +189,11 @@ object PdfExporter {
                 val hasSource = srcIdx != null && srcDoc != null && srcIdx in 0 until srcDoc.numberOfPages
                 when {
                     hasSource && srcDoc!!.getPage(srcIdx!!).rotation % 360 == 0 ->
-                        vectorImportedPage(outDoc, srcDoc, srcIdx, page, ins, s, paintRuling, flow)
+                        vectorImportedPage(ctx, srcDoc, srcIdx, page, ins, s, paintRuling, flow)
                     hasSource ->
                         rasterFullPage(outDoc, page, ins, source, paperColor, s, paintRuling, flow) // rotated source page
                     else ->
-                        vectorBlankPage(outDoc, page, ins, s, paperColor, paintRuling, flow)
+                        vectorBlankPage(ctx, page, ins, s, paperColor, paintRuling, flow)
                 }
                 PdfItemRaster.releaseInkGeometry(page.items)
                 onProgress(index + 1, total)
@@ -219,20 +221,20 @@ object PdfExporter {
     }
 
     /** Copy a (rotation-0) source page in as vector, then overlay its ruling + annotations. */
-    private fun vectorImportedPage(outDoc: PDDocument, srcDoc: PDDocument, srcIdx: Int, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
-        annotatePage(outDoc, outDoc.importPage(srcDoc.getPage(srcIdx)), page, ins, s, paintRuling, flow)
+    private fun vectorImportedPage(ctx: PdfExportContext, srcDoc: PDDocument, srcIdx: Int, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+        annotatePage(ctx, ctx.doc.importPage(srcDoc.getPage(srcIdx)), page, ins, s, paintRuling, flow)
     }
 
-    /** Append [page]'s ruling + annotations as a new content stream over an existing [pdfPage] of [doc]. */
-    private fun annotatePage(doc: PDDocument, pdfPage: PDPage, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+    /** Append [page]'s ruling + annotations as a new content stream over an existing [pdfPage] of the export. */
+    private fun annotatePage(ctx: PdfExportContext, pdfPage: PDPage, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
         val crop = pdfPage.cropBox
         // Page space's origin is the *imported* page's top-left, read before the box grows: the
         // source content keeps its coordinates and the margins extend the paper around it.
         val ox = crop.lowerLeftX.toDouble()
         val oy = (crop.lowerLeftY + crop.height).toDouble()
         growPageBox(pdfPage, crop, ins, s)
-        PDPageContentStream(doc, pdfPage, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
-            paintItems(cs, doc, page, ins, ox, oy, s, paintRuling, flow)
+        PDPageContentStream(ctx.doc, pdfPage, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
+            paintItems(cs, ctx, page, ins, ox, oy, s, paintRuling, flow)
         }
     }
 
@@ -250,24 +252,24 @@ object PdfExporter {
     }
 
     /** A note page with no PDF background: blank page filled with the paper colour, then ruling + annotations. */
-    private fun vectorBlankPage(outDoc: PDDocument, page: Page, ins: PageInsets, s: Double, paperColor: (Page) -> Rgba, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+    private fun vectorBlankPage(ctx: PdfExportContext, page: Page, ins: PageInsets, s: Double, paperColor: (Page) -> Rgba, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
         val wPts = ((ins.left + page.width + ins.right) * s).toFloat().coerceAtLeast(1f)
         val hPts = ((ins.top + page.height + ins.bottom) * s).toFloat().coerceAtLeast(1f)
         val pdfPage = PDPage(PDRectangle(wPts, hPts))
-        outDoc.addPage(pdfPage)
-        PDPageContentStream(outDoc, pdfPage).use { cs ->
+        ctx.doc.addPage(pdfPage)
+        PDPageContentStream(ctx.doc, pdfPage).use { cs ->
             val paper = paperColor(page)
             cs.setNonStrokingColor(paper.r / 255f, paper.g / 255f, paper.b / 255f)
             cs.addRect(0f, 0f, wPts, hPts)
             cs.fill()
             // Page space starts inside the paper by the left/top margins.
-            paintItems(cs, outDoc, page, ins, ox = ins.left * s, oy = hPts - ins.top * s, s, paintRuling, flow)
+            paintItems(cs, ctx, page, ins, ox = ins.left * s, oy = hPts - ins.top * s, s, paintRuling, flow)
         }
     }
 
     /** Draw a page's ruling (behind ink), the flow text (raster), then its items in z-order. */
-    private fun paintItems(cs: PDPageContentStream, outDoc: PDDocument, page: Page, ins: PageInsets, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
-        val renderer = PdfBoxRenderer(cs, outDoc, ox, oy, s)
+    private fun paintItems(cs: PDPageContentStream, ctx: PdfExportContext, page: Page, ins: PageInsets, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
+        val renderer = PdfBoxRenderer(cs, ctx, ox, oy, s)
         val cover = footprintOf(page, ins)
         paintRuling(page, renderer) // page ruling sits behind the ink
         rasterizeFlow(page, cover, flow)?.let { raster ->

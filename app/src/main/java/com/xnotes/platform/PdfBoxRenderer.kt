@@ -5,7 +5,6 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
-import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.util.Matrix
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
@@ -37,19 +36,24 @@ import com.xnotes.core.pal.BlendMode as PalBlend
  * the exporter and handed back as bitmaps via [drawItemBitmap]; the glow/layer/text methods here are
  * inert, so they never silently flatten anything to a crisp-but-wrong vector shape.
  */
-class PdfBoxRenderer(
+internal class PdfBoxRenderer(
     private val cs: PDPageContentStream,
-    private val doc: PDDocument,
+    private val ctx: PdfExportContext,
     ox: Double,
     oy: Double,
     s: Double,
 ) : Renderer {
+
+    private val doc: PDDocument get() = ctx.doc
 
     // Affine content→user mapping (translation + axis scale only; never rotation/shear — PAL §1).
     private var ox = ox
     private var oy = oy
     private var sx = s
     private var sy = -s
+
+    // The opacity a saveLayerAlpha put in force; a translucent colour inside it multiplies with it.
+    private var layerAlpha = 1.0
     private val stack = ArrayDeque<DoubleArray>()
     private val scaleAbs get() = (abs(sx) + abs(sy)) / 2.0
 
@@ -58,18 +62,19 @@ class PdfBoxRenderer(
 
     // --- transform stack ---
     override fun save() {
-        stack.addLast(doubleArrayOf(ox, oy, sx, sy))
+        stack.addLast(doubleArrayOf(ox, oy, sx, sy, layerAlpha))
         cs.saveGraphicsState()
     }
 
     override fun restore() {
         cs.restoreGraphicsState()
-        stack.removeLastOrNull()?.let { ox = it[0]; oy = it[1]; sx = it[2]; sy = it[3] }
+        stack.removeLastOrNull()?.let { ox = it[0]; oy = it[1]; sx = it[2]; sy = it[3]; layerAlpha = it[4] }
     }
 
     override fun saveLayerAlpha(bounds: Rect, alpha: Double) {
         save()
-        cs.setGraphicsStateParameters(alphaState(alpha, null))
+        layerAlpha *= alpha.coerceIn(0.0, 1.0)
+        cs.setGraphicsStateParameters(ctx.graphicsState(layerAlpha))
     }
 
     override fun saveLayerBlended(bounds: Rect, alpha: Double, blend: PalBlend) {
@@ -79,7 +84,21 @@ class PdfBoxRenderer(
             PalBlend.SCREEN -> BlendMode.SCREEN
             PalBlend.SRC_OVER -> null
         }
-        cs.setGraphicsStateParameters(alphaState(alpha, pdfBlend))
+        layerAlpha *= alpha.coerceIn(0.0, 1.0)
+        cs.setGraphicsStateParameters(ctx.graphicsState(layerAlpha, pdfBlend))
+    }
+
+    /**
+     * Run [paint] at [color]'s own opacity. PDF keeps opacity in the graphics state rather than
+     * the colour, and a state set later replaces it instead of multiplying, so a translucent
+     * colour gets a state of its own, scoped by q/Q so the layer's opacity is back afterwards.
+     */
+    private inline fun translucent(color: Rgba, paint: () -> Unit) {
+        if (color.a >= 255) return paint()
+        cs.saveGraphicsState()
+        cs.setGraphicsStateParameters(ctx.graphicsState(layerAlpha * color.a / 255.0))
+        paint()
+        cs.restoreGraphicsState()
     }
 
     override fun translate(dx: Double, dy: Double) {
@@ -103,7 +122,7 @@ class PdfBoxRenderer(
     // --- fills ---
     override fun fillBackground(rect: Rect, color: Rgba) = fillRect(rect, color)
 
-    override fun fillRect(rect: Rect, color: Rgba) {
+    override fun fillRect(rect: Rect, color: Rgba) = translucent(color) {
         setFill(color)
         rectPath(rect)
         cs.fill()
@@ -111,9 +130,11 @@ class PdfBoxRenderer(
 
     override fun fillPolygon(points: List<Pt>, color: Rgba, rule: FillRule) {
         if (points.size < 3) return
-        setFill(color)
-        polyPath(points, close = true)
-        if (rule == FillRule.EVEN_ODD) cs.fillEvenOdd() else cs.fill()
+        translucent(color) {
+            setFill(color)
+            polyPath(points, close = true)
+            if (rule == FillRule.EVEN_ODD) cs.fillEvenOdd() else cs.fill()
+        }
     }
 
     override fun fillCircle(center: Pt, radius: Double, color: Rgba) =
@@ -121,13 +142,15 @@ class PdfBoxRenderer(
 
     override fun fillEllipse(center: Pt, rx: Double, ry: Double, color: Rgba) {
         if (rx <= 0.0 || ry <= 0.0) return
-        setFill(color)
-        ellipsePath(center, rx, ry)
-        cs.fill()
+        translucent(color) {
+            setFill(color)
+            ellipsePath(center, rx, ry)
+            cs.fill()
+        }
     }
 
     // --- outlines ---
-    override fun strokeRect(rect: Rect, pen: Pen) {
+    override fun strokeRect(rect: Rect, pen: Pen) = translucent(pen.color) {
         applyPen(pen)
         rectPath(rect)
         cs.stroke()
@@ -135,23 +158,29 @@ class PdfBoxRenderer(
 
     override fun strokePolyline(points: List<Pt>, pen: Pen) {
         if (points.size < 2) return
-        applyPen(pen)
-        polyPath(points, close = false)
-        cs.stroke()
+        translucent(pen.color) {
+            applyPen(pen)
+            polyPath(points, close = false)
+            cs.stroke()
+        }
     }
 
     override fun strokePolygon(points: List<Pt>, pen: Pen) {
         if (points.size < 2) return
-        applyPen(pen)
-        polyPath(points, close = true)
-        cs.stroke()
+        translucent(pen.color) {
+            applyPen(pen)
+            polyPath(points, close = true)
+            cs.stroke()
+        }
     }
 
     override fun strokeEllipse(center: Pt, rx: Double, ry: Double, pen: Pen) {
         if (rx <= 0.0 || ry <= 0.0) return
-        applyPen(pen)
-        ellipsePath(center, rx, ry)
-        cs.stroke()
+        translucent(pen.color) {
+            applyPen(pen)
+            ellipsePath(center, rx, ry)
+            cs.stroke()
+        }
     }
 
     // --- raster ---
@@ -228,7 +257,7 @@ class PdfBoxRenderer(
         val h = (dest.h * abs(sy)).toFloat()
         if (multiply) {
             cs.saveGraphicsState()
-            cs.setGraphicsStateParameters(PDExtendedGraphicsState().apply { blendMode = BlendMode.MULTIPLY })
+            cs.setGraphicsStateParameters(ctx.graphicsState(layerAlpha, BlendMode.MULTIPLY))
             cs.drawImage(img, llx, lly, w, h)
             cs.restoreGraphicsState()
         } else {
@@ -282,15 +311,6 @@ class PdfBoxRenderer(
         curve(cx - rx, cy - ry * k, cx - rx * k, cy - ry, cx, cy - ry)
         curve(cx + rx * k, cy - ry, cx + rx, cy - ry * k, cx + rx, cy)
         cs.closePath()
-    }
-
-    private fun alphaState(alpha: Double, blend: BlendMode?): PDExtendedGraphicsState {
-        val a = alpha.coerceIn(0.0, 1.0).toFloat()
-        return PDExtendedGraphicsState().apply {
-            nonStrokingAlphaConstant = a
-            strokingAlphaConstant = a
-            if (blend != null) blendMode = blend
-        }
     }
 
     companion object {
