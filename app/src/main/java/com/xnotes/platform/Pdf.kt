@@ -13,6 +13,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
+import com.xnotes.R
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
@@ -20,15 +21,19 @@ import com.xnotes.core.model.PageInsets
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.insets
+import com.xnotes.core.pal.Mark
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pdf.FlowLinks
+import com.xnotes.core.pdf.FlowStructure
 import com.xnotes.core.pdf.PlacedLink
+import com.xnotes.core.pdf.TextLink
 import com.xnotes.core.text.FlowFrame
 import com.xnotes.core.text.FlowPainter
 import com.xnotes.core.text.TextFlow
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.OutputStream
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -83,10 +88,10 @@ object PdfExporter {
         val frame: FlowFrame,
         private val indexOf: (Page) -> Int?,
     ) {
-        /** Paint [page]'s share of the flow, page-local, where it meets [region]. */
-        fun paint(page: Page, r: Renderer, region: Rect) {
+        /** Paint [page]'s share of the flow, page-local, where it meets [region]; [tagged] splits runs at links. */
+        fun paint(page: Page, r: Renderer, region: Rect, tagged: Boolean = false) {
             val i = indexOf(page) ?: return
-            FlowPainter.paintPage(r, frame, i, region)
+            FlowPainter.paintPage(r, frame, i, region, if (tagged) breaks else emptyMap())
         }
 
         /** [page]'s flow extent, or null when there is no flow on it. */
@@ -95,7 +100,17 @@ object PdfExporter {
         /** The links on [page], line by line. */
         fun links(page: Page): List<PlacedLink> = indexOf(page)?.let { byPage[it] }.orEmpty()
 
-        private val byPage: Map<Int, List<PlacedLink>> by lazy { FlowLinks.place(flow, frame).groupBy { it.page } }
+        /** The links in each paragraph. */
+        val textLinks: Map<Int, List<TextLink>> by lazy { FlowLinks.find(flow) }
+
+        /** The flow's logical structure, for a tagged export. */
+        val structure: FlowStructure.Tree by lazy { FlowStructure.build(flow) }
+
+        private val byPage: Map<Int, List<PlacedLink>> by lazy { FlowLinks.place(flow, frame, textLinks).groupBy { it.page } }
+
+        private val breaks: Map<Int, IntArray> by lazy {
+            textLinks.mapValues { (_, links) -> links.flatMap { listOf(it.start, it.end) }.toIntArray() }
+        }
 
         companion object {
             val NONE = FlowExport(TextFlow(), FlowFrame.EMPTY) { null }
@@ -113,7 +128,8 @@ object PdfExporter {
      * [paperColor] gives each page's background fill (the on-screen paper colour, e.g. dark-theme
      * `#161616`) — used for plain note pages; an imported PDF page keeps its own background instead.
      * [onProgress] reports `(pagesDone, totalPages)` (once as `(0, total)` first) and [isCancelled]
-     * is polled per page so a long export can show a dialog and abort before [out] is written.
+     * is polled per page so a long export can show a dialog and abort before [out] is written. A
+     * plain note is written tagged, titled [title]; a PDF-backed one keeps its source's own make-up.
      */
     fun export(
         context: Context,
@@ -125,6 +141,7 @@ object PdfExporter {
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
         isCancelled: () -> Boolean = { false },
         flow: FlowExport = FlowExport.NONE,
+        title: String = doc.title,
     ) {
         // Text fonts read PdfBox's glyph list, which only loads once the resource loader is set up.
         PDFBoxResourceLoader.init(context.applicationContext)
@@ -141,13 +158,22 @@ object PdfExporter {
             sink.flush()
             return
         }
+        val tags = if (file == null) tagSetup(context, title) else null
         try {
-            exportVector(doc, srcDoc, source, sink, paperColor, paintRuling, onProgress, isCancelled, mem, flow)
+            exportVector(doc, srcDoc, source, sink, paperColor, paintRuling, onProgress, isCancelled, mem, flow, tags)
         } finally {
             srcDoc?.runCatching { close() }
         }
         sink.flush()
     }
+
+    /** How a tagged export of [title] reads to a screen reader, in the device's language. */
+    internal fun tagSetup(context: Context, title: String): PdfTags.Setup = PdfTags.Setup(
+        title = title,
+        lang = Locale.getDefault().toLanguageTag().takeIf { it != "und" }.orEmpty(),
+        altDrawing = context.getString(R.string.pdf_alt_drawing),
+        altImage = context.getString(R.string.pdf_alt_image),
+    )
 
     private fun loadSource(file: File, mem: MemoryUsageSetting): PDDocument? = try {
         PDDocument.load(file, mem) // file-backed + scratch-capped: never reads the whole PDF into RAM
@@ -166,6 +192,7 @@ object PdfExporter {
         isCancelled: () -> Boolean,
         mem: MemoryUsageSetting,
         flow: FlowExport,
+        tags: PdfTags.Setup?,
     ) {
         val s = 72.0 / doc.dpi
         val total = doc.pages.size
@@ -213,6 +240,7 @@ object PdfExporter {
         // rebuild a fresh document. Scratch is capped (see [mem]) so this can't exhaust the heap either.
         val outDoc = PDDocument(mem)
         val ctx = PdfExportContext(outDoc)
+        if (tags != null) ctx.tags = PdfTags(outDoc, tags).also { it.useFlow(flow.structure, flow.textLinks) }
         try {
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
@@ -292,9 +320,11 @@ object PdfExporter {
         ctx.doc.addPage(pdfPage)
         PDPageContentStream(ctx.doc, pdfPage).use { cs ->
             val paper = paperColor(page)
+            if (ctx.tags != null) cs.appendRawCommands("/Artifact BMC\n")
             cs.setNonStrokingColor(paper.r / 255f, paper.g / 255f, paper.b / 255f)
             cs.addRect(0f, 0f, wPts, hPts)
             cs.fill()
+            if (ctx.tags != null) cs.appendRawCommands("EMC\n")
             // Page space starts inside the paper by the left/top margins.
             paintItems(cs, ctx, pdfPage, page, ins, ox = ins.left * s, oy = hPts - ins.top * s, s, paintRuling, flow)
         }
@@ -304,18 +334,24 @@ object PdfExporter {
     private fun paintItems(cs: PDPageContentStream, ctx: PdfExportContext, pdfPage: PDPage, page: Page, ins: PageInsets, ox: Double, oy: Double, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport) {
         val renderer = PdfBoxRenderer(cs, ctx, pdfPage, ox, oy, s)
         val cover = footprintOf(page, ins)
+        renderer.beginMark(Mark.Decoration)
         paintRuling(page, renderer) // page ruling sits behind the ink
-        flow.paint(page, renderer, cover)
-        for (link in flow.links(page)) renderer.addLink(link.rect, link.uri)
+        renderer.endMark()
+        flow.paint(page, renderer, cover, tagged = ctx.tags != null)
+        for (link in flow.links(page)) renderer.addFlowLink(link)
         for (item in page.items) {
+            renderer.beginMark(PdfTags.markOf(item))
             if (PdfItemRaster.needsRaster(item)) {
-                val raster = PdfItemRaster.item(item, cover) ?: continue
-                renderer.drawItemBitmap(raster.bmp, raster.rect, raster.multiply)
-                raster.bmp.recycle()
+                PdfItemRaster.item(item, cover)?.let { raster ->
+                    renderer.drawItemBitmap(raster.bmp, raster.rect, raster.multiply)
+                    raster.bmp.recycle()
+                }
             } else {
                 item.paint(renderer)
             }
+            renderer.endMark()
         }
+        renderer.endPage()
     }
 
     /** [page]'s whole paper in page space, margins included (negative on a margined edge). */

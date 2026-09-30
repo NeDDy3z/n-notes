@@ -15,6 +15,7 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.paintPagePattern
+import com.xnotes.core.pal.Mark
 import com.xnotes.core.pal.Renderer
 import java.io.BufferedOutputStream
 import java.io.OutputStream
@@ -42,7 +43,8 @@ object CanvasPdfExporter {
     /**
      * [paperColor] fills the page (the on-screen paper: the canvas's own colour, or the theme's).
      * [onProgress] reports `(itemsDone, totalItems)`, starting at `(0, total)`, and [isCancelled] is
-     * polled per item so a dense canvas can show a dialog and abort before [out] is written.
+     * polled per item so a dense canvas can show a dialog and abort before [out] is written. The
+     * file is tagged and titled [title].
      */
     fun export(
         context: Context,
@@ -51,6 +53,7 @@ object CanvasPdfExporter {
         paperColor: Rgba,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
         isCancelled: () -> Boolean = { false },
+        title: String = doc.title,
     ) {
         PDFBoxResourceLoader.init(context.applicationContext)
         val layout = CanvasPdfLayout.of(doc.contentBounds(), doc.dpi)
@@ -61,15 +64,18 @@ object CanvasPdfExporter {
         val mem = MemoryUsageSetting.setupMixed(SCRATCH_MAIN_MEM_BYTES).setTempDir(context.cacheDir)
         val outDoc = PDDocument(mem)
         val ctx = PdfExportContext(outDoc)
+        ctx.tags = PdfTags(outDoc, PdfExporter.tagSetup(context, title))
         try {
             val wPts = layout.widthPoints.toFloat()
             val hPts = layout.heightPoints.toFloat()
             val page = PDPage(PDRectangle(wPts, hPts))
             outDoc.addPage(page)
             PDPageContentStream(outDoc, page).use { cs ->
+                cs.appendRawCommands("/Artifact BMC\n")
                 cs.setNonStrokingColor(paperColor.r / 255f, paperColor.g / 255f, paperColor.b / 255f)
                 cs.addRect(0f, 0f, wPts, hPts)
                 cs.fill()
+                cs.appendRawCommands("EMC\n")
                 if (!paintContent(cs, ctx, page, doc, items, layout, hPts, onProgress, isCancelled)) return
             }
             ctx.finish()
@@ -99,9 +105,12 @@ object CanvasPdfExporter {
         // Map the cover's top-left corner onto the page's, in the (translate + axis scale) form
         // PdfBoxRenderer takes: user = (ox + x·s, oy − y·s).
         val r = PdfBoxRenderer(cs, ctx, pdfPage, -cover.left * s, hPts + cover.top * s, s)
+        r.beginMark(Mark.Decoration)
         paintRuling(doc, r, layout)
+        r.endMark()
         items.forEachIndexed { index, item ->
             if (isCancelled()) return false
+            r.beginMark(PdfTags.markOf(item))
             if (PdfItemRaster.needsRaster(item)) {
                 PdfItemRaster.item(item, cover)?.let { raster ->
                     r.drawItemBitmap(raster.bmp, raster.rect, raster.multiply)
@@ -110,11 +119,13 @@ object CanvasPdfExporter {
             } else {
                 item.paint(r)
             }
+            r.endMark()
             // Let the ribbon go the moment the single pass is past it, so a dense canvas's whole
             // worth of geometry is never resident at once — least of all during the write below.
             PdfItemRaster.releaseInkGeometry(item)
             onProgress(index + 1, items.size)
         }
+        r.endPage()
         return !isCancelled()
     }
 

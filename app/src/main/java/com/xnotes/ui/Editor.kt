@@ -1699,6 +1699,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 { page, r -> paintExportRuling(state.document, page, r) },
                 onProgress, isCancelled,
                 flow = flowExportHooks(state.document),
+                title = title,
             )
         } finally {
             src?.close()
@@ -4699,8 +4700,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         isCancelled: () -> Boolean = { false },
     ) {
         val name = queryDisplayName(android.net.Uri.parse(srcUri)).orEmpty()
+        val title = com.xnotes.core.util.Paths.stem(name)
         if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
-            exportCanvasFileToPdf(srcUri, out, onProgress, isCancelled)
+            exportCanvasFileToPdf(srcUri, out, onProgress, isCancelled, title)
             return
         }
         val doc = appContext.contentResolver.openInputStream(android.net.Uri.parse(srcUri))?.use { codec.read(it, pdfDir, imageDir) } ?: return
@@ -4712,6 +4714,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 { page, r -> paintExportRuling(doc, page, r) },
                 onProgress, isCancelled,
                 flow = flowExportHooks(doc),
+                title = title.ifEmpty { doc.title },
             )
         } finally {
             src?.close()
@@ -4730,6 +4733,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         out: OutputStream,
         onProgress: (Int, Int) -> Unit,
         isCancelled: () -> Boolean,
+        title: String,
     ) {
         val doc = appContext.contentResolver.openInputStream(android.net.Uri.parse(srcUri))
             ?.use { canvasCodec.read(it, imageDir) } ?: return
@@ -4738,6 +4742,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 appContext, doc, out,
                 doc.background.paperColor ?: state.palette.paper,
                 onProgress, isCancelled,
+                title = title.ifEmpty { doc.title },
             )
         } finally {
             deleteCanvasImageTemps(doc) // transient doc loaded just for export; drop its extracts
@@ -5147,6 +5152,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 onProgress, isCancelled,
                 // The subset shares the open note's page objects, so its flow lines map through.
                 flow = flowExportHooks(state.document),
+                title = title,
             )
         } finally {
             src?.close()

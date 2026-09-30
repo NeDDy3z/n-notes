@@ -3,6 +3,7 @@ package com.xnotes.core.text
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.pal.Mark
 import com.xnotes.core.pal.Renderer
 
 /**
@@ -16,17 +17,23 @@ import com.xnotes.core.pal.Renderer
  */
 object FlowPainter {
 
-    fun paintPage(r: Renderer, frame: FlowFrame, pageIndex: Int, region: Rect) {
+    /**
+     * [breaks] holds, per paragraph, offsets where a backend writing text needs a run to end and
+     * the next begin, so each piece can be tagged on its own (a link inside a word, for one).
+     */
+    fun paintPage(r: Renderer, frame: FlowFrame, pageIndex: Int, region: Rect, breaks: Map<Int, IntArray> = emptyMap()) {
         val page = frame.pages.getOrNull(pageIndex) ?: return
+        if (r.writesText) r.beginMark(Mark.Decoration)
         for (table in page.tables) {
             if (table.bottom < region.top || table.top > region.bottom) continue
             paintTableFills(r, table)
             paintTableRules(r, table)
         }
         paintCodeChips(r, frame, page.lines, region)
+        if (r.writesText) r.endMark()
         for (line in page.lines) {
             if (line.bottom < region.top || line.top > region.bottom) continue
-            paintLine(r, frame, line)
+            paintLine(r, frame, line, breaks[line.paraIndex])
         }
     }
 
@@ -108,7 +115,11 @@ object FlowPainter {
         }
     }
 
-    private fun paintLine(r: Renderer, frame: FlowFrame, line: PlacedLine) {
+    private fun paintLine(r: Renderer, frame: FlowFrame, line: PlacedLine, breaks: IntArray?) {
+        // Marks are only for a backend recording structure; the screen never allocates one.
+        val tag = r.writesText
+        val para = line.paraIndex
+        if (tag) r.beginMark(Mark.Decoration)
         for (deco in line.decos) {
             deco.style.highlight?.let {
                 r.fillRect(Rect(deco.x0, line.top, deco.x1 - deco.x0, line.height), it)
@@ -128,26 +139,54 @@ object FlowPainter {
                 )
             }
         }
-        line.marker?.let { paintMarker(r, frame, line, it) }
+        if (tag) r.endMark()
+        line.marker?.let {
+            if (tag) r.beginMark(Mark.FlowMarker(para))
+            paintMarker(r, frame, line, it)
+            if (tag) r.endMark()
+        }
         // A backend writing real text gets the spaces too, each in reading order before the word
         // after it: a reader copies in content order, so trailing them all behind would scramble it.
         var next = line.startChar
         for (seg in line.segs) {
             val color = seg.style.color ?: frame.defaultColor
-            if (r.writesText) {
-                for (k in next until seg.start) r.drawTextRun(" ", line.caretX(k), line.baseline, seg.font, color)
+            if (tag) {
+                for (k in next until seg.start) {
+                    r.beginMark(Mark.FlowText(para, k, k + 1))
+                    r.drawTextRun(" ", line.caretX(k), line.baseline, seg.font, color)
+                    r.endMark()
+                }
                 next = seg.end
+                if (!seg.math && breaks != null && breaks.any { it > seg.start && it < seg.end }) {
+                    paintPieces(r, line, seg, color, breaks)
+                    continue
+                }
+                r.beginMark(Mark.FlowText(para, seg.start, seg.end))
             }
             if (seg.math) {
                 r.drawMath(seg.text, seg.x, line.baseline, seg.font.pointSize, color, seg.style.mathDisplay)
-                continue
+            } else {
+                r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, color)
             }
-            r.drawTextRun(seg.text, seg.x, line.baseline, seg.font, color)
+            if (tag) r.endMark()
+        }
+        if (tag) {
+            // A line wrapped at a space keeps it, so the words either side of the break stay two words.
+            val last = line.segs.lastOrNull()
+            val color = last?.style?.color ?: frame.defaultColor
+            for (k in next until line.endChar) {
+                r.beginMark(Mark.FlowText(para, k, k + 1))
+                r.drawTextRun(" ", line.caretX(k), line.baseline, last?.font ?: line.font, color)
+                r.endMark()
+            }
         }
         // A blank line inside a code block has to exist in the copy, or the code pastes back squashed.
-        if (r.writesText && line.codeLine && line.segs.isEmpty()) {
+        if (tag && line.codeLine && line.endChar == line.startChar) {
+            r.beginMark(Mark.FlowText(para, line.startChar, line.startChar))
             r.drawTextRun(" ", line.caretX(line.startChar), line.baseline, line.font, frame.defaultColor)
+            r.endMark()
         }
+        if (tag) r.beginMark(Mark.Decoration)
         val ascent = line.baseline - line.top
         val descent = line.bottom - line.baseline
         val thickness = (line.height / 14.0).coerceAtLeast(1.0)
@@ -167,6 +206,20 @@ object FlowPainter {
                     MATH_ERROR_RULE,
                 )
             }
+        }
+        if (tag) r.endMark()
+    }
+
+    /** [seg] cut at [breaks], each piece marked on its own and set where the line places it. */
+    private fun paintPieces(r: Renderer, line: PlacedLine, seg: Seg, color: Rgba, breaks: IntArray) {
+        var a = seg.start
+        for (b in breaks.sorted() + seg.end) {
+            if (b <= a || b > seg.end) continue
+            r.beginMark(Mark.FlowText(line.paraIndex, a, b))
+            val x = seg.x + line.caretX(a) - line.caretX(seg.start)
+            r.drawTextRun(seg.text.substring(a - seg.start, b - seg.start), x, line.baseline, seg.font, color)
+            r.endMark()
+            a = b
         }
     }
 

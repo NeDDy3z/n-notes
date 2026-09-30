@@ -18,6 +18,7 @@ import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FillRule
 import com.xnotes.core.pal.FontSpec
+import com.xnotes.core.pal.Mark
 import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.RasterSurface
 import com.xnotes.core.pal.Renderer
@@ -25,6 +26,7 @@ import com.xnotes.core.pal.TextFlags
 import com.xnotes.core.pdf.GlyphPlacement
 import com.xnotes.core.pdf.LinkFinder
 import com.xnotes.core.pdf.PdfNumbers
+import com.xnotes.core.pdf.PlacedLink
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -40,10 +42,11 @@ import com.xnotes.core.pal.BlendMode as PalBlend
  * Rather than push a flipped CTM — which would also mirror placed images and text — this maps every
  * point in software: `user = (ox + x·sx, oy + y·sy)` with `sx = +s, sy = −s, s = 72/dpi`.
  *
- * Only the primitives the *vectorizable* items use are meaningful here (fills, strokes, images).
- * Effect-heavy items (neon glow, highlighter multiply, translucent ink) and text are rasterized by
- * the exporter and handed back as bitmaps via [drawItemBitmap]; the glow/layer/text methods here are
- * inert, so they never silently flatten anything to a crisp-but-wrong vector shape.
+ * Only the primitives the *vectorizable* items use are meaningful here (fills, strokes, images,
+ * text). Effect-heavy items (neon glow, highlighter multiply, translucent ink) are rasterized by the
+ * exporter and handed back as bitmaps via [drawItemBitmap]; the glow methods here are inert, so they
+ * never silently flatten anything to a crisp-but-wrong vector shape. When the export is tagged,
+ * every primitive first tells the page's [PageTagger] what it is about to draw.
  */
 internal class PdfBoxRenderer(
     private val cs: PDPageContentStream,
@@ -55,6 +58,8 @@ internal class PdfBoxRenderer(
 ) : Renderer {
 
     private val doc: PDDocument get() = ctx.doc
+
+    private val tagger: PageTagger? = ctx.tags?.page(page, cs)
 
     // Affine content→user mapping (translation + axis scale only; never rotation/shear — PAL §1).
     private var ox = ox
@@ -77,6 +82,7 @@ internal class PdfBoxRenderer(
     }
 
     override fun restore() {
+        tagger?.restoring(stack.size - 1)
         cs.restoreGraphicsState()
         stack.removeLastOrNull()?.let { ox = it[0]; oy = it[1]; sx = it[2]; sy = it[3]; layerAlpha = it[4] }
     }
@@ -132,14 +138,18 @@ internal class PdfBoxRenderer(
     // --- fills ---
     override fun fillBackground(rect: Rect, color: Rgba) = fillRect(rect, color)
 
-    override fun fillRect(rect: Rect, color: Rgba) = translucent(color) {
-        setFill(color)
-        rectPath(rect)
-        cs.fill()
+    override fun fillRect(rect: Rect, color: Rgba) {
+        tag()
+        translucent(color) {
+            setFill(color)
+            rectPath(rect)
+            cs.fill()
+        }
     }
 
     override fun fillPolygon(points: List<Pt>, color: Rgba, rule: FillRule) {
         if (points.size < 3) return
+        tag()
         translucent(color) {
             setFill(color)
             polyPath(points, close = true)
@@ -152,6 +162,7 @@ internal class PdfBoxRenderer(
 
     override fun fillEllipse(center: Pt, rx: Double, ry: Double, color: Rgba) {
         if (rx <= 0.0 || ry <= 0.0) return
+        tag()
         translucent(color) {
             setFill(color)
             ellipsePath(center, rx, ry)
@@ -160,14 +171,18 @@ internal class PdfBoxRenderer(
     }
 
     // --- outlines ---
-    override fun strokeRect(rect: Rect, pen: Pen) = translucent(pen.color) {
-        applyPen(pen)
-        rectPath(rect)
-        cs.stroke()
+    override fun strokeRect(rect: Rect, pen: Pen) {
+        tag()
+        translucent(pen.color) {
+            applyPen(pen)
+            rectPath(rect)
+            cs.stroke()
+        }
     }
 
     override fun strokePolyline(points: List<Pt>, pen: Pen) {
         if (points.size < 2) return
+        tag()
         translucent(pen.color) {
             applyPen(pen)
             polyPath(points, close = false)
@@ -177,6 +192,7 @@ internal class PdfBoxRenderer(
 
     override fun strokePolygon(points: List<Pt>, pen: Pen) {
         if (points.size < 2) return
+        tag()
         translucent(pen.color) {
             applyPen(pen)
             polyPath(points, close = true)
@@ -186,6 +202,7 @@ internal class PdfBoxRenderer(
 
     override fun strokeEllipse(center: Pt, rx: Double, ry: Double, pen: Pen) {
         if (rx <= 0.0 || ry <= 0.0) return
+        tag()
         translucent(pen.color) {
             applyPen(pen)
             ellipsePath(center, rx, ry)
@@ -197,6 +214,7 @@ internal class PdfBoxRenderer(
     override fun drawRaster(raster: RasterSurface, dest: Rect, src: Rect?) {
         val bmp = (raster as? AndroidRasterSurface)?.bitmap ?: return
         if (bmp.isRecycled) return
+        tag()
         placeBitmap(bmp, dest, multiply = false)
     }
 
@@ -220,6 +238,7 @@ internal class PdfBoxRenderer(
             val m = android.graphics.Matrix().apply { postRotate(o.toFloat()) }
             bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
         }
+        tag()
         if (angle == 0.0) placeBitmap(bmp, dest, multiply = false) else placeTurnedBitmap(bmp, dest, angle)
     }
 
@@ -252,7 +271,10 @@ internal class PdfBoxRenderer(
      * rect. [multiply] composites it with the page beneath via the Multiply blend mode — used for the
      * highlighter, so it tints the PDF/ink underneath instead of painting a flat translucent block.
      */
-    fun drawItemBitmap(bmp: Bitmap, dest: Rect, multiply: Boolean) = placeBitmap(bmp, dest, multiply)
+    fun drawItemBitmap(bmp: Bitmap, dest: Rect, multiply: Boolean) {
+        tag()
+        placeBitmap(bmp, dest, multiply)
+    }
 
     /**
      * A text box, as real text: laid out by the same [AndroidText.layout] the screen draws it with,
@@ -263,17 +285,9 @@ internal class PdfBoxRenderer(
     override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {
         if (text.isEmpty()) return
         val layout = AndroidText.layout(text, rect.w.toInt(), AndroidText.textPaint(font))
-        for (link in LinkFinder.find(text)) {
-            for (line in layout.getLineForOffset(link.start)..layout.getLineForOffset(link.end - 1)) {
-                val a = maxOf(link.start, layout.getLineStart(line))
-                val b = minOf(link.end, layout.getLineEnd(line))
-                if (b <= a) continue
-                val x0 = minOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
-                val x1 = maxOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
-                val top = layout.getLineTop(line).toDouble()
-                addLink(Rect(rect.left + x0, rect.top + top, (x1 - x0).toDouble(), layout.getLineBottom(line) - top), link.uri)
-            }
-        }
+        val links = LinkFinder.find(text)
+        // Tagged, a word stops where a link starts or ends, so the link's text is an element of its own.
+        fun linkAt(k: Int): Int = if (tagger == null) -1 else links.indexOfFirst { k >= it.start && k < it.end }
         for (line in 0 until layout.lineCount) {
             val start = layout.getLineStart(line)
             var end = layout.getLineEnd(line)
@@ -284,19 +298,59 @@ internal class PdfBoxRenderer(
             var i = start
             while (i < end) {
                 if (text[i] == ' ' || text[i] == '\t') {
+                    tagger?.boxLink = -1
                     drawTextRun(" ", leftOf(i, i + 1), baseline, font, color)
                     i++
                     continue
                 }
+                val link = linkAt(i)
                 var j = i
-                while (j < end && text[j] != ' ' && text[j] != '\t') j++
+                while (j < end && text[j] != ' ' && text[j] != '\t' && linkAt(j) == link) j++
+                tagger?.boxLink = link
                 drawTextRun(text.substring(i, j), leftOf(i, j), baseline, font, color)
                 i = j
             }
+            // A line broken at a space or a newline ends in one, so the words either side stay apart.
+            if (end < layout.getLineEnd(line)) {
+                tagger?.boxLink = -1
+                drawTextRun(" ", rect.left + layout.getPrimaryHorizontal(end), baseline, font, color)
+            }
         }
+        for ((n, link) in links.withIndex()) {
+            for (line in layout.getLineForOffset(link.start)..layout.getLineForOffset(link.end - 1)) {
+                val a = maxOf(link.start, layout.getLineStart(line))
+                val b = minOf(link.end, layout.getLineEnd(line))
+                if (b <= a) continue
+                val x0 = minOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
+                val x1 = maxOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
+                val top = layout.getLineTop(line).toDouble()
+                val box = Rect(rect.left + x0, rect.top + top, (x1 - x0).toDouble(), layout.getLineBottom(line) - top)
+                val annot = linkAnnotation(box, link.uri) ?: continue
+                tagger?.boxLink = n
+                tagger?.annotate(annot.cosObject)
+            }
+        }
+        tagger?.boxLink = -1
     }
 
     override val writesText: Boolean get() = true
+
+    override fun beginMark(mark: Mark) {
+        tagger?.begin(mark)
+    }
+
+    override fun endMark() {
+        tagger?.end()
+    }
+
+    /** Close the page's open marked content. Call once the page is painted, before its stream ends. */
+    fun endPage() {
+        tagger?.close()
+    }
+
+    private fun tag(kind: PageTagger.Kind = PageTagger.Kind.GRAPHIC, latex: String? = null) {
+        tagger?.draw(kind, stack.size, latex)
+    }
 
     // A bullet is a glyph of its own, so selecting a list copies "•" where the dot is.
     override fun drawBullet(center: Pt, radius: Double, baseline: Double, font: FontSpec, color: Rgba) {
@@ -308,6 +362,7 @@ internal class PdfBoxRenderer(
         val glyph = ctx.text.markGlyph(key, "•", 2 * r, doubleArrayOf(0.0, cy - r, 2 * r, cy + r)) {
             StringBuilder().also { ellipseOps(it, r, cy, r) }.append("f\n").toString()
         }
+        tag(PageTagger.Kind.TEXT)
         showRun(PdfText.Run(listOf(glyph), doubleArrayOf(0.0)), center.x - radius, baseline, sizePx, color)
     }
 
@@ -336,6 +391,7 @@ internal class PdfBoxRenderer(
                 sb.append("f*\n")
             }.toString()
         }
+        tag(PageTagger.Kind.TEXT)
         showRun(PdfText.Run(listOf(glyph), doubleArrayOf(0.0)), outer.left, baseline, sizePx, color)
     }
 
@@ -358,15 +414,22 @@ internal class PdfBoxRenderer(
     // A formula is one glyph: vector outlines on the page, its LaTeX when copied.
     override fun drawMath(latex: String, x: Double, baseline: Double, sizePt: Double, color: Rgba, display: Boolean) {
         val glyph = ctx.text.formulaGlyph(latex, sizePt, color, display) ?: return
+        tag(PageTagger.Kind.TEXT, latex)
         showRun(PdfText.Run(listOf(glyph), doubleArrayOf(0.0)), x, baseline, sizePt * AndroidText.POINTS_TO_PX, color)
+    }
+
+    /** Make [link]'s share of the flow open its address when clicked. */
+    fun addFlowLink(link: PlacedLink) {
+        val annot = linkAnnotation(link.rect, link.uri) ?: return
+        tagger?.annotateFlow(annot.cosObject, link.para, link.link)
     }
 
     /**
      * Make [rect] (content space) open [uri] when clicked, drawing nothing: an address in the text
-     * looks exactly as it does on screen, and the link lies over it.
+     * looks exactly as it does on screen, and the link lies over it. Null for an empty [rect].
      */
-    fun addLink(rect: Rect, uri: String) {
-        if (rect.w <= 0.0 || rect.h <= 0.0) return
+    private fun linkAnnotation(rect: Rect, uri: String): PDAnnotationLink? {
+        if (rect.w <= 0.0 || rect.h <= 0.0) return null
         val link = PDAnnotationLink()
         link.rectangle = PDRectangle(ux(rect.left), uy(rect.bottom), (rect.w * abs(sx)).toFloat(), (rect.h * abs(sy)).toFloat())
         link.action = PDActionURI().apply { this.uri = uri }
@@ -375,13 +438,16 @@ internal class PdfBoxRenderer(
         val annots = page.annotations
         annots.add(link)
         page.annotations = annots
+        return link
     }
 
     // Real text through the export's Type 3 fonts: each glyph pinned to the x the screen draws it at.
     override fun drawTextRun(text: String, x: Double, baseline: Double, font: FontSpec, color: Rgba) {
         if (text.isEmpty()) return
         val run = ctx.text.shape(text, font)
-        if (run.glyphs.isNotEmpty()) showRun(run, x, baseline, font.pointSize * AndroidText.POINTS_TO_PX, color)
+        if (run.glyphs.isEmpty()) return
+        tag(PageTagger.Kind.TEXT)
+        showRun(run, x, baseline, font.pointSize * AndroidText.POINTS_TO_PX, color)
     }
 
     /**

@@ -355,6 +355,8 @@
     <string name="preparing">正在准备…</string>
     <string name="export_page_progress">第 %1$d / %2$d 页</string>
     <string name="export_item_progress">对象 %1$d / %2$d</string>
+    <string name="pdf_alt_drawing">手写笔记和绘图</string>
+    <string name="pdf_alt_image">图片</string>
     <string name="importing_pdf">正在导入 PDF…</string>
     <string name="refining_pdf_colours">正在优化 PDF 颜色 %1$d/%2$d 页…</string>
     <string name="unlock_zoom">解锁缩放</string>

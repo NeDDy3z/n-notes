@@ -14,11 +14,15 @@ internal class PdfExportContext(val doc: PDDocument) {
     /** The export's text fonts, filled as pages set text and written out by [finish]. */
     val text = PdfText(doc)
 
+    /** The document's logical structure when the export is tagged; set before the first page. */
+    var tags: PdfTags? = null
+
     private val states = HashMap<Pair<Int, BlendMode?>, PDExtendedGraphicsState>()
 
     /** Complete everything built up while drawing. Call once, after the last page and before saving. */
     fun finish() {
         text.finish()
+        tags?.finish()
     }
 
     /**

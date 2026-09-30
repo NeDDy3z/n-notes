@@ -375,6 +375,9 @@
     <string name="preparing">Preparing…</string>
     <string name="export_page_progress">page %1$d / %2$d</string>
     <string name="export_item_progress">item %1$d / %2$d</string>
+    <!-- What a screen reader says for the handwriting and for each image in an exported PDF -->
+    <string name="pdf_alt_drawing">Handwritten notes and drawings</string>
+    <string name="pdf_alt_image">Image</string>
     <string name="importing_pdf">Importing PDF…</string>
     <string name="importing_pdfs">Importing PDFs…</string>
     <string name="import_progress">%1$d of %2$d imported</string>

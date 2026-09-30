@@ -4,6 +4,7 @@ import com.xnotes.core.FakeRenderer
 import com.xnotes.core.FakeTextMeasurer
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.pal.Mark
 import com.xnotes.core.pal.Renderer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -118,9 +119,13 @@ class FlowPainterTest {
         assertFalse(ops.any { it.startsWith("drawTextRun:two@") })
     }
 
-    /** A backend that writes real text, recording like [FakeRenderer]. */
+    /** A backend that writes real text, recording like [FakeRenderer] and noting each text mark. */
     private class TextWriter(val inner: FakeRenderer = FakeRenderer()) : Renderer by inner {
         override val writesText: Boolean get() = true
+
+        override fun beginMark(mark: Mark) {
+            if (mark is Mark.FlowText) inner.ops += "mark:${mark.para},${mark.start},${mark.end}"
+        }
     }
 
     private fun write(frame: FlowFrame): List<String> {
@@ -153,5 +158,36 @@ class FlowPainterTest {
         }
         val runs = write(frameOf(flow)).map { it.substringBefore('@') }
         assertEquals(listOf("drawTextRun: ", "drawTextRun: ", "drawTextRun:x", "drawTextRun: ", "drawTextRun:y"), runs)
+    }
+
+    @Test
+    fun breaksCutAWordIntoPiecesMarkedApart() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("go (a.io).")))) }
+        val r = TextWriter()
+        FlowPainter.paintPage(r, frameOf(flow), 0, Rect(0.0, 0.0, 200.0, 100.0), mapOf(0 to intArrayOf(4, 8)))
+        val ops = r.inner.ops.filter { it.startsWith("mark:") || it.startsWith("drawTextRun:") }
+            .map { it.substringBefore('@') }
+        assertEquals(
+            listOf(
+                "mark:0,0,2", "drawTextRun:go", "mark:0,2,3", "drawTextRun: ",
+                "mark:0,3,4", "drawTextRun:(", "mark:0,4,8", "drawTextRun:a.io", "mark:0,8,10", "drawTextRun:).",
+            ),
+            ops,
+        )
+        // FakeTextMeasurer: 7.2 px a character, so each piece starts at its own character's x.
+        assertEquals(4 * 7.2, runAt(r.inner.ops, "a.io").first, 1e-9)
+        assertEquals(8 * 7.2, runAt(r.inner.ops, ").").first, 1e-9)
+    }
+
+    @Test
+    fun aLineWrappedAtASpaceEndsInIt() {
+        // 16 characters fit a line, so the paragraph wraps at the space after its first word.
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("abcdefghijklm nopq")))) }
+        flow.margins = FlowMargins(0.0, 0.0, 0.0, 0.0)
+        val frame = layout.layout(flow, listOf(PageBox(16 * 7.2, 100.0)), 150)
+        val r = TextWriter()
+        FlowPainter.paintPage(r, frame, 0, Rect(0.0, 0.0, 200.0, 100.0))
+        val runs = r.inner.ops.filter { it.startsWith("drawTextRun:") }.map { it.substringAfter(':').substringBefore('@') }
+        assertEquals(listOf("abcdefghijklm", " ", "nopq"), runs)
     }
 }

@@ -41,6 +41,32 @@ data class Pen(
 )
 
 /**
+ * What a stretch of drawing is, for a backend that records a document's structure (a tagged PDF
+ * a screen reader can follow). Painters announce it with [Renderer.beginMark]; every other
+ * backend ignores it. Marks that stand for one thing on the page are instances, so two images
+ * drawn back to back stay two images.
+ */
+sealed class Mark {
+    /** Paper, ruling, highlights, chips, rules: what a reader skips. */
+    object Decoration : Mark()
+
+    /** Characters [start, end) of flow paragraph [para]. */
+    class FlowText(val para: Int, val start: Int, val end: Int) : Mark()
+
+    /** The bullet, number or box of flow list paragraph [para]. */
+    class FlowMarker(val para: Int) : Mark()
+
+    /** Handwriting and shapes. */
+    object Drawing : Mark()
+
+    /** One inserted image. */
+    class Image : Mark()
+
+    /** One text box, occupying [bounds] on the page. */
+    class TextBox(val bounds: Rect) : Mark()
+}
+
+/**
  * Immediate-mode 2D vector painter (spec 01 §1). The application issues draw
  * calls every frame; the renderer retains no scene. The same interface draws to
  * the screen, to offscreen [RasterSurface]s, and to PDF export.
@@ -197,6 +223,11 @@ interface Renderer {
      * and a code block its indentation.
      */
     val writesText: Boolean get() = false
+
+    /** What the drawing from here to [endMark] is. Only a structure-recording backend cares. */
+    fun beginMark(mark: Mark) {}
+
+    fun endMark() {}
 
     /**
      * A list bullet: a dot of [radius] at [center], on a line whose baseline is at
