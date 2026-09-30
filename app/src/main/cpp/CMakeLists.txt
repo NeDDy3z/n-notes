@@ -57,6 +57,7 @@ include(pdfium.cmake)
 
 add_library(xnotespdf SHARED pdf_jni.cpp)
 target_include_directories(xnotespdf PRIVATE ${PDFIUM_DIR})
+target_compile_definitions(xnotespdf PRIVATE XNOTES_PDFIUM_REVISION="${PDFIUM_REVISION}")
 target_compile_options(xnotespdf PRIVATE -std=c++20 -fno-exceptions -fno-rtti -Os
     -fvisibility=hidden -ffunction-sections -fdata-sections
     "-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=")
