@@ -23,8 +23,11 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.insets
 import com.xnotes.core.pal.Mark
 import com.xnotes.core.pal.Renderer
+import com.xnotes.core.pdf.FlowHeadings
 import com.xnotes.core.pdf.FlowLinks
 import com.xnotes.core.pdf.FlowStructure
+import com.xnotes.core.pdf.Heading
+import com.xnotes.core.pdf.Outline
 import com.xnotes.core.pdf.PlacedLink
 import com.xnotes.core.pdf.TextLink
 import com.xnotes.core.text.FlowFrame
@@ -106,6 +109,11 @@ object PdfExporter {
         /** The flow's logical structure, for a tagged export. */
         val structure: FlowStructure.Tree by lazy { FlowStructure.build(flow) }
 
+        /** The headings whose first line is on [page]. */
+        fun headings(page: Page): List<Heading> = indexOf(page)?.let { headingsByPage[it] }.orEmpty()
+
+        private val headingsByPage: Map<Int, List<Heading>> by lazy { FlowHeadings.find(flow, frame).groupBy { it.page } }
+
         private val byPage: Map<Int, List<PlacedLink>> by lazy { FlowLinks.place(flow, frame, textLinks).groupBy { it.page } }
 
         private val breaks: Map<Int, IntArray> by lazy {
@@ -130,6 +138,7 @@ object PdfExporter {
      * [onProgress] reports `(pagesDone, totalPages)` (once as `(0, total)` first) and [isCancelled]
      * is polled per page so a long export can show a dialog and abort before [out] is written. A
      * plain note is written tagged, titled [title]; a PDF-backed one keeps its source's own make-up.
+     * The source's bookmarks are kept, and [headingBookmarks] adds one per heading of the flow.
      */
     fun export(
         context: Context,
@@ -142,6 +151,7 @@ object PdfExporter {
         isCancelled: () -> Boolean = { false },
         flow: FlowExport = FlowExport.NONE,
         title: String = doc.title,
+        headingBookmarks: Boolean = true,
     ) {
         // Text fonts read PdfBox's glyph list, which only loads once the resource loader is set up.
         PDFBoxResourceLoader.init(context.applicationContext)
@@ -160,7 +170,7 @@ object PdfExporter {
         }
         val tags = if (file == null) tagSetup(context, title) else null
         try {
-            exportVector(doc, srcDoc, source, sink, paperColor, paintRuling, onProgress, isCancelled, mem, flow, tags)
+            exportVector(doc, srcDoc, source, sink, paperColor, paintRuling, onProgress, isCancelled, mem, flow, tags, headingBookmarks)
         } finally {
             srcDoc?.runCatching { close() }
         }
@@ -193,6 +203,7 @@ object PdfExporter {
         mem: MemoryUsageSetting,
         flow: FlowExport,
         tags: PdfTags.Setup?,
+        headingBookmarks: Boolean,
     ) {
         val s = 72.0 / doc.dpi
         val total = doc.pages.size
@@ -223,6 +234,7 @@ object PdfExporter {
             }
             if (isCancelled()) return
             ctx.finish()
+            PdfBookmarks.write(srcDoc, emptyList(), headingAnchors(doc, flow, ctx, s, headingBookmarks))
             // Page work is near-instant on this path, so all the time is in writing the PDF — one
             // opaque PdfBox call. Report it as byte progress (output ≈ the source PDF's size) so the
             // dialog keeps moving instead of freezing at "done". total = -1 marks the writing phase.
@@ -260,10 +272,38 @@ object PdfExporter {
             }
             if (isCancelled()) return
             ctx.finish()
+            val sources = if (srcDoc != null) {
+                val at = Outline.pageMap(doc.pages.map { it.pdfPage })
+                PdfBookmarks.remapped(srcDoc) { i -> at[i]?.let { outDoc.getPage(it) } }
+            } else {
+                emptyList()
+            }
+            PdfBookmarks.write(outDoc, sources, headingAnchors(doc, flow, ctx, s, headingBookmarks))
             outDoc.save(out)
         } finally {
             outDoc.runCatching { close() }
         }
+    }
+
+    /**
+     * Where the bookmark of each heading on the exported pages opens, in [ctx]'s document, whose
+     * pages are [doc]'s in order. None unless [on].
+     */
+    private fun headingAnchors(doc: Document, flow: FlowExport, ctx: PdfExportContext, s: Double, on: Boolean): List<PdfBookmarks.Anchor> {
+        if (!on) return emptyList()
+        val out = mutableListOf<PdfBookmarks.Anchor>()
+        doc.pages.forEachIndexed { i, page ->
+            val headings = flow.headings(page)
+            if (headings.isEmpty()) return@forEachIndexed
+            val pd = ctx.doc.getPage(i)
+            // Page space starts below the paper's top edge by the top margin.
+            val top = pd.cropBox.upperRightY - page.insets(doc).top * s
+            for (h in headings) {
+                val element = ctx.tags?.let { tags -> flow.structure.textOf(h.para)?.let { tags.elementOf(it) } }
+                out += PdfBookmarks.Anchor(h, pd, (top - h.top * s).toFloat(), element)
+            }
+        }
+        return out
     }
 
     /** True when the note's pages are the source's pages 0..N-1 in order (rotation-0), optionally

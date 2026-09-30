@@ -107,6 +107,12 @@ class SettingsTest {
         assertTrue(back.disableFrontBuffering)
     }
 
+    @Test fun headingBookmarksAreOnUntilTurnedOff() {
+        assertTrue(Settings.fromJson(JSONObject()).prefs.pdfHeadingBookmarks)
+        val back = Settings.fromJson(Settings(prefs = Preferences(pdfHeadingBookmarks = false)).toJson()).prefs
+        assertFalse(back.pdfHeadingBookmarks)
+    }
+
     @Test fun customPageSizeRoundTripsAndSizesANewPage() {
         val prefs = Preferences(
             defaultPageSize = PageSize.CUSTOM,

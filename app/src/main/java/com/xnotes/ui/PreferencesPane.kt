@@ -130,7 +130,7 @@ fun PreferencesPane(
         prefs = p
         editor.applyPreferences(p)
     }
-    // Home and explorer settings leave the open note alone, so they skip its canvas refresh.
+    // Home, explorer and export settings leave the open note alone, so they skip its canvas refresh.
     fun updateHome(p: Preferences) {
         prefs = p
         editor.applyHomePreferences(p)
@@ -463,6 +463,12 @@ fun PreferencesPane(
             CheckRow(stringResource(R.string.pref_show_create_button), prefs.showCreateButton) { updateHome(prefs.copy(showCreateButton = it)) }
             CheckRow(stringResource(R.string.pref_show_folder_counts), prefs.showFolderCounts) { updateHome(prefs.copy(showFolderCounts = it)) }
             CheckRow(stringResource(R.string.pref_show_extensions), prefs.showExtensions) { updateHome(prefs.copy(showExtensions = it)) }
+
+            HorizontalDivider(color = palette.border.toComposeColor())
+            SectionTitle(stringResource(R.string.pref_pdf_export))
+            CheckRow(stringResource(R.string.pref_pdf_heading_bookmarks), prefs.pdfHeadingBookmarks) {
+                updateHome(prefs.copy(pdfHeadingBookmarks = it))
+            }
 
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle(stringResource(R.string.pref_performance))

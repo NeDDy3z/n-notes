@@ -1700,6 +1700,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 onProgress, isCancelled,
                 flow = flowExportHooks(state.document),
                 title = title,
+                headingBookmarks = settings.prefs.pdfHeadingBookmarks,
             )
         } finally {
             src?.close()
@@ -4715,6 +4716,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 onProgress, isCancelled,
                 flow = flowExportHooks(doc),
                 title = title.ifEmpty { doc.title },
+                headingBookmarks = settings.prefs.pdfHeadingBookmarks,
             )
         } finally {
             src?.close()
@@ -5153,6 +5155,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 // The subset shares the open note's page objects, so its flow lines map through.
                 flow = flowExportHooks(state.document),
                 title = title,
+                headingBookmarks = settings.prefs.pdfHeadingBookmarks,
             )
         } finally {
             src?.close()

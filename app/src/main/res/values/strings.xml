@@ -201,6 +201,8 @@
     <string name="pref_hide_page_borders">Hide page borders</string>
     <string name="pref_page_colour">Page colour</string>
     <string name="pref_page_colour_follows_theme">Page colour follows the theme</string>
+    <string name="pref_pdf_export">PDF export</string>
+    <string name="pref_pdf_heading_bookmarks">Bookmarks from headings</string>
     <string name="pref_performance">Performance</string>
     <string name="pref_cache_help">Higher feels smoother when you pan and zoom but uses more memory. Your ink and PDFs look just as crisp either way.</string>
     <string name="pref_disable_front_buffering">Disable front buffering</string>

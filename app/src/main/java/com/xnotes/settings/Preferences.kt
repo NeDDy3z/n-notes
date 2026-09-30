@@ -109,6 +109,8 @@ data class Preferences(
     val showCreateButton: Boolean = true,
     val showFolderCounts: Boolean = true,
     val showExtensions: Boolean = false,
+    /** Whether an exported PDF gets a bookmark for each heading of the note's text. */
+    val pdfHeadingBookmarks: Boolean = true,
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -194,6 +196,7 @@ data class Preferences(
         .put("show_create_button", showCreateButton)
         .put("show_folder_counts", showFolderCounts)
         .put("show_extensions", showExtensions)
+        .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
 
     companion object {
         val DEFAULT_ACCENT = Rgba(0, 230, 118, 255)
@@ -301,6 +304,7 @@ data class Preferences(
                 showCreateButton = o.optBoolean("show_create_button", true),
                 showFolderCounts = o.optBoolean("show_folder_counts", true),
                 showExtensions = o.optBoolean("show_extensions", false),
+                pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),
             )
         }
     }
