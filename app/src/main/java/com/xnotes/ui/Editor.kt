@@ -1119,6 +1119,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 false
             }
         }
+        controller.onPdfTextPress = { pageIndex ->
+            state.document.pages.getOrNull(pageIndex)?.pdfPage?.let { pdfSource?.text?.prefetch(it) }
+        }
         maybeAutoEnableFingerDraw()
         applySettings()
         rebuildPdfSource()

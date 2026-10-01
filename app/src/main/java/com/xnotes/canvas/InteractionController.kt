@@ -147,6 +147,16 @@ class InteractionController(
      *  main thread, so a tap on a not-yet-parsed page returns false and opens the link a moment later
      *  once it is ready. */
     var onLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
+
+    /** A free pointer (see [FreePointer]) went down on the PDF of page [pageIndex]: the host may start reading its text. */
+    var onPdfTextPress: ((pageIndex: Int) -> Unit)? = null
+
+    /**
+     * A free pointer's long press landed on the PDF of page [pageIndex] at [pageLocal] (page-local
+     * content px), no item on top. The host selects the word there, or runs [noText] (the paste
+     * menu, when there is something to paste) when there is none.
+     */
+    var onPdfTextLongPress: ((pageIndex: Int, pageLocal: Pt, noText: () -> Unit) -> Unit)? = null
     val document: Document get() = state.document
 
     var tool: Tool = Tool.DEFAULT
@@ -349,6 +359,9 @@ class InteractionController(
     private var longPressCandidate: Selected? = null
     private var longPressLocked: CanvasItem? = null
     private var longPressPrevTool: Tool? = null
+
+    /** The page whose PDF text the armed long press would select, -1 for none. */
+    private var longPressTextPage = -1
 
     // TEXT EDITING
     private var editingText: TextItem? = null
@@ -567,6 +580,8 @@ class InteractionController(
             toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff -> Tool.PAN
             else -> tool
         }
+        val isFinger = toolType == MotionEvent.TOOL_TYPE_FINGER
+        val free = FreePointer.isFree(tool, effectiveTool, isFinger)
 
         // A press off the box while editing. With a finger we defer: a tap commits (re-arming the
         // prior tool), a drag scrolls the page with the edit kept live (decided in handleUp's PAN
@@ -627,8 +642,10 @@ class InteractionController(
         }
 
         // Zoom-lock pan preference: swallow a single-finger pan when locked and set to "double"/"none".
+        // The pointer stays free, so a long press still picks up an item or selects text.
         if (effectiveTool == Tool.PAN && !singleFingerPanAllowed()) {
             mode = PointerMode.IDLE
+            armLongPress(Pt(vx, vy), content, isFinger, free)
             return
         }
 
@@ -651,7 +668,7 @@ class InteractionController(
         // The flow caret owns its own long press (word selection), and mid text-drag it is
         // suppressed so a hold-then-drag still sizes a box.
         if (mode != PointerMode.FLOW_TEXT && mode != PointerMode.TEXT_DRAG) {
-            armLongPress(Pt(vx, vy), content, toolType == MotionEvent.TOOL_TYPE_FINGER)
+            armLongPress(Pt(vx, vy), content, isFinger, free)
         }
     }
 
@@ -1984,11 +2001,12 @@ class InteractionController(
 
     // --- LONG-PRESS GRAB ---
 
-    private fun armLongPress(viewport: Pt, content: Pt, isFinger: Boolean) {
+    private fun armLongPress(viewport: Pt, content: Pt, isFinger: Boolean, free: Boolean) {
         cancelLongPress()
-        // Long-press (grab an item, or the paste menu on empty space) is a finger-only gesture:
-        // the stylus always draws, so resting it never grabs or pops a menu.
-        if (!isFinger) return
+        // Long press (grab an item, select PDF text, or the paste menu on empty space) is a finger
+        // gesture. A stylus or mouse only has it when free, under the PAN tool, where it mirrors the
+        // finger; otherwise it draws, so resting it never grabs or pops a menu.
+        if (!isFinger && !free) return
         val grabEligible = tool.isStroke || tool == Tool.PAN || tool == Tool.SELECT ||
             tool == Tool.LASSO || tool == Tool.SHAPE || tool == Tool.TEXT || tool == Tool.TEXT_BOX
         val pageIndex = state.pageIndexAtContent(content)
@@ -2005,10 +2023,15 @@ class InteractionController(
         longPressLocked = hit?.takeIf { it.locked }
         longPressCandidate =
             if (grabEligible && hit != null && !hit.locked) Selected(pageIndex!!, hit) else null
-        // Arm to grab an item, to unlock one, or (on empty space) to open the paste menu when there
-        // is content to paste.
+        // An item on top wins; a free pointer on the bare PDF selects its text.
+        if (free && hit == null && pageIndex != null && state.document.pages[pageIndex].pdfPage != null) {
+            longPressTextPage = pageIndex
+            onPdfTextPress?.invoke(pageIndex)
+        }
+        // Arm to grab an item, to unlock one, to select text, or (on empty space) to open the paste
+        // menu when there is content to paste.
         val showEmptyMenu = hit == null && (hasClipboardItems() || clipboardHasImage())
-        if (longPressCandidate == null && longPressLocked == null && !showEmptyMenu) return
+        if (longPressCandidate == null && longPressLocked == null && longPressTextPage < 0 && !showEmptyMenu) return
         val r = Runnable { triggerLongPress() }
         longPressRunnable = r
         handler.postDelayed(r, LONG_PRESS_MS)
@@ -2023,6 +2046,7 @@ class InteractionController(
         longPressRunnable = null
         longPressCandidate = null
         longPressLocked = null
+        longPressTextPage = -1
     }
 
     private fun triggerLongPress() {
@@ -2030,6 +2054,8 @@ class InteractionController(
         val candidate = longPressCandidate
         longPressCandidate = null
         val locked = longPressLocked
+        val textPage = longPressTextPage
+        longPressTextPage = -1
         // Abort the in-progress gesture (keep eraser removals); commit any text edit.
         commitTextEdit()
         liveStroke = null
@@ -2045,6 +2071,12 @@ class InteractionController(
             onToolChanged(tool)
             setSelection(listOf(candidate))
             beginMove(state.viewportToContent(longPressStart))
+        } else if (textPage >= 0) {
+            mode = PointerMode.IDLE
+            val start = longPressStart
+            val content = longPressContent
+            val pasteMenu = { if (hasClipboardItems() || clipboardHasImage()) onContextMenu(start, content, null) }
+            onPdfTextLongPress?.invoke(textPage, state.toPageSpace(textPage, content), pasteMenu) ?: pasteMenu()
         } else {
             // Empty space, or a locked item: open the context menu at the press point.
             mode = PointerMode.IDLE
