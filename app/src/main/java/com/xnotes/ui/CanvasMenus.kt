@@ -344,7 +344,7 @@ fun FlowEditMenu(editor: Editor) {
     val barWidthPx = with(density) { (4 * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     // When pushed below the selection, also clear the teardrop handles hanging there.
-    val handleClearance = with(density) { (2 * com.xnotes.canvas.FlowTextController.HANDLE_RADIUS_DP).dp.toPx() }
+    val handleClearance = with(density) { (2 * com.xnotes.canvas.TextHandles.RADIUS_DP).dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
     val yPx = if (rect.top.toFloat() - barHeightPx - gap > 0f) {

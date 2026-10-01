@@ -146,23 +146,10 @@ class FlowTextController(
     private val longPressRun = Runnable { onLongPressFired() }
 
     // selection handles + edge autoscroll while extending a selection
-    private enum class Handle { START, END }
-    private var draggingHandle: Handle? = null
+    private val handles = TextHandles(state)
+    private var draggingHandle: TextHandles.Handle? = null
     private var handleFixed: FlowPos? = null
     private var handleGrabOffset = Pt(0.0, 0.0)
-    private var lastDragViewport: Pt? = null
-    private var autoscrollVel = 0.0
-    private val autoscrollRun = object : Runnable {
-        override fun run() {
-            val vp = lastDragViewport ?: return
-            if (autoscrollVel == 0.0) return
-            state.scrollBy(0.0, autoscrollVel)
-            onViewChanged()
-            updateDragSelection(vp)
-            requestRender()
-            handler.postDelayed(this, AUTOSCROLL_TICK_MS)
-        }
-    }
 
     // --- session ---
 
@@ -183,7 +170,7 @@ class FlowTextController(
 
     fun endSession() {
         handler.removeCallbacks(longPressRun)
-        stopAutoscroll()
+        handles.stopAutoscroll()
         draggingHandle = null
         handleFixed = null
         if (!active) return
@@ -216,8 +203,8 @@ class FlowTextController(
             grabHandle(viewport)?.let { h ->
                 val r = selection.normalized()
                 draggingHandle = h
-                handleFixed = if (h == Handle.START) r.end else r.start
-                val moving = if (h == Handle.START) r.start else r.end
+                handleFixed = if (h == TextHandles.Handle.START) r.end else r.start
+                val moving = if (h == TextHandles.Handle.START) r.start else r.end
                 handleGrabOffset = caretAnchorViewport(moving)
                     ?.let { Pt(it.x - viewport.x, it.y - viewport.y) } ?: Pt(0.0, 0.0)
                 return
@@ -279,9 +266,12 @@ class FlowTextController(
         if (pressGated) return viewport.distanceTo(pressViewport) > DRAG_SLOP
         if (tableHold) return false
         if (draggingHandle != null || selectionArmed) {
-            lastDragViewport = viewport
             updateDragSelection(viewport)
-            updateAutoscroll(viewport)
+            handles.autoscroll(viewport) { vp ->
+                onViewChanged()
+                updateDragSelection(vp)
+                requestRender()
+            }
             requestRender()
             return false
         }
@@ -307,36 +297,9 @@ class FlowTextController(
         selection = if (pos < a.start) FlowRange(a.end, pos) else FlowRange(a.start, pos)
     }
 
-    /** Scroll while the finger sits in the top/bottom edge zone, speed scaling with depth. */
-    private fun updateAutoscroll(viewport: Pt) {
-        val zone = AUTOSCROLL_ZONE_DP * state.devicePxPerDp
-        val maxV = AUTOSCROLL_MAX_DP * state.devicePxPerDp
-        val top = state.insetTop
-        val bottom = state.viewportH - state.insetBottom
-        val vel = when {
-            viewport.y < top + zone -> -maxV * ((top + zone - viewport.y) / zone).coerceAtMost(1.0)
-            viewport.y > bottom - zone -> maxV * ((viewport.y - (bottom - zone)) / zone).coerceAtMost(1.0)
-            else -> 0.0
-        }
-        val wasStill = autoscrollVel == 0.0
-        autoscrollVel = vel
-        if (vel == 0.0) {
-            handler.removeCallbacks(autoscrollRun)
-        } else if (wasStill) {
-            handler.removeCallbacks(autoscrollRun)
-            handler.post(autoscrollRun)
-        }
-    }
-
-    private fun stopAutoscroll() {
-        autoscrollVel = 0.0
-        lastDragViewport = null
-        handler.removeCallbacks(autoscrollRun)
-    }
-
     fun release(content: Pt, viewport: Pt, timeMs: Long) {
         handler.removeCallbacks(longPressRun)
-        stopAutoscroll()
+        handles.stopAutoscroll()
         if (pressGated) {
             pressGated = false
             onGatedTap()
@@ -657,8 +620,8 @@ class FlowTextController(
                 r.fillRect(state.fromPageSpaceRect(pi, rect), accent.withAlpha(70))
             }
             val norm = selection.normalized()
-            drawHandle(r, norm.start, isStart = true, accent)
-            drawHandle(r, norm.end, isStart = false, accent)
+            handleCenter(norm.start, isStart = true)?.let { handles.draw(r, it, isStart = true, accent) }
+            handleCenter(norm.end, isStart = false)?.let { handles.draw(r, it, isStart = false, accent) }
         } else {
             val (pi, cr) = f.caretRect(selection.end) ?: return
             if (state.pageRects.getOrNull(pi) == null) return
@@ -680,19 +643,6 @@ class FlowTextController(
         }
     }
 
-    /**
-     * The classic Android teardrop: a circle whose squared-off quadrant puts a sharp
-     * tip exactly at the caret's bottom, the body hanging away from the selection
-     * (down-left for the start handle, down-right for the end handle).
-     */
-    private fun drawHandle(r: com.xnotes.core.pal.Renderer, pos: FlowPos, isStart: Boolean, color: com.xnotes.core.model.Rgba) {
-        val center = handleCenter(pos, isStart) ?: return
-        val radius = HANDLE_RADIUS_DP * state.devicePxPerDp / state.zoom
-        val tipX = if (isStart) center.x + radius else center.x - radius
-        r.fillCircle(center, radius, color)
-        r.fillRect(Rect(minOf(tipX, center.x), center.y - radius, radius, radius), color)
-    }
-
     /** Viewport point of the line middle at [pos]: the spot a handle drag really targets. */
     private fun caretAnchorViewport(pos: FlowPos): Pt? {
         val f = frame() ?: return null
@@ -709,24 +659,13 @@ class FlowTextController(
         // Hang the handle below the caret's *display* rect, so it reads screen-down even
         // when the page is rotated.
         val crC = state.fromPageSpaceRect(pi, cr)
-        val radius = HANDLE_RADIUS_DP * state.devicePxPerDp / state.zoom
-        val cx = if (isStart) crC.left - radius else crC.left + radius
-        return Pt(cx, crC.bottom + radius)
+        return handles.center(Pt(crC.left, crC.bottom), isStart)
     }
 
     /** The handle a press at [viewport] grabs, preferring the nearer of the two. */
-    private fun grabHandle(viewport: Pt): Handle? {
-        val hitRadius = HANDLE_HIT_DP * state.devicePxPerDp
+    private fun grabHandle(viewport: Pt): TextHandles.Handle? {
         val norm = selection.normalized()
-        val dStart = handleCenter(norm.start, isStart = true)
-            ?.let { viewport.distanceTo(state.contentToViewport(it)) } ?: Double.MAX_VALUE
-        val dEnd = handleCenter(norm.end, isStart = false)
-            ?.let { viewport.distanceTo(state.contentToViewport(it)) } ?: Double.MAX_VALUE
-        return when {
-            dStart <= dEnd && dStart <= hitRadius -> Handle.START
-            dEnd <= hitRadius -> Handle.END
-            else -> null
-        }
+        return handles.grab(viewport, handleCenter(norm.start, isStart = true), handleCenter(norm.end, isStart = false))
     }
 
     private fun caretPosAt(content: Pt): FlowPos? {
@@ -768,13 +707,7 @@ class FlowTextController(
         const val BURST_IDLE_MS = 2000L
         val LONG_PRESS_MS = android.view.ViewConfiguration.getLongPressTimeout().toLong()
 
-        const val HANDLE_RADIUS_DP = 8.0
-
         /** A long press this close to a table rule holds the table, even over text. */
         const val TABLE_RULE_SLOP_DP = 6.0
-        const val HANDLE_HIT_DP = 26.0
-        const val AUTOSCROLL_ZONE_DP = 56.0
-        const val AUTOSCROLL_MAX_DP = 14.0
-        const val AUTOSCROLL_TICK_MS = 16L
     }
 }
