@@ -2367,6 +2367,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The side panel's tab; the panel's own button opens it on Pages. */
     var sidePanelTab by mutableStateOf(SidePanelTab.PAGES)
 
+    /** Bumped to send focus to the search field, its tab open already or not. */
+    var searchFocusTick by mutableStateOf(0)
+        private set
+
+    /** Shows the Search tab with its field focused (Ctrl+F). */
+    fun openSearch() {
+        sidePanelTab = SidePanelTab.SEARCH
+        sidebarVisible = true
+        searchFocusTick++
+    }
+
     // --- search (the side panel's Search tab) ---
 
     var searchQuery by mutableStateOf("")
@@ -5463,6 +5474,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_C && pdfText.selection != null -> copyPdfText()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_A -> selectAll()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_B -> toggleSidebar()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_F -> openSearch()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_COMMA -> keyActions.preferences()
             ctrl && (e.keyCode == android.view.KeyEvent.KEYCODE_PLUS || e.keyCode == android.view.KeyEvent.KEYCODE_EQUALS) -> zoomIn()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_MINUS -> zoomOut()

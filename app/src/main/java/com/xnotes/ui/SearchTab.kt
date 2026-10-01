@@ -103,7 +103,10 @@ private fun QueryField(editor: Editor) {
     val focus = remember { FocusRequester() }
     // The last query comes back selected, so typing replaces it.
     var field by remember { mutableStateOf(TextFieldValue(editor.searchQuery, TextRange(0, editor.searchQuery.length))) }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(editor.searchFocusTick) {
+        runCatching { focus.requestFocus() }
+        field = field.copy(selection = TextRange(0, field.text.length))
+    }
     Row(
         Modifier
             .fillMaxWidth()
