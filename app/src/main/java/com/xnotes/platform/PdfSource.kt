@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import com.xnotes.canvas.PdfPageFilter
+import com.xnotes.core.search.SearchText
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -47,6 +48,13 @@ class PdfSource private constructor(
 
     /** The text of the pages last touched, for selecting and copying. */
     val text = PageTextCache { pdf.pageText(it, PdfPriority.INTERACTIVE) }
+
+    /** Page [index]'s text to search, from the held text when there is one; null once closed. Waits, so not on the main thread. */
+    fun searchText(index: Int): SearchText? {
+        if (closed) return null
+        text.peek(index)?.let { return SearchText.of(it) }
+        return pdf.searchText(index, PdfPriority.SEARCH)
+    }
 
     /** Page sizes in points already read, by page. */
     private val pageSizes = ConcurrentHashMap<Int, Pair<Float, Float>>()

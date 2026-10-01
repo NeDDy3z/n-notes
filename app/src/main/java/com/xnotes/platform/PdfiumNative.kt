@@ -43,6 +43,9 @@ object PdfiumNative {
     /** Page [index]'s text as the codepoints, boxes, flags and angles of a [com.xnotes.core.pdf.PageText]. */
     @JvmStatic external fun nativePageText(doc: Long, index: Int): Array<Any?>?
 
+    /** Page [index]'s codepoints and flags as [nativePageText] reads them, leaving the page cache as it was. */
+    @JvmStatic external fun nativePageChars(doc: Long, index: Int): Array<Any>?
+
     /** See [PdfiumDocument.render]; it stops early once [lifetime] or [token] is cancelled. */
     @JvmStatic external fun nativeRender(
         doc: Long, index: Int, bitmap: Bitmap, fullW: Int, fullH: Int, left: Int, top: Int,

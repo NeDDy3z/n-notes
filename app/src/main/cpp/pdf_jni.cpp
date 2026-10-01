@@ -129,6 +129,14 @@ FPDF_PAGE GetPage(Doc* doc, int index) {
     return page;
 }
 
+// Page index if the cache holds it, without making it the most recent; else null.
+FPDF_PAGE CachedPage(Doc* doc, int index) {
+    for (const auto& p : doc->pages) {
+        if (p.first == index) return p.second;
+    }
+    return nullptr;
+}
+
 // Maps page user space to display points: top-left origin, /Rotate applied.
 struct DisplayMap {
     double a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
@@ -234,6 +242,49 @@ jint Codepoint(unsigned int u, bool hyphen) {
     if (u > 0x10FFFF || (u >= 0xD800 && u <= 0xDFFF)) return 0xFFFD;
     return static_cast<jint>(u);
 }
+
+// The text page of page. PDFium groups and orders a line's words in display space, reversing them
+// on a page turned upside down, so it reads the page unturned; the boxes it gives are in page space.
+FPDF_TEXTPAGE LoadTextPage(FPDF_PAGE page) {
+    const int rotation = FPDFPage_GetRotation(page);
+    if (rotation > 0) FPDFPage_SetRotation(page, 0);
+    FPDF_TEXTPAGE text = FPDFText_LoadPage(page);
+    if (rotation > 0) FPDFPage_SetRotation(page, rotation);
+    return text;
+}
+
+// Reads a text page's characters as PageText keeps them, in order from the first.
+class CharReader {
+  public:
+    explicit CharReader(FPDF_TEXTPAGE text) : text_(text), count_(std::max(FPDFText_CountChars(text), 0)) {}
+
+    int count() const { return count_; }
+
+    // Character i's codepoint and kText* bits, for i = 0, 1, ... in turn.
+    void Read(int i, jint* codepoint, jbyte* flags) {
+        const bool generated = FPDFText_IsGenerated(text_, i) == 1;
+        const bool hyphen = FPDFText_IsHyphen(text_, i) == 1;
+        // A /ToUnicode entry beyond the BMP comes as two characters, its UTF-16 halves; the
+        // first gets the whole codepoint, the second none.
+        unsigned int u = low_taken_ ? 0 : FPDFText_GetUnicode(text_, i);
+        low_taken_ = false;
+        if (u >= 0xD800 && u <= 0xDBFF && i + 1 < count_) {
+            const unsigned int low = FPDFText_GetUnicode(text_, i + 1);
+            if (low >= 0xDC00 && low <= 0xDFFF) {
+                u = 0x10000 + ((u - 0xD800) << 10) + (low - 0xDC00);
+                low_taken_ = true;
+            }
+        }
+        *codepoint = Codepoint(u, hyphen);
+        *flags = static_cast<jbyte>((generated ? kTextGenerated : 0) | (hyphen ? kTextHyphen : 0) |
+                                    (FPDFText_HasUnicodeMapError(text_, i) == 1 ? kTextUnmapped : 0));
+    }
+
+  private:
+    FPDF_TEXTPAGE text_;
+    int count_;
+    bool low_taken_ = false;
+};
 
 // How far a glyph set with matrix m is turned, in degrees clockwise as displayed, in [0, 360);
 // float noise is snapped to the nearest quarter turn.
@@ -577,40 +628,20 @@ extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_xnotes_platform_PdfiumNative_nativePageText(JNIEnv* env, jclass, jlong handle, jint index) {
     FPDF_PAGE page = GetPage(FromHandle(handle), index);
     if (!page) return nullptr;
-    // PDFium groups and orders a line's words in display space, reversing them on a page turned
-    // upside down, so it reads the page unturned; the boxes it gives are in page space anyway.
-    const int rotation = FPDFPage_GetRotation(page);
-    if (rotation > 0) FPDFPage_SetRotation(page, 0);
-    FPDF_TEXTPAGE text = FPDFText_LoadPage(page);
-    if (rotation > 0) FPDFPage_SetRotation(page, rotation);
+    FPDF_TEXTPAGE text = LoadTextPage(page);
     if (!text) return nullptr;
     const DisplayMap map = MapFor(page);
-    const int count = std::max(FPDFText_CountChars(text), 0);
+    CharReader reader(text);
+    const int count = reader.count();
     std::vector<jint> codepoints(count);
     std::vector<float> boxes;
     boxes.reserve(4 * static_cast<size_t>(count));
     std::vector<jbyte> flags(count);
     std::vector<float> angles(count);
     bool turned = false;
-    bool low_taken = false;
     float angle = 0;
     for (int i = 0; i < count; ++i) {
-        const bool generated = FPDFText_IsGenerated(text, i) == 1;
-        const bool hyphen = FPDFText_IsHyphen(text, i) == 1;
-        // A /ToUnicode entry beyond the BMP comes as two characters, its UTF-16 halves; the
-        // first gets the whole codepoint, the second none.
-        unsigned int u = low_taken ? 0 : FPDFText_GetUnicode(text, i);
-        low_taken = false;
-        if (u >= 0xD800 && u <= 0xDBFF && i + 1 < count) {
-            const unsigned int low = FPDFText_GetUnicode(text, i + 1);
-            if (low >= 0xDC00 && low <= 0xDFFF) {
-                u = 0x10000 + ((u - 0xD800) << 10) + (low - 0xDC00);
-                low_taken = true;
-            }
-        }
-        codepoints[i] = Codepoint(u, hyphen);
-        flags[i] = static_cast<jbyte>((generated ? kTextGenerated : 0) | (hyphen ? kTextHyphen : 0) |
-                                      (FPDFText_HasUnicodeMapError(text, i) == 1 ? kTextUnmapped : 0));
+        reader.Read(i, &codepoints[i], &flags[i]);
         FS_RECTF r = {};
         FPDFText_GetLooseCharBox(text, i, &r);
         const float xs[] = {r.left, r.right};
@@ -618,7 +649,7 @@ Java_com_xnotes_platform_PdfiumNative_nativePageText(JNIEnv* env, jclass, jlong 
         AddBox(map, xs, ys, 2, &boxes);
         // An inferred character has no matrix of its own, so it takes the angle of the one before.
         FS_MATRIX m;
-        if (!generated && FPDFText_GetMatrix(text, i, &m)) angle = DisplayAngle(map, m);
+        if (!(flags[i] & kTextGenerated) && FPDFText_GetMatrix(text, i, &m)) angle = DisplayAngle(map, m);
         angles[i] = angle;
         turned |= angle != 0;
     }
@@ -638,5 +669,39 @@ Java_com_xnotes_platform_PdfiumNative_nativePageText(JNIEnv* env, jclass, jlong 
     env->SetObjectArrayElement(out, 1, jboxes);
     env->SetObjectArrayElement(out, 2, jflags);
     env->SetObjectArrayElement(out, 3, jangles);
+    return out;
+}
+
+// Page index's characters as nativePageText reads them, without boxes: {int[] codepoints,
+// byte[] flags}. A page the cache lacks is loaded for this read alone, so a search through a book
+// never pushes the pages on screen out of it.
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativePageChars(JNIEnv* env, jclass, jlong handle, jint index) {
+    Doc* doc = FromHandle(handle);
+    FPDF_PAGE page = CachedPage(doc, index);
+    const bool own = page == nullptr;
+    if (own) page = FPDF_LoadPage(doc->pdf, index);
+    if (!page) return nullptr;
+    FPDF_TEXTPAGE text = LoadTextPage(page);
+    std::vector<jint> codepoints;
+    std::vector<jbyte> flags;
+    if (text) {
+        CharReader reader(text);
+        codepoints.resize(reader.count());
+        flags.resize(reader.count());
+        for (int i = 0; i < reader.count(); ++i) reader.Read(i, &codepoints[i], &flags[i]);
+        FPDFText_ClosePage(text);
+    }
+    if (own) FPDF_ClosePage(page);
+    if (!text) return nullptr;
+    const auto n = static_cast<jsize>(codepoints.size());
+    jintArray jcodepoints = env->NewIntArray(n);
+    jbyteArray jflags = env->NewByteArray(n);
+    jobjectArray out = env->NewObjectArray(2, env->FindClass("java/lang/Object"), nullptr);
+    if (!jcodepoints || !jflags || !out) return nullptr;
+    env->SetIntArrayRegion(jcodepoints, 0, n, codepoints.data());
+    env->SetByteArrayRegion(jflags, 0, n, flags.data());
+    env->SetObjectArrayElement(out, 0, jcodepoints);
+    env->SetObjectArrayElement(out, 1, jflags);
     return out;
 }

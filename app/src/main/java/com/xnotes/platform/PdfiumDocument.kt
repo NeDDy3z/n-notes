@@ -3,6 +3,7 @@ package com.xnotes.platform
 import android.graphics.Bitmap
 import android.graphics.RectF
 import com.xnotes.core.pdf.PageText
+import com.xnotes.core.search.SearchText
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -92,6 +93,12 @@ class PdfiumDocument private constructor(
         val parts = PdfiumNative.nativePageText(handle, index) ?: return@withHandle null
         lastTextMs = (System.nanoTime() - t0) / 1_000_000
         PageText(parts[0] as IntArray, parts[1] as FloatArray, parts[2] as ByteArray, parts[3] as FloatArray?)
+    }
+
+    /** Page [index]'s text to search, read without boxes or keeping the page loaded; null when not open or it does not load. */
+    fun searchText(index: Int, priority: PdfPriority): SearchText? {
+        val parts = withHandle(priority) { PdfiumNative.nativePageChars(it, index) } ?: return null
+        return SearchText.ofPdf(parts[0] as IntArray, parts[1] as ByteArray)
     }
 
     /**

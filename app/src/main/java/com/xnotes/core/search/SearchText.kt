@@ -147,11 +147,17 @@ class SearchText private constructor(
         private val EMPTY = IntArray(0)
 
         /** A PDF page's text: characters without text and line-end hyphens are left out. */
-        fun of(page: PageText): SearchText {
-            val b = Builder(page.length)
-            for (i in 0 until page.length) {
-                val cp = page.codepoint(i)
-                if (cp == 0 || page.isHyphen(i)) continue
+        fun of(page: PageText): SearchText = ofPdf(page.length, page::codepoint, page::isHyphen)
+
+        /** A PDF page's text from its [codepoints] and [PageText] flag bits alone. */
+        fun ofPdf(codepoints: IntArray, flags: ByteArray): SearchText =
+            ofPdf(codepoints.size, { codepoints[it] }, { flags[it].toInt() and PageText.HYPHEN != 0 })
+
+        private inline fun ofPdf(length: Int, codepoint: (Int) -> Int, isHyphen: (Int) -> Boolean): SearchText {
+            val b = Builder(length)
+            for (i in 0 until length) {
+                val cp = codepoint(i)
+                if (cp == 0 || isHyphen(i)) continue
                 b.add(cp, i, i)
             }
             return b.build()
