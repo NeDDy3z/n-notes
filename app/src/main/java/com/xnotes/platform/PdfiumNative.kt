@@ -18,8 +18,8 @@ object PdfiumNative {
 
     @JvmStatic external fun nativeClose(doc: Long)
 
-    /** Each page's width and height in points, as displayed (its /Rotate applied); 0 for a broken page. */
-    @JvmStatic external fun nativePageSizes(doc: Long): FloatArray?
+    /** Width and height in points, as displayed (/Rotate applied), of [count] pages from [from]; 0 when broken. */
+    @JvmStatic external fun nativePageSizes(doc: Long, from: Int, count: Int): FloatArray?
 
     /** See [PdfiumDocument.render]; it stops early once [lifetime] or [token] is cancelled. */
     @JvmStatic external fun nativeRender(

@@ -169,14 +169,17 @@ Java_com_xnotes_platform_PdfiumNative_nativeClose(JNIEnv*, jclass, jlong handle)
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_xnotes_platform_PdfiumNative_nativePageSizes(JNIEnv* env, jclass, jlong handle) {
+Java_com_xnotes_platform_PdfiumNative_nativePageSizes(JNIEnv* env, jclass, jlong handle, jint from,
+                                                      jint count) {
     FPDF_DOCUMENT pdf = FromHandle(handle)->pdf;
-    const int count = FPDF_GetPageCount(pdf);
+    const int pages = FPDF_GetPageCount(pdf);
+    from = from < 0 ? 0 : (from > pages ? pages : from);
+    count = count < 0 ? 0 : (count > pages - from ? pages - from : count);
     // FPDF_GetPageSizeByIndexF reads the page dictionary only, never the content stream.
     std::vector<float> sizes(2 * static_cast<size_t>(count));
     for (int i = 0; i < count; ++i) {
         FS_SIZEF size = {};
-        if (FPDF_GetPageSizeByIndexF(pdf, i, &size)) {
+        if (FPDF_GetPageSizeByIndexF(pdf, from + i, &size)) {
             sizes[2 * i] = size.width;
             sizes[2 * i + 1] = size.height;
         }

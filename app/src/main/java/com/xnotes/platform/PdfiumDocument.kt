@@ -48,9 +48,13 @@ class PdfiumDocument private constructor(
         return Opened(out[1], null)
     }
 
-    /** Width and height in points of each page as displayed (/Rotate applied); null when not open. */
-    fun pageSizes(priority: PdfPriority = PdfPriority.INTERACTIVE): FloatArray? =
-        withHandle(priority) { PdfiumNative.nativePageSizes(it) }
+    /**
+     * Width and height in points of [count] pages from [from], as displayed (/Rotate applied),
+     * 0 for a page that does not load; null when not open. Every page by default.
+     */
+    fun pageSizes(
+        from: Int = 0, count: Int = Int.MAX_VALUE, priority: PdfPriority = PdfPriority.INTERACTIVE,
+    ): FloatArray? = withHandle(priority) { PdfiumNative.nativePageSizes(it, from, count) }
 
     /**
      * Renders the part of page [index] at ([left], [top]) of a [fullW] x [fullH] raster of the

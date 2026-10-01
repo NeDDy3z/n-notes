@@ -266,6 +266,7 @@
     <string name="save">保存</string>
     <string name="create">创建</string>
     <string name="err_save_that_note">无法保存该笔记。</string>
+    <string name="err_pdf_password">该 PDF 受密码保护，xnotes 无法打开。</string>
     <string name="err_create_folder">无法创建该文件夹。</string>
     <string name="err_create_canvas">无法创建画布。</string>
     <string name="err_create_note">无法创建笔记。</string>

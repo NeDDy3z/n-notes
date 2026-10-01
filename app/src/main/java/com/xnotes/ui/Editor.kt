@@ -1189,7 +1189,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     (content.bottom - pr.top).coerceAtMost(cover.h) + cover.top,
                 )
                 if (local.w > 0.0 && local.h > 0.0) {
-                    state.paintPageBackground?.invoke(page, r, res, local)
+                    // The user is waiting on this capture, so it skips ahead of other PDF renders.
+                    com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.INTERACTIVE) {
+                        state.paintPageBackground?.invoke(page, r, res, local)
+                    }
                     state.paintFlow?.invoke(page, r, local)
                 }
                 for (item in itemsSnapshot(page)) item.paint(r)
@@ -1233,8 +1236,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         com.xnotes.platform.SystemClipboard.imageUri(appContext)
 
     private fun rebuildPdfSource() {
-        pdfSource?.close()
-        pdfSource = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.create(appContext, it) }
+        // Opening never waits, and queued first it runs before the old document's close.
+        val old = pdfSource
+        pdfSource = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.open(appContext, it) }
+        old?.close()
         pdfSource?.onImagesReady = { index ->
             view.post {
                 // The sweep found page [index]'s locations: snap the canvas background (refreshBackground
@@ -1321,13 +1326,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 // The raster covers the page's content box only; a margin is paper beside it.
                 val slice = clampToContent(region, page)
                 if (slice != null) {
-                    val fullW = (page.width * res).toInt()
-                    val fullH = (page.height * res).toInt()
                     val rx = (slice.left * res).toInt()
                     val ry = (slice.top * res).toInt()
                     val rw = kotlin.math.ceil(slice.w * res).toInt()
                     val rh = kotlin.math.ceil(slice.h * res).toInt()
-                    src.renderRegion(pi, fullW, fullH, rx, ry, rw, rh, pdfPageFilter())?.let { bg ->
+                    // A point is dpi/72 content px, not a fit to the paper: older imports stored whole
+                    // points, so their PDF runs past the paper by under a point, cropped as before.
+                    val pxPerPt = res * state.document.dpi / 72.0
+                    src.renderRegion(pi, pxPerPt, rx, ry, rw, rh, pdfPageFilter())?.let { bg ->
                         renderer.drawRaster(bg, slice)
                         bg.recycle()
                     }
@@ -1687,10 +1693,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onProgress: (Int, Int) -> Unit = { _, _ -> },
         isCancelled: () -> Boolean = { false },
     ) {
-        // Render against a private PdfSource built from the document's own bytes, not the
-        // live [pdfSource]: export now runs off the main thread, and Android's PdfRenderer
-        // is single-threaded — sharing it with the canvas's background cache builder would
-        // crash. A plain note has null bytes and renders identically.
+        // A private PdfSource, not the live [pdfSource], which a note switch mid-export would
+        // close. A plain note has no PDF and renders identically.
         val src = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.create(appContext, it) }
         try {
             com.xnotes.platform.PdfExporter.export(
@@ -2293,7 +2297,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         r.translate(-cover.left, -cover.top)
         if (!active()) return null
         // Paints the PDF page too, not just the ruling.
-        state.paintPageBackground?.invoke(page, r, scale, cover)
+        com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
+            state.paintPageBackground?.invoke(page, r, scale, cover)
+        }
         state.paintFlow?.invoke(page, r, cover)
         for (item in itemsSnapshot(page)) {
             if (!active()) return null
@@ -2590,7 +2596,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                         if (filter.stampImages) src.ensureImageRects(pi)
                         val pw = (page.width * scale).toInt().coerceAtLeast(1)
                         val ph = (page.height * scale).toInt().coerceAtLeast(1)
-                        src.renderPage(pi, pw, ph, filter)?.let { bg ->
+                        com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
+                            src.renderPage(pi, pw, ph, filter)
+                        }?.let { bg ->
                             r.drawRaster(bg, Rect(0.0, 0.0, page.width, page.height))
                             bg.recycle()
                         }
@@ -3152,7 +3160,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Imports the PDF at [pdfFile] into a new `.xnote` under [parentDocId] (named after [rawName]);
      *  returns its URI, or null. The PDF is streamed straight into the bundle, never held in RAM. IO. */
     fun createPdfNoteFile(treeUri: String, parentDocId: String, rawName: String, pdfFile: java.io.File): String? {
-        val source = com.xnotes.platform.PdfSource.create(appContext, pdfFile) ?: return null
+        val source = com.xnotes.platform.PdfSource.open(appContext, pdfFile)
+        lastImportError = source.openError
+        if (source.pageCount == 0) {
+            source.close()
+            return null
+        }
         val doc = com.xnotes.platform.PdfImporter.import(source, state.document.dpi) // doc.pdfFile = pdfFile
         stampNewNoteDefaults(doc)
         doc.created = System.currentTimeMillis()
@@ -3161,6 +3174,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         source.close()
         return uri
     }
+
+    /** Why the last PDF given to [createPdfNoteFile] did not open, null when it did. */
+    var lastImportError: com.xnotes.platform.PdfOpenError? = null
+        private set
 
     /** Streams [input] to a private temp file for a pending import; returns it, or null. The caller
      *  owns the file (it's handed to [requestImport]). Copies in small buffers so a large pick never
@@ -5127,9 +5144,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         sub.pages.addAll(pages) // share the page objects; export only reads them
         sub.style = state.document.style // carry the note's "all pages" style into the subset export
         sub.templates = state.document.templates
-        // A private source per export — see [exportPdf]: the canvas's cache thread may be
-        // touching the live [pdfSource], and PdfRenderer can't be shared across threads. The
-        // shared PDF file is read-only and owned by the open document, so closing src won't delete it.
+        // A private source per export, see [exportPdf]. The shared PDF file is read-only and owned
+        // by the open document, so closing src won't delete it.
         val src = sub.pdfFile?.let { com.xnotes.platform.PdfSource.create(appContext, it) }
         try {
             com.xnotes.platform.PdfExporter.export(

@@ -3,10 +3,8 @@ package com.xnotes.platform
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
@@ -32,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.roundToInt
 
 /**
  * A tappable link discovered on a PDF page. [frac] is the link's rectangle as a page fraction
@@ -42,10 +41,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 data class PdfLink(val frac: RectF, val url: String?, val destPage: Int?)
 
 /**
- * Reads and rasterizes a PDF via the framework [PdfRenderer] (PAL §14). Pages
- * are reported in PostScript points and rendered on demand into ARGB surfaces;
- * a [PdfPageFilter] applies the note's colour filters (invert/contrast/…) to
- * the rendered pixels.
+ * Reads and rasterizes a PDF through [PdfiumDocument] (PAL §14). Pages are
+ * reported in PostScript points and rendered on demand into ARGB surfaces; a
+ * [PdfPageFilter] applies the note's colour filters (invert/contrast/…) to the
+ * rendered pixels.
  *
  * When the filter inverts, [renderPage]/[renderRegion] can keep embedded images
  * in their original colours ([PdfPageFilter.stampImages]): the whole page is
@@ -57,14 +56,23 @@ data class PdfLink(val frac: RectF, val url: String?, val destPage: Int?)
  */
 class PdfSource private constructor(
     private val appContext: Context,
-    /** The on-disk PDF this source reads (memory-mapped by the renderer). Owned by the caller, **not**
-     *  by this PdfSource — [close] never deletes it, so several sources can read one file safely. */
+    /** The on-disk PDF this source reads. Owned by the caller, **not** by this PdfSource — [close]
+     *  never deletes it, so several sources can read one file safely. */
     val file: File,
-    private val pfd: ParcelFileDescriptor,
-    private val renderer: PdfRenderer,
+    private val pdf: PdfiumDocument,
 ) {
-    /** Fixed for the document's life, so it is read once and never off a closed [renderer]. */
-    val pageCount: Int = renderer.pageCount
+    /** Pages in the PDF, 0 when it did not open. Waits for the open, so not on the main thread. */
+    val pageCount: Int get() = pdf.pageCount
+
+    /** Why the PDF did not open, null when it did. Waits for the open. */
+    val openError: PdfOpenError? get() = pdf.error
+
+    /** Page sizes in points already read, by page. */
+    private val pageSizes = ConcurrentHashMap<Int, Pair<Float, Float>>()
+
+    /** The framework renderer, only for links until they move to PDFium; opened on first use. */
+    private var linkPfd: ParcelFileDescriptor? = null
+    private var linkRenderer: PdfRenderer? = null
 
     /** PdfBox model, loaded lazily the first time image boxes are requested. Guarded by [pdfBoxLock]. */
     @Volatile private var pdfBoxDoc: PDDocument? = null
@@ -72,8 +80,8 @@ class PdfSource private constructor(
 
     /** Set once the image sweep finishes and [releasePdfBoxModel] closes [pdfBoxDoc] to reclaim its
      *  heap; [pdfBoxDocument] won't reload it, since every page's image rects are already cached.
-     *  (Links don't use PdfBox at all — they read native annotations from the framework [renderer]
-     *  on API 35+; PdfBox here is image-only.) */
+     *  (Links don't use PdfBox at all — they read native annotations from the framework
+     *  [PdfRenderer] on API 35+; PdfBox here is image-only.) */
     private var pdfBoxReleased = false
 
     /**
@@ -137,73 +145,68 @@ class PdfSource private constructor(
     /** Latches true once [prepAllImages] has enqueued the whole-document sweep (once per source). */
     @Volatile private var sweepRequested = false
 
-    /** Page size in points (1 pt = 1/72 inch). */
-    @Synchronized
-    fun pageSizePoints(index: Int): Pair<Int, Int>? {
-        if (closed || index !in 0 until pageCount) return null
-        val page = renderer.openPage(index)
-        val size = page.width to page.height
-        page.close()
-        return size
+    /** Page size in points (1 pt = 1/72 inch) as displayed, its /Rotate applied; 0x0 for a broken page. */
+    fun pageSizePoints(index: Int): Pair<Float, Float>? {
+        pageSizes[index]?.let { return it }
+        if (closed) return null
+        val priority = callerPriority.get() ?: PdfPriority.VISIBLE_RENDER
+        val s = pdf.pageSizes(index, 1, priority)?.takeIf { it.size == 2 } ?: return null
+        return (s[0] to s[1]).also { pageSizes[index] = it }
     }
 
-    @Synchronized
+    /** Every page's size in points, width then height, in one read (for importing a whole PDF). */
+    fun allPageSizePoints(): FloatArray? = if (closed) null else pdf.pageSizes()
+
+    /** The whole page [index] fitted to [widthPx] × [heightPx]. */
     fun renderPage(index: Int, widthPx: Int, heightPx: Int, filter: PdfPageFilter = PdfPageFilter.NONE): AndroidRasterSurface? {
-        if (closed || index !in 0 until pageCount) return null
         val w = widthPx.coerceIn(1, MAX_DIM)
         val h = heightPx.coerceIn(1, MAX_DIM)
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        bmp.eraseColor(Color.WHITE)
-        val page = renderer.openPage(index)
-        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-        page.close()
-        val m = filter.pageMatrix ?: return AndroidRasterSurface(bmp)
-
-        val filtered = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        Canvas(filtered).drawBitmap(bmp, 0f, 0f, matrixPaint(m))
-        if (filter.stampImages) {
-            keepImageColors(index, filtered, bmp, fullWpx = w, fullHpx = h, offsetXpx = 0, offsetYpx = 0)
-        }
-        bmp.recycle()
-        return AndroidRasterSurface(filtered)
+        return render(index, w, h, 0, 0, w, h, filter)
     }
 
     /**
      * Render only the sub-rectangle ([regionLeftPx], [regionTopPx], [regionWpx], [regionHpx]) of
-     * the page — coordinates in the page's own pixel space, where the whole page spans
-     * [fullWpx] × [fullHpx] — into a [regionWpx] × [regionHpx] bitmap. The page is never allocated
-     * at full size; only the region bitmap is, so a high-zoom viewport region can be rasterized at
-     * full resolution without a giant whole-page bitmap.
+     * page [index] drawn at [pxPerPt] pixels per point, in pixels from the page's top-left corner,
+     * into a [regionWpx] × [regionHpx] bitmap. The page is never allocated at full size; only the
+     * region bitmap is, so a high-zoom viewport region can be rasterized at full resolution
+     * without a giant whole-page bitmap.
      */
-    @Synchronized
     fun renderRegion(
         index: Int,
-        fullWpx: Int,
-        fullHpx: Int,
+        pxPerPt: Double,
         regionLeftPx: Int,
         regionTopPx: Int,
         regionWpx: Int,
         regionHpx: Int,
         filter: PdfPageFilter = PdfPageFilter.NONE,
     ): AndroidRasterSurface? {
-        if (closed || index !in 0 until pageCount) return null
-        val w = regionWpx.coerceIn(1, MAX_DIM)
-        val h = regionHpx.coerceIn(1, MAX_DIM)
+        val (wPts, hPts) = pageSizePoints(index) ?: return null
+        val fullW = (wPts * pxPerPt).roundToInt()
+        val fullH = (hPts * pxPerPt).roundToInt()
+        if (fullW <= 0 || fullH <= 0) return null
+        return render(
+            index, fullW, fullH, regionLeftPx, regionTopPx,
+            regionWpx.coerceIn(1, MAX_DIM), regionHpx.coerceIn(1, MAX_DIM), filter,
+        )
+    }
+
+    /** Renders the [w] × [h] region at ([left], [top]) of a [fullW] × [fullH] raster of page [index]. */
+    private fun render(
+        index: Int, fullW: Int, fullH: Int, left: Int, top: Int, w: Int, h: Int, filter: PdfPageFilter,
+    ): AndroidRasterSurface? {
+        if (closed) return null
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        bmp.eraseColor(Color.WHITE)
-        val page = renderer.openPage(index)
-        val m = Matrix().apply {
-            setScale(fullWpx.toFloat() / page.width, fullHpx.toFloat() / page.height) // points → full-page px
-            postTranslate(-regionLeftPx.toFloat(), -regionTopPx.toFloat()) // shift the region's origin to (0,0)
+        val priority = callerPriority.get() ?: PdfPriority.VISIBLE_RENDER
+        if (!pdf.render(index, bmp, fullW, fullH, left, top, priority)) {
+            bmp.recycle()
+            return null
         }
-        page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-        page.close()
-        val pm = filter.pageMatrix ?: return AndroidRasterSurface(bmp)
+        val m = filter.pageMatrix ?: return AndroidRasterSurface(bmp)
 
         val filtered = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        Canvas(filtered).drawBitmap(bmp, 0f, 0f, matrixPaint(pm))
+        Canvas(filtered).drawBitmap(bmp, 0f, 0f, matrixPaint(m))
         if (filter.stampImages) {
-            keepImageColors(index, filtered, bmp, fullWpx, fullHpx, offsetXpx = regionLeftPx, offsetYpx = regionTopPx)
+            keepImageColors(index, filtered, bmp, fullW, fullH, offsetXpx = left, offsetYpx = top)
         }
         bmp.recycle()
         return AndroidRasterSurface(filtered)
@@ -375,8 +378,7 @@ class PdfSource private constructor(
     }
 
     /** The single daemon worker for all link parsing (warm + guaranteed tap), created on first use;
-     *  null after [close]. Keeps link parsing off the UI thread; the native read itself serializes
-     *  with rasterizing on the instance monitor (one open [PdfRenderer] page at a time). */
+     *  null after [close]. Keeps link parsing off the UI thread. */
     private fun linksWorker(): ExecutorService? = synchronized(executorLock) {
         if (closed) return@synchronized null
         linksExecutor ?: Executors.newSingleThreadExecutor { r ->
@@ -399,18 +401,20 @@ class PdfSource private constructor(
 
     /**
      * Read [index]'s links from the framework [PdfRenderer]'s native annotation APIs (API 35+) as
-     * page-fraction rects (top-left origin) plus targets. This rides the renderer xnotes already holds
-     * open for rasterizing — pdfium keeps the document parsed, so opening one page is cheap and native,
-     * with **no** PdfBox model, no Java-heap object pool, and no full-file re-parse (the per-parse
-     * [PDDocument] reload that drained battery is gone). [PdfRenderer] is single-threaded and allows
-     * only one open page at a time, so this serializes with rasterizing on the instance monitor; the
-     * call is a quick native read off the UI thread. Bounds come back in the rendered (display) point
-     * space, so normalizing is just divide-by-page-size — no crop-box math and no y-flip.
+     * page-fraction rects (top-left origin) plus targets, through a renderer opened just for links.
+     * [PdfRenderer] allows only one open page at a time, so reads serialize on the instance
+     * monitor. Bounds come back in the rendered (display) point space, so normalizing is just
+     * divide-by-page-size — no crop-box math and no y-flip.
      */
     @Synchronized
     private fun parseNativeLinks(index: Int): List<PdfLink> {
         if (closed || Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return emptyList()
         if (index !in 0 until pageCount) return emptyList()
+        val renderer = linkRenderer ?: run {
+            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            linkPfd = fd
+            PdfRenderer(fd).also { linkRenderer = it }
+        }
         val page = renderer.openPage(index)
         try {
             val w = page.width.toFloat()
@@ -504,9 +508,8 @@ class PdfSource private constructor(
     }
 
     /** Close the PdfBox model once the image sweep has cached every page's rects, reclaiming its heap
-     *  (the parsed object model and any cached resources). The framework [renderer] is independent and
-     *  stays open for rasterizing, and image rects read from their cache, so nothing reloads it. Links
-     *  don't use PdfBox at all — they read native annotations from the framework [renderer] (API 35+).
+     *  (the parsed object model and any cached resources). Rendering is PDFium's, and image rects read
+     *  from their cache, so nothing reloads it. Links don't use PdfBox at all (see [parseNativeLinks]).
      *  Runs on the prep worker after the last parse; serialized with parsing on [pdfBoxLock]. */
     private fun releasePdfBoxModel() = synchronized(pdfBoxLock) {
         runCatching { pdfBoxDoc?.close() }
@@ -523,10 +526,11 @@ class PdfSource private constructor(
             runCatching { linksExecutor?.shutdownNow() }
         }
         runCatching { pdfBoxDoc?.close() }
-        // On the render monitor: [closed] is already set, so this only waits out a live raster.
+        pdf.close()
+        // On the link monitor: [closed] is already set, so this only waits out a link read.
         synchronized(this) {
-            runCatching { renderer.close() }
-            runCatching { pfd.close() }
+            runCatching { linkRenderer?.close() }
+            runCatching { linkPfd?.close() }
         }
         // [file] is owned by the caller (Document / import staging); deleting it here is not our job.
     }
@@ -606,21 +610,33 @@ class PdfSource private constructor(
         /** Cap on PdfBox's in-RAM scratch while parsing image boxes; overflow spills to temp files. */
         private const val SCRATCH_MAIN_MEM_BYTES = 32L * 1024 * 1024
 
-        /**
-         * Opens [file] as a PDF (memory-mapped, never read whole into RAM), or null if it cannot be
-         * opened. The file is **not** copied or owned: the caller keeps it alive for the source's
-         * lifetime and deletes it afterwards.
-         */
-        fun create(context: Context, file: File): PdfSource? = try {
-            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-            val renderer = PdfRenderer(pfd)
-            if (renderer.pageCount == 0) {
-                renderer.close(); pfd.close(); null
-            } else {
-                PdfSource(context.applicationContext, file, pfd, renderer)
+        private val callerPriority = ThreadLocal<PdfPriority>()
+
+        /** Runs [block] with the renders it asks for queued at [priority] instead of VISIBLE_RENDER. */
+        fun <T> withPriority(priority: PdfPriority, block: () -> T): T {
+            val outer = callerPriority.get()
+            callerPriority.set(priority)
+            try {
+                return block()
+            } finally {
+                if (outer == null) callerPriority.remove() else callerPriority.set(outer)
             }
-        } catch (_: Exception) {
-            null
+        }
+
+        /**
+         * Starts opening [file] as a PDF and returns at once, so the main thread may call it; a PDF
+         * that does not open just renders nothing. The file is **not** copied or owned: the caller
+         * keeps it alive for the source's lifetime and deletes it afterwards.
+         */
+        fun open(context: Context, file: File): PdfSource =
+            PdfSource(context.applicationContext, file, PdfiumDocument.open(file))
+
+        /** Opens [file] and waits for it: null when it does not open or has no pages. Not on the main thread. */
+        fun create(context: Context, file: File): PdfSource? {
+            val source = open(context, file)
+            if (source.pageCount > 0) return source
+            source.close()
+            return null
         }
     }
 }

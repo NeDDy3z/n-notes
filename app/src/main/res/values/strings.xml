@@ -278,6 +278,7 @@
     <string name="save">Save</string>
     <string name="create">Create</string>
     <string name="err_save_that_note">Couldn’t save that note.</string>
+    <string name="err_pdf_password">That PDF is password-protected, which xnotes can’t open.</string>
     <string name="err_create_folder">Couldn’t create that folder.</string>
     <string name="err_create_canvas">Couldn’t create the canvas.</string>
     <string name="err_create_note">Couldn’t create the note.</string>

@@ -45,10 +45,12 @@ object PdfImporter {
     fun import(source: PdfSource, dpi: Int = PageSize.DEFAULT_DPI): Document {
         val doc = Document(dpi = dpi)
         doc.pdfFile = source.file
-        for (i in 0 until source.pageCount) {
-            val (wPts, hPts) = source.pageSizePoints(i) ?: break
-            if (wPts <= 0 || hPts <= 0) {
-                // Android 15+ reports a page it can't load, or one with no visible area, as 0x0
+        val sizes = source.allPageSizePoints() ?: FloatArray(0)
+        for (i in 0 until sizes.size / 2) {
+            val wPts = sizes[2 * i]
+            val hPts = sizes[2 * i + 1]
+            if (wPts < 1f || hPts < 1f) {
+                // A page that doesn't load (0x0), or one too small to see, takes the previous page's size
                 val (w, h) = doc.pages.lastOrNull()?.let { it.width to it.height }
                     ?: PageSize.A4.pixels(com.xnotes.core.model.Orientation.PORTRAIT, dpi)
                 doc.pages.add(Page(w, h))
