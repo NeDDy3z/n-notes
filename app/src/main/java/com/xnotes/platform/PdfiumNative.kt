@@ -19,7 +19,7 @@ object PdfiumNative {
 
     @JvmStatic external fun nativeClose(doc: Long)
 
-    /** Closes [doc]'s loaded pages; they load again when next used. */
+    /** Frees [doc]'s loaded pages, fonts and cached glyphs; they load again when next used. */
     @JvmStatic external fun nativeTrim(doc: Long)
 
     /** Pages loaded across all documents; it reads no PDFium state, so any thread may ask. */

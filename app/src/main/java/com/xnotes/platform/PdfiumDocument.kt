@@ -126,7 +126,7 @@ class PdfiumDocument private constructor(
         return pdfium.call(priority, *tokens) { if (handle == 0L) null else body(handle) }
     }
 
-    /** Closes this document's loaded pages, which reload when next used. Never blocks. */
+    /** Frees this document's loaded pages, fonts and cached glyphs, which reload when next used. Never blocks. */
     fun trim() {
         pdfium.submit(PdfPriority.INTERACTIVE, lifetime) { if (handle != 0L) PdfiumNative.nativeTrim(handle) }
     }
@@ -160,7 +160,7 @@ class PdfiumDocument private constructor(
         /** Starts opening [file] on the shared PDFium thread. */
         fun open(file: File): PdfiumDocument = PdfiumDocument(file, PdfiumThread.shared)
 
-        /** Closes every open document's loaded pages, for when the system is short on memory. */
+        /** Frees every open document's pages, fonts and glyphs, for when the app is hidden or short on memory. */
         fun trimAll() {
             for (doc in live) doc.trim()
         }

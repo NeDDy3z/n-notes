@@ -43,6 +43,7 @@ struct OutlineWalk {
 // An open document, the file it reads and its most recently used pages, newest last.
 struct Doc {
     int fd = -1;
+    unsigned long size = 0;
     FPDF_DOCUMENT pdf = nullptr;
     // Only for documents with a form; PDFium keeps a pointer to form_info.
     FPDF_FORMFILLINFO form_info = {};
@@ -69,6 +70,22 @@ int ReadBlock(void* param, unsigned long pos, unsigned char* buf, unsigned long 
     return 1;
 }
 
+// Loads the document from doc's file; null when it does not parse.
+FPDF_DOCUMENT Load(Doc* doc) {
+    FPDF_FILEACCESS access = {};
+    access.m_FileLen = doc->size;
+    access.m_GetBlock = ReadBlock;
+    access.m_Param = doc;
+    return FPDF_LoadCustomDocument(&access, nullptr);
+}
+
+// Form fields are widget annotations, which only FPDF_FFLDraw paints.
+void InitForm(Doc* doc) {
+    if (FPDF_GetFormType(doc->pdf) == FORMTYPE_NONE) return;
+    doc->form_info.version = 1;
+    doc->form = FPDFDOC_InitFormFillEnvironment(doc->pdf, &doc->form_info);
+}
+
 // Opens path into doc, returning an FPDF_ERR_* code.
 jint Open(Doc* doc, const char* path) {
     doc->fd = open(path, O_RDONLY | O_CLOEXEC);
@@ -76,17 +93,10 @@ jint Open(Doc* doc, const char* path) {
     if (doc->fd < 0 || fstat64(doc->fd, &st) != 0) return FPDF_ERR_FILE;
     // FPDF_FILEACCESS addresses the file with an unsigned long, 32 bits on armv7.
     if (static_cast<unsigned long long>(st.st_size) > ULONG_MAX) return FPDF_ERR_FILE;
-    FPDF_FILEACCESS access = {};
-    access.m_FileLen = static_cast<unsigned long>(st.st_size);
-    access.m_GetBlock = ReadBlock;
-    access.m_Param = doc;
-    doc->pdf = FPDF_LoadCustomDocument(&access, nullptr);
+    doc->size = static_cast<unsigned long>(st.st_size);
+    doc->pdf = Load(doc);
     if (!doc->pdf) return static_cast<jint>(FPDF_GetLastError());
-    // Form fields are widget annotations, which only FPDF_FFLDraw paints.
-    if (FPDF_GetFormType(doc->pdf) != FORMTYPE_NONE) {
-        doc->form_info.version = 1;
-        doc->form = FPDFDOC_InitFormFillEnvironment(doc->pdf, &doc->form_info);
-    }
+    InitForm(doc);
     return FPDF_ERR_SUCCESS;
 }
 
@@ -286,12 +296,22 @@ Java_com_xnotes_platform_PdfiumNative_nativeClose(JNIEnv*, jclass, jlong handle)
     delete doc;
 }
 
-// Closes the document's loaded pages, the bulk of its memory; they load again when next used.
+// Frees what the document holds: its loaded pages, and, by loading it afresh, the fonts and the
+// glyphs they cached at every size drawn, which grow with each zoom level. Everything loads again
+// when next used. Skipped while an outline walk holds bookmarks of the old document.
 extern "C" JNIEXPORT void JNICALL
 Java_com_xnotes_platform_PdfiumNative_nativeTrim(JNIEnv*, jclass, jlong handle) {
     Doc* doc = FromHandle(handle);
     for (const auto& cached : doc->pages) ClosePage(doc, cached.second);
     doc->pages.clear();
+    if (!doc->outline.stack.empty()) return;
+    FPDF_DOCUMENT fresh = Load(doc);
+    if (!fresh) return;
+    if (doc->form) FPDFDOC_ExitFormFillEnvironment(doc->form);
+    doc->form = nullptr;
+    FPDF_CloseDocument(doc->pdf);
+    doc->pdf = fresh;
+    InitForm(doc);
 }
 
 // Pages loaded across all documents; it reads no PDFium state, so any thread may ask.
