@@ -1,6 +1,7 @@
 package com.xnotes.platform
 
 import android.graphics.Bitmap
+import android.graphics.RectF
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -62,6 +63,22 @@ class PdfiumDocument private constructor(
      */
     fun imageRects(index: Int, priority: PdfPriority): FloatArray? =
         withHandle(priority) { PdfiumNative.nativeImageRects(it, index) }
+
+    /**
+     * The link areas on page [index], one per line of a link that spans several, with where each
+     * goes: another page of this PDF, or a URI. Null when not open.
+     */
+    fun links(index: Int, priority: PdfPriority): List<PdfLink>? = withHandle(priority) { handle ->
+        val parts = PdfiumNative.nativeLinks(handle, index) ?: return@withHandle null
+        val boxes = parts[0] as FloatArray
+        val dests = parts[1] as IntArray
+        val uris = parts[2] as Array<*>
+        List(dests.size) { i ->
+            val rect = RectF(boxes[4 * i], boxes[4 * i + 1], boxes[4 * i + 2], boxes[4 * i + 3])
+            val uri = (uris[i] as ByteArray?)?.toString(Charsets.UTF_8)
+            PdfLink(rect, uri, dests[i].takeIf { it >= 0 && uri == null })
+        }
+    }
 
     /**
      * Renders the part of page [index] at ([left], [top]) of a [fullW] x [fullH] raster of the

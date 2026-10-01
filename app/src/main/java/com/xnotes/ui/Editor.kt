@@ -1102,17 +1102,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
             val pdfIdx = page.pdfPage ?: return@onLinkTap false
             if (page.width <= 0.0 || page.height <= 0.0) return@onLinkTap false
-            val fx = (pageLocal.x / page.width).toFloat()
-            val fy = (pageLocal.y / page.height).toFloat()
+            // Into PDF points, at the same dpi/72 the page renders with.
+            val ptPerPx = 72.0 / state.document.dpi
+            val x = (pageLocal.x * ptPerPx).toFloat()
+            val y = (pageLocal.y * ptPerPx).toFloat()
             if (src.hasLinks(pdfIdx)) {
-                val link = src.linkAt(pdfIdx, fx, fy) ?: return@onLinkTap false
+                val link = src.linkAt(pdfIdx, x, y) ?: return@onLinkTap false
                 followLink(link)
                 true
             } else {
                 // Not parsed yet: parse off the main thread, then open on the main thread. The tap
                 // is not blocked or consumed; on the first tap of a page the link opens a moment later.
                 src.requestLinks(pdfIdx) {
-                    view.post { if (pdfSource === src) src.linkAt(pdfIdx, fx, fy)?.let { followLink(it) } }
+                    view.post { if (pdfSource === src) src.linkAt(pdfIdx, x, y)?.let { followLink(it) } }
                 }
                 false
             }

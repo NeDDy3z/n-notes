@@ -7,9 +7,6 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
-import android.graphics.pdf.PdfRenderer
-import android.os.Build
-import android.os.ParcelFileDescriptor
 import com.xnotes.canvas.PdfPageFilter
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -19,11 +16,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
 /**
- * A tappable link discovered on a PDF page. [frac] is the link's rectangle as a page fraction
- * (0..1, top-left origin, matching the rendered bitmap). Exactly one target is set: an external
- * [url] (web/mailto), or an internal [destPage] (0-based source-PDF page to jump to).
+ * A tappable link discovered on a PDF page. [rect] is the link's area in points as the page is
+ * displayed (top-left origin, /Rotate applied). Exactly one target is set: an external [url]
+ * (web/mailto), or an internal [destPage] (0-based source-PDF page to jump to).
  */
-data class PdfLink(val frac: RectF, val url: String?, val destPage: Int?)
+data class PdfLink(val rect: RectF, val url: String?, val destPage: Int?)
 
 /**
  * Reads and rasterizes a PDF through [PdfiumDocument] (PAL §14). Pages are
@@ -54,15 +51,7 @@ class PdfSource private constructor(
     /** Image boxes in points (l, t, r, b per image, top-left origin) already read, by page. */
     private val imageRects = ConcurrentHashMap<Int, FloatArray>()
 
-    /** The framework renderer, only for links until they move to PDFium; opened on first use. */
-    private var linkPfd: ParcelFileDescriptor? = null
-    private var linkRenderer: PdfRenderer? = null
-
-    /** PDF hyperlinks are read straight from the framework [PdfRenderer] (pdfium), which only exposes
-     *  link annotations on Android 15+ (API 35). Below that the feature is **disabled**. */
-    private val linksSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM
-
-    /** Immutable snapshot of one page's parsed links (page fractions, top-left origin). */
+    /** Immutable snapshot of one page's parsed links. */
     private class PageLinks(val index: Int, val links: List<PdfLink>)
 
     /** Only the **current** page's links are held, replaced as the canvas moves — so link memory is
@@ -194,19 +183,19 @@ class PdfSource private constructor(
         return rects.also { imageRects[index] = it }
     }
 
-    // --- Links (read from the framework PdfRenderer's native annotation APIs; API 35+ only) ---
+    // --- Links ---
 
     /** True when [index] is the page whose links are currently held (possibly an empty list). */
     fun hasLinks(index: Int): Boolean = current?.index == index
 
-    /** The topmost link whose rect (page fraction, top-left origin) contains ([fx], [fy]), or null.
+    /** The topmost link whose area contains ([x], [y]), in points as displayed, or null.
      *  Non-blocking: returns null unless [index] is the currently-held page — call [requestLinks] to
      *  parse it off the main thread. Later annotations paint on top, so iterate back-to-front. */
-    fun linkAt(index: Int, fx: Float, fy: Float): PdfLink? {
+    fun linkAt(index: Int, x: Float, y: Float): PdfLink? {
         val c = current ?: return null
         if (c.index != index) return null
         for (i in c.links.indices.reversed()) {
-            if (c.links[i].frac.contains(fx, fy)) return c.links[i]
+            if (c.links[i].rect.contains(x, y)) return c.links[i]
         }
         return null
     }
@@ -216,7 +205,7 @@ class PdfSource private constructor(
      *  pages just overwrites the target, so only the page(s) the scroll settles on get parsed — never
      *  a per-page backlog. Fire-and-forget: it only fills the cache so a later tap finds it hot. */
     fun warmLinks(index: Int) {
-        if (closed || !linksSupported || index < 0) return
+        if (closed || index < 0) return
         desiredLinkPage = index
         if (current?.index != index) pumpLinks()
     }
@@ -251,7 +240,7 @@ class PdfSource private constructor(
      *  way a stale [warmLinks] request is), then invoke [onReady] on the worker thread (the caller hops
      *  to the main thread itself). Cache-checked, so it no-ops if warming already parsed the page. */
     fun requestLinks(index: Int, onReady: () -> Unit) {
-        if (closed || !linksSupported) return
+        if (closed) return
         if (current?.index == index) { onReady(); return }
         val executor = linksWorker() ?: return
         runCatching {
@@ -274,63 +263,14 @@ class PdfSource private constructor(
 
     /**
      * Parse [index]'s links and make them the current page's links, replacing (evicting) the previous
-     * page's — only one page is ever held, so link memory stays O(1). The links are read straight from
-     * the framework [PdfRenderer] (see [parseNativeLinks]); on Android versions below API 35 the parse
-     * yields nothing and the feature is inert (entry points already gate on [linksSupported]).
+     * page's — only one page is ever held, so link memory stays O(1). Interactive priority even when
+     * warming: the page is usually loaded already for its render, so a read takes well under 1 ms.
      */
     private fun setCurrentLinks(index: Int): List<PdfLink> {
         current?.let { if (it.index == index) return it.links }
-        val result = runCatching { parseNativeLinks(index) }.getOrDefault(emptyList())
+        val result = pdf.links(index, PdfPriority.INTERACTIVE).orEmpty()
         current = PageLinks(index, result)
         return result
-    }
-
-    /**
-     * Read [index]'s links from the framework [PdfRenderer]'s native annotation APIs (API 35+) as
-     * page-fraction rects (top-left origin) plus targets, through a renderer opened just for links.
-     * [PdfRenderer] allows only one open page at a time, so reads serialize on the instance
-     * monitor. Bounds come back in the rendered (display) point space, so normalizing is just
-     * divide-by-page-size — no crop-box math and no y-flip.
-     */
-    @Synchronized
-    private fun parseNativeLinks(index: Int): List<PdfLink> {
-        if (closed || Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return emptyList()
-        if (index !in 0 until pageCount) return emptyList()
-        val renderer = linkRenderer ?: run {
-            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-            linkPfd = fd
-            PdfRenderer(fd).also { linkRenderer = it }
-        }
-        val page = renderer.openPage(index)
-        try {
-            val w = page.width.toFloat()
-            val h = page.height.toFloat()
-            if (w <= 0f || h <= 0f) return emptyList()
-            val out = ArrayList<PdfLink>()
-            for (link in page.linkContents) {
-                val url = link.uri?.toString()
-                if (url.isNullOrBlank()) continue
-                for (b in link.bounds) addLinkRect(out, b, w, h, url, null)
-            }
-            for (gl in page.gotoLinks) {
-                val dest = gl.destination?.pageNumber ?: continue
-                if (dest < 0) continue
-                for (b in gl.bounds) addLinkRect(out, b, w, h, null, dest)
-            }
-            return out
-        } finally {
-            runCatching { page.close() }
-        }
-    }
-
-    /** Append one link rect to [out], converting its display-space point bounds [b] (top-left origin,
-     *  page = [w]×[h] points) to a clamped page fraction. Degenerate rects are dropped. */
-    private fun addLinkRect(out: MutableList<PdfLink>, b: RectF, w: Float, h: Float, url: String?, destPage: Int?) {
-        val fLeft = (b.left / w).coerceIn(0f, 1f)
-        val fTop = (b.top / h).coerceIn(0f, 1f)
-        val fRight = (b.right / w).coerceIn(0f, 1f)
-        val fBottom = (b.bottom / h).coerceIn(0f, 1f)
-        if (fRight > fLeft && fBottom > fTop) out.add(PdfLink(RectF(fLeft, fTop, fRight, fBottom), url, destPage))
     }
 
     fun close() {
@@ -339,11 +279,6 @@ class PdfSource private constructor(
             runCatching { linksExecutor?.shutdownNow() }
         }
         pdf.close()
-        // On the link monitor: [closed] is already set, so this only waits out a link read.
-        synchronized(this) {
-            runCatching { linkRenderer?.close() }
-            runCatching { linkPfd?.close() }
-        }
         // [file] is owned by the caller (Document / import staging); deleting it here is not our job.
     }
 

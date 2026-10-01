@@ -11,9 +11,11 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdf_formfill.h"
 #include "public/fpdf_progressive.h"
@@ -134,6 +136,20 @@ DisplayMap MapFor(FPDF_PAGE page) {
     return m;
 }
 
+// Appends the display box (l, t, r, b) around the user-space points xs, ys.
+void AddBox(const DisplayMap& map, const float* xs, const float* ys, int n, std::vector<float>* out) {
+    float l = 0, t = 0, r = 0, b = 0;
+    for (int i = 0; i < n; ++i) {
+        float x, y;
+        map.Apply(xs[i], ys[i], &x, &y);
+        l = i ? std::min(l, x) : x;
+        t = i ? std::min(t, y) : y;
+        r = i ? std::max(r, x) : x;
+        b = i ? std::max(b, y) : y;
+    }
+    out->insert(out->end(), {l, t, r, b});
+}
+
 // m, then n, in PDF's row-vector order.
 FS_MATRIX Concat(const FS_MATRIX& m, const FS_MATRIX& n) {
     return {m.a * n.a + m.b * n.c,       m.a * n.b + m.b * n.d,
@@ -151,21 +167,16 @@ void AddImages(FPDF_PAGEOBJECT obj, const FS_MATRIX& to_page, const DisplayMap& 
     const FS_MATRIX u = Concat(m, to_page);
     switch (FPDFPageObj_GetType(obj)) {
         case FPDF_PAGEOBJ_IMAGE: {
-            // u maps the unit square to page space.
-            float l = w, t = h, r = 0, b = 0;
-            for (const auto [cx, cy] : {std::pair{0, 0}, {1, 0}, {0, 1}, {1, 1}}) {
-                float x, y;
-                map.Apply(u.a * cx + u.c * cy + u.e, u.b * cx + u.d * cy + u.f, &x, &y);
-                l = std::min(l, x);
-                t = std::min(t, y);
-                r = std::max(r, x);
-                b = std::max(b, y);
-            }
-            l = std::max(l, 0.f);
-            t = std::max(t, 0.f);
-            r = std::min(r, w);
-            b = std::min(b, h);
-            if (r > l && b > t) out->insert(out->end(), {l, t, r, b});
+            // u maps the unit square to page space; the box is clipped to the page.
+            const float xs[] = {u.e, u.a + u.e, u.c + u.e, u.a + u.c + u.e};
+            const float ys[] = {u.f, u.b + u.f, u.d + u.f, u.b + u.d + u.f};
+            AddBox(map, xs, ys, 4, out);
+            float* box = out->data() + out->size() - 4;
+            box[0] = std::max(box[0], 0.f);
+            box[1] = std::max(box[1], 0.f);
+            box[2] = std::min(box[2], w);
+            box[3] = std::min(box[3], h);
+            if (box[2] <= box[0] || box[3] <= box[1]) out->resize(out->size() - 4);
             break;
         }
         case FPDF_PAGEOBJ_FORM: {
@@ -324,5 +335,83 @@ Java_com_xnotes_platform_PdfiumNative_nativeImageRects(JNIEnv* env, jclass, jlon
     }
     jfloatArray out = env->NewFloatArray(static_cast<jsize>(rects.size()));
     if (out) env->SetFloatArrayRegion(out, 0, static_cast<jsize>(rects.size()), rects.data());
+    return out;
+}
+
+// Page index's links: one display box (l, t, r, b) per quad, or per link without quads, with the
+// page it goes to (-1 for none) and its URI bytes (null for none), as {float[], int[], byte[][]}.
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativeLinks(JNIEnv* env, jclass, jlong handle, jint index) {
+    Doc* doc = FromHandle(handle);
+    FPDF_PAGE page = GetPage(doc, index);
+    if (!page) return nullptr;
+    const DisplayMap map = MapFor(page);
+    std::vector<float> boxes;
+    std::vector<jint> dests;
+    std::vector<std::string> uris;
+    int pos = 0;
+    FPDF_LINK link;
+    while (FPDFLink_Enumerate(page, &pos, &link)) {
+        int dest = -1;
+        std::string uri;
+        if (FPDF_DEST d = FPDFLink_GetDest(doc->pdf, link)) {
+            dest = FPDFDest_GetDestPageIndex(doc->pdf, d);
+        } else if (FPDF_ACTION action = FPDFLink_GetAction(link)) {
+            const unsigned long type = FPDFAction_GetType(action);
+            if (type == PDFACTION_GOTO) {
+                if (FPDF_DEST ad = FPDFAction_GetDest(doc->pdf, action)) {
+                    dest = FPDFDest_GetDestPageIndex(doc->pdf, ad);
+                }
+            } else if (type == PDFACTION_URI) {
+                // The length includes the terminating NUL.
+                const unsigned long n = FPDFAction_GetURIPath(doc->pdf, action, nullptr, 0);
+                if (n > 1) {
+                    uri.resize(n);
+                    FPDFAction_GetURIPath(doc->pdf, action, uri.data(), n);
+                    uri.resize(n - 1);
+                }
+            }
+        }
+        if (dest < 0 && uri.empty()) continue;
+        const size_t before = boxes.size();
+        const int quads = FPDFLink_CountQuadPoints(link);
+        for (int q = 0; q < quads; ++q) {
+            FS_QUADPOINTSF p;
+            if (!FPDFLink_GetQuadPoints(link, q, &p)) continue;
+            const float xs[] = {p.x1, p.x2, p.x3, p.x4};
+            const float ys[] = {p.y1, p.y2, p.y3, p.y4};
+            AddBox(map, xs, ys, 4, &boxes);
+        }
+        FS_RECTF rect;
+        if (boxes.size() == before && FPDFLink_GetAnnotRect(link, &rect)) {
+            const float xs[] = {rect.left, rect.right};
+            const float ys[] = {rect.bottom, rect.top};
+            AddBox(map, xs, ys, 2, &boxes);
+        }
+        for (size_t added = (boxes.size() - before) / 4; added > 0; --added) {
+            dests.push_back(dest);
+            uris.push_back(uri);
+        }
+    }
+    const auto count = static_cast<jsize>(dests.size());
+    jfloatArray jboxes = env->NewFloatArray(4 * count);
+    jintArray jdests = env->NewIntArray(count);
+    jobjectArray juris = env->NewObjectArray(count, env->FindClass("[B"), nullptr);
+    jobjectArray out = env->NewObjectArray(3, env->FindClass("java/lang/Object"), nullptr);
+    if (!jboxes || !jdests || !juris || !out) return nullptr;
+    env->SetFloatArrayRegion(jboxes, 0, 4 * count, boxes.data());
+    env->SetIntArrayRegion(jdests, 0, count, dests.data());
+    for (jsize i = 0; i < count; ++i) {
+        if (uris[i].empty()) continue;
+        const auto len = static_cast<jsize>(uris[i].size());
+        jbyteArray bytes = env->NewByteArray(len);
+        if (!bytes) return nullptr;
+        env->SetByteArrayRegion(bytes, 0, len, reinterpret_cast<const jbyte*>(uris[i].data()));
+        env->SetObjectArrayElement(juris, i, bytes);
+        env->DeleteLocalRef(bytes);
+    }
+    env->SetObjectArrayElement(out, 0, jboxes);
+    env->SetObjectArrayElement(out, 1, jdests);
+    env->SetObjectArrayElement(out, 2, juris);
     return out;
 }
