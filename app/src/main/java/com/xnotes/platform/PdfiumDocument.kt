@@ -57,6 +57,13 @@ class PdfiumDocument private constructor(
     ): FloatArray? = withHandle(priority) { PdfiumNative.nativePageSizes(it, from, count) }
 
     /**
+     * The boxes of the images on page [index], those inside form XObjects included: left, top,
+     * right, bottom in points as displayed (top-left origin, /Rotate applied); null when not open.
+     */
+    fun imageRects(index: Int, priority: PdfPriority): FloatArray? =
+        withHandle(priority) { PdfiumNative.nativeImageRects(it, index) }
+
+    /**
      * Renders the part of page [index] at ([left], [top]) of a [fullW] x [fullH] raster of the
      * whole page into [bitmap] (ARGB_8888), on white. False when cancelled, failed or not open.
      */

@@ -1220,10 +1220,9 @@ class CanvasState(
      * baked into [caches]/[bgCaches]), so a colour-only change just needs the sharp viewport — which
      * *does* bake the paper — to re-render: bump [sharpGen]. A ruling, by contrast, lives in the
      * background cache, so a pattern/spacing/pattern-colour change must drop that page's background
-     * and let the draw loop rebuild via [backgroundForOrSchedule]. Unlike
-     * [refreshBackground] (the PDF-refine path) these do **not** early-return on a missing cache, so a
-     * plain page that *gains* a ruling rebuilds correctly; one that loses it stops drawing a background
-     * (see [hasPageBackground]).
+     * and let the draw loop rebuild via [backgroundForOrSchedule]. These do **not** early-return on a
+     * missing cache, so a plain page that *gains* a ruling rebuilds correctly; one that loses it stops
+     * drawing a background (see [hasPageBackground]).
      */
     fun invalidatePaper() {
         sharpGen++
@@ -1291,11 +1290,11 @@ class CanvasState(
      * out input — a full page of ink is the same work [renderInk] does on the cache thread, times
      * every cached page, on the thread the tap arrived on.
      *
-     * So it schedules instead, exactly like [refreshBackground] does for a PDF page: the current
-     * surface stays in [caches] and keeps being blitted until the rebuild lands, so the page shows
-     * its pre-edit content for a frame or two rather than blanking (the flicker [invalidateAllCaches]
-     * caused). [staleInk] is what stops [usableFor] handing that surface back as current — an edit
-     * changes neither the cover nor the resolution, so nothing else would notice.
+     * So it schedules instead: the current surface stays in [caches] and keeps being blitted until
+     * the rebuild lands, so the page shows its pre-edit content for a frame or two rather than
+     * blanking (the flicker [invalidateAllCaches] caused). [staleInk] is what stops [usableFor]
+     * handing that surface back as current — an edit changes neither the cover nor the resolution,
+     * so nothing else would notice.
      *
      * Bumps [cacheGen] so a build scheduled before the edit is discarded on publish rather than
      * overwriting the page with its pre-edit snapshot, and [sharpGen] because the sharp viewport can
@@ -1331,25 +1330,6 @@ class CanvasState(
             for ((page, rect) in byPage) repairRegion(page, rect.outset(SHARP_EDIT_PAD))
         }
         cacheGen++
-    }
-
-    /**
-     * Re-render only [page]'s background layer (e.g. a PDF page whose embedded-image colours just
-     * finished parsing), swapping the refreshed surface in when it's ready and leaving the current
-     * one on screen until then so the page never blanks. Unlike a global background flush this
-     * touches *only* [page]: other pages' cached backgrounds and in-flight builds are left intact,
-     * so refining one page never re-rasterizes — or flickers — the rest of the visible pages.
-     *
-     * Skips pages with no live background cache (off-screen now): they render stamped on their own
-     * when next scrolled into view. The rebuild is scheduled at the current generation, so on the
-     * single-threaded cache executor it lands after the (already-published) provisional build and
-     * its stamped surface wins.
-     */
-    fun refreshBackground(page: Page) {
-        if (paintPageBackground == null) return
-        if (!bgCaches.containsKey(page)) return
-        sharpGen++ // also refine the sharp viewport if it's covering this page (deep zoom)
-        scheduleBg(page, clampedRes(page))
     }
 
     /**

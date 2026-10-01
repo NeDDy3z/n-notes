@@ -769,21 +769,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var tocVersion by mutableStateOf(0)
         private set
 
-    /** True while a filtered PDF's embedded-image colours are still being parsed off-thread (only
-     *  when the note's resolved View settings filter pages and keep image colours); drives the
-     *  canvas hint. */
-    var isRefiningPdf by mutableStateOf(false)
-        private set
-
-    /** Up-front sweep progress for the "Refining PDF colours k/N pages…" hint: PDF pages whose
-     *  embedded-image boxes are parsed, and the total PDF page count. Both 0 when not refining. */
-    var refiningDone by mutableStateOf(0)
-        private set
-    var refiningTotal by mutableStateOf(0)
-        private set
-
-    /** Bumped when the sweep finishes a PDF page that has a cached side-panel thumbnail, so the panel
-     *  re-renders that row from inverted to real image colours. Observed by the thumbnail producer. */
+    /** Bumped when the side-panel thumbnails must re-render (rotation or PDF filter change).
+     *  Observed by the thumbnail producer. */
     var pdfThumbTick by mutableStateOf(0)
         private set
 
@@ -1238,34 +1225,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun rebuildPdfSource() {
         // Opening never waits, and queued first it runs before the old document's close.
         val old = pdfSource
-        pdfSource = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.open(appContext, it) }
+        pdfSource = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.open(it) }
         old?.close()
-        pdfSource?.onImagesReady = { index ->
-            view.post {
-                // The sweep found page [index]'s locations: snap the canvas background (refreshBackground
-                // self-skips off-screen pages) and drop the now-stale inverted side-panel thumbnail so the
-                // panel re-renders it un-inverted (pdfThumbTick is bumped only when a cached thumb existed).
-                state.document.pages.forEach { if (it.pdfPage == index) state.refreshBackground(it) }
-                if (evictPageThumbnails(index)) pdfThumbTick++
-                view.requestRender()
-            }
-        }
-        pdfSource?.onImagesProgress = { done, total ->
-            view.post {
-                if (pdfSource != null && pdfKeepsImageColors()) {
-                    refiningTotal = total
-                    refiningDone = done
-                    isRefiningPdf = done < total
-                }
-            }
-        }
         installPageBackground()
         installFlowPainter()
         installHighlighter()
         republishFlow(invalidate = false)
         state.invalidateAllCaches()
         refreshToc()
-        startPdfRefine() // kick the up-front sweep over all pages + drive the "Refining k/N" hint
     }
 
     /** Re-extract the open PDF's outline off-thread (a one-shot PdfBox read, see [com.xnotes.platform.PdfOutline]),
@@ -1515,27 +1482,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /**
-     * Kick off (once per source) the up-front background sweep that parses every PDF page's embedded-
-     * image boxes, currently-visible pages first, and prime the "Refining PDF colours k/N pages…"
-     * hint. A no-op that clears the hint unless dark mode + keep-image-colours are both on, since the
-     * boxes are only needed to un-invert images. Safe to call repeatedly (on open and whenever the
-     * preference toggles): [PdfSource.prepAllImages] enqueues the sweep only the first time.
-     */
-    private fun startPdfRefine() {
-        val src = pdfSource
-        if (src == null || !pdfKeepsImageColors()) {
-            isRefiningPdf = false
-            refiningDone = 0
-            refiningTotal = 0
-            return
-        }
-        refiningTotal = src.pageCount
-        refiningDone = src.parsedPageCount()
-        isRefiningPdf = refiningDone < refiningTotal
-        if (isRefiningPdf) src.prepAllImages()
-    }
-
     fun insertImage(bytes: ByteArray) = insertImageAt(bytes, null)
 
     /** Insert an image, centred on [atContent] (or on the current page when null). */
@@ -1695,7 +1641,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     ) {
         // A private PdfSource, not the live [pdfSource], which a note switch mid-export would
         // close. A plain note has no PDF and renders identically.
-        val src = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.create(appContext, it) }
+        val src = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.create(it) }
         try {
             com.xnotes.platform.PdfExporter.export(
                 appContext, state.document, src, out,
@@ -2372,14 +2318,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
     }
 
-    /** Drop any cached side-panel thumbnails backed by PDF page [pdfPageIndex] (its colours just
-     *  finished parsing), so the panel re-renders them un-inverted. Returns true if one was evicted. */
-    private fun evictPageThumbnails(pdfPageIndex: Int): Boolean = synchronized(pageThumbs) {
-        var evicted = false
-        state.document.pages.forEach { if (it.pdfPage == pdfPageIndex && pageThumbs.remove(it) != null) evicted = true }
-        evicted
-    }
-
     fun addBookmark(label: String) {
         state.document.bookmarks.add(Bookmark(state.currentPageIndex(), label))
         state.document.dirty = true
@@ -2591,9 +2529,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         r.translate(-cover.left, -cover.top)
         doc.pdfFile?.let { file ->
             runCatching {
-                com.xnotes.platform.PdfSource.create(appContext, file)?.let { src ->
+                com.xnotes.platform.PdfSource.create(file)?.let { src ->
                     page.pdfPage?.let { pi ->
-                        if (filter.stampImages) src.ensureImageRects(pi)
                         val pw = (page.width * scale).toInt().coerceAtLeast(1)
                         val ph = (page.height * scale).toInt().coerceAtLeast(1)
                         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
@@ -3160,7 +3097,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Imports the PDF at [pdfFile] into a new `.xnote` under [parentDocId] (named after [rawName]);
      *  returns its URI, or null. The PDF is streamed straight into the bundle, never held in RAM. IO. */
     fun createPdfNoteFile(treeUri: String, parentDocId: String, rawName: String, pdfFile: java.io.File): String? {
-        val source = com.xnotes.platform.PdfSource.open(appContext, pdfFile)
+        val source = com.xnotes.platform.PdfSource.open(pdfFile)
         lastImportError = source.openError
         if (source.pageCount == 0) {
             source.close()
@@ -4060,7 +3997,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             state.invalidateAllBackgrounds()
             if (evictPdfPageThumbnails()) pdfThumbTick++
             currentUri?.let { invalidateThumb(it) } // the recents tile re-renders with the new filter
-            startPdfRefine() // a filter change can newly require the image-box sweep
         }
         view.scrollbarEnabled = new.scrollbar
         view.requestRender()
@@ -4082,13 +4018,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         else -> (viewKey(uri)?.let { viewStates.get(it)?.overrides } ?: com.xnotes.canvas.ViewOverrides())
             .resolve(viewDefaults)
     }
-
-    /** True when the open note's PDF render stamps image colours (so image boxes are needed). */
-    private fun pdfKeepsImageColors(): Boolean = viewSettings.keepImages &&
-        !com.xnotes.canvas.PdfColorFilter.isIdentity(
-            viewSettings.contrast, viewSettings.invert, viewSettings.brightness, viewSettings.sepia,
-            viewSettings.multiply, viewSettings.screen,
-        )
 
     /** Drop every cached side-panel thumbnail backed by a PDF page (the filter changed). */
     private fun evictPdfPageThumbnails(): Boolean = synchronized(pageThumbs) {
@@ -4709,7 +4638,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             return
         }
         val doc = appContext.contentResolver.openInputStream(android.net.Uri.parse(srcUri))?.use { codec.read(it, pdfDir, imageDir) } ?: return
-        val src = doc.pdfFile?.let { com.xnotes.platform.PdfSource.create(appContext, it) }
+        val src = doc.pdfFile?.let { com.xnotes.platform.PdfSource.create(it) }
         try {
             com.xnotes.platform.PdfExporter.export(
                 appContext, doc, src, out,
@@ -5146,7 +5075,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         sub.templates = state.document.templates
         // A private source per export, see [exportPdf]. The shared PDF file is read-only and owned
         // by the open document, so closing src won't delete it.
-        val src = sub.pdfFile?.let { com.xnotes.platform.PdfSource.create(appContext, it) }
+        val src = sub.pdfFile?.let { com.xnotes.platform.PdfSource.create(it) }
         try {
             com.xnotes.platform.PdfExporter.export(
                 appContext, sub, src, out,
@@ -5166,11 +5095,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** PNG bytes for page [index], rendered at full page resolution (paper + background + items), or null. */
     fun pageImagePng(index: Int): ByteArray? {
         val page = pageAt(index) ?: return null
-        // One-shot export: find this page's image locations now so the PNG is correct regardless of how
-        // far the background sweep has reached (renderThumbnail itself is a pure consumer).
-        if (pdfKeepsImageColors()) {
-            page.pdfPage?.let { pi -> pdfSource?.ensureImageRects(pi) }
-        }
         val bmp = renderThumbnail(page, state.outerW(page).toInt().coerceAtLeast(1)) ?: return null
         return java.io.ByteArrayOutputStream().use { out ->
             bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)

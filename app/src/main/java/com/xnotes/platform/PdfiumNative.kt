@@ -21,6 +21,9 @@ object PdfiumNative {
     /** Width and height in points, as displayed (/Rotate applied), of [count] pages from [from]; 0 when broken. */
     @JvmStatic external fun nativePageSizes(doc: Long, from: Int, count: Int): FloatArray?
 
+    /** The boxes (l, t, r, b), in points as displayed, of the images on page [index], those in forms included. */
+    @JvmStatic external fun nativeImageRects(doc: Long, index: Int): FloatArray?
+
     /** See [PdfiumDocument.render]; it stops early once [lifetime] or [token] is cancelled. */
     @JvmStatic external fun nativeRender(
         doc: Long, index: Int, bitmap: Bitmap, fullW: Int, fullH: Int, left: Int, top: Int,

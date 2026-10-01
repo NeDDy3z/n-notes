@@ -6,12 +6,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <climits>
+#include <cmath>
 #include <cstring>
 #include <utility>
 #include <vector>
 
+#include "public/fpdf_edit.h"
 #include "public/fpdf_formfill.h"
 #include "public/fpdf_progressive.h"
 #include "public/fpdfview.h"
@@ -94,6 +97,83 @@ FPDF_PAGE GetPage(Doc* doc, int index) {
     }
     pages.emplace_back(index, page);
     return page;
+}
+
+// Maps page user space to display points: top-left origin, /Rotate applied.
+struct DisplayMap {
+    double a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
+
+    void Apply(double x, double y, float* ox, float* oy) const {
+        *ox = static_cast<float>(a * x + c * y + e);
+        *oy = static_cast<float>(b * x + d * y + f);
+    }
+};
+
+// The map PDFium renders with, sampled from FPDF_PageToDevice at 1/1024 pt.
+DisplayMap MapFor(FPDF_PAGE page) {
+    constexpr double kScale = 1024;
+    DisplayMap m;
+    FS_RECTF box;
+    const double bw = FPDF_GetPageBoundingBox(page, &box) ? box.right - box.left : 0;
+    const double bh = box.top - box.bottom;
+    const double w = FPDF_GetPageWidthF(page) * kScale;
+    const double h = FPDF_GetPageHeightF(page) * kScale;
+    if (bw <= 0 || bh <= 0 || w < 1 || h < 1) return m;
+    const int sx = static_cast<int>(std::lround(w));
+    const int sy = static_cast<int>(std::lround(h));
+    int x0, y0, x1, y1, x2, y2;
+    FPDF_PageToDevice(page, 0, 0, sx, sy, 0, box.left, box.bottom, &x0, &y0);
+    FPDF_PageToDevice(page, 0, 0, sx, sy, 0, box.right, box.bottom, &x1, &y1);
+    FPDF_PageToDevice(page, 0, 0, sx, sy, 0, box.left, box.top, &x2, &y2);
+    m.a = (x1 - x0) / (bw * kScale);
+    m.b = (y1 - y0) / (bw * kScale);
+    m.c = (x2 - x0) / (bh * kScale);
+    m.d = (y2 - y0) / (bh * kScale);
+    m.e = x0 / kScale - m.a * box.left - m.c * box.bottom;
+    m.f = y0 / kScale - m.b * box.left - m.d * box.bottom;
+    return m;
+}
+
+// m, then n, in PDF's row-vector order.
+FS_MATRIX Concat(const FS_MATRIX& m, const FS_MATRIX& n) {
+    return {m.a * n.a + m.b * n.c,       m.a * n.b + m.b * n.d,
+            m.c * n.a + m.d * n.c,       m.c * n.b + m.d * n.d,
+            m.e * n.a + m.f * n.c + n.e, m.e * n.b + m.f * n.d + n.f};
+}
+
+// Appends obj's display box (l, t, r, b) when it is an image, or those of the images inside it
+// when it is a form XObject; to_page maps the space obj sits in to page space. PDFium parses
+// forms at most 40 deep, which bounds the recursion.
+void AddImages(FPDF_PAGEOBJECT obj, const FS_MATRIX& to_page, const DisplayMap& map, float w,
+               float h, std::vector<float>* out) {
+    FS_MATRIX m;
+    if (!FPDFPageObj_GetMatrix(obj, &m)) return;
+    const FS_MATRIX u = Concat(m, to_page);
+    switch (FPDFPageObj_GetType(obj)) {
+        case FPDF_PAGEOBJ_IMAGE: {
+            // u maps the unit square to page space.
+            float l = w, t = h, r = 0, b = 0;
+            for (const auto [cx, cy] : {std::pair{0, 0}, {1, 0}, {0, 1}, {1, 1}}) {
+                float x, y;
+                map.Apply(u.a * cx + u.c * cy + u.e, u.b * cx + u.d * cy + u.f, &x, &y);
+                l = std::min(l, x);
+                t = std::min(t, y);
+                r = std::max(r, x);
+                b = std::max(b, y);
+            }
+            l = std::max(l, 0.f);
+            t = std::max(t, 0.f);
+            r = std::min(r, w);
+            b = std::min(b, h);
+            if (r > l && b > t) out->insert(out->end(), {l, t, r, b});
+            break;
+        }
+        case FPDF_PAGEOBJ_FORM: {
+            const int count = FPDFFormObj_CountObjects(obj);
+            for (int i = 0; i < count; ++i) AddImages(FPDFFormObj_GetObject(obj, i), u, map, w, h, out);
+            break;
+        }
+    }
 }
 
 // Pauses a progressive render, for good, once either CancelToken is cancelled.
@@ -226,4 +306,23 @@ Java_com_xnotes_platform_PdfiumNative_nativeRender(JNIEnv* env, jclass, jlong ha
     FPDFBitmap_Destroy(bitmap);
     AndroidBitmap_unlockPixels(env, jbitmap);
     return status == FPDF_RENDER_DONE;
+}
+
+// The display boxes, in points, of the images on page index, those inside form XObjects included.
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativeImageRects(JNIEnv* env, jclass, jlong handle,
+                                                       jint index) {
+    FPDF_PAGE page = GetPage(FromHandle(handle), index);
+    if (!page) return nullptr;
+    const DisplayMap map = MapFor(page);
+    const float w = FPDF_GetPageWidthF(page);
+    const float h = FPDF_GetPageHeightF(page);
+    std::vector<float> rects;
+    const int count = FPDFPage_CountObjects(page);
+    for (int i = 0; i < count; ++i) {
+        AddImages(FPDFPage_GetObject(page, i), {1, 0, 0, 1, 0, 0}, map, w, h, &rects);
+    }
+    jfloatArray out = env->NewFloatArray(static_cast<jsize>(rects.size()));
+    if (out) env->SetFloatArrayRegion(out, 0, static_cast<jsize>(rects.size()), rects.data());
+    return out;
 }

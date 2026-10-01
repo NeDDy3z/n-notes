@@ -1198,7 +1198,6 @@ private fun EditorPane(
                         com.xnotes.ui.FlowTableMenu(editor)
                         com.xnotes.ui.TableChrome(editor)
                         ZoomLockHint(editor)
-                        RefiningPdfHint(editor)
                     }
                 }
             }
@@ -1479,54 +1478,6 @@ private fun PdfImportBatchDialog(done: Int, total: Int, onCancel: () -> Unit) {
             androidx.compose.material3.TextButton(onClick = onCancel) {
                 Text(stringResource(R.string.cancel), color = palette.accent.toComposeColor())
             }
-        }
-    }
-}
-
-/**
- * Subtle, non-blocking hint shown bottom-right while a dark-mode PDF's embedded-image colours are
- * still being parsed by the up-front background sweep ([Editor.isRefiningPdf]). The pages are already
- * visible; this just shows a `k/N` progress bar so the user can keep scrolling and drawing while the
- * remaining pages' images snap to their true colours.
- */
-@Composable
-private fun BoxScope.RefiningPdfHint(editor: Editor) {
-    val palette = LocalPalette.current
-    AnimatedVisibility(
-        visible = editor.isRefiningPdf,
-        modifier = Modifier.align(Alignment.BottomEnd).padding(com.xnotes.ui.LocalToolbarCover.current).padding(12.dp),
-        enter = fadeIn(),
-        exit = fadeOut(),
-    ) {
-        val total = editor.refiningTotal
-        val done = editor.refiningDone
-        val fraction = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else 0f
-        Column(
-            // Fixed width so the bar's fillMaxWidth tracks the chip (not the whole screen); the label
-            // wraps to two tidy lines under it.
-            modifier = Modifier
-                .width(190.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(palette.surface.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            androidx.compose.material3.LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = palette.accent.toComposeColor(),
-                trackColor = palette.border.toComposeColor(),
-                drawStopIndicator = {}, // no trailing dot
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.refining_pdf_colours, done, total),
-                color = palette.textDim.toComposeColor(),
-                fontSize = 13.sp,
-            )
         }
     }
 }
