@@ -3,6 +3,7 @@ package com.xnotes.core.pdf
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.MarkupType
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.pal.BlendMode
 import com.xnotes.core.pal.FillRule
@@ -29,24 +30,24 @@ object MarkupPainter {
         }
     }
 
-    /** Paints [m] in points. */
-    fun paint(r: Renderer, m: TextMarkup) {
+    /** Paints [m] in points, in [color] with a highlight laid on by [blend] (a page's filter changes both). */
+    fun paint(r: Renderer, m: TextMarkup, color: Rgba = m.color, blend: BlendMode = BlendMode.MULTIPLY) {
         if (m.type == MarkupType.HIGHLIGHT) {
             // One layer per markup: its own overlapping lines never darken twice, stacked markups do.
             quadBounds(m.quads)?.let { bounds ->
-                r.saveLayerBlended(bounds, m.intensity, BlendMode.MULTIPLY)
-                for (q in m.quads) r.fillRect(Rect.ltrb(q.left.toDouble(), q.top.toDouble(), q.right.toDouble(), q.bottom.toDouble()), m.color)
+                r.saveLayerBlended(bounds, m.intensity, blend)
+                for (q in m.quads) r.fillRect(Rect.ltrb(q.left.toDouble(), q.top.toDouble(), q.right.toDouble(), q.bottom.toDouble()), color)
                 r.restore()
             }
         } else {
             for (q in m.quads) {
                 val line = lineOf(m.type, q)
-                if (line.size >= 2) r.strokePolyline(line, Pen(m.color, thickness(q), cosmetic = false))
+                if (line.size >= 2) r.strokePolyline(line, Pen(color, thickness(q), cosmetic = false))
             }
         }
         if (m.note != null) markerOf(m)?.let { marker ->
-            r.fillCircle(marker.center, marker.radius, m.color)
-            r.fillPolygon(marker.tail, m.color, FillRule.NONZERO)
+            r.fillCircle(marker.center, marker.radius, color)
+            r.fillPolygon(marker.tail, color, FillRule.NONZERO)
         }
     }
 

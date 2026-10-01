@@ -954,6 +954,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state, pdfTexts, frame = { publishedFlow?.frame }, onViewChanged = { refreshView() }, requestRender = { onRender() },
     ).also { controller.searchTints = it }
 
+    private val markupOverlay = com.xnotes.canvas.MarkupOverlay(state) { pdfPageFilter() }.also { controller.markupOverlay = it }
+
     /** Viewport bounds the PDF text selection's menu anchors to, or null when it is hidden. */
     var pdfTextMenu by mutableStateOf<Rect?>(null)
         private set
@@ -5142,6 +5144,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val pagesBefore = state.document.pages.size
         val was = touchedRegions(command)
         history.undo()
+        bakeMarkups(command)
         afterHistory(
             structural = state.document.pages.size != pagesBefore,
             regions = spanning(was, touchedRegions(command)),
@@ -5154,10 +5157,31 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val pagesBefore = state.document.pages.size
         val was = touchedRegions(command)
         history.redo()
+        bakeMarkups(command)
         afterHistory(
             structural = state.document.pages.size != pagesBefore,
             regions = spanning(was, touchedRegions(command)),
         )
+    }
+
+    /** Applies a markup edit (built, not yet applied) as one undo step. */
+    fun applyMarkupEdit(command: Command) {
+        command.redo()
+        history.push(command)
+        bakeMarkups(command)
+        state.document.dirty = true
+        refreshContent()
+        view.requestRender()
+    }
+
+    /** Paints afresh the backgrounds of the pages [command]'s markups lie on; the overlay shows new ones meanwhile. */
+    private fun bakeMarkups(command: Command?) {
+        val touched = command?.touchedMarkups().orEmpty()
+        for (page in touched.map { it.first }.distinct()) {
+            val now = page.markups
+            val added = touched.filter { (p, m) -> p === page && now.any { it === m } }.map { it.second }
+            state.rebakeBackground(page, added)
+        }
     }
 
     /**

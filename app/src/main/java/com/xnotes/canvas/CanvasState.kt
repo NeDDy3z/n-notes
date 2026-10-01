@@ -10,6 +10,7 @@ import com.xnotes.core.model.PageInsets
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.model.insets
 import com.xnotes.core.model.resolvedPageColor
 import com.xnotes.core.model.resolvedTemplate
@@ -39,7 +40,10 @@ internal fun CanvasItem.isHighlighterInk(): Boolean = this is Stroke && this.too
  * mismatch — and blitted stretched into the new one meanwhile, like a stale-resolution entry is
  * during a pinch.
  */
-class CacheEntry(val surface: RasterSurface, val res: Double, val cover: Rect = Rect(0.0, 0.0, 0.0, 0.0))
+class CacheEntry(val surface: RasterSurface, val res: Double, val cover: Rect = Rect(0.0, 0.0, 0.0, 0.0)) {
+    /** A background layer's last markup edit held (see [CanvasState.rebakeBackground]). Main thread only. */
+    var seq: Int = 0
+}
 
 /**
  * A cached highlighter ribbon: its opaque bitmap, the resolution + geometry + opaque colour it
@@ -428,6 +432,8 @@ class CanvasState(
         val sy: Double,
         val z: Double,
         val gen: Int,
+        /** The last markup edit its base layer holds, like [CacheEntry.seq]. */
+        val seq: Int,
     )
 
     private var sharpFrame: SharpFrame? = null
@@ -1148,7 +1154,7 @@ class CanvasState(
         val res = clampedRes(page)
         val existing = bgCaches[page]
         if (existing != null && existing.usableFor(page, res)) return existing
-        return buildBackground(page, res).also { bgCaches[page] = it }
+        return buildBackground(page, res).also { it.seq = markupSeq; bgCaches[page] = it }
     }
 
     /** Non-blocking counterpart to [backgroundFor]; see [cacheForOrSchedule]. */
@@ -1164,11 +1170,12 @@ class CanvasState(
     private fun scheduleBg(page: Page, res: Double) {
         if (!pendingBg.add(page)) return
         val gen = cacheGen
+        val seq = markupSeq // the build reads the markups after this, so it holds every edit up to here
         runAsync {
             val entry = buildBackground(page, res)
             postToMain {
                 pendingBg.remove(page)
-                if (gen == cacheGen) bgCaches[page] = entry
+                if (gen == cacheGen) bgCaches[page] = entry.also { it.seq = seq }
                 onCacheReady?.invoke() // discarded or not; see [scheduleInk]
             }
         }
@@ -1185,6 +1192,70 @@ class CanvasState(
         r.translate(-cover.left, -cover.top)
         paintPageBackground?.invoke(page, r, res, cover)
         return CacheEntry(surface, res, cover)
+    }
+
+    /** Markup edits made so far; each background layer and sharp frame records the last one it holds. */
+    private var markupSeq = 0
+
+    private class Unbaked(val seq: Int, val markup: TextMarkup)
+
+    /** Markups an edit put on a page that a layer on screen may not hold yet, by page. Main thread only. */
+    private val unbaked = HashMap<Page, MutableList<Unbaked>>()
+
+    /** Pages whose background is being painted afresh for a markup edit, and those edited again meanwhile. */
+    private val rebaking = HashSet<Page>()
+    private val rebakeAgain = HashSet<Page>()
+
+    /** A markup edit came in while a sharp render was under way, which may have read the page before it. */
+    private var sharpAgain = false
+
+    /**
+     * [page]'s markups changed: its background layer is painted afresh on the cache thread and
+     * swapped in once done, the old one shown meanwhile, and the sharp viewport likewise. Patching
+     * just the region they cover would leave seams: PDFium draws a region's pixels visibly
+     * differently from the same pixels of a whole page, around glyphs and images near its edges.
+     * [added] are the markups the edit put on; [unbakedMarkups] hands them to the overlay until the
+     * layers on screen hold them, so nothing blinks while the new layer renders.
+     */
+    fun rebakeBackground(page: Page, added: List<TextMarkup>) {
+        val seq = ++markupSeq
+        if (added.isNotEmpty()) unbaked.getOrPut(page) { ArrayList() }.addAll(added.map { Unbaked(seq, it) })
+        // A whole-layer build under way may have read the markups before the edit.
+        cacheGen++
+        if (pendingSharp) sharpAgain = true else if (sharpFrame?.gen == sharpGen) requestSharpViewport()
+        val entry = bgCaches[page] ?: return
+        if (entry.usableFor(page, clampedRes(page))) scheduleRebake(page) // else the draw loop builds it anew
+    }
+
+    private fun scheduleRebake(page: Page) {
+        if (!rebaking.add(page)) {
+            rebakeAgain += page
+            return
+        }
+        val res = clampedRes(page)
+        val seq = markupSeq // the build reads the markups after this, so it holds every edit up to here
+        runAsync {
+            val fresh = buildBackground(page, res)
+            postToMain {
+                rebaking.remove(page)
+                val shown = bgCaches[page]
+                if (shown != null && shown.seq < seq) bgCaches[page] = fresh.also { it.seq = seq }
+                if (rebakeAgain.remove(page) && bgCaches[page] != null) scheduleRebake(page)
+                onCacheReady?.invoke()
+            }
+        }
+    }
+
+    /** [page]'s markups the layers on screen don't hold yet, for the overlay to draw meanwhile. */
+    fun unbakedMarkups(page: Page): List<TextMarkup> {
+        val list = unbaked[page] ?: return emptyList()
+        var held = bgCaches[page]?.takeIf { it.cover == footprint(page) }?.seq ?: 0
+        val frame = sharpFrame
+        if (frame != null && frame.gen == sharpGen && isPastResolutionCap()) held = min(held, frame.seq)
+        val now = page.markups
+        list.removeAll { u -> u.seq <= held || now.none { it === u.markup } }
+        if (list.isEmpty()) unbaked.remove(page)
+        return list.map { it.markup }
     }
 
     /** Append a single just-committed stroke into an existing cache (cheap), else rebuild. */
@@ -1282,6 +1353,7 @@ class CanvasState(
         caches.clear()
         staleInk.clear()
         bgCaches.clear()
+        unbaked.clear()
         hlCaches.clear()
         wetInk.clear()
         cacheGen++
@@ -1550,6 +1622,7 @@ class CanvasState(
         if (draws.isEmpty()) return
         pendingSharp = true
         pendingSharpEdits.clear()
+        val seq = markupSeq
         val withFlow = !flowLifted // snapshot; a session toggle bumps sharpGen and discards this
         runAsync {
             val base = surfaceFactory.create(vw, vh, 1.0).also { it.fill(bg) }
@@ -1558,12 +1631,16 @@ class CanvasState(
             postToMain {
                 pendingSharp = false
                 if (gen == sharpGen && sx == scrollX && sy == scrollY && z == zoom) {
-                    sharpFrame = SharpFrame(base, ink, sx, sy, z, gen)
+                    sharpFrame = SharpFrame(base, ink, sx, sy, z, gen, seq)
                     // Replay edits committed during the build; the item snapshot predates them.
                     for ((p, rect) in pendingSharpEdits) repairSharpInk(p, rect)
                     onCacheReady?.invoke()
                 }
                 pendingSharpEdits.clear()
+                if (sharpAgain) {
+                    sharpAgain = false
+                    requestSharpViewport()
+                }
             }
         }
     }

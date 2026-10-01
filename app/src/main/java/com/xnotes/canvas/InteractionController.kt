@@ -153,6 +153,9 @@ class InteractionController(
 
     /** The open search's matches, tinted under the selections. */
     var searchTints: SearchTints? = null
+
+    /** Text markups the page layers don't show yet, under everything else in the overlay. */
+    var markupOverlay: MarkupOverlay? = null
     val document: Document get() = state.document
 
     var tool: Tool = Tool.DEFAULT
@@ -2919,6 +2922,8 @@ class InteractionController(
         r.withSave {
             r.translate(origin.x, origin.y)
             r.scale(state.zoom, state.zoom)
+
+            markupOverlay?.draw(r)
 
             // Lifted (selected) items, drawn live at the move offset.
             for (sel in selection) {
