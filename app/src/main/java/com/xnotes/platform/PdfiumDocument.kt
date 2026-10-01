@@ -88,7 +88,9 @@ class PdfiumDocument private constructor(
 
     /** Page [index]'s text with a box for each character; null when not open or the page does not load. */
     fun pageText(index: Int, priority: PdfPriority): PageText? = withHandle(priority) { handle ->
+        val t0 = System.nanoTime()
         val parts = PdfiumNative.nativePageText(handle, index) ?: return@withHandle null
+        lastTextMs = (System.nanoTime() - t0) / 1_000_000
         PageText(parts[0] as IntArray, parts[1] as FloatArray, parts[2] as ByteArray, parts[3] as FloatArray?)
     }
 
@@ -163,6 +165,7 @@ class PdfiumDocument private constructor(
         /** Every document not yet closed, for [trimAll]. */
         private val live: MutableSet<PdfiumDocument> = ConcurrentHashMap.newKeySet()
         @Volatile private var lastOpenMs = -1L
+        @Volatile private var lastTextMs = -1L
 
         /** Starts opening [file] on the shared PDFium thread. */
         fun open(file: File): PdfiumDocument = PdfiumDocument(file, PdfiumThread.shared)
@@ -172,12 +175,13 @@ class PdfiumDocument private constructor(
             for (doc in live) doc.trim()
         }
 
-        /** The revision, the open documents, their loaded pages and the last open's time, for the debug HUD. */
+        /** The revision, the open documents, their loaded pages and the last open and text read's times, for the debug HUD. */
         val hud: String
-            get() = "%.10s  docs %d  pages %d  open %s".format(
+            get() = "%.10s  docs %d  pages %d  open %s  text %s".format(
                 PdfiumNative.revision, openCount.get(),
                 if (PdfiumNative.loaded) PdfiumNative.nativeLoadedPages() else 0,
                 if (lastOpenMs < 0) "-" else "$lastOpenMs ms",
+                if (lastTextMs < 0) "-" else "$lastTextMs ms",
             )
 
         private fun errorOf(code: Int): PdfOpenError = when (code) {

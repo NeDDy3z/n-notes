@@ -45,6 +45,9 @@ class PdfSource private constructor(
     /** Why the PDF did not open, null when it did. Waits for the open. */
     val openError: PdfOpenError? get() = pdf.error
 
+    /** The text of the pages last touched, for selecting and copying. */
+    val text = PageTextCache { pdf.pageText(it, PdfPriority.INTERACTIVE) }
+
     /** Page sizes in points already read, by page. */
     private val pageSizes = ConcurrentHashMap<Int, Pair<Float, Float>>()
 
@@ -292,6 +295,7 @@ class PdfSource private constructor(
         synchronized(executorLock) {
             runCatching { linksExecutor?.shutdownNow() }
         }
+        text.close()
         pdf.close()
         // [file] is owned by the caller (Document / import staging); deleting it here is not our job.
     }
