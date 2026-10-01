@@ -12,19 +12,24 @@ class FakePageText(private val cell: Float = 6f, private val height: Float = 12f
     private val angles = ArrayList<Float>()
     private var pen = floatArrayOf(0f, 0f)
     private var angle = 0
+    private var layout = 0
     private var hyphenEnded = false
 
     /**
      * A line of [text] whose first cell's top-left corner is at ([x], [y]), the whole line turned
      * clockwise about that corner by [angle], a quarter turn. [hyphen] makes its last character a
-     * line-end hyphen.
+     * line-end hyphen. A [vertical] line runs down like one turned by 90 but keeps its glyphs
+     * upright, as CJK set in columns does.
      */
-    fun line(text: String, x: Float, y: Float, angle: Int = 0, hyphen: Boolean = false): FakePageText {
+    fun line(
+        text: String, x: Float, y: Float, angle: Int = 0, hyphen: Boolean = false, vertical: Boolean = false,
+    ): FakePageText {
         if (codepoints.isNotEmpty() && !hyphenEnded) {
             add('\r'.code, null, PageText.GENERATED)
             add('\n'.code, null, PageText.GENERATED)
         }
         this.angle = angle
+        layout = if (vertical) 90 else angle
         var k = 0
         for (c in text) {
             val u = k * cell
@@ -57,8 +62,8 @@ class FakePageText(private val cell: Float = 6f, private val height: Float = 12f
         angles += angle.toFloat()
     }
 
-    /** The point (u, v) of the unturned line, from its corner ([x], [y]), turned by [angle]. */
-    private fun turn(x: Float, y: Float, u: Float, v: Float): FloatArray = when (angle) {
+    /** The point (u, v) of the unturned line, from its corner ([x], [y]), turned as the line runs. */
+    private fun turn(x: Float, y: Float, u: Float, v: Float): FloatArray = when (layout) {
         90 -> floatArrayOf(x - v, y + u)
         180 -> floatArrayOf(x - u, y - v)
         270 -> floatArrayOf(x + v, y - u)

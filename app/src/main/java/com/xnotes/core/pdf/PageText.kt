@@ -1,5 +1,7 @@
 package com.xnotes.core.pdf
 
+import kotlin.math.roundToInt
+
 /**
  * The text of one PDF page as PDFium reads it, one entry per character in PDFium's order: the
  * content stream's, right-to-left runs turned to reading order, with the spaces and line breaks
@@ -39,6 +41,12 @@ class PageText(
     fun hasBox(i: Int): Boolean = right(i) > left(i) && bottom(i) > top(i)
 
     fun angle(i: Int): Float = angles?.get(i) ?: 0f
+
+    /** [angle] to the nearest quarter turn: 0 reads rightward, 1 down, 2 leftward, 3 up. */
+    fun quarter(i: Int): Int = Math.floorMod((angle(i) / 90f).roundToInt(), 4)
+
+    /** The extent of character [i]'s box across its line. */
+    fun lineHeight(i: Int): Float = if (quarter(i) % 2 == 1) right(i) - left(i) else bottom(i) - top(i)
 
     /** A space or line break PDFium inferred from the layout, where the PDF draws nothing. */
     fun isGenerated(i: Int): Boolean = has(i, GENERATED)
