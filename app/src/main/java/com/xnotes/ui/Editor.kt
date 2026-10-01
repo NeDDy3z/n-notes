@@ -4227,7 +4227,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return id.substringBeforeLast('/', "").ifEmpty { null }
     }
 
-    /** The name a fork of [title] takes: the note's own name, de-duplicated the usual way. */
+    /** The name a fork numbered from [title] takes, de-duplicated the usual way (`title_1`, `title_2`, ...). */
     private fun forkName(root: String, parentId: String, title: String, kind: com.xnotes.core.util.DocumentKind): String =
         uniqueDocumentName(root, parentId, com.xnotes.core.util.DocumentKind.stripSuffix(title), kind)
 
@@ -4258,8 +4258,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun saveNoteGuarded(uri: String, doc: Document, title: String, owner: Document): SaveResult? = synchronized(saveLock) {
         val target = forks.target(uri, owner)
         if (changedUnderneath(target)) {
-            val fork = forkNote(target, doc, title) ?: return null
-            forks.record(target, fork.uri, owner)
+            val base = forks.base(target, DocumentKind.stripSuffix(title))
+            val fork = forkNote(target, doc, base) ?: return null
+            forks.record(target, fork.uri, owner, DocumentKind.stripSuffix(fork.name), base)
             return SaveResult(fork.uri, fork)
         }
         if (!writeNoteSafely(target, doc)) return null
@@ -4275,8 +4276,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     ): SaveResult? = synchronized(saveLock) {
         val target = forks.target(uri, owner)
         if (changedUnderneath(target)) {
-            val fork = forkCanvas(target, doc, title) ?: return null
-            forks.record(target, fork.uri, owner)
+            val base = forks.base(target, DocumentKind.stripSuffix(title))
+            val fork = forkCanvas(target, doc, base) ?: return null
+            forks.record(target, fork.uri, owner, DocumentKind.stripSuffix(fork.name), base)
             return SaveResult(fork.uri, fork)
         }
         if (!writeCanvasSafely(target, doc)) return null

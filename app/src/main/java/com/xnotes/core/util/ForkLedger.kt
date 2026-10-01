@@ -7,7 +7,11 @@ class ForkLedger {
 
     private class Forward(val to: String, val owner: WeakReference<Any>)
 
+    /** A fork's own name and the name its chain started from, both without the extension. */
+    private class Named(val stem: String, val base: String)
+
     private val forwards = HashMap<String, Forward>()
+    private val names = HashMap<String, Named>()
 
     /** Where [owner]'s save aimed at [uri] belongs: the newest fork [owner] made from it, else [uri] itself. */
     @Synchronized
@@ -20,10 +24,15 @@ class ForkLedger {
         return at
     }
 
-    /** Record that [owner] forked [from] into the new file [to]. */
+    /** The name a fork of [uri] is numbered from: its chain's first name while [stem] is still the fork's own. */
     @Synchronized
-    fun record(from: String, to: String, owner: Any) {
+    fun base(uri: String, stem: String): String = names[uri]?.takeIf { it.stem == stem }?.base ?: stem
+
+    /** Record that [owner] forked [from] into the new file [to], named [stem] and numbered from [base]. */
+    @Synchronized
+    fun record(from: String, to: String, owner: Any, stem: String, base: String) {
         forwards.remove(to) // a uri reused by this new file must not still forward elsewhere
         forwards[from] = Forward(to, WeakReference(owner))
+        names[to] = Named(stem, base)
     }
 }
