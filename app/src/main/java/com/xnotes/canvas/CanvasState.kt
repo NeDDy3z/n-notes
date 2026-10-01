@@ -697,6 +697,31 @@ class CanvasState(
         return null
     }
 
+    /**
+     * The page under [content], or the nearest shown one (drags cross the gaps between pages),
+     * with the point in its page space clamped to the page.
+     */
+    fun pagePointAt(content: Pt): Pair<Int, Pt>? {
+        var pi = pageIndexAtContent(content)
+        if (pi == null) {
+            val drawable = drawablePageRange()
+            var bestD = Double.MAX_VALUE
+            for (i in pageRects.indices) {
+                if (i !in drawable) continue // never target a hidden paginated neighbour
+                val d = pageRects[i].distanceTo(content)
+                if (d < bestD) {
+                    bestD = d
+                    pi = i
+                }
+            }
+        }
+        val index = pi ?: return null
+        if (pageRects.getOrNull(index) == null) return null
+        val page = document.pages.getOrNull(index) ?: return null
+        val p = toPageSpace(index, content)
+        return index to Pt(p.x.coerceIn(0.0, page.width), p.y.coerceIn(0.0, page.height))
+    }
+
     /** The current page (spec 05 §4): contains the viewport vertical centre, biased by half a gap.
      *  Paginated mode reads it from [currentRow] instead (the page under the viewport centre). */
     fun currentPageIndex(): Int {

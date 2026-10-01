@@ -893,6 +893,39 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var flowEditingActive by mutableStateOf(false)
         private set
 
+    /** The PDF text of note pages, read through the open PDF's text cache. */
+    private val pdfTexts = object : com.xnotes.canvas.PdfTextSource {
+        private fun pdfPageOf(page: Int): Int? = state.document.pages.getOrNull(page)?.pdfPage
+
+        override fun peek(page: Int) = pdfPageOf(page)?.let { pdfSource?.text?.peek(it) }
+
+        override fun prefetch(page: Int) {
+            pdfPageOf(page)?.let { pdfSource?.text?.prefetch(it) }
+        }
+
+        override fun request(page: Int, onReady: () -> Unit) {
+            val src = pdfSource
+            val pdf = pdfPageOf(page)
+            if (src == null || pdf == null) return onReady()
+            src.text.request(pdf) { view.post { if (pdfSource === src) onReady() } }
+        }
+    }
+
+    val pdfText = com.xnotes.canvas.PdfTextController(
+        state, pdfTexts, onViewChanged = { refreshView() }, requestRender = { onRender() },
+    ).also { ctrl ->
+        controller.pdfText = ctrl
+        ctrl.onHaptic = {
+            runCatching { view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) }
+        }
+        ctrl.onSettled = { pdfTextMenu = ctrl.menuAnchor() }
+        ctrl.onCleared = { pdfTextMenu = null }
+    }
+
+    /** Viewport bounds the PDF text selection's menu anchors to, or null when it is hidden. */
+    var pdfTextMenu by mutableStateOf<Rect?>(null)
+        private set
+
     /** The clipboard's text content, or null. */
     private fun clipboardText(): String? {
         val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
@@ -1079,6 +1112,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
                 flowContextMenu = null
                 tableMenu = null
+                pdfTextMenu = null
             }
             controller.onTouch(ev)
         }
@@ -1118,9 +1152,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 }
                 false
             }
-        }
-        controller.onPdfTextPress = { pageIndex ->
-            state.document.pages.getOrNull(pageIndex)?.pdfPage?.let { pdfSource?.text?.prefetch(it) }
         }
         maybeAutoEnableFingerDraw()
         applySettings()
@@ -1228,6 +1259,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         com.xnotes.platform.SystemClipboard.imageUri(appContext)
 
     private fun rebuildPdfSource() {
+        pdfText.clear()
         // Opening never waits, and queued first it runs before the old document's close.
         val old = pdfSource
         pdfSource = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.open(it) }
@@ -5119,7 +5151,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     fun escape() {
-        if (editingTable != null) endTableEdit() else controller.escape()
+        when {
+            pdfText.selection != null -> pdfText.clear()
+            editingTable != null -> endTableEdit()
+            else -> controller.escape()
+        }
     }
 
     fun toggleSidebar() {

@@ -71,7 +71,7 @@ import kotlin.math.sin
 /** The pointer state machine modes (spec 06 §1). */
 enum class PointerMode {
     IDLE, DRAW, ERASE, BAND, LASSO_DRAW, SHOT, SHAPE, MOVE, RESIZE, TRANSFORM, PAN, PINCH, FLOW_TEXT,
-    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE,
+    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, PDF_TEXT,
 }
 
 /**
@@ -148,15 +148,8 @@ class InteractionController(
      *  once it is ready. */
     var onLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
-    /** A free pointer (see [FreePointer]) went down on the PDF of page [pageIndex]: the host may start reading its text. */
-    var onPdfTextPress: ((pageIndex: Int) -> Unit)? = null
-
-    /**
-     * A free pointer's long press landed on the PDF of page [pageIndex] at [pageLocal] (page-local
-     * content px), no item on top. The host selects the word there, or runs [noText] (the paste
-     * menu, when there is something to paste) when there is none.
-     */
-    var onPdfTextLongPress: ((pageIndex: Int, pageLocal: Pt, noText: () -> Unit) -> Unit)? = null
+    /** PDF text selection: a free pointer's long press on a PDF page selects there (installed by the Editor). */
+    var pdfText: PdfTextController? = null
     val document: Document get() = state.document
 
     var tool: Tool = Tool.DEFAULT
@@ -363,6 +356,9 @@ class InteractionController(
     /** The page whose PDF text the armed long press would select, -1 for none. */
     private var longPressTextPage = -1
 
+    /** A press zoom lock kept from panning, where it went down: a tap there still ends a PDF text selection. */
+    private var lockedPressAt: Pt? = null
+
     // TEXT EDITING
     private var editingText: TextItem? = null
     private var editingIsNew = false
@@ -551,6 +547,7 @@ class InteractionController(
         stopFling() // a new touch halts any in-progress glide
         stopOverscrollSettle() // ...and lets a re-grab take over the elastic mid-spring
         panMayCommitText = false // a fresh gesture; the editing branch below re-arms it if it applies
+        lockedPressAt = null
         val toolType = e.getToolType(0)
         val vx = e.getX(0).toDouble()
         val vy = e.getY(0).toDouble()
@@ -641,10 +638,22 @@ class InteractionController(
             }
         }
 
+        // A PDF text selection's handle drags with any pointer. Otherwise only a pan or a pinch keeps
+        // the selection: anything else ends it now, and a tap ends it on release.
+        pdfText?.let { text ->
+            if (text.press(Pt(vx, vy))) {
+                mode = PointerMode.PDF_TEXT
+                cancelLongPress()
+                return
+            }
+            if (effectiveTool != Tool.PAN) text.clear()
+        }
+
         // Zoom-lock pan preference: swallow a single-finger pan when locked and set to "double"/"none".
         // The pointer stays free, so a long press still picks up an item or selects text.
         if (effectiveTool == Tool.PAN && !singleFingerPanAllowed()) {
             mode = PointerMode.IDLE
+            lockedPressAt = Pt(vx, vy)
             armLongPress(Pt(vx, vy), content, isFinger, free)
             return
         }
@@ -674,6 +683,11 @@ class InteractionController(
 
     private fun handlePointerDown(e: MotionEvent) {
         cancelLongPress()
+        // A second finger turns a PDF text drag into a pinch; the selection stays.
+        if (mode == PointerMode.PDF_TEXT) {
+            pdfText?.release()
+            mode = PointerMode.IDLE
+        }
         // A second finger on a ruler being moved twists/translates it instead of pinch-zooming.
         if (mode == PointerMode.RULER_MOVE && e.pointerCount >= 2) {
             beginRulerTransform(e)
@@ -717,6 +731,7 @@ class InteractionController(
                 // drag extends the selection (dragTo returns true to request the pan handoff).
                 if (flowText?.dragTo(content, Pt(vx, vy)) == true) beginPan(vx, vy)
             PointerMode.TEXT_DRAG -> extendTextDrag(content)
+            PointerMode.PDF_TEXT -> pdfText?.dragTo(Pt(vx, vy))
             else -> Unit
         }
     }
@@ -760,11 +775,14 @@ class InteractionController(
                         else -> startPanFling()
                     }
                 } else {
+                    // A tap ends a PDF text selection and does nothing else.
+                    val textCleared = tap && pdfText?.selection != null
+                    if (textCleared) pdfText?.clear()
                     // A finger tap (no drag) that didn't just halt a glide, landing off the current
                     // selection, dismisses it — the finger's counterpart to the stylus's empty-tap clear.
-                    val linkHandled = tap && state.overscrollY <= 0.0 && tryLinkTap(content)
+                    val linkHandled = !textCleared && tap && state.overscrollY <= 0.0 && tryLinkTap(content)
                     when {
-                        linkHandled -> Unit
+                        textCleared || linkHandled -> Unit
                         state.overscrollY > 0.0 -> releaseOverscroll()
                         tap && hasSelection && selectionBoundsContent()?.contains(content) != true -> clearSelection()
                         !state.verticalScroll -> endPanPaginated()
@@ -786,6 +804,15 @@ class InteractionController(
                 flowText?.release(content, Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble()), e.eventTime)
             }
             PointerMode.TEXT_DRAG -> endTextDrag(content)
+            PointerMode.PDF_TEXT -> {
+                mode = PointerMode.IDLE
+                pdfText?.release()
+            }
+            PointerMode.IDLE -> lockedPressAt?.let { at ->
+                lockedPressAt = null
+                val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
+                if (up.distanceTo(at) <= TAP_SLOP) pdfText?.clear()
+            }
             PointerMode.RULER_MOVE -> { mode = PointerMode.IDLE; requestRender() }
             PointerMode.RULER_TRANSFORM -> { mode = PointerMode.IDLE; requestRender() }
             PointerMode.RULER_ROTATE -> { mode = PointerMode.IDLE; requestRender() }
@@ -2024,9 +2051,10 @@ class InteractionController(
         longPressCandidate =
             if (grabEligible && hit != null && !hit.locked) Selected(pageIndex!!, hit) else null
         // An item on top wins; a free pointer on the bare PDF selects its text.
-        if (free && hit == null && pageIndex != null && state.document.pages[pageIndex].pdfPage != null) {
+        val text = pdfText
+        if (free && text != null && hit == null && pageIndex != null && state.document.pages[pageIndex].pdfPage != null) {
             longPressTextPage = pageIndex
-            onPdfTextPress?.invoke(pageIndex)
+            text.prefetch(pageIndex)
         }
         // Arm to grab an item, to unlock one, to select text, or (on empty space) to open the paste
         // menu when there is content to paste.
@@ -2071,12 +2099,15 @@ class InteractionController(
             onToolChanged(tool)
             setSelection(listOf(candidate))
             beginMove(state.viewportToContent(longPressStart))
-        } else if (textPage >= 0) {
-            mode = PointerMode.IDLE
+        } else if (textPage >= 0 && pdfText != null) {
+            // Select the word under the press, which may drag on to extend it; no text there means
+            // empty space, so the paste menu as before.
+            mode = PointerMode.PDF_TEXT
             val start = longPressStart
             val content = longPressContent
-            val pasteMenu = { if (hasClipboardItems() || clipboardHasImage()) onContextMenu(start, content, null) }
-            onPdfTextLongPress?.invoke(textPage, state.toPageSpace(textPage, content), pasteMenu) ?: pasteMenu()
+            pdfText?.longPress(textPage, state.toPageSpace(textPage, content)) {
+                if (hasClipboardItems() || clipboardHasImage()) onContextMenu(start, content, null)
+            }
         } else {
             // Empty space, or a locked item: open the context menu at the press point.
             mode = PointerMode.IDLE
@@ -2920,8 +2951,9 @@ class InteractionController(
 
             // Selection chrome.
             val accent = chromePen(1.3)
-            // Flow caret + selection highlight, under the selection chrome.
+            // Flow caret + selection highlight, under the selection chrome; then the PDF's.
             flowText?.drawOverlay(r)
+            pdfText?.drawOverlay(r)
 
             when {
                 mode == PointerMode.BAND -> bandRect?.let { r.strokeRect(it, accent) }

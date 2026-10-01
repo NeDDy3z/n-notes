@@ -210,7 +210,7 @@ class FlowTextController(
                 return
             }
         }
-        val (pi, local) = pagePointAt(content) ?: return
+        val (pi, local) = state.pagePointAt(content) ?: return
         val hit = frame()?.hitTest(pi, local) ?: return
         pressHit = hit
         pressAnchor = when (hit) {
@@ -229,7 +229,7 @@ class FlowTextController(
      */
     private fun onLongPressFired() {
         val anchor = pressAnchor ?: return
-        val held = pagePointAt(pressContent)?.let { (pi, local) ->
+        val held = state.pagePointAt(pressContent)?.let { (pi, local) ->
             frame()?.tablePressAt(pi, local, TABLE_RULE_SLOP_DP * state.devicePxPerDp / state.zoom)
         }
         if (held != null && !held.second) {
@@ -361,7 +361,7 @@ class FlowTextController(
 
     /** Place the caret from a programmatic point (menu paste): tap semantics, no gestures. */
     fun tapAt(content: Pt) {
-        val (pi, local) = pagePointAt(content) ?: return
+        val (pi, local) = state.pagePointAt(content) ?: return
         when (val hit = frame()?.hitTest(pi, local)) {
             null -> Unit
             is FlowHit.Caret ->
@@ -374,7 +374,7 @@ class FlowTextController(
 
     /** A tap below the flow end: fill the gap with empty lines so the caret lands there. */
     private fun tapBeyondEnd(content: Pt) {
-        val (pi, local) = pagePointAt(content) ?: return
+        val (pi, local) = state.pagePointAt(content) ?: return
         val f = frame() ?: return
         var count = f.emptyLinesToReach(pi, local.y, slotHeight())
         if (flow().paragraphs.isEmpty() && count <= 0) count = 1
@@ -669,7 +669,7 @@ class FlowTextController(
     }
 
     private fun caretPosAt(content: Pt): FlowPos? {
-        val (pi, local) = pagePointAt(content) ?: return null
+        val (pi, local) = state.pagePointAt(content) ?: return null
         return when (val hit = frame()?.hitTest(pi, local) ?: return null) {
             is FlowHit.Caret -> hit.pos
             is FlowHit.Checkbox -> FlowPos(hit.paraIndex, 0)
@@ -677,27 +677,6 @@ class FlowTextController(
         }
     }
 
-    /** The page under [content], or the nearest one (drags cross the gaps between pages). */
-    private fun pagePointAt(content: Pt): Pair<Int, Pt>? {
-        var pi = state.pageIndexAtContent(content)
-        if (pi == null) {
-            val drawable = state.drawablePageRange()
-            var bestD = Double.MAX_VALUE
-            for (i in state.pageRects.indices) {
-                if (i !in drawable) continue // never target a hidden paginated neighbour
-                val d = state.pageRects[i].distanceTo(content)
-                if (d < bestD) {
-                    bestD = d
-                    pi = i
-                }
-            }
-        }
-        val index = pi ?: return null
-        if (state.pageRects.getOrNull(index) == null) return null
-        val page = state.document.pages.getOrNull(index) ?: return null
-        val p = state.toPageSpace(index, content)
-        return index to Pt(p.x.coerceIn(0.0, page.width), p.y.coerceIn(0.0, page.height))
-    }
 
     companion object {
         const val DRAG_SLOP = 14.0
