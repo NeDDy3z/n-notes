@@ -187,6 +187,9 @@ private const val PDF_TEXT_MENU_SETTLE_MS = 250L
 /** Text handed to another app's text action at most, well inside what an intent can carry. */
 private const val PROCESS_TEXT_MAX = 100_000
 
+/** How far off an address written in a PDF's text a tap may land and still open it. */
+private const val AUTO_LINK_SLOP_DP = 4.0
+
 /** The one thread every pane's search scans on, at background priority. */
 private val searchWorker: java.util.concurrent.Executor by lazy {
     java.util.concurrent.Executors.newSingleThreadExecutor { r ->
@@ -1248,15 +1251,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             val ptPerPx = 72.0 / state.document.dpi
             val x = (pageLocal.x * ptPerPx).toFloat()
             val y = (pageLocal.y * ptPerPx).toFloat()
+            val slop = (AUTO_LINK_SLOP_DP * state.devicePxPerDp / state.zoom * ptPerPx).toFloat()
             if (src.hasLinks(pdfIdx)) {
-                val link = src.linkAt(pdfIdx, x, y) ?: return@onLinkTap false
+                val link = src.linkAt(pdfIdx, x, y) ?: return@onLinkTap openAutoLink(src, pdfIdx, x, y, slop)
                 followLink(link)
                 true
             } else {
                 // Not parsed yet: parse off the main thread, then open on the main thread. The tap
                 // is not blocked or consumed; on the first tap of a page the link opens a moment later.
                 src.requestLinks(pdfIdx) {
-                    view.post { if (pdfSource === src) src.linkAt(pdfIdx, x, y)?.let { followLink(it) } }
+                    view.post {
+                        if (pdfSource !== src) return@post
+                        val link = src.linkAt(pdfIdx, x, y)
+                        if (link != null) followLink(link) else openAutoLink(src, pdfIdx, x, y, slop)
+                    }
                 }
                 false
             }
@@ -1613,6 +1621,24 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val dest = link.destPage ?: return
         val docPage = state.document.pages.indexOfFirst { it.pdfPage == dest }
         if (docPage >= 0) goToPage(docPage)
+    }
+
+    /**
+     * Opens the address written out in the text of [src]'s page [pdfIdx] at ([x], [y]) in points,
+     * where no link annotation is. True when it opened at once; a page whose text is not held yet is
+     * read first and its link opens a moment later, as an annotation's does on a page's first tap.
+     */
+    private fun openAutoLink(src: com.xnotes.platform.PdfSource, pdfIdx: Int, x: Float, y: Float, slop: Float): Boolean {
+        val text = src.text.peek(pdfIdx)
+        if (text != null) {
+            val link = com.xnotes.core.pdf.PageLinks.at(text, x, y, slop) ?: return false
+            openUrl(link.uri)
+            return true
+        }
+        src.text.request(pdfIdx) { t ->
+            view.post { if (pdfSource === src && t != null) com.xnotes.core.pdf.PageLinks.at(t, x, y, slop)?.let { openUrl(it.uri) } }
+        }
+        return false
     }
 
     /** Open an external web/mail URL in the system handler. Restricted to safe schemes; never throws. */
