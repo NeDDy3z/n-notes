@@ -22,3 +22,7 @@
 # back to Enum.name(). Keep the core enums whole so renaming can never change a name written to, or
 # read back from, a saved document — the .xnote format must stay forward/backward compatible.
 -keep enum com.xnotes.core.** { *; }
+
+# --- PDFium JNI ---------------------------------------------------------------------------------
+# pdf_jni.cpp reads CancelToken.isCancelled by name while a render runs.
+-keepclassmembers class com.xnotes.platform.CancelToken { boolean isCancelled; }

@@ -1,5 +1,7 @@
 package com.xnotes.platform
 
+import android.graphics.Bitmap
+
 /** The JNI surface over the vendored PDFium (see cpp/pdf_jni.cpp). All but [revision] run on [PdfiumThread]. */
 object PdfiumNative {
     val loaded: Boolean = runCatching { System.loadLibrary("xnotespdf") }.isSuccess
@@ -18,4 +20,10 @@ object PdfiumNative {
 
     /** Each page's width and height in points, as displayed (its /Rotate applied); 0 for a broken page. */
     @JvmStatic external fun nativePageSizes(doc: Long): FloatArray?
+
+    /** See [PdfiumDocument.render]; it stops early once [lifetime] or [token] is cancelled. */
+    @JvmStatic external fun nativeRender(
+        doc: Long, index: Int, bitmap: Bitmap, fullW: Int, fullH: Int, left: Int, top: Int,
+        lifetime: CancelToken, token: CancelToken?,
+    ): Boolean
 }

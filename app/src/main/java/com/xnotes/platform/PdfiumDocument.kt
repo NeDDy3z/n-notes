@@ -1,5 +1,6 @@
 package com.xnotes.platform
 
+import android.graphics.Bitmap
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -51,9 +52,22 @@ class PdfiumDocument private constructor(
     fun pageSizes(priority: PdfPriority = PdfPriority.INTERACTIVE): FloatArray? =
         withHandle(priority) { PdfiumNative.nativePageSizes(it) }
 
+    /**
+     * Renders the part of page [index] at ([left], [top]) of a [fullW] x [fullH] raster of the
+     * whole page into [bitmap] (ARGB_8888), on white. False when cancelled, failed or not open.
+     */
+    fun render(
+        index: Int, bitmap: Bitmap, fullW: Int, fullH: Int, left: Int, top: Int,
+        priority: PdfPriority, token: CancelToken? = null,
+    ): Boolean = withHandle(priority, token) {
+        PdfiumNative.nativeRender(it, index, bitmap, fullW, fullH, left, top, lifetime, token)
+    } ?: false
+
     /** Runs [body] with the native document on the PDFium thread; null when it is not open. */
-    private fun <T> withHandle(priority: PdfPriority, vararg tokens: CancelToken, body: (Long) -> T): T? =
-        pdfium.call(priority, lifetime, *tokens) { if (handle == 0L) null else body(handle) }
+    private fun <T> withHandle(priority: PdfPriority, token: CancelToken? = null, body: (Long) -> T): T? {
+        val tokens = if (token == null) arrayOf(lifetime) else arrayOf(lifetime, token)
+        return pdfium.call(priority, *tokens) { if (handle == 0L) null else body(handle) }
+    }
 
     /** Frees the native document once its running job, if any, ends. Never blocks. */
     override fun close() {
