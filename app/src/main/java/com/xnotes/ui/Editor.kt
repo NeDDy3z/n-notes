@@ -703,7 +703,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // Only a canvas living under the granted folder autosaves; anything else is left alone,
         // matching how a note opened from outside the root behaves.
         canvasAutosaveUri = if (uri != null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
-        lastCanvasStamp = canvasAutosaveUri?.let { stampOf(it) }
+        canvasAutosaveUri?.let { rememberStamp(it) }
         canvasOpen = true
         noteOpen = true
     }
@@ -718,7 +718,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     val out = appContext.contentResolver.openOutputStream(android.net.Uri.parse(uri), "wt")
                         ?: return@runCatching false
                     out.use { java.io.FileInputStream(tmp).use { input -> input.copyTo(it, copyBuffer) } }
-                    lastCanvasStamp = stampOf(uri)
+                    rememberStamp(uri)
                     true
                 } finally {
                     tmp.delete()
@@ -3882,6 +3882,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             createdStore.rekeyTree(from, to)
             viewStates.rekeyTree(from, to)
             docMeta.rekeyTree(from, to)
+            knownStamps.remove(oldUri)?.let { knownStamps[newUri] = it }
             invalidateThumb(oldUri)
         }
         val tree = browseRoot?.let { android.net.Uri.parse(it) } ?: return
@@ -4169,11 +4170,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Size + last-modified of a SAF document: the evidence that a file did or did not move under us. */
     private data class DocStamp(val size: Long, val modified: Long)
 
-    /** The stamp the note's autosave file carried after this editor last wrote it. */
-    @Volatile private var lastNoteStamp: DocStamp? = null
-
-    /** The canvas sibling of [lastNoteStamp]. */
-    @Volatile private var lastCanvasStamp: DocStamp? = null
+    /** The stamp each file carried after this editor last opened or wrote it, by uri. */
+    private val knownStamps = java.util.concurrent.ConcurrentHashMap<String, DocStamp>()
 
     /** Where a fork landed: the new file's uri, and the name to show the user. */
     private class Fork(val uri: String, val name: String)
@@ -4201,6 +4199,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }.getOrNull()
 
+    /** Keep what the provider now reports for [uri] as its known stamp, or forget it when it reports nothing. */
+    private fun rememberStamp(uri: String) {
+        val stamp = stampOf(uri)
+        if (stamp != null) knownStamps[uri] = stamp else knownStamps.remove(uri)
+    }
+
     /**
      * Has something else rewritten [uri] since this editor last wrote it? A folder-sync app pulling
      * in the other device's copy does exactly that, and so does the other split pane holding the same
@@ -4210,8 +4214,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * An unreadable stamp is **not** evidence. A provider that won't report size or mtime must never
      * trigger a fork: a spurious duplicate file is a worse default than the plain write.
      */
-    private fun changedUnderneath(uri: String, known: DocStamp?): Boolean {
-        if (known == null) return false
+    private fun changedUnderneath(uri: String): Boolean {
+        val known = knownStamps[uri] ?: return false
         val now = stampOf(uri) ?: return false
         return now != known
     }
@@ -4237,7 +4241,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val parentId = parentDocIdOf(uri) ?: return null
         val name = forkName(root, parentId, title, com.xnotes.core.util.DocumentKind.NOTE)
         val forked = createNoteFile(root, parentId, name) { codec.write(doc, it) } ?: return null
-        lastNoteStamp = stampOf(forked)
+        rememberStamp(forked)
         return Fork(forked, name)
     }
 
@@ -4247,14 +4251,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val parentId = parentDocIdOf(uri) ?: return null
         val name = forkName(root, parentId, title, com.xnotes.core.util.DocumentKind.CANVAS)
         val forked = createNoteFile(root, parentId, name) { canvasCodec.write(doc, it) } ?: return null
-        lastCanvasStamp = stampOf(forked)
+        rememberStamp(forked)
         return Fork(forked, name)
     }
 
     /** Autosave [owner]'s [doc] to [uri], or to the fork [owner] already moved to, forking when that file moved under us. IO. */
     private fun saveNoteGuarded(uri: String, doc: Document, title: String, owner: Document): SaveResult? = synchronized(saveLock) {
         val target = forks.target(uri, owner)
-        if (changedUnderneath(target, lastNoteStamp)) {
+        if (changedUnderneath(target)) {
             val fork = forkNote(target, doc, title) ?: return null
             forks.record(target, fork.uri, owner)
             return SaveResult(fork.uri, fork)
@@ -4271,7 +4275,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         owner: com.xnotes.core.infinite.InfiniteDocument,
     ): SaveResult? = synchronized(saveLock) {
         val target = forks.target(uri, owner)
-        if (changedUnderneath(target, lastCanvasStamp)) {
+        if (changedUnderneath(target)) {
             val fork = forkCanvas(target, doc, title) ?: return null
             forks.record(target, fork.uri, owner)
             return SaveResult(fork.uri, fork)
@@ -4301,7 +4305,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun maybeBindAutosave(uri: String?) {
         autosaveUri = if (uri != null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
-        lastNoteStamp = autosaveUri?.let { stampOf(it) }
+        autosaveUri?.let { rememberStamp(it) }
     }
 
     /**
@@ -4333,7 +4337,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 state.lastSaveDeflateMs = timing.deflateMs
                 state.lastSaveManifestBytes = timing.manifestBytes
                 state.lastSaveBytes = tmp.length() // live file size for the debug overlay
-                lastNoteStamp = stampOf(uri) // read back what the provider reports, not what we wrote
+                rememberStamp(uri) // read back what the provider reports, not what we wrote
                 true
             } finally {
                 tmp.delete()
@@ -4416,7 +4420,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             state.lastSaveDeflateMs = timing.deflateMs
             state.lastSaveManifestBytes = timing.manifestBytes
             state.lastSaveBytes = length
-            lastNoteStamp = stampOf(uri) // read back what the provider reports, not what we wrote
+            rememberStamp(uri) // read back what the provider reports, not what we wrote
             true
         } finally {
             tmp.delete()
