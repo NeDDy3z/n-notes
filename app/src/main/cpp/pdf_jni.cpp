@@ -8,9 +8,11 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,6 +28,14 @@ namespace {
 // Pages kept loaded per document, so render, links and text parse a page once.
 constexpr size_t kPageCache = 4;
 
+// Where a walk of the outline stands between the slices it is read in.
+struct OutlineWalk {
+    // The next bookmark at each depth still open, deepest last.
+    std::vector<std::pair<FPDF_BOOKMARK, int>> stack;
+    std::set<FPDF_BOOKMARK> seen;
+    size_t read = 0;
+};
+
 // An open document, the file it reads and its most recently used pages, newest last.
 struct Doc {
     int fd = -1;
@@ -34,6 +44,7 @@ struct Doc {
     FPDF_FORMFILLINFO form_info = {};
     FPDF_FORMHANDLE form = nullptr;
     std::vector<std::pair<int, FPDF_PAGE>> pages;
+    OutlineWalk outline;
 };
 
 Doc* FromHandle(jlong handle) {
@@ -185,6 +196,16 @@ void AddImages(FPDF_PAGEOBJECT obj, const FS_MATRIX& to_page, const DisplayMap& 
             break;
         }
     }
+}
+
+// The page bookmark b opens, from its /Dest or its GoTo action; -1 for none.
+int BookmarkPage(FPDF_DOCUMENT pdf, FPDF_BOOKMARK b) {
+    FPDF_DEST dest = FPDFBookmark_GetDest(pdf, b);
+    if (!dest) {
+        FPDF_ACTION action = FPDFBookmark_GetAction(b);
+        if (action && FPDFAction_GetType(action) == PDFACTION_GOTO) dest = FPDFAction_GetDest(pdf, action);
+    }
+    return dest ? FPDFDest_GetDestPageIndex(pdf, dest) : -1;
 }
 
 // Pauses a progressive render, for good, once either CancelToken is cancelled.
@@ -413,5 +434,65 @@ Java_com_xnotes_platform_PdfiumNative_nativeLinks(JNIEnv* env, jclass, jlong han
     env->SetObjectArrayElement(out, 0, jboxes);
     env->SetObjectArrayElement(out, 1, jdests);
     env->SetObjectArrayElement(out, 2, juris);
+    return out;
+}
+
+// The next slice of the outline in reading order, as {String[] titles, int[] pages, int[] levels},
+// read for about budget_ms; empty once the walk has read it all, or max entries. A restart begins
+// a new walk. A bookmark met twice ends its chain, as malformed outlines can loop.
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativeOutline(JNIEnv* env, jclass, jlong handle, jint max,
+                                                    jint budget_ms, jboolean restart) {
+    Doc* doc = FromHandle(handle);
+    OutlineWalk& walk = doc->outline;
+    if (restart) {
+        walk = OutlineWalk();
+        walk.stack.emplace_back(FPDFBookmark_GetFirstChild(doc->pdf, nullptr), 0);
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budget_ms);
+    std::vector<std::u16string> titles;
+    std::vector<jint> pages;
+    std::vector<jint> levels;
+    while (!walk.stack.empty() && walk.read < static_cast<size_t>(max) &&
+           std::chrono::steady_clock::now() < deadline) {
+        auto& [b, level] = walk.stack.back();
+        if (!b || !walk.seen.insert(b).second) {
+            walk.stack.pop_back();
+            continue;
+        }
+        const FPDF_BOOKMARK at = b;
+        const int depth = level;
+        b = FPDFBookmark_GetNextSibling(doc->pdf, at);
+        // The length is in bytes, the terminating NUL included.
+        const unsigned long bytes = FPDFBookmark_GetTitle(at, nullptr, 0);
+        std::u16string title(bytes / 2, u'\0');
+        if (!title.empty()) {
+            FPDFBookmark_GetTitle(at, title.data(), bytes);
+            title.pop_back();
+        }
+        titles.push_back(std::move(title));
+        pages.push_back(BookmarkPage(doc->pdf, at));
+        levels.push_back(depth);
+        ++walk.read;
+        if (depth < 64) walk.stack.emplace_back(FPDFBookmark_GetFirstChild(doc->pdf, at), depth + 1);
+    }
+    const auto count = static_cast<jsize>(titles.size());
+    jobjectArray jtitles = env->NewObjectArray(count, env->FindClass("java/lang/String"), nullptr);
+    jintArray jpages = env->NewIntArray(count);
+    jintArray jlevels = env->NewIntArray(count);
+    jobjectArray out = env->NewObjectArray(3, env->FindClass("java/lang/Object"), nullptr);
+    if (!jtitles || !jpages || !jlevels || !out) return nullptr;
+    for (jsize i = 0; i < count; ++i) {
+        const std::u16string& t = titles[i];
+        jstring title = env->NewString(reinterpret_cast<const jchar*>(t.data()), static_cast<jsize>(t.size()));
+        if (!title) return nullptr;
+        env->SetObjectArrayElement(jtitles, i, title);
+        env->DeleteLocalRef(title);
+    }
+    env->SetIntArrayRegion(jpages, 0, count, pages.data());
+    env->SetIntArrayRegion(jlevels, 0, count, levels.data());
+    env->SetObjectArrayElement(out, 0, jtitles);
+    env->SetObjectArrayElement(out, 1, jpages);
+    env->SetObjectArrayElement(out, 2, jlevels);
     return out;
 }

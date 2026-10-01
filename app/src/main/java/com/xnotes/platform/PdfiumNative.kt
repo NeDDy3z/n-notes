@@ -27,6 +27,12 @@ object PdfiumNative {
     /** Page [index]'s link boxes (l, t, r, b in points as displayed), their target pages (-1 for none) and URIs. */
     @JvmStatic external fun nativeLinks(doc: Long, index: Int): Array<Any>?
 
+    /**
+     * The next slice of the outline, read for about [budgetMs] (empty when done, or after [max]
+     * entries): titles, target pages (-1 for none), depths. [restart] begins a new walk.
+     */
+    @JvmStatic external fun nativeOutline(doc: Long, max: Int, budgetMs: Int, restart: Boolean): Array<Any>?
+
     /** See [PdfiumDocument.render]; it stops early once [lifetime] or [token] is cancelled. */
     @JvmStatic external fun nativeRender(
         doc: Long, index: Int, bitmap: Bitmap, fullW: Int, fullH: Int, left: Int, top: Int,

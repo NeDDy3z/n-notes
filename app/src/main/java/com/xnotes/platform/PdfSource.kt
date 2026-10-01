@@ -81,8 +81,18 @@ class PdfSource private constructor(
         return (s[0] to s[1]).also { pageSizes[index] = it }
     }
 
-    /** Every page's size in points, width then height, in one read (for importing a whole PDF). */
-    fun allPageSizePoints(): FloatArray? = if (closed) null else pdf.pageSizes()
+    /** Every page's size in points, width then height, for importing a whole PDF. Read in slices, so
+     *  renders get their turn. */
+    fun allPageSizePoints(): FloatArray? {
+        val n = pageCount
+        val out = FloatArray(2 * n)
+        for (from in 0 until n step SIZES_PER_READ) {
+            if (closed) return null
+            val part = pdf.pageSizes(from, SIZES_PER_READ, priority()) ?: return null
+            part.copyInto(out, 2 * from)
+        }
+        return out
+    }
 
     /** The whole page [index] fitted to [widthPx] × [heightPx]. */
     fun renderPage(index: Int, widthPx: Int, heightPx: Int, filter: PdfPageFilter = PdfPageFilter.NONE): AndroidRasterSurface? {
@@ -182,6 +192,10 @@ class PdfSource private constructor(
         val rects = pdf.imageRects(index, priority()) ?: return FloatArray(0)
         return rects.also { imageRects[index] = it }
     }
+
+    /** The PDF's outline (bookmarks), empty when it has none. Waits, so not on the main thread. */
+    fun outline(): List<PdfOutlineEntry> =
+        if (closed) emptyList() else pdf.outline(MAX_OUTLINE, PdfPriority.THUMBNAIL).orEmpty()
 
     // --- Links ---
 
@@ -284,6 +298,12 @@ class PdfSource private constructor(
 
     companion object {
         private const val MAX_DIM = 4096
+
+        /** Bookmarks read at most, so a pathological outline can't flood the Contents tab. */
+        private const val MAX_OUTLINE = 2000
+
+        /** Page sizes read per job; a page dictionary takes up to a fraction of a ms. */
+        private const val SIZES_PER_READ = 128
 
         private val callerPriority = ThreadLocal<PdfPriority>()
 

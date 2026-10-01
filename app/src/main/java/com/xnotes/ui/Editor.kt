@@ -1237,17 +1237,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         refreshToc()
     }
 
-    /** Re-extract the open PDF's outline off-thread (a one-shot PdfBox read, see [com.xnotes.platform.PdfOutline]),
-     *  publishing it to the Contents tab when it lands. Clears the TOC immediately so a non-PDF note or a
-     *  document swap never shows the previous note's outline; a stale parse that finishes after another
-     *  swap is dropped by the file-identity guard. */
+    /** Read the open PDF's outline off-thread, publishing it to the Contents tab when it lands. Clears
+     *  the TOC immediately so a non-PDF note or a document swap never shows the previous note's
+     *  outline; a read that finishes after another swap is dropped by the source-identity guard. */
     private fun refreshToc() {
         toc = emptyList()
         tocVersion++
-        val file = state.document.pdfFile ?: return
+        val src = pdfSource ?: return
         autosaveScope.launch {
-            val entries = withContext(Dispatchers.IO) { com.xnotes.platform.PdfOutline.extract(appContext, file) }
-            if (state.document.pdfFile === file) {
+            val entries = withContext(Dispatchers.IO) { src.outline() }
+            if (pdfSource === src) {
                 toc = entries
                 tocVersion++
             }

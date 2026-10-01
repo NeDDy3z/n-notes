@@ -81,6 +81,30 @@ class PdfiumDocument private constructor(
     }
 
     /**
+     * The document outline in reading order, at most [maxEntries] bookmarks, those without a title
+     * dropped (their children stay); null when not open. A bookmark chain that loops is cut. Read in
+     * short slices, one job each, so a big outline never holds up a page render for long.
+     */
+    @Synchronized
+    fun outline(maxEntries: Int, priority: PdfPriority): List<PdfOutlineEntry>? {
+        val out = ArrayList<PdfOutlineEntry>()
+        var restart = true
+        while (true) {
+            val parts = withHandle(priority) { PdfiumNative.nativeOutline(it, maxEntries, SLICE_MS, restart) }
+                ?: return null
+            restart = false
+            val titles = parts[0] as Array<*>
+            if (titles.isEmpty()) return out
+            val pages = parts[1] as IntArray
+            val levels = parts[2] as IntArray
+            for (i in titles.indices) {
+                val title = (titles[i] as String).trim()
+                if (title.isNotEmpty()) out += PdfOutlineEntry(title, pages[i], levels[i])
+            }
+        }
+    }
+
+    /**
      * Renders the part of page [index] at ([left], [top]) of a [fullW] x [fullH] raster of the
      * whole page into [bitmap] (ARGB_8888), on white. False when cancelled, failed or not open.
      */
@@ -112,6 +136,9 @@ class PdfiumDocument private constructor(
     }
 
     companion object {
+        /** How long one job of a sliced read may run, so renders queued meanwhile get their turn. */
+        private const val SLICE_MS = 8
+
         private val NOT_OPENED = Opened(0, PdfOpenError.UNKNOWN)
         private val openCount = AtomicInteger()
         @Volatile private var lastOpenMs = -1L
