@@ -230,6 +230,7 @@ object XnotesIcons {
     )
     val filter = icon("M3 6h18", "M7 12h10", "M10 18h4")
     val chevronDown = icon("M6 9l6 6 6-6")
+    val chevronUp = icon("M18 15l-6-6-6 6")
     val clock = icon(circle(12.0, 12.0, 10.0), "M12 6v6l4 2")
     val restore = icon("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5")
     val moveToFolder = icon(

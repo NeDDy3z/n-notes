@@ -266,6 +266,14 @@
     <string name="delete_confirm_title">Delete?</string>
     <string name="search_notes">Search notes</string>
     <string name="clear_search">Clear search</string>
+    <string name="search">Search</string>
+    <string name="find_in_note">Find in note</string>
+    <string name="match_case">Match case</string>
+    <string name="whole_words">Whole words</string>
+    <string name="previous_match">Previous match</string>
+    <string name="next_match">Next match</string>
+    <string name="no_matches">No matches</string>
+    <string name="search_position">%1$s / %2$s</string>
     <string name="share">Share</string>
     <string name="save_copy_ellipsis">Save a copy…</string>
     <string name="export_pdf">Export to PDF</string>

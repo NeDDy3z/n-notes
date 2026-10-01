@@ -254,6 +254,14 @@
     <string name="delete_confirm_title">删除？</string>
     <string name="search_notes">搜索笔记</string>
     <string name="clear_search">清除搜索</string>
+    <string name="search">搜索</string>
+    <string name="find_in_note">在笔记中查找</string>
+    <string name="match_case">区分大小写</string>
+    <string name="whole_words">全字匹配</string>
+    <string name="previous_match">上一个匹配项</string>
+    <string name="next_match">下一个匹配项</string>
+    <string name="no_matches">无匹配项</string>
+    <string name="search_position">%1$s / %2$s</string>
     <string name="share">分享</string>
     <string name="save_copy_ellipsis">保存副本…</string>
     <string name="export_pdf">导出为 PDF</string>

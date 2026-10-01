@@ -41,6 +41,14 @@ import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
+import com.xnotes.core.search.SearchCorpus
+import com.xnotes.core.search.SearchHit
+import com.xnotes.core.search.SearchQuery
+import com.xnotes.core.search.SearchResults
+import com.xnotes.core.search.SearchSession
+import com.xnotes.core.search.SearchText
+import com.xnotes.core.search.TypedText
+import com.xnotes.core.search.TypedTexts
 import com.xnotes.core.model.deepCopy
 import com.xnotes.core.model.snapshot
 import com.xnotes.core.model.insets
@@ -178,6 +186,16 @@ private const val PDF_TEXT_MENU_SETTLE_MS = 250L
 
 /** Text handed to another app's text action at most, well inside what an intent can carry. */
 private const val PROCESS_TEXT_MAX = 100_000
+
+/** The one thread every pane's search scans on, at background priority. */
+private val searchWorker: java.util.concurrent.Executor by lazy {
+    java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread({
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            r.run()
+        }, "xnotes-search").apply { isDaemon = true }
+    }
+}
 
 
 /** Recent, shared by both panes of a split so a note opened in either shows up; null until first read from settings. */
@@ -1356,6 +1374,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         republishFlow(invalidate = false)
         state.invalidateAllCaches()
         refreshToc()
+        if (search != null) {
+            closeSearchSession()
+            openSearchSession()
+        }
     }
 
     /** Read the open PDF's outline off-thread, publishing it to the Contents tab when it lands. Clears
@@ -2331,6 +2353,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         title = state.document.title
         contentVersion++
         refreshView()
+        refreshSearch()
         if (autosaveUri != null && state.document.dirty) scheduleAutosave()
     }
 
@@ -2340,6 +2363,158 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun pagesSnapshot(): List<Page> = state.document.pages.toList()
 
     fun pageAt(index: Int): Page? = state.document.pages.getOrNull(index)
+
+    /** The side panel's tab; the panel's own button opens it on Pages. */
+    var sidePanelTab by mutableStateOf(SidePanelTab.PAGES)
+
+    // --- search (the side panel's Search tab) ---
+
+    var searchQuery by mutableStateOf("")
+        private set
+    var searchMatchCase by mutableStateOf(false)
+        private set
+    var searchWholeWords by mutableStateOf(false)
+        private set
+
+    /** The open search's matches so far; null while the tab is closed or the query empty. */
+    var searchResults by mutableStateOf<SearchResults?>(null)
+        private set
+
+    /** The match prev and next step from, tinted stronger on its page. */
+    var searchCurrent by mutableStateOf<SearchHit?>(null)
+        private set
+
+    private var search: SearchSession? = null
+
+    /** The page a scan started from, which its first match is picked after. */
+    private var searchFrom = 0
+
+    /** The match to stay on when a scan reruns because the note changed. */
+    private var searchKeep: SearchHit? = null
+    private var searchStampSeen = 0L
+
+    private val searchUi = object : com.xnotes.core.search.UiThread {
+        private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+        override fun post(r: Runnable) {
+            handler.post(r)
+        }
+
+        override fun postDelayed(r: Runnable, delayMs: Long) {
+            handler.postDelayed(r, delayMs)
+        }
+
+        override fun cancel(r: Runnable) {
+            handler.removeCallbacks(r)
+        }
+    }
+
+    /** What a search of this note reads: [src] for the PDF, the live model for the rest. */
+    private fun searchCorpus(src: com.xnotes.platform.PdfSource?) = object : SearchCorpus {
+        override fun pdfPages(): IntArray = state.document.pages.let { ps -> IntArray(ps.size) { ps[it].pdfPage ?: -1 } }
+
+        override fun typedTexts(): List<TypedText> {
+            republishFlowIfStale()
+            return TypedTexts.of(state.document.pages, state.document.flow, publishedFlow?.frame)
+        }
+
+        override fun pdfText(index: Int): SearchText? = src?.searchText(index)
+    }
+
+    /** The Search tab came into view: a session starts, looking for the query it last had. */
+    fun openSearchSession() {
+        if (search != null) return
+        search = SearchSession(searchCorpus(pdfSource), searchUi, searchWorker).also { it.onResults = ::onSearchResults }
+        searchStampSeen = searchStamp()
+        runSearch(now = true)
+    }
+
+    /** The Search tab went away: the session ends, letting go of the texts it read and its tints. */
+    fun closeSearchSession() {
+        search?.close()
+        search = null
+        searchResults = null
+        searchCurrent = null
+        searchKeep = null
+        view.requestRender()
+    }
+
+    fun searchFor(text: String) {
+        if (text == searchQuery) return
+        searchQuery = text
+        runSearch(now = false)
+    }
+
+    fun toggleSearchMatchCase() {
+        searchMatchCase = !searchMatchCase
+        runSearch(now = true)
+    }
+
+    fun toggleSearchWholeWords() {
+        searchWholeWords = !searchWholeWords
+        runSearch(now = true)
+    }
+
+    /** Steps to the next match, or back to the one before, round the ends. */
+    fun searchStep(forward: Boolean) {
+        val r = searchResults ?: return
+        if (r.count == 0) return
+        val i = searchCurrent?.let(r::indexOf)?.takeIf { it >= 0 }
+        val next = when {
+            i == null -> r.firstFrom(state.currentPageIndex())?.takeIf { it >= 0 } ?: 0
+            forward -> (i + 1) % r.count
+            else -> (i - 1 + r.count) % r.count
+        }
+        showSearchHit(r.hit(next))
+    }
+
+    fun showSearchHit(hit: SearchHit) {
+        searchCurrent = hit
+        view.requestRender()
+    }
+
+    private fun runSearch(now: Boolean, keep: SearchHit? = null) {
+        val s = search ?: return
+        searchKeep = keep
+        searchFrom = keep?.page ?: state.currentPageIndex()
+        s.search(SearchQuery(searchQuery, searchMatchCase, searchWholeWords), searchFrom, now)
+    }
+
+    private fun onSearchResults(r: SearchResults?) {
+        searchResults = r
+        val cur = searchCurrent
+        if (r == null) {
+            searchCurrent = null
+        } else if (cur == null || r.indexOf(cur) < 0) {
+            val keep = searchKeep
+            val kept = keep?.let { k -> r.hitsOn(k.page).firstOrNull { it.target == k.target && it.sourceStart == k.sourceStart } }
+            val i = if (kept != null) r.indexOf(kept) else r.firstFrom(searchFrom)
+            searchCurrent = if (i != null && i >= 0) r.hit(i) else null
+            if (searchCurrent != null) searchKeep = null
+        }
+        view.requestRender()
+    }
+
+    /** Changes whenever what a search reads does: the flow, the page list, a text box. */
+    private fun searchStamp(): Long {
+        var stamp = flowStamp()
+        for (p in state.document.pages) {
+            stamp = stamp * 31 + System.identityHashCode(p) + (p.pdfPage ?: -1)
+            for (item in p.items) {
+                if (item is com.xnotes.core.model.TextItem) stamp = stamp * 31 + System.identityHashCode(item) + item.text.hashCode()
+            }
+        }
+        return stamp
+    }
+
+    /** Looks again when an edit changed what the open search reads, staying on the match it was on. */
+    private fun refreshSearch() {
+        if (search == null) return
+        val stamp = searchStamp()
+        if (stamp == searchStampSeen) return
+        searchStampSeen = stamp
+        runSearch(now = false, keep = searchCurrent)
+    }
 
     /**
      * A page's display height/width ratio (rotation-aware). The side panel reserves each thumbnail
@@ -5246,6 +5421,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     fun toggleSidebar() {
+        if (!sidebarVisible) sidePanelTab = SidePanelTab.PAGES
         sidebarVisible = !sidebarVisible
     }
 
