@@ -8,6 +8,8 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import com.xnotes.canvas.PdfPageFilter
+import com.xnotes.core.model.TextMarkup
+import com.xnotes.core.pdf.MarkupPainter
 import com.xnotes.core.search.SearchText
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -33,6 +35,9 @@ data class PdfLink(val rect: RectF, val url: String?, val destPage: Int?)
  * in their original colours ([PdfPageFilter.stampImages]): the whole page is
  * filtered as usual, then the original pixels are stamped back over each image's
  * box, which PDFium reads from the page's objects with the render.
+ *
+ * Text markups are painted onto the raw raster before either, so they invert with the page and a
+ * highlight over a photo is stamped back with it.
  */
 class PdfSource private constructor(
     /** The on-disk PDF this source reads. Owned by the caller, **not** by this PdfSource — [close]
@@ -105,11 +110,17 @@ class PdfSource private constructor(
         return out
     }
 
-    /** The whole page [index] fitted to [widthPx] × [heightPx]. */
-    fun renderPage(index: Int, widthPx: Int, heightPx: Int, filter: PdfPageFilter = PdfPageFilter.NONE): AndroidRasterSurface? {
+    /** The whole page [index] fitted to [widthPx] × [heightPx], with [markups] on it. */
+    fun renderPage(
+        index: Int,
+        widthPx: Int,
+        heightPx: Int,
+        filter: PdfPageFilter = PdfPageFilter.NONE,
+        markups: List<TextMarkup> = emptyList(),
+    ): AndroidRasterSurface? {
         val w = widthPx.coerceIn(1, MAX_DIM)
         val h = heightPx.coerceIn(1, MAX_DIM)
-        return render(index, w, h, 0, 0, w, h, filter)
+        return render(index, w, h, 0, 0, w, h, filter, markups)
     }
 
     /**
@@ -117,7 +128,7 @@ class PdfSource private constructor(
      * page [index] drawn at [pxPerPt] pixels per point, in pixels from the page's top-left corner,
      * into a [regionWpx] × [regionHpx] bitmap. The page is never allocated at full size; only the
      * region bitmap is, so a high-zoom viewport region can be rasterized at full resolution
-     * without a giant whole-page bitmap.
+     * without a giant whole-page bitmap. [markups] are drawn on it.
      */
     fun renderRegion(
         index: Int,
@@ -127,6 +138,7 @@ class PdfSource private constructor(
         regionWpx: Int,
         regionHpx: Int,
         filter: PdfPageFilter = PdfPageFilter.NONE,
+        markups: List<TextMarkup> = emptyList(),
     ): AndroidRasterSurface? {
         val (wPts, hPts) = pageSizePoints(index) ?: return null
         val fullW = (wPts * pxPerPt).roundToInt()
@@ -134,13 +146,14 @@ class PdfSource private constructor(
         if (fullW <= 0 || fullH <= 0) return null
         return render(
             index, fullW, fullH, regionLeftPx, regionTopPx,
-            regionWpx.coerceIn(1, MAX_DIM), regionHpx.coerceIn(1, MAX_DIM), filter,
+            regionWpx.coerceIn(1, MAX_DIM), regionHpx.coerceIn(1, MAX_DIM), filter, markups,
         )
     }
 
     /** Renders the [w] × [h] region at ([left], [top]) of a [fullW] × [fullH] raster of page [index]. */
     private fun render(
         index: Int, fullW: Int, fullH: Int, left: Int, top: Int, w: Int, h: Int, filter: PdfPageFilter,
+        markups: List<TextMarkup>,
     ): AndroidRasterSurface? {
         if (closed) return null
         // Read before the render, which then finds the page already loaded.
@@ -150,6 +163,7 @@ class PdfSource private constructor(
             bmp.recycle()
             return null
         }
+        if (markups.isNotEmpty()) paintMarkups(bmp, markups, index, fullW, fullH, left, top)
         val m = filter.pageMatrix ?: return AndroidRasterSurface(bmp)
 
         val filtered = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -160,6 +174,17 @@ class PdfSource private constructor(
         }
         bmp.recycle()
         return AndroidRasterSurface(filtered)
+    }
+
+    /** Draws [markups] onto [bmp], the ([left], [top]) corner of page [index] rendered [fullW] × [fullH]. */
+    private fun paintMarkups(bmp: Bitmap, markups: List<TextMarkup>, index: Int, fullW: Int, fullH: Int, left: Int, top: Int) {
+        val (wPts, hPts) = pageSizePoints(index) ?: return
+        if (wPts <= 0f || hPts <= 0f) return
+        val r = AndroidRenderer(Canvas(bmp))
+        r.translate(-left.toDouble(), -top.toDouble())
+        // PDFium's own scale for this render, so the marks sit on its glyphs to the pixel.
+        r.scale(fullW / wPts.toDouble(), fullH / hPts.toDouble())
+        for (m in markups) MarkupPainter.paint(r, m)
     }
 
     /** A bitmap paint applying colour matrix [m]. */

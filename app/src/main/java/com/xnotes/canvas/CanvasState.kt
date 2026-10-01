@@ -1129,12 +1129,13 @@ class CanvasState(
     }
 
     /**
-     * Whether [page] has anything in its background layer — a PDF page or a resolved ruling.
+     * Whether [page] has anything in its background layer — a PDF page, a resolved ruling or markups.
      * Plain colour pages return false so no (large, transparent) background surface is allocated,
      * even though [paintPageBackground] is always installed for the pattern path.
      */
     fun hasPageBackground(page: Page): Boolean =
-        paintPageBackground != null && (page.pdfPage != null || effectiveTemplate(page) != PageTemplates.NONE)
+        paintPageBackground != null &&
+            (page.pdfPage != null || effectiveTemplate(page) != PageTemplates.NONE || page.markups.isNotEmpty())
 
     /**
      * The page's rendered background layer (PDF/template) at the current resolution,

@@ -41,6 +41,7 @@ import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
+import com.xnotes.core.pdf.MarkupPainter
 import com.xnotes.core.search.SearchCorpus
 import com.xnotes.core.search.SearchHit
 import com.xnotes.core.search.SearchQuery
@@ -1439,12 +1440,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * page-style ruling (lines/dots/grid) on top. Always non-null — so plain notes get rulings too —
      * and reads [pdfSource] live, so a single install survives document swaps; [CanvasState.hasPageBackground]
      * gates which pages actually allocate a background surface (a plain colour page allocates none).
+     * Text markups go into the PDF raster, under its colour filter; a page without a PDF draws them last.
      */
     private fun installPageBackground() {
         state.paintPageBackground = { page, renderer, res, region ->
             val src = pdfSource
             val pi = page.pdfPage
-            val content = com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height)
+            val markups = page.markups
             if (src != null && pi != null) {
                 // The raster covers the page's content box only; a margin is paper beside it.
                 val slice = clampToContent(region, page)
@@ -1456,7 +1458,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     // A point is dpi/72 content px, not a fit to the paper: older imports stored whole
                     // points, so their PDF runs past the paper by under a point, cropped as before.
                     val pxPerPt = res * state.document.dpi / 72.0
-                    src.renderRegion(pi, pxPerPt, rx, ry, rw, rh, pdfPageFilter())?.let { bg ->
+                    src.renderRegion(pi, pxPerPt, rx, ry, rw, rh, pdfPageFilter(), markups)?.let { bg ->
                         renderer.drawRaster(bg, slice)
                         bg.recycle()
                     }
@@ -1465,6 +1467,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // A template covers a blank note page whole; on an imported PDF page it rules the
             // margins only, so the page itself is never drawn over.
             TemplateLibrary.paint(renderer, state.document, page, state.footprint(page), region)
+            if (pi == null) MarkupPainter.paint(renderer, markups, state.document.dpi / 72.0)
         }
     }
 
@@ -2885,7 +2888,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                         val pw = (page.width * scale).toInt().coerceAtLeast(1)
                         val ph = (page.height * scale).toInt().coerceAtLeast(1)
                         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
-                            src.renderPage(pi, pw, ph, filter)
+                            src.renderPage(pi, pw, ph, filter, page.markups)
                         }?.let { bg ->
                             r.drawRaster(bg, Rect(0.0, 0.0, page.width, page.height))
                             bg.recycle()
@@ -2895,6 +2898,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 }
             }
         }
+        if (page.pdfPage == null) MarkupPainter.paint(r, page.markups, doc.dpi / 72.0)
         // A closed note's flow is laid out locally (the published snapshot serves the open note only).
         if (!doc.flow.isEmpty) {
             val frame = themedFlowLayout(doc.flow)
