@@ -231,6 +231,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         set(value) { LiveSettings.set(value) }
     private var pdfSource: com.xnotes.platform.PdfSource? = null
 
+    /** Whether the open note has a PDF, which the text markup tool needs. Set by the init block, so declared before it. */
+    var hasPdf by mutableStateOf(false)
+        private set
+
+    /** The markup tool was asked for while the note had no PDF; it comes back with the next note that has one. */
+    private var markupResting = false
+
     private val deviceHasDisplayCutout = com.xnotes.deviceHasDisplayCutout(context)
 
     /** The flow defaults a new note starts with when none are saved: text sized for this screen. */
@@ -1385,6 +1392,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val old = pdfSource
         pdfSource = state.document.pdfFile?.let { com.xnotes.platform.PdfSource.open(it) }
         old?.close()
+        hasPdf = pdfSource != null
+        // Asked for again: it rests on a note without a PDF, and wakes on the next one with a PDF.
+        if (tool == Tool.MARKUP || (markupResting && tool == Tool.PAN)) selectTool(Tool.MARKUP)
         installPageBackground()
         installFlowPainter()
         installHighlighter()
@@ -5069,9 +5079,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     // --- tools & colour ---
 
     fun selectTool(t: Tool) {
-        controller.setTool(t)
-        tool = t
+        // The markup tool marks a PDF's text: a note without one gets Pan, and the next with one gets it back.
+        markupResting = t == Tool.MARKUP && !hasPdf
+        val armed = if (markupResting) Tool.PAN else t
+        controller.setTool(armed)
+        tool = armed
     }
+
 
     /** Run the action a two/three-finger tap or stylus double-tap is mapped to; "none" does nothing. */
     private fun dispatchTapGesture(action: String) = when (action) {

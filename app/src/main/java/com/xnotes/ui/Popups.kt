@@ -58,9 +58,11 @@ import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.tools.EraseMode
+import com.xnotes.core.tools.MarkupMode
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.ShapeKind
 import com.xnotes.core.tools.Tool
+import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolConversions
 import com.xnotes.platform.FontCatalog
 import com.xnotes.settings.Preferences
@@ -935,6 +937,42 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * Text markup tool popup: what a drag over PDF text does (select it, or one of the four marks) and,
+ * in Highlight mode, how deep it goes. A mark takes the toolbar's active ink colour.
+ */
+@Composable
+fun MarkupToolPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
+    val base = remember { editor.toolConfig(Tool.MARKUP) }
+    var mode by remember { mutableStateOf(base.markupMode) }
+    var intensity by remember { mutableStateOf((base.markupIntensity * 100).toFloat()) }
+
+    fun emit() = editor.updateToolConfig(Tool.MARKUP, base.copy(markupMode = mode, markupIntensity = intensity / 100.0))
+
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle(stringResource(R.string.tool_markup))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MarkupMode.entries.forEach { m ->
+                    KindChip(markupIcon(m), stringResource(m.labelRes), selected = mode == m) { mode = m; emit() }
+                }
+            }
+            if (mode == MarkupMode.HIGHLIGHT) {
+                val min = (ToolConfig.MARKUP_INTENSITY_MIN * 100).toFloat()
+                SliderRow(stringResource(R.string.caption_intensity), intensity, min..100f) { intensity = it; emit() }
+            }
+        }
+    }
+}
+
+private fun markupIcon(mode: MarkupMode): ImageVector = when (mode) {
+    MarkupMode.SELECT -> XnotesIcons.textSelect
+    MarkupMode.HIGHLIGHT -> XnotesIcons.highlight
+    MarkupMode.UNDERLINE -> XnotesIcons.underline
+    MarkupMode.STRIKEOUT -> XnotesIcons.strikethrough
+    MarkupMode.SQUIGGLY -> XnotesIcons.squiggly
 }
 
 /** Colour switcher (spec 10 §4): the toolbar swatch picker — opens the shared [ColorPickerPopup]

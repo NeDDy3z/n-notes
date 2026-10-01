@@ -12,6 +12,7 @@ import com.xnotes.core.model.PageEdge
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.TableBorders
+import com.xnotes.core.tools.MarkupMode
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.platform.FontCatalog
@@ -41,6 +42,17 @@ val Tool.labelRes: Int
         Tool.TEXT -> R.string.tool_text
         Tool.TEXT_BOX -> R.string.tool_text_box
         Tool.IMAGE -> R.string.tool_image
+        Tool.MARKUP -> R.string.tool_markup
+    }
+
+@get:StringRes
+val MarkupMode.labelRes: Int
+    get() = when (this) {
+        MarkupMode.SELECT -> R.string.tool_select
+        MarkupMode.HIGHLIGHT -> R.string.markup_highlight
+        MarkupMode.UNDERLINE -> R.string.underline
+        MarkupMode.STRIKEOUT -> R.string.strikethrough
+        MarkupMode.SQUIGGLY -> R.string.markup_squiggly
     }
 
 @get:StringRes
@@ -65,6 +77,7 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.RULER -> R.string.tool_ruler
         ToolbarItem.TEXT -> R.string.tool_text
         ToolbarItem.TEXT_BOX -> R.string.tool_text_box
+        ToolbarItem.MARKUP -> R.string.tool_markup
         ToolbarItem.IMAGE -> R.string.tool_image
         ToolbarItem.UNDO -> R.string.undo
         ToolbarItem.REDO -> R.string.redo

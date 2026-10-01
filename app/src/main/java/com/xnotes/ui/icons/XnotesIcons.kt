@@ -88,6 +88,19 @@ object XnotesIcons {
         "M7.5 9.5v-2h9v2", "M12 7.5v9", "M9 16.5h6",
     )
 
+    // The text markup tool: three lines of text, the middle one marked.
+    val markup = icon("M4 4.5h16", roundRect(2.5, 8.5, 19.0, 7.0, 2.0), "M6.5 12h11", "M4 19.5h10")
+
+    // Its modes: selecting text (Lucide "text-select"), highlighting it (Lucide "highlighter"), and a
+    // squiggle under it (the underline's U over a wave); underline and strikethrough are the flow bar's.
+    val textSelect = icon(
+        "M5 3a2 2 0 0 0-2 2", "M19 3a2 2 0 0 1 2 2", "M21 19a2 2 0 0 1-2 2", "M5 21a2 2 0 0 1-2-2",
+        "M9 3h1", "M9 21h1", "M14 3h1", "M14 21h1", "M3 9v1", "M21 9v1", "M3 14v1", "M21 14v1",
+        "M7 8h8", "M7 12h10", "M7 16h6",
+    )
+    val highlight = icon("M9 11l-6 6v3h9l3-3", "M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4")
+    val squiggly = icon("M6 4v6a6 6 0 0 0 12 0V4", "M4 20q2-2.5 4 0t4 0t4 0t4 0")
+
     // The flow format bar's glyphs (Lucide: bold/italic/underline/strikethrough, lists,
     // square-check, aligns, indents).
     val bold = icon("M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8")

@@ -19,6 +19,9 @@
     <string name="tool_ruler">Ruler</string>
     <string name="tool_text">Text</string>
     <string name="tool_text_box">Text box</string>
+    <string name="tool_markup">PDF text markup</string>
+    <string name="markup_highlight">Highlight</string>
+    <string name="markup_squiggly">Squiggly</string>
     <string name="tool_image">Image</string>
     <string name="toolbar_home">Home</string>
     <string name="toolbar_title">Title</string>

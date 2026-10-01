@@ -112,6 +112,7 @@ fun Toolbar(
         Tool.SHAPE to XnotesIcons.shape,
         Tool.TEXT to XnotesIcons.text,
         Tool.TEXT_BOX to XnotesIcons.textBox,
+        Tool.MARKUP to XnotesIcons.markup,
     )
     var configForTool by remember { mutableStateOf<Tool?>(null) }
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
@@ -196,6 +197,10 @@ private fun ToolbarItemView(
             if (tool != null) ToolButton(editor, tool, toolIcons[tool], configForTool, setConfigForTool)
         }
 
+        // Marks a PDF's text, so a note without a PDF has no use for it.
+        ToolbarItem.MARKUP ->
+            if (editor.hasPdf) ToolButton(editor, Tool.MARKUP, toolIcons[Tool.MARKUP], configForTool, setConfigForTool)
+
         ToolbarItem.WAND ->
             ToolbarIcon(XnotesIcons.magicWand, stringResource(R.string.tool_wand), active = editor.wandEnabled) { editor.toggleWand() }
         ToolbarItem.RULER ->
@@ -273,7 +278,7 @@ private fun ToolButton(
     if (icon == null) return
     Box {
         ToolbarIcon(icon, stringResource(tool.labelRes), active = editor.tool == tool, glideKey = tool) {
-            if (editor.tool == tool && (tool.isStroke || tool == Tool.SHAPE || tool == Tool.ERASER || tool == Tool.SELECT || tool == Tool.TEXT)) {
+            if (editor.tool == tool && (tool.isStroke || tool == Tool.SHAPE || tool == Tool.ERASER || tool == Tool.SELECT || tool == Tool.TEXT || tool == Tool.MARKUP)) {
                 setConfigForTool(tool)
             } else {
                 editor.selectTool(tool)
@@ -286,6 +291,7 @@ private fun ToolButton(
                 tool == Tool.ERASER -> EraserConfigPopup(editor) { setConfigForTool(null) }
                 tool == Tool.SELECT -> SelectConfigPopup(editor) { setConfigForTool(null) }
                 tool == Tool.TEXT -> TextToolConfigPopup(editor) { setConfigForTool(null) }
+                tool == Tool.MARKUP -> MarkupToolPopup(editor) { setConfigForTool(null) }
                 else -> ToolConfigPopup(editor, tool) { setConfigForTool(null) }
             }
         }

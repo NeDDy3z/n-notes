@@ -82,6 +82,16 @@ class SettingsTest {
         assertTrue(back.prefs.hidePageBorders)
     }
 
+    @Test fun theMarkupToolsModeAndIntensityRoundTrip() {
+        val markup = com.xnotes.core.tools.ToolConfig(markupMode = com.xnotes.core.tools.MarkupMode.SQUIGGLY, markupIntensity = 0.8)
+        val back = Settings.fromJson(Settings(tools = mapOf(Tool.MARKUP to markup)).toJson())
+        assertEquals(com.xnotes.core.tools.MarkupMode.SQUIGGLY, back.configFor(Tool.MARKUP).markupMode)
+        assertEquals(0.8, back.configFor(Tool.MARKUP).markupIntensity, 1e-9)
+        val wild = Settings(tools = mapOf(Tool.MARKUP to markup)).toJson()
+        wild.getJSONObject("tools").getJSONObject("markup").put("markup_intensity", 7.0)
+        assertEquals(1.0, Settings.fromJson(wild).configFor(Tool.MARKUP).markupIntensity, 1e-9)
+    }
+
     @Test fun everyTapGestureMappingRoundTrips() {
         val prefs = Preferences(
             twoFingerTap = "undo",
