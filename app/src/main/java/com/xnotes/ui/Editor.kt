@@ -755,7 +755,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         doc.dirty = false // the snapshot holds these edits; see [startNoteWrite]
         canvasWriteJob = autosaveScope.launch {
             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                saveCanvasGuarded(uri, snapshot, title)
+                saveCanvasGuarded(uri, snapshot, title, doc)
             }
             if (res != null) {
                 if (infiniteOrNull?.document === doc) res.fork?.let { adoptCanvasFork(it) }
@@ -4181,6 +4181,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Where a guarded save landed; [fork] is null when it wrote the file in place as usual. */
     private class SaveResult(val uri: String, val fork: Fork?)
 
+    /** The forks made here, so a save queued before its document forked follows it into the fork. */
+    private val forks = com.xnotes.core.util.ForkLedger()
+
     /** Size + mtime of the document at [uri], or null when the provider will not report either. */
     private fun stampOf(uri: String): DocStamp? = runCatching {
         appContext.contentResolver.query(
@@ -4248,14 +4251,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return Fork(forked, name)
     }
 
-    /** Autosave [doc] to [uri], forking instead of overwriting when the file moved under us. IO. */
-    private fun saveNoteGuarded(uri: String, doc: Document, title: String): SaveResult? = synchronized(saveLock) {
-        if (changedUnderneath(uri, lastNoteStamp)) {
-            val fork = forkNote(uri, doc, title) ?: return null
+    /** Autosave [owner]'s [doc] to [uri], or to the fork [owner] already moved to, forking when that file moved under us. IO. */
+    private fun saveNoteGuarded(uri: String, doc: Document, title: String, owner: Document): SaveResult? = synchronized(saveLock) {
+        val target = forks.target(uri, owner)
+        if (changedUnderneath(target, lastNoteStamp)) {
+            val fork = forkNote(target, doc, title) ?: return null
+            forks.record(target, fork.uri, owner)
             return SaveResult(fork.uri, fork)
         }
-        if (!writeNoteSafely(uri, doc)) return null
-        SaveResult(uri, null)
+        if (!writeNoteSafely(target, doc)) return null
+        SaveResult(target, null)
     }
 
     /** The canvas sibling of [saveNoteGuarded]. IO. */
@@ -4263,13 +4268,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         uri: String,
         doc: com.xnotes.core.infinite.InfiniteDocument,
         title: String,
+        owner: com.xnotes.core.infinite.InfiniteDocument,
     ): SaveResult? = synchronized(saveLock) {
-        if (changedUnderneath(uri, lastCanvasStamp)) {
-            val fork = forkCanvas(uri, doc, title) ?: return null
+        val target = forks.target(uri, owner)
+        if (changedUnderneath(target, lastCanvasStamp)) {
+            val fork = forkCanvas(target, doc, title) ?: return null
+            forks.record(target, fork.uri, owner)
             return SaveResult(fork.uri, fork)
         }
-        if (!writeCanvasSafely(uri, doc)) return null
-        SaveResult(uri, null)
+        if (!writeCanvasSafely(target, doc)) return null
+        SaveResult(target, null)
     }
 
     /** Point the open note at the copy it just forked into, and say so. Main thread. */
@@ -4463,7 +4471,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.autosaveStatus = "in progress"
         noteWriteJob = autosaveScope.launch {
             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                saveNoteGuarded(uri, snapshot, title)
+                saveNoteGuarded(uri, snapshot, title, doc)
             }
             if (res != null) {
                 // The note may have been closed or switched while the bytes were going out. The write
