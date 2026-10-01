@@ -391,9 +391,9 @@ fun FlowEditMenu(editor: Editor) {
 }
 
 /**
- * The PDF text selection's bar: Copy, and behind the overflow the apps that act on selected text
- * ("Translate", "Search" and the like). Never takes focus; a canvas touch hides it until the
- * selection, or the view under it, settles again.
+ * The PDF text selection's bar: Copy, the four marks (made in the active ink colour), and behind
+ * the overflow the apps that act on selected text ("Translate", "Search" and the like). Never takes
+ * focus; a canvas touch hides it until the selection, or the view under it, settles again.
  */
 @Composable
 fun PdfSelectionMenu(editor: Editor) {
@@ -404,7 +404,7 @@ fun PdfSelectionMenu(editor: Editor) {
     var overflowOpen by remember { mutableStateOf(false) }
 
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { ((if (actions.isEmpty()) 1 else 2) * 46).dp.toPx() }
+    val barWidthPx = with(density) { ((1 + PDF_MARKS.size + if (actions.isEmpty()) 0 else 1) * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val margin = with(density) { 8.dp.toPx() }
     // When pushed below the selection, also clear the teardrop handles hanging there.
@@ -425,6 +425,9 @@ fun PdfSelectionMenu(editor: Editor) {
             .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
     ) {
         ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyPdfText() }
+        for ((type, icon, label) in PDF_MARKS) {
+            ActionIcon(icon, stringResource(label)) { editor.markPdfSelection(type) }
+        }
         if (actions.isNotEmpty()) {
             Box {
                 ActionIcon(XnotesIcons.more, stringResource(R.string.more)) { overflowOpen = true }
@@ -444,6 +447,14 @@ fun PdfSelectionMenu(editor: Editor) {
         }
     }
 }
+
+/** The selection bar's marks, in the order the markup tool's popup lists them. */
+private val PDF_MARKS = listOf(
+    Triple(com.xnotes.core.model.MarkupType.HIGHLIGHT, XnotesIcons.highlight, R.string.markup_highlight),
+    Triple(com.xnotes.core.model.MarkupType.UNDERLINE, XnotesIcons.underline, R.string.underline),
+    Triple(com.xnotes.core.model.MarkupType.STRIKEOUT, XnotesIcons.strikethrough, R.string.strikethrough),
+    Triple(com.xnotes.core.model.MarkupType.SQUIGGLY, XnotesIcons.squiggly, R.string.markup_squiggly),
+)
 
 private const val TABLE_BAR_ICONS = 4
 

@@ -972,6 +972,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
+    /** Marks the PDF text selection as [type]: the selection bar's mark buttons. */
+    fun markPdfSelection(type: MarkupType) {
+        pdfText.selection?.let { markSelection(it, type) }
+    }
+
     /** Marks [sel] as [type] in the active ink colour, a markup on each page it covers, as one undo step. */
     fun markSelection(sel: com.xnotes.core.pdf.TextSelection, type: MarkupType) {
         val intensity = controller.configFor(Tool.MARKUP).markupIntensity
