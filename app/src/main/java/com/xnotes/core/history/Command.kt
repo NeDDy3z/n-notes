@@ -8,6 +8,7 @@ import com.xnotes.core.model.GeometrySnapshot
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.Resizable
 import com.xnotes.core.model.TextItem
+import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.model.TextStyle
 
 /**
@@ -30,6 +31,13 @@ interface Command {
      * item currently sits on, for commands that hold items but not pages.
      */
     fun touched(locate: (CanvasItem) -> Page?): List<Pair<Page, CanvasItem>>? = null
+
+    /**
+     * The markups this command's undo/redo puts on or takes off, each with its page, so the view
+     * repaints the page backgrounds just where they lie. Markups are immutable, so a restyle names
+     * the old and the new one.
+     */
+    fun touchedMarkups(): List<Pair<Page, TextMarkup>> = emptyList()
 }
 
 /** Append an item to a page (finishing a stroke, pasting/inserting, new text). */
@@ -295,6 +303,8 @@ class CompositeCommand(private val commands: List<Command>) : Command {
         for (c in commands) out.addAll(c.touched(locate) ?: return null)
         return out
     }
+
+    override fun touchedMarkups(): List<Pair<Page, TextMarkup>> = commands.flatMap { it.touchedMarkups() }
 }
 
 /** Delete a page (reversible by re-inserting at its original index). */
