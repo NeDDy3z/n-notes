@@ -23,6 +23,8 @@ import com.xnotes.core.history.AddItem
 import com.xnotes.core.history.AddPage
 import com.xnotes.core.history.Command
 import com.xnotes.core.history.AddMarkups
+import com.xnotes.core.history.RemoveMarkup
+import com.xnotes.core.history.ReplaceMarkup
 import com.xnotes.core.history.CompositeCommand
 import com.xnotes.core.history.DeletePage
 import com.xnotes.core.history.EraseItems
@@ -193,6 +195,9 @@ private const val PROCESS_TEXT_MAX = 100_000
 
 /** How far off an address written in a PDF's text a tap may land and still open it. */
 private const val AUTO_LINK_SLOP_DP = 4.0
+
+/** The least a markup's note marker takes a tap over, however small it is drawn. */
+private const val MARKUP_MARKER_TARGET_DP = 32.0
 
 /** The one thread every pane's search scans on, at background priority. */
 private val searchWorker: java.util.concurrent.Executor by lazy {
@@ -991,6 +996,113 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
+    /** A markup's tap menu: the markup on note page [page], where it shows in the viewport, and the link under the tap. */
+    class MarkupMenu(val page: Int, val markup: TextMarkup, val anchor: Rect, val openLink: (() -> Unit)?)
+
+    /** The open markup menu, or null. */
+    var markupMenu by mutableStateOf<MarkupMenu?>(null)
+        private set
+
+    /** The markup whose note is being written, or null. */
+    var markupNote by mutableStateOf<MarkupMenu?>(null)
+        private set
+
+    /**
+     * A tap at [pageLocal] on note page [pageIndex]: opens the menu of the markup there, with "Open
+     * link" when [withLink] and a link lies under the tap. False when no markup is there.
+     */
+    private fun openMarkupMenu(pageIndex: Int, pageLocal: Pt, withLink: Boolean): Boolean {
+        val page = state.document.pages.getOrNull(pageIndex) ?: return false
+        if (page.markups.isEmpty()) return false
+        val ptPerPx = 72.0 / state.document.dpi
+        val x = pageLocal.x * ptPerPx
+        val y = pageLocal.y * ptPerPx
+        val slop = AUTO_LINK_SLOP_DP * state.devicePxPerDp / state.zoom * ptPerPx
+        val reach = MARKUP_MARKER_TARGET_DP / 2 * state.devicePxPerDp / state.zoom * ptPerPx
+        val m = MarkupPainter.markupAt(page.markups, x, y, slop, reach) ?: return false
+        val anchor = markupAnchor(pageIndex, m) ?: return false
+        markupMenu = MarkupMenu(pageIndex, m, anchor, if (withLink) linkOpener(page, x.toFloat(), y.toFloat(), slop.toFloat()) else null)
+        return true
+    }
+
+    /** Opens the link at ([x], [y]) in points on [page]'s PDF page, an annotation's or an address in its text; null for none known yet. */
+    private fun linkOpener(page: Page, x: Float, y: Float, slop: Float): (() -> Unit)? {
+        val src = pdfSource ?: return null
+        val pdfIdx = page.pdfPage ?: return null
+        if (src.hasLinks(pdfIdx)) src.linkAt(pdfIdx, x, y)?.let { return { followLink(it) } }
+        val text = src.text.peek(pdfIdx) ?: return null
+        val link = com.xnotes.core.pdf.PageLinks.at(text, x, y, slop) ?: return null
+        return { openUrl(link.uri) }
+    }
+
+    /** [m] on note page [pageIndex] in viewport px, for its menu to stand by; null when off the layout. */
+    private fun markupAnchor(pageIndex: Int, m: TextMarkup): Rect? {
+        val b = MarkupPainter.bounds(m) ?: return null
+        if (pageIndex !in state.pageRects.indices) return null
+        val s = state.document.dpi / 72.0
+        val c = state.fromPageSpaceRect(pageIndex, Rect(b.x * s, b.y * s, b.w * s, b.h * s))
+        val tl = state.contentToViewport(Pt(c.left, c.top))
+        val br = state.contentToViewport(Pt(c.right, c.bottom))
+        return Rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y)
+    }
+
+    fun dismissMarkupMenu() {
+        markupMenu = null
+    }
+
+    /** Puts [after] in the menu markup's place as one undo step, and closes the menu. */
+    private fun replaceMenuMarkup(after: (TextMarkup) -> TextMarkup) {
+        val menu = markupMenu ?: markupNote ?: return
+        markupMenu = null
+        val page = state.document.pages.getOrNull(menu.page) ?: return
+        if (page.markups.none { it === menu.markup }) return
+        applyMarkupEdit(ReplaceMarkup(page, menu.markup, after(menu.markup)))
+    }
+
+    /** Recolours the menu's markup; the toolbar's colour stays as it is. */
+    fun recolorMarkup(color: Rgba) = replaceMenuMarkup { it.copy(color = color.withAlpha(255), modified = System.currentTimeMillis()) }
+
+    fun retypeMarkup(type: MarkupType) = replaceMenuMarkup { it.copy(type = type, modified = System.currentTimeMillis()) }
+
+    fun deleteMarkup() {
+        val menu = markupMenu ?: return
+        markupMenu = null
+        val page = state.document.pages.getOrNull(menu.page) ?: return
+        if (page.markups.none { it === menu.markup }) return
+        applyMarkupEdit(RemoveMarkup(page, menu.markup))
+    }
+
+    /** Copies the text the menu's markup marks, as it was when marked. */
+    fun copyMarkupText() {
+        val menu = markupMenu ?: return
+        markupMenu = null
+        val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText(appContext.getString(R.string.copy), menu.markup.text))
+    }
+
+    fun openMarkupLink() {
+        val open = markupMenu?.openLink ?: return
+        markupMenu = null
+        open()
+    }
+
+    /** Opens the menu markup's note to read or write. */
+    fun editMarkupNote() {
+        markupNote = markupMenu ?: return
+        markupMenu = null
+    }
+
+    /** Keeps [text] as the note being written (none when blank) and closes it. */
+    fun saveMarkupNote(text: String) {
+        val note = text.replace("\r\n", "\n").takeIf { it.isNotBlank() }
+        if (note != markupNote?.markup?.note) replaceMenuMarkup { it.copy(note = note, modified = System.currentTimeMillis()) }
+        markupNote = null
+    }
+
+    fun dismissMarkupNote() {
+        markupNote = null
+    }
+
     /** The PDF text of note [pages], read where the cache let it go, handed to [then] on the main thread once all is in. */
     private fun readPdfTexts(pages: IntRange, then: (Map<Int, com.xnotes.core.pdf.PageText>) -> Unit) {
         val got = HashMap<Int, com.xnotes.core.pdf.PageText>()
@@ -1280,6 +1392,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     flowContextMenu = null
                     tableMenu = null
                     pdfTextMenu = null
+                    markupMenu = null
                     canvasTouched = true
                 }
                 android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
@@ -1304,7 +1417,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onViewSettingsChanged(com.xnotes.canvas.ViewSettings(), viewSettings)
         view.onKey = { e -> e.action == android.view.KeyEvent.ACTION_DOWN && handleKeyDown(e) }
         controller.clipboardHasImage = { clipboardImageUri() != null }
+        controller.onMarkupTap = { pageIndex, pageLocal -> openMarkupMenu(pageIndex, pageLocal, withLink = false) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
+            if (openMarkupMenu(pageIndex, pageLocal, withLink = true)) return@onLinkTap true
             val src = pdfSource ?: return@onLinkTap false
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
             val pdfIdx = page.pdfPage ?: return@onLinkTap false

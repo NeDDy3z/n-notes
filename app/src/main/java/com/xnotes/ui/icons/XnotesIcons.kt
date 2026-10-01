@@ -101,6 +101,13 @@ object XnotesIcons {
     val highlight = icon("M9 11l-6 6v3h9l3-3", "M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4")
     val squiggly = icon("M6 4v6a6 6 0 0 0 12 0V4", "M4 20q2-2.5 4 0t4 0t4 0t4 0")
 
+    // A markup's note (Lucide "message-square") and the link under it (Lucide "link").
+    val note = icon("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")
+    val link = icon(
+        "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
+        "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+    )
+
     // The flow format bar's glyphs (Lucide: bold/italic/underline/strikethrough, lists,
     // square-check, aligns, indents).
     val bold = icon("M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8")

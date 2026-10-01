@@ -170,6 +170,21 @@ class MarkupPainterTest {
     }
 
     @Test
+    fun aTapFindsTheTopmostMarkupOrItsNoteMarker() {
+        val under = markup(MarkupType.HIGHLIGHT, upright)
+        val over = markup(MarkupType.UNDERLINE, TextQuad(150f, 200f, 300f, 214f, 0), note = "n")
+        val marks = listOf(under, over)
+        assertEquals(under, MarkupPainter.markupAt(marks, 120.0, 207.0, 2.0, 8.0))
+        assertEquals(over, MarkupPainter.markupAt(marks, 200.0, 207.0, 2.0, 8.0))
+        assertEquals(under, MarkupPainter.markupAt(marks, 99.0, 199.0, 2.0, 8.0))
+        assertNull(MarkupPainter.markupAt(marks, 120.0, 230.0, 2.0, 8.0))
+        // Past the end of the noted line, the marker answers as far as its reach.
+        val marker = MarkupPainter.markerOf(over)!!
+        assertEquals(over, MarkupPainter.markupAt(marks, marker.center.x + 7.0, marker.center.y, 2.0, 8.0))
+        assertNull(MarkupPainter.markupAt(marks, marker.center.x + 9.0, marker.center.y, 2.0, 8.0))
+    }
+
+    @Test
     fun aTurnedMarkerFollowsTheLine() {
         val down = TextQuad(300f, 100f, 314f, 240f, 1)
         val marker = MarkupPainter.markerOf(markup(MarkupType.HIGHLIGHT, down, note = "n"))!!

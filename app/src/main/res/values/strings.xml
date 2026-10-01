@@ -22,6 +22,11 @@
     <string name="tool_markup">PDF text markup</string>
     <string name="markup_highlight">Highlight</string>
     <string name="markup_squiggly">Squiggly</string>
+    <string name="markup_colour">Colour</string>
+    <string name="markup_kind">Kind</string>
+    <string name="markup_note">Note</string>
+    <string name="markup_note_hint">Write a note</string>
+    <string name="open_link">Open link</string>
     <string name="tool_image">Image</string>
     <string name="toolbar_home">Home</string>
     <string name="toolbar_title">Title</string>

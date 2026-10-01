@@ -1205,6 +1205,8 @@ private fun EditorPane(
                         com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
                         com.xnotes.ui.FlowEditMenu(editor)
                         com.xnotes.ui.PdfSelectionMenu(editor)
+                        com.xnotes.ui.MarkupMenu(editor)
+                        com.xnotes.ui.MarkupNoteDialog(editor)
                         com.xnotes.ui.SlashMenu(editor)
                         com.xnotes.ui.FlowTableMenu(editor)
                         com.xnotes.ui.TableChrome(editor)

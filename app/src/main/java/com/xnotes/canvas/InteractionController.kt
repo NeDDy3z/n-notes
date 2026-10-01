@@ -149,6 +149,9 @@ class InteractionController(
      *  once it is ready. */
     var onLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
+    /** The markup tool tapped at [pageLocal] on note page [pageIndex]: true when a markup there took it. */
+    var onMarkupTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
+
     /** PDF text selection: a free pointer's long press on a PDF page selects there (installed by the Editor). */
     var pdfText: PdfTextController? = null
 
@@ -366,6 +369,10 @@ class InteractionController(
     /** A press zoom lock kept from panning, where it went down: a tap there still ends a PDF text selection. */
     private var lockedPressAt: Pt? = null
 
+    /** Where the markup tool pressed, in the viewport and on its page, so a lift there counts as a tap. */
+    private var markupPressAt: Pt? = null
+    private var markupPressPage: Pair<Int, Pt>? = null
+
     // TEXT EDITING
     private var editingText: TextItem? = null
     private var editingIsNew = false
@@ -555,6 +562,8 @@ class InteractionController(
         stopOverscrollSettle() // ...and lets a re-grab take over the elastic mid-spring
         panMayCommitText = false // a fresh gesture; the editing branch below re-arms it if it applies
         lockedPressAt = null
+        markupPressAt = null
+        markupPressPage = null
         val toolType = e.getToolType(0)
         val vx = e.getX(0).toDouble()
         val vy = e.getY(0).toDouble()
@@ -695,6 +704,8 @@ class InteractionController(
         val (page, local) = state.pagePointAt(content) ?: return
         if (state.document.pages.getOrNull(page)?.pdfPage == null) return
         mode = PointerMode.PDF_TEXT
+        markupPressAt = state.contentToViewport(content)
+        markupPressPage = page to local
         text.beginToolDrag(page, local, mark = configFor(Tool.MARKUP).markupMode != MarkupMode.SELECT)
     }
 
@@ -823,7 +834,16 @@ class InteractionController(
             PointerMode.TEXT_DRAG -> endTextDrag(content)
             PointerMode.PDF_TEXT -> {
                 mode = PointerMode.IDLE
+                // A markup tool tap marks nothing; on a markup it opens that markup's menu.
+                val pressAt = markupPressAt
+                val pressPage = markupPressPage
+                markupPressAt = null
+                markupPressPage = null
                 pdfText?.release()
+                val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
+                if (pressAt != null && pressPage != null && up.distanceTo(pressAt) <= TAP_SLOP) {
+                    onMarkupTap?.invoke(pressPage.first, pressPage.second)
+                }
             }
             PointerMode.IDLE -> lockedPressAt?.let { at ->
                 lockedPressAt = null

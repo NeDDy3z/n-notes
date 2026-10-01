@@ -58,6 +58,23 @@ object MarkupPainter {
         return if (marker == null) quads else quads.union(marker)
     }
 
+    /**
+     * The topmost of [marks] at ([x], [y]), in points: on one of its lines grown by [slop], or within
+     * [markerReach] of its note marker's middle (the marker's own size when that is bigger).
+     */
+    fun markupAt(marks: List<TextMarkup>, x: Double, y: Double, slop: Double, markerReach: Double): TextMarkup? {
+        for (m in marks.asReversed()) {
+            if (m.note != null) {
+                val marker = markerOf(m)
+                if (marker != null && marker.center.distanceTo(Pt(x, y)) <= max(marker.radius, markerReach)) return m
+            }
+            for (q in m.quads) {
+                if (x >= q.left - slop && x <= q.right + slop && y >= q.top - slop && y <= q.bottom + slop) return m
+            }
+        }
+        return null
+    }
+
     /** The note marker: a speech bubble just past the markup's end, level with the line's top. */
     class Marker(val center: Pt, val radius: Double, val tail: List<Pt>) {
         val bounds: Rect get() = Rect.bounding(tail).union(Rect(center.x - radius, center.y - radius, 2 * radius, 2 * radius))

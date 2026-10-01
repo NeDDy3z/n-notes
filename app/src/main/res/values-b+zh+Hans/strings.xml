@@ -21,6 +21,11 @@
     <string name="tool_markup">PDF 文本标注</string>
     <string name="markup_highlight">高亮</string>
     <string name="markup_squiggly">波浪线</string>
+    <string name="markup_colour">颜色</string>
+    <string name="markup_kind">样式</string>
+    <string name="markup_note">备注</string>
+    <string name="markup_note_hint">写备注</string>
+    <string name="open_link">打开链接</string>
     <string name="tool_image">图片</string>
     <string name="toolbar_home">首页</string>
     <string name="toolbar_title">标题</string>
