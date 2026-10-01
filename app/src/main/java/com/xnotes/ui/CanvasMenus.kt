@@ -390,6 +390,61 @@ fun FlowEditMenu(editor: Editor) {
     }
 }
 
+/**
+ * The PDF text selection's bar: Copy, and behind the overflow the apps that act on selected text
+ * ("Translate", "Search" and the like). Never takes focus; a canvas touch hides it until the
+ * selection, or the view under it, settles again.
+ */
+@Composable
+fun PdfSelectionMenu(editor: Editor) {
+    val rect = editor.pdfTextMenu ?: return
+    val palette = LocalPalette.current
+    val density = LocalDensity.current
+    val actions = remember { editor.pdfTextActions() }
+    var overflowOpen by remember { mutableStateOf(false) }
+
+    val barHeightPx = with(density) { 48.dp.toPx() }
+    val barWidthPx = with(density) { ((if (actions.isEmpty()) 1 else 2) * 46).dp.toPx() }
+    val gap = with(density) { 10.dp.toPx() }
+    val margin = with(density) { 8.dp.toPx() }
+    // When pushed below the selection, also clear the teardrop handles hanging there.
+    val handleClearance = with(density) { (2 * com.xnotes.canvas.TextHandles.RADIUS_DP).dp.toPx() }
+    val centerX = ((rect.left + rect.right) / 2.0).toFloat()
+    val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(margin)
+    val above = rect.top.toFloat() - barHeightPx - gap
+    val below = rect.bottom.toFloat() + handleClearance + gap
+    // A selection taller than the view leaves no room either side: keep the bar on screen.
+    val maxY = (editor.state.viewportH - barHeightPx - margin).coerceAtLeast(margin)
+    val yPx = (if (above > 0f) above else below).coerceIn(margin, maxY)
+
+    Row(
+        modifier = Modifier
+            .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
+            .clip(MaterialTheme.shapes.medium)
+            .background(palette.menuBg.toComposeColor())
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+    ) {
+        ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyPdfText() }
+        if (actions.isNotEmpty()) {
+            Box {
+                ActionIcon(XnotesIcons.more, stringResource(R.string.more)) { overflowOpen = true }
+                DropdownMenu(
+                    expanded = overflowOpen,
+                    onDismissRequest = { overflowOpen = false },
+                    properties = PopupProperties(focusable = false),
+                ) {
+                    for ((label, app) in actions) {
+                        DropdownMenuItem(text = { Text(label) }, onClick = {
+                            overflowOpen = false
+                            editor.processPdfText(app)
+                        })
+                    }
+                }
+            }
+        }
+    }
+}
+
 private const val TABLE_BAR_ICONS = 4
 
 /**

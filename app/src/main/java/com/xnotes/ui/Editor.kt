@@ -173,6 +173,12 @@ private const val SETTINGS_SAVE_DELAY_MS = 400L
 /** How many opened documents Recent remembers. */
 private const val RECENT_MAX = 40
 
+/** How long the view must sit still before a PDF text selection's menu shows again. */
+private const val PDF_TEXT_MENU_SETTLE_MS = 250L
+
+/** Text handed to another app's text action at most, well inside what an intent can carry. */
+private const val PROCESS_TEXT_MAX = 100_000
+
 
 /** Recent, shared by both panes of a split so a note opened in either shows up; null until first read from settings. */
 private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xnotes.settings.RecentDoc>?>(null)
@@ -926,6 +932,79 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var pdfTextMenu by mutableStateOf<Rect?>(null)
         private set
 
+    /** Whether a pointer is on the canvas; the PDF text menu waits for none before it shows again. */
+    private var canvasTouched = false
+
+    private val showPdfTextMenu = Runnable {
+        if (!canvasTouched && pdfText.selection != null) pdfTextMenu = pdfText.menuAnchor()
+    }
+
+    /** Hides the PDF text menu while the view moves under it, showing it again once it settles. */
+    private fun settlePdfTextMenu() {
+        if (pdfText.selection == null) return
+        pdfTextMenu = null
+        view.removeCallbacks(showPdfTextMenu)
+        view.postDelayed(showPdfTextMenu, PDF_TEXT_MENU_SETTLE_MS)
+    }
+
+    fun dismissPdfTextMenu() {
+        pdfTextMenu = null
+    }
+
+    /**
+     * Hands the PDF text selection to [use] on the main thread, as copied (see [TextSelection.text]).
+     * Pages whose text the cache let go are read again off the main thread first.
+     */
+    private fun withPdfSelectionText(use: (String) -> Unit) {
+        val sel = pdfText.selection ?: return
+        val src = pdfSource ?: return
+        val pdfPages = (sel.start.page..sel.end.page).associateWith { state.document.pages.getOrNull(it)?.pdfPage }
+        if (pdfPages.values.all { it == null || src.text.peek(it) != null }) {
+            use(sel.text { page -> pdfPages[page]?.let { src.text.peek(it) } })
+            return
+        }
+        autosaveScope.launch {
+            val text = withContext(Dispatchers.IO) { sel.text { page -> pdfPages[page]?.let { src.text.get(it) } } }
+            if (pdfSource === src) use(text)
+        }
+    }
+
+    /** Copies the PDF text selection, raw: the PDF's own order, line breaks and hyphens. */
+    fun copyPdfText() {
+        withPdfSelectionText { text ->
+            val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as? android.content.ClipboardManager ?: return@withPdfSelectionText
+            runCatching { cm.setPrimaryClip(android.content.ClipData.newPlainText("xnotes text", text)) }
+        }
+        pdfText.clear()
+    }
+
+    /** The apps that act on selected text ("Translate", "Search" and the like): label and activity. */
+    fun pdfTextActions(): List<Pair<String, android.content.ComponentName>> {
+        val pm = appContext.packageManager
+        val query = android.content.Intent(android.content.Intent.ACTION_PROCESS_TEXT).setType("text/plain")
+        val found = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            pm.queryIntentActivities(query, android.content.pm.PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(query, 0)
+        }
+        return found.map { it.loadLabel(pm).toString() to android.content.ComponentName(it.activityInfo.packageName, it.activityInfo.name) }
+    }
+
+    /** Hands the PDF text selection to [app] read-only, as a read-only text field would. */
+    fun processPdfText(app: android.content.ComponentName) {
+        withPdfSelectionText { text ->
+            val intent = android.content.Intent(android.content.Intent.ACTION_PROCESS_TEXT)
+                .setType("text/plain")
+                .setComponent(app)
+                .putExtra(android.content.Intent.EXTRA_PROCESS_TEXT, text.take(PROCESS_TEXT_MAX))
+                .putExtra(android.content.Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+            runCatching { viewContext.startActivity(intent) }
+        }
+        pdfText.clear()
+    }
+
     /** The clipboard's text content, or null. */
     private fun clipboardText(): String? {
         val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
@@ -1109,10 +1188,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     init {
         view.input = { ev ->
             // Any fresh canvas touch quietly retires the flow action bar and still does its job.
-            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-                flowContextMenu = null
-                tableMenu = null
-                pdfTextMenu = null
+            when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    flowContextMenu = null
+                    tableMenu = null
+                    pdfTextMenu = null
+                    canvasTouched = true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    canvasTouched = false
+                    settlePdfTextMenu()
+                }
             }
             controller.onTouch(ev)
         }
@@ -2027,6 +2113,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun refreshView() {
         if (editingTable != null || tableMenu != null) tableChromeTick++
+        if (!canvasTouched) settlePdfTextMenu()
         zoomPercent = (state.zoom * 100).roundToInt()
         pageIndex = state.currentPageIndex()
         warmVisibleLinks(pageIndex)
@@ -5197,6 +5284,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_S && shift -> keyActions.saveAs()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_S -> keyActions.save()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_E -> keyActions.exportPdf()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_C && pdfText.selection != null -> copyPdfText()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_A -> selectAll()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_B -> toggleSidebar()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_COMMA -> keyActions.preferences()
