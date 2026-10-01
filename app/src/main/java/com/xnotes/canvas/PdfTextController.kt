@@ -18,8 +18,8 @@ interface PdfTextSource {
     /** Starts reading the text in the background. */
     fun prefetch(page: Int)
 
-    /** Reads the text off the main thread, then runs [onReady] on the main thread, read or not. */
-    fun request(page: Int, onReady: () -> Unit)
+    /** Reads the text off the main thread, then hands it to [onReady] on the main thread, null when there is none. */
+    fun request(page: Int, onReady: (PageText?) -> Unit)
 }
 
 /**

@@ -927,11 +927,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             pdfPageOf(page)?.let { pdfSource?.text?.prefetch(it) }
         }
 
-        override fun request(page: Int, onReady: () -> Unit) {
+        override fun request(page: Int, onReady: (com.xnotes.core.pdf.PageText?) -> Unit) {
             val src = pdfSource
             val pdf = pdfPageOf(page)
-            if (src == null || pdf == null) return onReady()
-            src.text.request(pdf) { view.post { if (pdfSource === src) onReady() } }
+            if (src == null || pdf == null) return onReady(null)
+            src.text.request(pdf) { text -> view.post { if (pdfSource === src) onReady(text) } }
         }
     }
 
@@ -945,6 +945,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         ctrl.onSettled = { pdfTextMenu = ctrl.menuAnchor() }
         ctrl.onCleared = { pdfTextMenu = null }
     }
+
+    private val searchTints = com.xnotes.canvas.SearchTints(
+        state, pdfTexts, frame = { publishedFlow?.frame }, onViewChanged = { refreshView() }, requestRender = { onRender() },
+    ).also { controller.searchTints = it }
 
     /** Viewport bounds the PDF text selection's menu anchors to, or null when it is hidden. */
     var pdfTextMenu by mutableStateOf<Rect?>(null)
@@ -2404,6 +2408,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private var searchKeep: SearchHit? = null
     private var searchStampSeen = 0L
 
+    /** A fresh query's first match is brought into view once it is known (an edit's rerun stays put). */
+    private var searchReveal = false
+
     private val searchUi = object : com.xnotes.core.search.UiThread {
         private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -2447,7 +2454,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         searchResults = null
         searchCurrent = null
         searchKeep = null
-        view.requestRender()
+        searchTints.show(null, null)
     }
 
     fun searchFor(text: String) {
@@ -2479,31 +2486,40 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         showSearchHit(r.hit(next))
     }
 
+    /** Makes [hit] the current match and brings it into view. */
     fun showSearchHit(hit: SearchHit) {
         searchCurrent = hit
-        view.requestRender()
+        searchReveal = false
+        searchTints.show(searchResults, hit)
+        searchTints.reveal(hit)
     }
 
     private fun runSearch(now: Boolean, keep: SearchHit? = null) {
         val s = search ?: return
         searchKeep = keep
+        searchReveal = keep == null
         searchFrom = keep?.page ?: state.currentPageIndex()
         s.search(SearchQuery(searchQuery, searchMatchCase, searchWholeWords), searchFrom, now)
     }
 
     private fun onSearchResults(r: SearchResults?) {
         searchResults = r
-        val cur = searchCurrent
+        val was = searchCurrent
         if (r == null) {
             searchCurrent = null
-        } else if (cur == null || r.indexOf(cur) < 0) {
+        } else if (was == null || r.indexOf(was) < 0) {
             val keep = searchKeep
             val kept = keep?.let { k -> r.hitsOn(k.page).firstOrNull { it.target == k.target && it.sourceStart == k.sourceStart } }
             val i = if (kept != null) r.indexOf(kept) else r.firstFrom(searchFrom)
             searchCurrent = if (i != null && i >= 0) r.hit(i) else null
             if (searchCurrent != null) searchKeep = null
         }
-        view.requestRender()
+        val current = searchCurrent
+        searchTints.show(r, current)
+        if (searchReveal && current != null) {
+            searchReveal = false
+            searchTints.reveal(current)
+        }
     }
 
     /** Changes whenever what a search reads does: the flow, the page list, a text box. */

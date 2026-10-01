@@ -150,6 +150,9 @@ class InteractionController(
 
     /** PDF text selection: a free pointer's long press on a PDF page selects there (installed by the Editor). */
     var pdfText: PdfTextController? = null
+
+    /** The open search's matches, tinted under the selections. */
+    var searchTints: SearchTints? = null
     val document: Document get() = state.document
 
     var tool: Tool = Tool.DEFAULT
@@ -2951,7 +2954,8 @@ class InteractionController(
 
             // Selection chrome.
             val accent = chromePen(1.3)
-            // Flow caret + selection highlight, under the selection chrome; then the PDF's.
+            // Search matches, then the flow caret + selection highlight, under the selection chrome; then the PDF's.
+            searchTints?.draw(r)
             flowText?.drawOverlay(r)
             pdfText?.drawOverlay(r)
 
