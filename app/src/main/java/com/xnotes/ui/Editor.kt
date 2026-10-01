@@ -2292,23 +2292,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         r.scale(scale, scale)
         r.translate(-cover.left, -cover.top)
         if (!active()) return null
-        val src = pdfSource
-        val pi = page.pdfPage
-        if (src != null && pi != null) {
-            // Pure consumer: never parses. Stamps real image colours only if the linear sweep has
-            // already found this page's locations, otherwise draws it filtered; the row re-renders
-            // with real colours once the sweep reaches the page (see onImagesReady → pdfThumbTick).
-            val pw = (page.width * scale).toInt().coerceAtLeast(1)
-            val ph = (page.height * scale).toInt().coerceAtLeast(1)
-            src.renderPage(pi, pw, ph, pdfPageFilter())?.let { bg ->
-                r.drawRaster(bg, com.xnotes.core.geometry.Rect(0.0, 0.0, page.width, page.height))
-                bg.recycle()
-            }
-            // The margins are outside the raster, so their ruling still has to be painted.
-            state.paintPageBackground?.invoke(page, r, scale, cover)
-        } else {
-            state.paintPageBackground?.invoke(page, r, scale, cover)
-        }
+        // Paints the PDF page too, not just the ruling.
+        state.paintPageBackground?.invoke(page, r, scale, cover)
         state.paintFlow?.invoke(page, r, cover)
         for (item in itemsSnapshot(page)) {
             if (!active()) return null
