@@ -22,6 +22,7 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.AddItem
 import com.xnotes.core.history.AddPage
 import com.xnotes.core.history.Command
+import com.xnotes.core.history.AddMarkups
 import com.xnotes.core.history.CompositeCommand
 import com.xnotes.core.history.DeletePage
 import com.xnotes.core.history.EraseItems
@@ -31,6 +32,7 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
+import com.xnotes.core.model.MarkupType
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageMargins
@@ -39,6 +41,7 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pdf.MarkupPainter
@@ -957,6 +960,48 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         ctrl.onSettled = { pdfTextMenu = ctrl.menuAnchor() }
         ctrl.onCleared = { pdfTextMenu = null }
+        ctrl.onMarked = { sel -> controller.configFor(Tool.MARKUP).markupMode.type?.let { markSelection(sel, it) } }
+        ctrl.drawMark = { r, page, quads ->
+            val cfg = controller.configFor(Tool.MARKUP)
+            val type = cfg.markupMode.type
+            val p = state.document.pages.getOrNull(page)
+            if (type != null && p != null) {
+                val mark = TextMarkup("", type, controller.inkColor.withAlpha(255), cfg.markupIntensity, quads, "", null, 0L, 0L)
+                markupOverlay.paintOn(r, page, p, listOf(mark))
+            }
+        }
+    }
+
+    /** Marks [sel] as [type] in the active ink colour, a markup on each page it covers, as one undo step. */
+    fun markSelection(sel: com.xnotes.core.pdf.TextSelection, type: MarkupType) {
+        val intensity = controller.configFor(Tool.MARKUP).markupIntensity
+        val color = controller.inkColor
+        readPdfTexts(sel.start.page..sel.end.page) { texts ->
+            pdfText.clear()
+            val made = com.xnotes.core.pdf.Markups.of(sel, { texts[it] }, type, color, intensity, System.currentTimeMillis())
+            val pages = state.document.pages
+            val steps = made.groupBy({ it.first }, { it.second })
+                .mapNotNull { (i, marks) -> pages.getOrNull(i)?.let { AddMarkups(it, marks) } }
+            if (steps.isNotEmpty()) applyMarkupEdit(steps.singleOrNull() ?: CompositeCommand(steps))
+        }
+    }
+
+    /** The PDF text of note [pages], read where the cache let it go, handed to [then] on the main thread once all is in. */
+    private fun readPdfTexts(pages: IntRange, then: (Map<Int, com.xnotes.core.pdf.PageText>) -> Unit) {
+        val got = HashMap<Int, com.xnotes.core.pdf.PageText>()
+        val missing = ArrayList<Int>()
+        for (p in pages) {
+            val t = pdfTexts.peek(p)
+            if (t != null) got[p] = t else if (state.document.pages.getOrNull(p)?.pdfPage != null) missing += p
+        }
+        if (missing.isEmpty()) return then(got)
+        var left = missing.size
+        for (p in missing) {
+            pdfTexts.request(p) { t ->
+                if (t != null) got[p] = t
+                if (--left == 0) then(got)
+            }
+        }
     }
 
     private val searchTints = com.xnotes.canvas.SearchTints(

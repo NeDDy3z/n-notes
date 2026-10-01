@@ -56,6 +56,7 @@ import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.ShapeKind
+import com.xnotes.core.tools.MarkupMode
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
@@ -678,20 +679,30 @@ class InteractionController(
             effectiveTool == Tool.SHAPE -> beginShape(content)
             effectiveTool == Tool.TEXT -> beginTextGesture(content, Pt(vx, vy))
             effectiveTool == Tool.TEXT_BOX -> beginTextBoxGesture(content)
+            effectiveTool == Tool.MARKUP -> beginMarkup(content)
             else -> Unit
         }
-        // The flow caret owns its own long press (word selection), and mid text-drag it is
-        // suppressed so a hold-then-drag still sizes a box.
-        if (mode != PointerMode.FLOW_TEXT && mode != PointerMode.TEXT_DRAG) {
+        // The flow caret owns its own long press (word selection), mid text-drag it is suppressed so
+        // a hold-then-drag still sizes a box, and a markup drag held still is just a slow drag.
+        if (mode != PointerMode.FLOW_TEXT && mode != PointerMode.TEXT_DRAG && mode != PointerMode.PDF_TEXT) {
             armLongPress(Pt(vx, vy), content, isFinger, free)
         }
     }
 
+    /** The markup tool's press: selects, or marks, the PDF text it then drags over; anywhere else nothing. */
+    private fun beginMarkup(content: Pt) {
+        val text = pdfText ?: return
+        val (page, local) = state.pagePointAt(content) ?: return
+        if (state.document.pages.getOrNull(page)?.pdfPage == null) return
+        mode = PointerMode.PDF_TEXT
+        text.beginToolDrag(page, local, mark = configFor(Tool.MARKUP).markupMode != MarkupMode.SELECT)
+    }
+
     private fun handlePointerDown(e: MotionEvent) {
         cancelLongPress()
-        // A second finger turns a PDF text drag into a pinch; the selection stays.
+        // A second finger turns a PDF text drag into a pinch; the selection stays, a mark in the making goes.
         if (mode == PointerMode.PDF_TEXT) {
-            pdfText?.release()
+            pdfText?.interrupt()
             mode = PointerMode.IDLE
         }
         // A second finger on a ruler being moved twists/translates it instead of pinch-zooming.

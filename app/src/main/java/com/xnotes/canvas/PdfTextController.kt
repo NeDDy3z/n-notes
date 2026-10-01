@@ -25,8 +25,9 @@ interface PdfTextSource {
 /**
  * Selecting the text of a note's PDF pages. A free pointer's long press selects a word and drags on
  * to extend it; the teardrop handles move either end, across pages, autoscrolling near the edges
- * while the view scrolls (a paginated view keeps a handle to the pages shown). Drawn in the
- * interaction overlay, over ink, like the flow text selection.
+ * while the view scrolls (a paginated view keeps a handle to the pages shown). The text markup tool
+ * selects by dragging from where it presses, a character at a time. Drawn in the interaction
+ * overlay, over ink, like the flow text selection.
  */
 class PdfTextController(
     private val state: CanvasState,
@@ -46,6 +47,12 @@ class PdfTextController(
     /** A long press selected a word: a short haptic tick. */
     var onHaptic: () -> Unit = {}
 
+    /** The markup tool's marking drag lifted over [TextSelection]: time to make the marks. */
+    var onMarked: (TextSelection) -> Unit = {}
+
+    /** Draws the lines a marking drag covers on note page [Int] as the mark it will make. */
+    var drawMark: ((Renderer, Int, List<TextQuad>) -> Unit)? = null
+
     private val handles = TextHandles(state)
     private var dragging: TextHandles.Handle? = null
     private var fixed: TextPos? = null
@@ -53,6 +60,12 @@ class PdfTextController(
 
     /** The long-pressed word, while the press that selected it drags on to extend it. */
     private var word: TextSelection? = null
+
+    /** The markup tool's drag: under way, the boundary it started from once its text is read, and whether it marks. */
+    private var toolDrag = false
+    private var anchor: TextPos? = null
+    var marking = false
+        private set
     private var pressing = false
     private var dragAt: Pt? = null
 
@@ -83,6 +96,38 @@ class PdfTextController(
             if (text == null) noText() else selectWord(page, text, pageLocal, noText)
             if (!pressing && selection != null) onSettled()
         }
+    }
+
+    /**
+     * The markup tool's press at [pageLocal] (page space) on page [page]: from the character boundary
+     * there the selection follows the pointer a character at a time. A press away from the text
+     * selects nothing; text still being read starts once it lands. With [mark] the selection draws
+     * as the mark it will become, and lifting hands it to [onMarked] instead of showing its menu.
+     */
+    fun beginToolDrag(page: Int, pageLocal: Pt, mark: Boolean) {
+        pressing = true
+        toolDrag = true
+        marking = mark
+        val gen = ++pressGen
+        texts.peek(page)?.let { return anchorAt(page, it, pageLocal) }
+        texts.request(page) { text ->
+            if (gen != pressGen || text == null) return@request
+            anchorAt(page, text, pageLocal)
+            dragAt?.let { follow(it) }
+            requestRender()
+        }
+    }
+
+    private fun anchorAt(page: Int, text: PageText, pageLocal: Pt) {
+        val x = (pageLocal.x * ptPerPx).toFloat()
+        val y = (pageLocal.y * ptPerPx).toFloat()
+        val slop = (TOUCH_SLOP_DP * state.devicePxPerDp / state.zoom * ptPerPx).toFloat()
+        val offset = TextHit.offsetAt(text, x, y, slop)
+        if (offset < 0) return
+        val at = TextPos(page, offset)
+        readForSelection.clear()
+        anchor = at
+        selection = TextSelection(at, at)
     }
 
     private fun selectWord(page: Int, text: PageText, pageLocal: Pt, noText: () -> Unit) {
@@ -121,7 +166,7 @@ class PdfTextController(
 
     /** The pointer that selected, or grabbed a handle, moved to [viewport]. */
     fun dragTo(viewport: Pt) {
-        if (dragging == null && word == null) return
+        if (dragging == null && word == null && !toolDrag) return
         dragAt = viewport
         follow(viewport)
         if (state.verticalScroll) {
@@ -138,24 +183,41 @@ class PdfTextController(
     fun release() {
         handles.stopAutoscroll()
         val selecting = dragging != null || word != null
+        val tool = toolDrag
+        val marked = marking
         dragging = null
         fixed = null
         word = null
         dragAt = null
         pressing = false
-        if (selecting && selection != null) onSettled()
+        toolDrag = false
+        anchor = null
+        val sel = selection
+        when {
+            tool && (sel == null || sel.isEmpty) -> clear()
+            tool && marked -> onMarked(sel!!)
+            (selecting || tool) && sel != null -> onSettled()
+        }
+    }
+
+    /** A second pointer came down mid-drag: a mark in the making is dropped, a selection stays. */
+    fun interrupt() {
+        if (toolDrag && marking) clear() else release()
     }
 
     fun clear() {
         pressGen++
         pressing = false
-        if (selection == null && dragging == null && word == null) return
+        if (selection == null && dragging == null && word == null && !toolDrag) return
         handles.stopAutoscroll()
         selection = null
         dragging = null
         fixed = null
         word = null
         dragAt = null
+        toolDrag = false
+        anchor = null
+        marking = false
         reading.clear()
         readForSelection.clear()
         onCleared()
@@ -166,10 +228,13 @@ class PdfTextController(
         val h = dragging
         val target = if (h != null) Pt(viewport.x + grabOffset.x, viewport.y + grabOffset.y) else viewport
         val pos = posAt(state.viewportToContent(target)) ?: return
+        val a = anchor
         selection = if (h != null) {
             val f = fixed ?: return
             if (pos == f) return
             TextSelection.between(f, pos)
+        } else if (toolDrag) {
+            TextSelection.between(a ?: return, pos)
         } else {
             val w = word ?: return
             if (pos < w.start) TextSelection(pos, w.end) else TextSelection(w.start, maxOf(pos, w.end))
@@ -196,9 +261,19 @@ class PdfTextController(
         return if (offset < 0) null else TextPos(page, offset)
     }
 
-    /** The selection's tint and handles, in content space. */
+    /** The selection's tint and handles, in content space; a marking drag's mark instead. */
     fun drawOverlay(r: Renderer) {
         val sel = selection ?: return
+        val mark = drawMark
+        if (marking && mark != null) {
+            val visible = state.visiblePageRange() ?: return
+            for (page in maxOf(sel.start.page, visible.first)..minOf(sel.end.page, visible.last)) {
+                val text = texts.peek(page) ?: continue
+                val quads = sel.quads(page, text)
+                if (quads.isNotEmpty()) mark(r, page, quads)
+            }
+            return
+        }
         val accent = state.palette.accent
         val tint = accent.withAlpha(70)
         forEachQuad(sel) { page, q -> r.fillRect(contentRect(page, q), tint) }

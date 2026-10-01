@@ -15,7 +15,8 @@ import com.xnotes.core.pal.Renderer
 class TextHandles(private val state: CanvasState) {
     enum class Handle { START, END }
 
-    private val handler = Handler(Looper.getMainLooper())
+    /** Made on the first autoscroll, so a drag that never nears an edge touches no looper. */
+    private val handler by lazy { Handler(Looper.getMainLooper()) }
     private var velocity = 0.0
     private var dragAt: Pt? = null
     private var onStep: (Pt) -> Unit = {}
@@ -76,7 +77,7 @@ class TextHandles(private val state: CanvasState) {
         val wasStill = velocity == 0.0
         velocity = vel
         if (vel == 0.0) {
-            handler.removeCallbacks(step)
+            if (!wasStill) handler.removeCallbacks(step)
         } else if (wasStill) {
             handler.removeCallbacks(step)
             handler.post(step)
@@ -84,9 +85,10 @@ class TextHandles(private val state: CanvasState) {
     }
 
     fun stopAutoscroll() {
+        val moving = velocity != 0.0
         velocity = 0.0
         dragAt = null
-        handler.removeCallbacks(step)
+        if (moving) handler.removeCallbacks(step)
     }
 
     companion object {
