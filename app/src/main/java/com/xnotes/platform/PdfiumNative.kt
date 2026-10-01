@@ -43,6 +43,9 @@ object PdfiumNative {
     /** Page [index]'s text as the codepoints, boxes, flags and angles of a [com.xnotes.core.pdf.PageText]. */
     @JvmStatic external fun nativePageText(doc: Long, index: Int): Array<Any?>?
 
+    /** Page [index]'s map from user space to points as displayed, {a, b, c, d, e, f}, leaving the page cache as it was. */
+    @JvmStatic external fun nativePageGeometry(doc: Long, index: Int): DoubleArray?
+
     /** Page [index]'s codepoints and flags as [nativePageText] reads them, leaving the page cache as it was. */
     @JvmStatic external fun nativePageChars(doc: Long, index: Int): Array<Any>?
 

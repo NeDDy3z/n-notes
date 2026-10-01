@@ -3,6 +3,7 @@ package com.xnotes.platform
 import android.graphics.Bitmap
 import android.graphics.RectF
 import com.xnotes.core.pdf.PageText
+import com.xnotes.core.pdf.PdfPageGeometry
 import com.xnotes.core.search.SearchText
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -93,6 +94,12 @@ class PdfiumDocument private constructor(
         val parts = PdfiumNative.nativePageText(handle, index) ?: return@withHandle null
         lastTextMs = (System.nanoTime() - t0) / 1_000_000
         PageText(parts[0] as IntArray, parts[1] as FloatArray, parts[2] as ByteArray, parts[3] as FloatArray?)
+    }
+
+    /** How page [index]'s user space maps to its points as displayed; null when not open or the page does not load. */
+    fun pageGeometry(index: Int, priority: PdfPriority): PdfPageGeometry? {
+        val m = withHandle(priority) { PdfiumNative.nativePageGeometry(it, index) } ?: return null
+        return PdfPageGeometry(m[0], m[1], m[2], m[3], m[4], m[5])
     }
 
     /** Page [index]'s text to search, read without boxes or keeping the page loaded; null when not open or it does not load. */

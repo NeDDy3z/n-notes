@@ -98,6 +98,16 @@ object MarkupPainter {
         }
     }
 
+    /**
+     * [q]'s corners in the order PDF QuadPoints take them: the line's start then end along the
+     * glyphs' tops, then the same along their feet.
+     */
+    fun corners(q: TextQuad): List<Pt> {
+        val len = along(q)
+        val h = across(q)
+        return listOf(frame(q, 0.0, 0.0), frame(q, len, 0.0), frame(q, 0.0, h), frame(q, len, h))
+    }
+
     /** How thick a line type is drawn on [q]. */
     internal fun thickness(q: TextQuad): Double = max(across(q) / THICKNESS_DIVISOR, MIN_THICKNESS)
 

@@ -675,6 +675,27 @@ Java_com_xnotes_platform_PdfiumNative_nativePageText(JNIEnv* env, jclass, jlong 
 // Page index's characters as nativePageText reads them, without boxes: {int[] codepoints,
 // byte[] flags}. A page the cache lacks is loaded for this read alone, so a search through a book
 // never pushes the pages on screen out of it.
+// Page index's display map, user space to points as displayed, as {a, b, c, d, e, f}, leaving the
+// page cache as it was; null when the page does not load or has no area.
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativePageGeometry(JNIEnv* env, jclass, jlong handle, jint index) {
+    Doc* doc = FromHandle(handle);
+    FPDF_PAGE page = CachedPage(doc, index);
+    const bool own = page == nullptr;
+    if (own) page = FPDF_LoadPage(doc->pdf, index);
+    if (!page) return nullptr;
+    FS_RECTF box;
+    const bool ok = FPDF_GetPageBoundingBox(page, &box) && box.right > box.left && box.top > box.bottom;
+    const DisplayMap m = MapFor(page);
+    if (own) FPDF_ClosePage(page);
+    if (!ok) return nullptr;
+    const jdouble values[6] = {m.a, m.b, m.c, m.d, m.e, m.f};
+    jdoubleArray out = env->NewDoubleArray(6);
+    if (!out) return nullptr;
+    env->SetDoubleArrayRegion(out, 0, 6, values);
+    return out;
+}
+
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_xnotes_platform_PdfiumNative_nativePageChars(JNIEnv* env, jclass, jlong handle, jint index) {
     Doc* doc = FromHandle(handle);

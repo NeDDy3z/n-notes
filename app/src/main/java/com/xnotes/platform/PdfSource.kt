@@ -10,6 +10,7 @@ import android.graphics.RectF
 import com.xnotes.canvas.PdfPageFilter
 import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.pdf.MarkupPainter
+import com.xnotes.core.pdf.PdfPageGeometry
 import com.xnotes.core.search.SearchText
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -63,6 +64,16 @@ class PdfSource private constructor(
 
     /** Page sizes in points already read, by page. */
     private val pageSizes = ConcurrentHashMap<Int, Pair<Float, Float>>()
+
+    /** Page geometries already read, by page. */
+    private val geometries = ConcurrentHashMap<Int, PdfPageGeometry>()
+
+    /** How page [index]'s user space maps to its points as displayed; null once closed. Waits, so not on the main thread. */
+    fun pageGeometry(index: Int): PdfPageGeometry? {
+        geometries[index]?.let { return it }
+        if (closed) return null
+        return pdf.pageGeometry(index, PdfPriority.THUMBNAIL)?.also { geometries[index] = it }
+    }
 
     /** Image boxes in points (l, t, r, b per image, top-left origin) already read, by page. */
     private val imageRects = ConcurrentHashMap<Int, FloatArray>()
