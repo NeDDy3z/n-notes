@@ -91,6 +91,7 @@ import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.util.DocumentKind
+import com.xnotes.core.util.FileStamp
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.format.DocumentCodec
 import com.xnotes.format.SvgColors
@@ -4167,11 +4168,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     // --- divergence guard (something else rewrote the file underneath the open editor) ---
 
-    /** Size + last-modified of a SAF document: the evidence that a file did or did not move under us. */
-    private data class DocStamp(val size: Long, val modified: Long)
-
     /** The stamp each file carried after this editor last opened or wrote it, by uri. */
-    private val knownStamps = java.util.concurrent.ConcurrentHashMap<String, DocStamp>()
+    private val knownStamps = java.util.concurrent.ConcurrentHashMap<String, FileStamp>()
 
     /** Where a fork landed: the new file's uri, and the name to show the user. */
     private class Fork(val uri: String, val name: String)
@@ -4183,7 +4181,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private val forks = com.xnotes.core.util.ForkLedger()
 
     /** Size + mtime of the document at [uri], or null when the provider will not report either. */
-    private fun stampOf(uri: String): DocStamp? = runCatching {
+    private fun stampOf(uri: String): FileStamp? = runCatching {
         appContext.contentResolver.query(
             android.net.Uri.parse(uri),
             arrayOf(
@@ -4195,7 +4193,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             if (!c.moveToFirst()) return@use null
             val size = if (c.isNull(0)) -1L else c.getLong(0)
             val modified = if (c.isNull(1)) -1L else c.getLong(1)
-            if (size < 0L && modified < 0L) null else DocStamp(size, modified)
+            if (size < 0L && modified < 0L) null else FileStamp(size, modified)
         }
     }.getOrNull()
 
@@ -4212,12 +4210,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * conflict copy, so the caller forks instead.
      *
      * An unreadable stamp is **not** evidence. A provider that won't report size or mtime must never
-     * trigger a fork: a spurious duplicate file is a worse default than the plain write.
+     * trigger a fork: a spurious duplicate file is a worse default than the plain write. Nor is an
+     * mtime that drifted under two seconds at the same size, which SD cards do on their own.
      */
     private fun changedUnderneath(uri: String): Boolean {
         val known = knownStamps[uri] ?: return false
         val now = stampOf(uri) ?: return false
-        return now != known
+        return !known.matches(now)
     }
 
     /** The parent folder's document id for the file at [uri], or null when it has none. */
