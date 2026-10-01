@@ -2,6 +2,7 @@ package com.xnotes.platform
 
 import android.graphics.Bitmap
 import android.graphics.RectF
+import com.xnotes.core.pdf.PageText
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -83,6 +84,12 @@ class PdfiumDocument private constructor(
             val uri = (uris[i] as ByteArray?)?.toString(Charsets.UTF_8)
             PdfLink(rect, uri, dests[i].takeIf { it >= 0 && uri == null })
         }
+    }
+
+    /** Page [index]'s text with a box for each character; null when not open or the page does not load. */
+    fun pageText(index: Int, priority: PdfPriority): PageText? = withHandle(priority) { handle ->
+        val parts = PdfiumNative.nativePageText(handle, index) ?: return@withHandle null
+        PageText(parts[0] as IntArray, parts[1] as FloatArray, parts[2] as ByteArray, parts[3] as FloatArray?)
     }
 
     /**

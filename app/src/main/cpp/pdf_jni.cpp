@@ -22,6 +22,7 @@
 #include "public/fpdf_edit.h"
 #include "public/fpdf_formfill.h"
 #include "public/fpdf_progressive.h"
+#include "public/fpdf_text.h"
 #include "public/fpdfview.h"
 
 namespace {
@@ -212,6 +213,38 @@ void AddImages(FPDF_PAGEOBJECT obj, const FS_MATRIX& to_page, const DisplayMap& 
             break;
         }
     }
+}
+
+// PageText's flag bits.
+constexpr jbyte kTextGenerated = 1;
+constexpr jbyte kTextHyphen = 2;
+constexpr jbyte kTextUnmapped = 4;
+
+// The codepoint PageText keeps for what FPDFText_GetUnicode gave: 0 for the markers PDFium leaves
+// out of its own text, U+FFFD for a value no character has.
+jint Codepoint(unsigned int u, bool hyphen) {
+    // PDFium swaps a hyphen that ends a line, a hyphen-minus or soft hyphen, for U+0002.
+    if (hyphen) return '-';
+    switch (u) {
+        case 0x2: case 0x3: case 0x93: case 0x94: case 0x96: case 0x97: case 0x98: case 0xFFFE:
+            return 0;
+        default:
+            break;
+    }
+    if (u > 0x10FFFF || (u >= 0xD800 && u <= 0xDFFF)) return 0xFFFD;
+    return static_cast<jint>(u);
+}
+
+// How far a glyph set with matrix m is turned, in degrees clockwise as displayed, in [0, 360);
+// float noise is snapped to the nearest quarter turn.
+float DisplayAngle(const DisplayMap& map, const FS_MATRIX& m) {
+    const double dx = map.a * m.a + map.c * m.b;
+    const double dy = map.b * m.a + map.d * m.b;
+    double deg = std::atan2(dy, dx) * (180 / 3.14159265358979323846);
+    if (deg < 0) deg += 360;
+    const double quarter = std::round(deg / 90) * 90;
+    if (std::fabs(deg - quarter) < 0.01) deg = quarter == 360 ? 0 : quarter;
+    return deg == 0 ? 0.f : static_cast<float>(deg);
 }
 
 // The page bookmark b opens, from its /Dest or its GoTo action; -1 for none.
@@ -534,5 +567,76 @@ Java_com_xnotes_platform_PdfiumNative_nativeOutline(JNIEnv* env, jclass, jlong h
     env->SetObjectArrayElement(out, 0, jtitles);
     env->SetObjectArrayElement(out, 1, jpages);
     env->SetObjectArrayElement(out, 2, jlevels);
+    return out;
+}
+
+// Page index's text in PDFium's order as {int[] codepoints, float[] boxes, byte[] flags,
+// float[] angles}: per character its loose box (l, t, r, b) in display points, its kText* bits
+// and its DisplayAngle; angles is null when no character is turned.
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativePageText(JNIEnv* env, jclass, jlong handle, jint index) {
+    FPDF_PAGE page = GetPage(FromHandle(handle), index);
+    if (!page) return nullptr;
+    // PDFium groups and orders a line's words in display space, reversing them on a page turned
+    // upside down, so it reads the page unturned; the boxes it gives are in page space anyway.
+    const int rotation = FPDFPage_GetRotation(page);
+    if (rotation > 0) FPDFPage_SetRotation(page, 0);
+    FPDF_TEXTPAGE text = FPDFText_LoadPage(page);
+    if (rotation > 0) FPDFPage_SetRotation(page, rotation);
+    if (!text) return nullptr;
+    const DisplayMap map = MapFor(page);
+    const int count = std::max(FPDFText_CountChars(text), 0);
+    std::vector<jint> codepoints(count);
+    std::vector<float> boxes;
+    boxes.reserve(4 * static_cast<size_t>(count));
+    std::vector<jbyte> flags(count);
+    std::vector<float> angles(count);
+    bool turned = false;
+    bool low_taken = false;
+    float angle = 0;
+    for (int i = 0; i < count; ++i) {
+        const bool generated = FPDFText_IsGenerated(text, i) == 1;
+        const bool hyphen = FPDFText_IsHyphen(text, i) == 1;
+        // A /ToUnicode entry beyond the BMP comes as two characters, its UTF-16 halves; the
+        // first gets the whole codepoint, the second none.
+        unsigned int u = low_taken ? 0 : FPDFText_GetUnicode(text, i);
+        low_taken = false;
+        if (u >= 0xD800 && u <= 0xDBFF && i + 1 < count) {
+            const unsigned int low = FPDFText_GetUnicode(text, i + 1);
+            if (low >= 0xDC00 && low <= 0xDFFF) {
+                u = 0x10000 + ((u - 0xD800) << 10) + (low - 0xDC00);
+                low_taken = true;
+            }
+        }
+        codepoints[i] = Codepoint(u, hyphen);
+        flags[i] = static_cast<jbyte>((generated ? kTextGenerated : 0) | (hyphen ? kTextHyphen : 0) |
+                                      (FPDFText_HasUnicodeMapError(text, i) == 1 ? kTextUnmapped : 0));
+        FS_RECTF r = {};
+        FPDFText_GetLooseCharBox(text, i, &r);
+        const float xs[] = {r.left, r.right};
+        const float ys[] = {r.bottom, r.top};
+        AddBox(map, xs, ys, 2, &boxes);
+        // An inferred character has no matrix of its own, so it takes the angle of the one before.
+        FS_MATRIX m;
+        if (!generated && FPDFText_GetMatrix(text, i, &m)) angle = DisplayAngle(map, m);
+        angles[i] = angle;
+        turned |= angle != 0;
+    }
+    FPDFText_ClosePage(text);
+    const auto n = static_cast<jsize>(count);
+    jintArray jcodepoints = env->NewIntArray(n);
+    jfloatArray jboxes = env->NewFloatArray(4 * n);
+    jbyteArray jflags = env->NewByteArray(n);
+    jfloatArray jangles = turned ? env->NewFloatArray(n) : nullptr;
+    jobjectArray out = env->NewObjectArray(4, env->FindClass("java/lang/Object"), nullptr);
+    if (!jcodepoints || !jboxes || !jflags || (turned && !jangles) || !out) return nullptr;
+    env->SetIntArrayRegion(jcodepoints, 0, n, codepoints.data());
+    env->SetFloatArrayRegion(jboxes, 0, 4 * n, boxes.data());
+    env->SetByteArrayRegion(jflags, 0, n, flags.data());
+    if (turned) env->SetFloatArrayRegion(jangles, 0, n, angles.data());
+    env->SetObjectArrayElement(out, 0, jcodepoints);
+    env->SetObjectArrayElement(out, 1, jboxes);
+    env->SetObjectArrayElement(out, 2, jflags);
+    env->SetObjectArrayElement(out, 3, jangles);
     return out;
 }
