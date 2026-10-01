@@ -249,6 +249,15 @@ class MainActivity : ComponentActivity() {
         editor?.persist()
     }
 
+    @Suppress("DEPRECATION") // RUNNING_* still arrive below Android 14
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // PDFium's loaded pages are its big native cost; they load again when next drawn.
+        if (level >= TRIM_MEMORY_BACKGROUND || level == TRIM_MEMORY_RUNNING_LOW || level == TRIM_MEMORY_RUNNING_CRITICAL) {
+            com.xnotes.platform.PdfiumDocument.trimAll()
+        }
+    }
+
     private fun applyFullscreen(fullscreen: Boolean) {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         if (fullscreen) {

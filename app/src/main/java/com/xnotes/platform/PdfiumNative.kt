@@ -2,7 +2,8 @@ package com.xnotes.platform
 
 import android.graphics.Bitmap
 
-/** The JNI surface over the vendored PDFium (see cpp/pdf_jni.cpp). All but [revision] run on [PdfiumThread]. */
+/** The JNI surface over the vendored PDFium (see cpp/pdf_jni.cpp). All but [revision] and
+ *  [nativeLoadedPages] run on [PdfiumThread]. */
 object PdfiumNative {
     val loaded: Boolean = runCatching { System.loadLibrary("xnotespdf") }.isSuccess
 
@@ -17,6 +18,12 @@ object PdfiumNative {
     @JvmStatic external fun nativeOpen(path: String, out: IntArray): Long
 
     @JvmStatic external fun nativeClose(doc: Long)
+
+    /** Closes [doc]'s loaded pages; they load again when next used. */
+    @JvmStatic external fun nativeTrim(doc: Long)
+
+    /** Pages loaded across all documents; it reads no PDFium state, so any thread may ask. */
+    @JvmStatic external fun nativeLoadedPages(): Int
 
     /** Width and height in points, as displayed (/Rotate applied), of [count] pages from [from]; 0 when broken. */
     @JvmStatic external fun nativePageSizes(doc: Long, from: Int, count: Int): FloatArray?

@@ -3,6 +3,7 @@ package com.xnotes.platform
 import android.graphics.Bitmap
 import android.graphics.RectF
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -28,6 +29,10 @@ class PdfiumDocument private constructor(
     private var handle = 0L
 
     private val opening = pdfium.submit(PdfPriority.INTERACTIVE, lifetime) { openNative() }
+
+    init {
+        live.add(this)
+    }
 
     /** The page count, 0 when the PDF did not open. Waits for the open. */
     val pageCount: Int get() = opened().pageCount
@@ -121,9 +126,15 @@ class PdfiumDocument private constructor(
         return pdfium.call(priority, *tokens) { if (handle == 0L) null else body(handle) }
     }
 
+    /** Closes this document's loaded pages, which reload when next used. Never blocks. */
+    fun trim() {
+        pdfium.submit(PdfPriority.INTERACTIVE, lifetime) { if (handle != 0L) PdfiumNative.nativeTrim(handle) }
+    }
+
     /** Frees the native document once its running job, if any, ends. Never blocks. */
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        live.remove(this)
         lifetime.cancel()
         // Behind what is on screen: freeing a big book takes tens of ms.
         pdfium.submit(PdfPriority.THUMBNAIL) {
@@ -141,15 +152,25 @@ class PdfiumDocument private constructor(
 
         private val NOT_OPENED = Opened(0, PdfOpenError.UNKNOWN)
         private val openCount = AtomicInteger()
+
+        /** Every document not yet closed, for [trimAll]. */
+        private val live: MutableSet<PdfiumDocument> = ConcurrentHashMap.newKeySet()
         @Volatile private var lastOpenMs = -1L
 
         /** Starts opening [file] on the shared PDFium thread. */
         fun open(file: File): PdfiumDocument = PdfiumDocument(file, PdfiumThread.shared)
 
-        /** The revision, the open documents and the last open's time, for the debug HUD. */
+        /** Closes every open document's loaded pages, for when the system is short on memory. */
+        fun trimAll() {
+            for (doc in live) doc.trim()
+        }
+
+        /** The revision, the open documents, their loaded pages and the last open's time, for the debug HUD. */
         val hud: String
-            get() = "%.10s  docs %d  open %s".format(
-                PdfiumNative.revision, openCount.get(), if (lastOpenMs < 0) "-" else "$lastOpenMs ms",
+            get() = "%.10s  docs %d  pages %d  open %s".format(
+                PdfiumNative.revision, openCount.get(),
+                if (PdfiumNative.loaded) PdfiumNative.nativeLoadedPages() else 0,
+                if (lastOpenMs < 0) "-" else "$lastOpenMs ms",
             )
 
         private fun errorOf(code: Int): PdfOpenError = when (code) {

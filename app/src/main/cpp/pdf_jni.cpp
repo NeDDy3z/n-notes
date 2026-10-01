@@ -1,5 +1,5 @@
 // The JNI surface over the vendored PDFium (see pdfium.cmake and THIRD_PARTY).
-// PDFium is not thread-safe, so all but nativeRevision run on PdfiumThread.
+// PDFium is not thread-safe, so all but nativeRevision and nativeLoadedPages run on PdfiumThread.
 #include <android/bitmap.h>
 #include <fcntl.h>
 #include <jni.h>
@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <climits>
@@ -27,6 +28,9 @@ namespace {
 
 // Pages kept loaded per document, so render, links and text parse a page once.
 constexpr size_t kPageCache = 4;
+
+// Loaded pages across all documents, for the debug HUD (read off the PDFium thread).
+std::atomic<int> g_loaded_pages{0};
 
 // Where a walk of the outline stands between the slices it is read in.
 struct OutlineWalk {
@@ -89,6 +93,7 @@ jint Open(Doc* doc, const char* path) {
 void ClosePage(Doc* doc, FPDF_PAGE page) {
     if (doc->form) FORM_OnBeforeClosePage(page, doc->form);
     FPDF_ClosePage(page);
+    --g_loaded_pages;
 }
 
 // Page index, loaded (its content parsed) at most once while it stays in the cache.
@@ -103,6 +108,7 @@ FPDF_PAGE GetPage(Doc* doc, int index) {
     }
     FPDF_PAGE page = FPDF_LoadPage(doc->pdf, index);
     if (!page) return nullptr;
+    ++g_loaded_pages;
     if (doc->form) FORM_OnAfterLoadPage(page, doc->form);
     if (pages.size() == kPageCache) {
         ClosePage(doc, pages.front().second);
@@ -278,6 +284,20 @@ Java_com_xnotes_platform_PdfiumNative_nativeClose(JNIEnv*, jclass, jlong handle)
     FPDF_CloseDocument(doc->pdf);
     close(doc->fd);
     delete doc;
+}
+
+// Closes the document's loaded pages, the bulk of its memory; they load again when next used.
+extern "C" JNIEXPORT void JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativeTrim(JNIEnv*, jclass, jlong handle) {
+    Doc* doc = FromHandle(handle);
+    for (const auto& cached : doc->pages) ClosePage(doc, cached.second);
+    doc->pages.clear();
+}
+
+// Pages loaded across all documents; it reads no PDFium state, so any thread may ask.
+extern "C" JNIEXPORT jint JNICALL
+Java_com_xnotes_platform_PdfiumNative_nativeLoadedPages(JNIEnv*, jclass) {
+    return g_loaded_pages.load();
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
