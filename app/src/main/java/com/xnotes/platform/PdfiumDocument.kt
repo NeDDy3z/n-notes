@@ -1,0 +1,94 @@
+package com.xnotes.platform
+
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+/** Why a PDF did not open, from PDFium's FPDF_ERR_* codes. */
+enum class PdfOpenError { FILE, FORMAT, PASSWORD, SECURITY, UNKNOWN }
+
+/**
+ * A PDF opened with PDFium. The native document lives on [PdfiumThread]: opening is queued
+ * there and returns at once, and the calls that need it wait, so keep them off the main thread.
+ */
+class PdfiumDocument private constructor(
+    /** The PDF read, owned by the caller: [close] never deletes it. */
+    val file: File,
+    private val pdfium: PdfiumThread,
+) : AutoCloseable {
+    private class Opened(val pageCount: Int, val error: PdfOpenError?)
+
+    /** Cancelled by [close], which drops this document's queued jobs. */
+    private val lifetime = CancelToken()
+    private val closed = AtomicBoolean(false)
+
+    /** The native document; read and written on the PDFium thread only. */
+    private var handle = 0L
+
+    private val opening = pdfium.submit(PdfPriority.INTERACTIVE, lifetime) { openNative() }
+
+    /** The page count, 0 when the PDF did not open. Waits for the open. */
+    val pageCount: Int get() = opened().pageCount
+
+    /** Why the PDF did not open, null when it did. Waits for the open. */
+    val error: PdfOpenError? get() = opened().error
+
+    private fun opened(): Opened = opening.await() ?: NOT_OPENED
+
+    private fun openNative(): Opened {
+        if (!PdfiumNative.loaded) return NOT_OPENED
+        val t0 = System.nanoTime()
+        val out = IntArray(2)
+        val h = PdfiumNative.nativeOpen(file.path, out)
+        if (h == 0L) return Opened(0, errorOf(out[0]))
+        handle = h
+        openCount.incrementAndGet()
+        lastOpenMs = (System.nanoTime() - t0) / 1_000_000
+        return Opened(out[1], null)
+    }
+
+    /** Width and height in points of each page as displayed (/Rotate applied); null when not open. */
+    fun pageSizes(priority: PdfPriority = PdfPriority.INTERACTIVE): FloatArray? =
+        withHandle(priority) { PdfiumNative.nativePageSizes(it) }
+
+    /** Runs [body] with the native document on the PDFium thread; null when it is not open. */
+    private fun <T> withHandle(priority: PdfPriority, vararg tokens: CancelToken, body: (Long) -> T): T? =
+        pdfium.call(priority, lifetime, *tokens) { if (handle == 0L) null else body(handle) }
+
+    /** Frees the native document once its running job, if any, ends. Never blocks. */
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        lifetime.cancel()
+        // Behind what is on screen: freeing a big book takes tens of ms.
+        pdfium.submit(PdfPriority.THUMBNAIL) {
+            if (handle != 0L) {
+                PdfiumNative.nativeClose(handle)
+                handle = 0L
+                openCount.decrementAndGet()
+            }
+        }
+    }
+
+    companion object {
+        private val NOT_OPENED = Opened(0, PdfOpenError.UNKNOWN)
+        private val openCount = AtomicInteger()
+        @Volatile private var lastOpenMs = -1L
+
+        /** Starts opening [file] on the shared PDFium thread. */
+        fun open(file: File): PdfiumDocument = PdfiumDocument(file, PdfiumThread.shared)
+
+        /** The revision, the open documents and the last open's time, for the debug HUD. */
+        val hud: String
+            get() = "%.10s  docs %d  open %s".format(
+                PdfiumNative.revision, openCount.get(), if (lastOpenMs < 0) "-" else "$lastOpenMs ms",
+            )
+
+        private fun errorOf(code: Int): PdfOpenError = when (code) {
+            2 -> PdfOpenError.FILE
+            3 -> PdfOpenError.FORMAT
+            4 -> PdfOpenError.PASSWORD
+            5 -> PdfOpenError.SECURITY
+            else -> PdfOpenError.UNKNOWN
+        }
+    }
+}
