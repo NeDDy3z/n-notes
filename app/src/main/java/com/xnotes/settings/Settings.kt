@@ -138,7 +138,7 @@ data class Settings(
             val shape = toolsObj?.optJSONObject("shape")?.let { shapeConfig(it) } ?: ShapeConfig()
 
             val colors = rgbaList(o.optJSONArray("toolbar_colors")).toMutableList()
-            while (colors.size < 7) colors.add(InkPalette.presets[colors.size])
+            while (colors.size < InkPalette.MAX_SWATCHES) colors.add(InkPalette.presets[colors.size])
 
             return Settings(
                 viewDefaults = o.optJSONObject("view_defaults")
@@ -146,15 +146,15 @@ data class Settings(
                     ?: legacyViewDefaults(o.optJSONObject("prefs")),
                 tools = tools,
                 shapeConfig = shape,
-                toolbarColors = colors.take(7),
-                toolbarColorCount = o.optInt("toolbar_color_count", 5).coerceIn(1, 7),
+                toolbarColors = colors.take(InkPalette.MAX_SWATCHES),
+                toolbarColorCount = o.optInt("toolbar_color_count", 5).coerceIn(1, InkPalette.MAX_SWATCHES),
                 toolbarLayout = toolbarLayout(o.optJSONObject("toolbar_layout")),
                 canvasToolbarLayout = toolbarLayout(
                     o.optJSONObject("canvas_toolbar_layout"),
                     ToolbarLayout.CANVAS_ITEMS,
                     ToolbarLayout.CANVAS_DEFAULT,
                 ),
-                activeColor = o.optInt("active_color", 0).coerceIn(0, 6),
+                activeColor = o.optInt("active_color", 0).coerceIn(0, InkPalette.MAX_SWATCHES - 1),
                 // Only tools the toolbar can arm come back; a transient one (e.g. TEXT_BOX) would
                 // leave the bar showing a tool the user never picked.
                 lastTool = Tool.fromId(o.optString("last_tool", ""))

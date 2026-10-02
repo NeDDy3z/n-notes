@@ -16,7 +16,7 @@ class SettingsTest {
 
     @Test fun emptyJsonYieldsDefaults() {
         val s = Settings.fromJson(JSONObject())
-        assertEquals(7, s.toolbarColors.size)
+        assertEquals(15, s.toolbarColors.size)
         assertEquals(5, s.toolbarColorCount)
         assertEquals(0, s.activeColor)
         assertEquals(1.0, s.renderScale, 1e-9)
@@ -172,12 +172,12 @@ class SettingsTest {
         assertEquals("system", Settings.fromJson(o).prefs.uiAppearance)
     }
 
-    @Test fun toolbarColorsPaddedToSeven() {
+    @Test fun toolbarColorsPaddedToFifteen() {
         val o = JSONObject().put(
             "toolbar_colors",
             org.json.JSONArray().put(org.json.JSONArray().put(0).put(0).put(0).put(255)),
         )
-        assertEquals(7, Settings.fromJson(o).toolbarColors.size)
+        assertEquals(15, Settings.fromJson(o).toolbarColors.size)
     }
 
     @Test fun toolbarColorCountDefaultsToFive() {
@@ -185,9 +185,9 @@ class SettingsTest {
     }
 
     @Test fun toolbarColorCountRoundTripsAndClamps() {
-        assertEquals(7, Settings.fromJson(Settings(toolbarColorCount = 7).toJson()).toolbarColorCount)
+        assertEquals(15, Settings.fromJson(Settings(toolbarColorCount = 15).toJson()).toolbarColorCount)
         assertEquals(1, Settings.fromJson(Settings(toolbarColorCount = 0).toJson()).toolbarColorCount)
-        assertEquals(7, Settings.fromJson(Settings(toolbarColorCount = 99).toJson()).toolbarColorCount)
+        assertEquals(15, Settings.fromJson(Settings(toolbarColorCount = 99).toJson()).toolbarColorCount)
     }
 
     @Test fun rememberColorDedupesAndCaps() {

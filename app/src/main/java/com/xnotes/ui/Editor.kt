@@ -2299,9 +2299,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         settingsRepo.save(settings)
     }
 
-    /** Set how many colour swatches the toolbar shows (1-7) and persist. */
+    /** Set how many colour swatches the toolbar shows (1-15) and persist. */
     fun applyToolbarColorCount(count: Int) {
-        val c = count.coerceIn(1, 7)
+        val c = count.coerceIn(1, InkPalette.MAX_SWATCHES)
         toolbarColorCount = c
         infiniteOrNull?.toolbarColorCount = c
         if (activeColorIndex >= c) pickColor(c - 1)
