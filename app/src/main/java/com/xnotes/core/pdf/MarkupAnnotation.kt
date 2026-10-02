@@ -10,7 +10,8 @@ import com.xnotes.core.model.TextMarkup
  * box in the page's user space, and an appearance stream drawing it as [MarkupPainter] does on
  * screen. The stream is in user space too, so its /BBox is [rect] and its /Matrix the identity. A
  * highlight fills all its quads as one path, so where its lines overlap it darkens once, laid on
- * through the graphics state [GS] (Multiply at its intensity).
+ * through the graphics state [GS] (Multiply at its intensity). A note draws nothing: viewers show
+ * the annotation's /Contents their own way.
  */
 class MarkupAnnotation(
     /** Eight numbers a quad: its line's start then end along the glyphs' tops, then along their feet. */
@@ -83,15 +84,6 @@ class MarkupAnnotation(
                     shows(quadRect(q).outset(w / 2))
                 }
             }
-            if (m.note != null) MarkupPainter.markerOf(m)?.let { marker ->
-                color("rg")
-                circle(sb, marker.center, marker.radius, user, ::point)
-                sb.append("f\n")
-                point(user(marker.tail[0]), "m")
-                for (i in 1 until marker.tail.size) point(user(marker.tail[i]), "l")
-                sb.append("h\nf\n")
-                shows(marker.bounds)
-            }
             val d = shown ?: return null
             val rect = Rect.bounding(listOf(Pt(d.left, d.top), Pt(d.right, d.top), Pt(d.left, d.bottom), Pt(d.right, d.bottom)).map(user))
             return MarkupAnnotation(quadPoints, rect, sb.toString())
@@ -99,26 +91,5 @@ class MarkupAnnotation(
 
         private fun quadRect(q: TextQuad): Rect =
             Rect.ltrb(q.left.toDouble(), q.top.toDouble(), q.right.toDouble(), q.bottom.toDouble())
-
-        /** A closed circle as four Béziers, built where it is displayed and written where [user] puts it. */
-        private fun circle(sb: StringBuilder, c: Pt, r: Double, user: (Pt) -> Pt, point: (Pt, String) -> Unit) {
-            val k = r * 0.5522847498307936
-            fun at(dx: Double, dy: Double) = user(Pt(c.x + dx, c.y + dy))
-            fun curve(a: Pt, b: Pt, end: Pt) {
-                for (p in listOf(a, b, end)) {
-                    PdfNumbers.append(sb, p.x)
-                    sb.append(' ')
-                    PdfNumbers.append(sb, p.y)
-                    sb.append(' ')
-                }
-                sb.append("c\n")
-            }
-            point(at(r, 0.0), "m")
-            curve(at(r, k), at(k, r), at(0.0, r))
-            curve(at(-k, r), at(-r, k), at(-r, 0.0))
-            curve(at(-r, -k), at(-k, -r), at(0.0, -r))
-            curve(at(k, -r), at(r, -k), at(r, 0.0))
-            sb.append("h\n")
-        }
     }
 }

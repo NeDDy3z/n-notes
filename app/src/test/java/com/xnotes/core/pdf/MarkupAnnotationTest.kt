@@ -28,10 +28,6 @@ class MarkupAnnotationTest {
     private fun operands(content: String, op: String): List<List<Double>> =
         content.lines().filter { it.endsWith(" $op") }.map { l -> l.removeSuffix(" $op").split(' ').map { it.toDouble() } }
 
-    private fun covers(outer: Rect, inner: Rect) =
-        outer.left <= inner.left + 1e-9 && outer.top <= inner.top + 1e-9 &&
-            outer.right >= inner.right - 1e-9 && outer.bottom >= inner.bottom - 1e-9
-
     @Test
     fun aHighlightFillsItsQuadsAsOnePathThroughMultiply() {
         val a = MarkupAnnotation.of(markup(MarkupType.HIGHLIGHT, line, TextQuad(100f, 212f, 180f, 226f, 0)), ::onUpright)!!
@@ -76,18 +72,11 @@ class MarkupAnnotationTest {
     }
 
     @Test
-    fun aNoteBringsItsBubbleInsideTheRect() {
+    fun aNoteAddsNothingToTheAppearance() {
         val plain = MarkupAnnotation.of(markup(MarkupType.STRIKEOUT, line), ::onUpright)!!
         val noted = MarkupAnnotation.of(markup(MarkupType.STRIKEOUT, line, note = "see eq. 4"), ::onUpright)!!
-        val b = MarkupPainter.markerOf(markup(MarkupType.STRIKEOUT, line, note = "x"))!!.bounds
-        val bubble = Rect.fromPoints(onUpright(b.left, b.top), onUpright(b.right, b.bottom))
-        assertEquals(0, plain.content.lines().count { it.endsWith(" c") })
-        assertFalse(covers(plain.rect, bubble))
-        // The circle's four curves and the tail, filled in the markup's colour.
-        assertEquals(4, noted.content.lines().count { it.endsWith(" c") })
-        assertEquals(listOf(listOf(1.0, 0.502, 0.0)), operands(noted.content, "rg"))
-        assertTrue(covers(noted.rect, bubble))
-        assertTrue(covers(noted.rect, plain.rect))
+        assertEquals(plain.content, noted.content)
+        assertEquals(plain.rect, noted.rect)
     }
 
     @Test
