@@ -87,6 +87,14 @@ internal class PdfTags(private val doc: PDDocument, private val setup: Setup) {
         annotate(page, annot, flowLink(para, link, parent))
     }
 
+    /** Give text markup annotation [annot] on [pd] an Annot element of its own saying [alt], read after the page's drawing. */
+    fun markup(pd: PDPage, annot: COSDictionary, alt: String) {
+        val page = pages.lastOrNull { it.pd.cosObject === pd.cosObject } ?: return
+        val node = StructNode("Annot").also { it.alt = alt }
+        page.markups += node
+        annotate(page, annot, node)
+    }
+
     fun annotate(page: PageTags, annot: COSDictionary, owner: StructNode) {
         val a = Annot(page, annot, nextKey++, owner)
         annot.setInt(COSName.STRUCT_PARENT, a.key)
@@ -103,6 +111,7 @@ internal class PdfTags(private val doc: PDDocument, private val setup: Setup) {
         val owners = ArrayList<StructNode>()
         val boxes = ArrayList<Pair<Rect, StructNode>>()
         val images = ArrayList<StructNode>()
+        val markups = ArrayList<StructNode>()
         var ink: StructNode? = null
             private set
         private val boxOf = IdentityHashMap<Mark.TextBox, StructNode>()
@@ -157,6 +166,7 @@ internal class PdfTags(private val doc: PDDocument, private val setup: Setup) {
             page.boxes.sortedWith(compareBy({ Math.round(it.first.top) }, { it.first.left })).forEach { root.kids += it.second }
             root.kids += page.images
             page.ink?.let { root.kids += it }
+            root.kids += page.markups
         }
         val treeRoot = COSDictionary()
         treeRoot.setItem(COSName.TYPE, COSName.getPDFName("StructTreeRoot"))

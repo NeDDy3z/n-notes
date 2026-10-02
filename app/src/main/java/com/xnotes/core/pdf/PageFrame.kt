@@ -16,7 +16,10 @@ class PageFrame(val turn: Affine, val ox: Double, val oy: Double, val s: Double)
     val turned: Boolean get() = turn != Affine.IDENTITY
 
     /** Page point ([x], [y]) in user space. */
-    fun toUser(x: Double, y: Double): Pt = turn.apply(Pt(ox + x * s, oy - y * s))
+    fun toUser(x: Double, y: Double): Pt = pointToUser(x * s, y * s)
+
+    /** Point ([x], [y]) of the page as displayed, in points, in user space: where a markup's quads go. */
+    fun pointToUser(x: Double, y: Double): Pt = turn.apply(Pt(ox + x, oy - y))
 
     /** The user-space box around page rect [r]; its left and top hold the smaller x and y. */
     fun toUser(r: Rect): Rect = Rect.bounding(

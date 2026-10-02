@@ -29,6 +29,7 @@ import com.xnotes.core.pdf.FlowHeadings
 import com.xnotes.core.pdf.FlowLinks
 import com.xnotes.core.pdf.FlowStructure
 import com.xnotes.core.pdf.Heading
+import com.xnotes.core.pdf.MarkupPainter
 import com.xnotes.core.pdf.Outline
 import com.xnotes.core.pdf.PageFrame
 import com.xnotes.core.pdf.PlacedLink
@@ -230,6 +231,8 @@ object PdfExporter {
                     // must a margined one — its extra paper is written by growing the page's boxes.
                     if (page.items.isNotEmpty() || flow.bounds(page) != null || !ins.isZero) {
                         frames[index] = annotatePage(ctx, srcDoc.getPage(index), page, ins, s, paintRuling, flow)
+                    } else if (page.markups.isNotEmpty()) {
+                        srcDoc.getPage(index).let { pd -> PdfMarkups.write(ctx, pd, page.markups, sourceFrame(pd, s)) }
                     }
                 } else {
                     frames[index] = vectorBlankPage(ctx, page, ins, s, paperColor, paintRuling, flow) // a blank note page appended after the PDF
@@ -339,22 +342,33 @@ object PdfExporter {
         pdfPage.cosObject.setItem(COSName.ANNOTS, COSArray().also { it.addAll(annots) })
     }
 
-    /** Append [page]'s ruling + annotations as a new content stream over an existing [pdfPage] of the export; returns where it drew. */
+    /**
+     * Append [page]'s ruling + annotations as a new content stream over an existing [pdfPage] of the
+     * export, then its markups; returns where it drew.
+     */
     private fun annotatePage(ctx: PdfExportContext, pdfPage: PDPage, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport): PageFrame {
-        val crop = pdfPage.cropBox
-        // Page space's origin is the *imported* page's top-left as displayed, read before the box
-        // grows: the source content keeps its coordinates and the margins extend the paper around it.
-        val frame = PageFrame.of(
-            crop.lowerLeftX.toDouble(), crop.lowerLeftY.toDouble(),
-            (crop.lowerLeftX + crop.width).toDouble(), (crop.lowerLeftY + crop.height).toDouble(),
-            pdfPage.rotation, s,
-        )
+        val frame = sourceFrame(pdfPage, s)
         val cover = footprintOf(page, ins)
         growPageBox(pdfPage, frame, cover, ins)
         PDPageContentStream(ctx.doc, pdfPage, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
             paintItems(cs, ctx, pdfPage, page, frame, cover, paintRuling, flow)
         }
+        PdfMarkups.write(ctx, pdfPage, page.markups, frame)
         return frame
+    }
+
+    /**
+     * Where page space lands on [pdfPage], a source page: its origin is the page's top-left as
+     * displayed, read before the box grows, since the source content keeps its coordinates and the
+     * margins extend the paper around it.
+     */
+    private fun sourceFrame(pdfPage: PDPage, s: Double): PageFrame {
+        val crop = pdfPage.cropBox
+        return PageFrame.of(
+            crop.lowerLeftX.toDouble(), crop.lowerLeftY.toDouble(),
+            (crop.lowerLeftX + crop.width).toDouble(), (crop.lowerLeftY + crop.height).toDouble(),
+            pdfPage.rotation, s,
+        )
     }
 
     /** Grow an imported page's boxes out to [cover], its paper with the note's margins, on the sides they show on. */
@@ -366,7 +380,7 @@ object PdfExporter {
         pdfPage.cropBox = grown
     }
 
-    /** A note page with no PDF background: blank page filled with the paper colour, then ruling + annotations; returns where it drew. */
+    /** A note page with no PDF background: blank page filled with the paper colour, then ruling + annotations and markups; returns where it drew. */
     private fun vectorBlankPage(ctx: PdfExportContext, page: Page, ins: PageInsets, s: Double, paperColor: (Page) -> Rgba, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport): PageFrame {
         val wPts = ((ins.left + page.width + ins.right) * s).toFloat().coerceAtLeast(1f)
         val hPts = ((ins.top + page.height + ins.bottom) * s).toFloat().coerceAtLeast(1f)
@@ -383,6 +397,7 @@ object PdfExporter {
             if (ctx.tags != null) cs.appendRawCommands("EMC\n")
             paintItems(cs, ctx, pdfPage, page, frame, footprintOf(page, ins), paintRuling, flow)
         }
+        PdfMarkups.write(ctx, pdfPage, page.markups, frame)
         return frame
     }
 
@@ -467,15 +482,15 @@ object PdfExporter {
                 canvas.scale(scale, scale)
                 canvas.translate(-cover.left.toFloat(), -cover.top.toFloat())
 
-                val src = page.pdfPage
-                if (src != null && source != null) {
-                    val bg = source.renderPage(src, page.width.toInt(), page.height.toInt())
-                    if (bg != null) {
-                        canvas.drawBitmap(bg.bitmap, null, RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()), bitmapPaint)
-                        bg.recycle()
-                    }
-                }
                 val renderer = AndroidRenderer(canvas)
+                val src = page.pdfPage
+                val bg = if (src != null && source != null) source.renderPage(src, page.width.toInt(), page.height.toInt(), markups = page.markups) else null
+                if (bg != null) {
+                    canvas.drawBitmap(bg.bitmap, null, RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()), bitmapPaint)
+                    bg.recycle()
+                } else {
+                    MarkupPainter.paint(renderer, page.markups, doc.dpi / 72.0) // on bare paper, beneath the ruling
+                }
                 paintRuling(page, renderer) // ruling behind ink
                 flow.paint(page, renderer, cover)
                 for (item in page.items) item.paint(renderer)
