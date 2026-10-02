@@ -12,6 +12,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.util.Matrix
+import com.xnotes.core.geometry.Affine
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.ImageData
@@ -40,7 +41,9 @@ import com.xnotes.core.pal.BlendMode as PalBlend
  * Coordinates: the model paints in *content pixels* (top-left origin, y-down, page sized at the
  * document dpi). PDF user space is points (bottom-left origin, y-up), offset to the page's crop box.
  * Rather than push a flipped CTM — which would also mirror placed images and text — this maps every
- * point in software: `user = (ox + x·sx, oy + y·sy)` with `sx = +s, sy = −s, s = 72/dpi`.
+ * point in software: `user = (ox + x·sx, oy + y·sy)` with `sx = +s, sy = −s, s = 72/dpi`. On a
+ * source page turned by /Rotate that is an upright frame, which the stream's one `cm` ([turn])
+ * takes into user space, so ink, text and images sit upright on the page as displayed.
  *
  * Only the primitives the *vectorizable* items use are meaningful here (fills, strokes, images,
  * text). Effect-heavy items (neon glow, highlighter multiply, translucent ink) are rasterized by the
@@ -55,11 +58,16 @@ internal class PdfBoxRenderer(
     ox: Double,
     oy: Double,
     s: Double,
+    private val turn: Affine = Affine.IDENTITY,
 ) : Renderer {
 
     private val doc: PDDocument get() = ctx.doc
 
     private val tagger: PageTagger? = ctx.tags?.page(page, cs)
+
+    init {
+        if (turn != Affine.IDENTITY) cs.transform(Matrix(turn.a.toFloat(), turn.b.toFloat(), turn.c.toFloat(), turn.d.toFloat(), turn.e.toFloat(), turn.f.toFloat()))
+    }
 
     // Affine content→user mapping (translation + axis scale only; never rotation/shear — PAL §1).
     private var ox = ox
@@ -431,7 +439,7 @@ internal class PdfBoxRenderer(
     private fun linkAnnotation(rect: Rect, uri: String): PDAnnotationLink? {
         if (rect.w <= 0.0 || rect.h <= 0.0) return null
         val link = PDAnnotationLink()
-        link.rectangle = PDRectangle(ux(rect.left), uy(rect.bottom), (rect.w * abs(sx)).toFloat(), (rect.h * abs(sy)).toFloat())
+        link.rectangle = userRect(rect)
         link.action = PDActionURI().apply { this.uri = uri }
         link.border = COSArray().apply { repeat(3) { add(COSInteger.ZERO) } }
         link.contents = uri
@@ -439,6 +447,13 @@ internal class PdfBoxRenderer(
         annots.add(link)
         page.annotations = annots
         return link
+    }
+
+    /** [rect] (content space) in the page's user space, where annotations are placed: [turn] doesn't reach them. */
+    private fun userRect(rect: Rect): PDRectangle {
+        if (turn == Affine.IDENTITY) return PDRectangle(ux(rect.left), uy(rect.bottom), (rect.w * abs(sx)).toFloat(), (rect.h * abs(sy)).toFloat())
+        val box = Rect.bounding(listOf(Pt(ox + rect.left * sx, oy + rect.top * sy), Pt(ox + rect.right * sx, oy + rect.bottom * sy)).map(turn::apply))
+        return PDRectangle(box.left.toFloat(), box.top.toFloat(), box.w.toFloat(), box.h.toFloat())
     }
 
     // Real text through the export's Type 3 fonts: each glyph pinned to the x the screen draws it at.

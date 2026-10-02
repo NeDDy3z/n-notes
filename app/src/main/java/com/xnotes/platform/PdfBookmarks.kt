@@ -25,8 +25,11 @@ import kotlin.math.roundToInt
  */
 internal object PdfBookmarks {
 
-    /** Where [heading]'s bookmark opens: its [page] in the export, [top] there in points, and its tagged [element]. */
-    class Anchor(val heading: Heading, val page: PDPage, val top: Float, val element: COSDictionary?)
+    /**
+     * Where [heading]'s bookmark opens: its [page] in the export, [left] (null keeps the view's)
+     * and [top] there in points, and its tagged [element].
+     */
+    class Anchor(val heading: Heading, val page: PDPage, val left: Float?, val top: Float, val element: COSDictionary?)
 
     /** A source bookmark copied for the export, and whether it showed its children. */
     class Entry(val item: PDOutlineItem, val open: Boolean)
@@ -59,7 +62,7 @@ internal object PdfBookmarks {
         item.title = a.heading.title
         item.destination = PDPageXYZDestination().apply {
             page = a.page
-            left = -1
+            left = a.left?.roundToInt() ?: -1
             top = a.top.roundToInt()
             zoom = -1f
         }
