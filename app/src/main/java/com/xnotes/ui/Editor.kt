@@ -644,6 +644,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 settings = settings.rememberColor(color)
                 it.recentColors = recentColors
             }
+            it.view.onTwoFingerTap = { dispatchTapGesture(preferences.twoFingerTap) }
+            it.view.onThreeFingerTap = { dispatchTapGesture(preferences.threeFingerTap) }
         }
 
     /** Take on a swatch the canvas recoloured, so both bars show it and the next save keeps it. */
@@ -5357,12 +5359,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
 
     /** Run the action a two/three-finger tap or stylus double-tap is mapped to; "none" does nothing. */
-    private fun dispatchTapGesture(action: String) = when (action) {
-        "undo" -> undo()
-        "redo" -> redo()
-        "toggle_pan" -> toggleTool(Tool.PAN)
-        "toggle_eraser" -> toggleTool(Tool.ERASER)
-        "toggle_previous" -> toggleToPreviousTool()
+    private fun dispatchTapGesture(action: String) = when {
+        // The pen's taps arrive here whichever surface is up; a canvas on top must not edit the note under it.
+        canvasOpen -> infinite.dispatchTapGesture(action)
+        action == "undo" -> undo()
+        action == "redo" -> redo()
+        action == "toggle_pan" -> toggleTool(Tool.PAN)
+        action == "toggle_eraser" -> toggleTool(Tool.ERASER)
+        action == "toggle_previous" -> toggleToPreviousTool()
         else -> Unit
     }
 

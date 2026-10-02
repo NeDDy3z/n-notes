@@ -368,10 +368,31 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     // --- tools ---
 
+    /** The single tool armed before this one, for the tap-gesture toggles; null until a switch. */
+    private var previousTool: Tool? = null
+
     fun armTool(next: Tool) {
         // Leaving the selection tools drops the selection, so its chrome cannot linger over ink.
         if (tool != next && (tool == Tool.SELECT || tool == Tool.LASSO)) interaction.clearSelection()
+        // After the clear, so a long-press grab's borrowed selection tool is never remembered.
+        if (tool != next) previousTool = tool
         adoptTool(next)
+    }
+
+    /** Run the action a finger or stylus tap is mapped to, as the paged editor does. */
+    fun dispatchTapGesture(action: String) {
+        when (action) {
+            "undo" -> undo()
+            "redo" -> redo()
+            "toggle_pan" -> toggleTool(Tool.PAN)
+            "toggle_eraser" -> toggleTool(Tool.ERASER)
+            "toggle_previous" -> previousTool?.let { armTool(it) }
+        }
+    }
+
+    /** Arm [target], or if it is already armed, return to the previous tool. */
+    private fun toggleTool(target: Tool) {
+        if (tool == target) previousTool?.let { armTool(it) } else armTool(target)
     }
 
     /** Show a tool the gesture layer armed by itself: a long-press grab, and its release. */
