@@ -92,6 +92,16 @@ class SettingsTest {
         assertEquals(1.0, Settings.fromJson(wild).configFor(Tool.MARKUP).markupIntensity, 1e-9)
     }
 
+    @Test fun theEraserTakesTextMarkupsUnlessSwitchedOff() {
+        assertTrue(Settings().configFor(Tool.ERASER).eraseMarkups)
+        val off = Settings().configFor(Tool.ERASER).copy(eraseMarkups = false)
+        val json = Settings(tools = mapOf(Tool.ERASER to off)).toJson()
+        assertFalse(Settings.fromJson(json).configFor(Tool.ERASER).eraseMarkups)
+        // Settings saved before the switch existed read as on.
+        json.getJSONObject("tools").getJSONObject("eraser").remove("erase_markups")
+        assertTrue(Settings.fromJson(json).configFor(Tool.ERASER).eraseMarkups)
+    }
+
     @Test fun everyTapGestureMappingRoundTrips() {
         val prefs = Preferences(
             twoFingerTap = "undo",

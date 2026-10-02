@@ -124,6 +124,7 @@
     <string name="eraser_area">Area</string>
     <string name="caption_size">Size</string>
     <string name="caption_switch_back">Switch back</string>
+    <string name="caption_erase_markups">Erase PDF text markups</string>
     <string name="title_select">Select</string>
     <string name="title_shape">Shape</string>
     <string name="caption_fill">Fill</string>

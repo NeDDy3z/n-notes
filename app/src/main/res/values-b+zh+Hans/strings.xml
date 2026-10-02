@@ -113,6 +113,7 @@
     <string name="eraser_area">范围</string>
     <string name="caption_size">大小</string>
     <string name="caption_switch_back">切换回去</string>
+    <string name="caption_erase_markups">擦除 PDF 文本标注</string>
     <string name="title_select">选择</string>
     <string name="title_shape">形状</string>
     <string name="caption_fill">填充</string>

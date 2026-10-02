@@ -88,6 +88,8 @@ data class ToolConfig(
     val markupMode: MarkupMode = MarkupMode.HIGHLIGHT,
     /** Text markup tool: how deep a new highlight's colour goes, in [MARKUP_INTENSITY_MIN, 1]. Only [Tool.MARKUP]. */
     val markupIntensity: Double = DEFAULT_MARKUP_INTENSITY,
+    /** Eraser: also take off the PDF text markups it touches. Only used by [Tool.ERASER]. */
+    val eraseMarkups: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_MARKUP_INTENSITY = 0.5

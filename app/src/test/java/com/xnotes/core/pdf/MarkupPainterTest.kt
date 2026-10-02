@@ -185,6 +185,32 @@ class MarkupPainterTest {
     }
 
     @Test
+    fun theEraserTakesAMarkOnlyWhereItIsDrawn() {
+        val highlight = markup(MarkupType.HIGHLIGHT, upright)
+        assertTrue(MarkupPainter.touches(highlight, 170.0, 220.0, 6.5))
+        assertFalse(MarkupPainter.touches(highlight, 170.0, 220.0, 5.5))
+        // The underline runs at y = 213, a point thick: the rest of the line's box is not it.
+        val underline = markup(MarkupType.UNDERLINE, upright)
+        assertFalse(MarkupPainter.touches(underline, 170.0, 205.0, 2.0))
+        assertTrue(MarkupPainter.touches(underline, 170.0, 210.0, 2.6))
+        assertFalse(MarkupPainter.touches(underline, 170.0, 210.0, 2.4))
+        // The squiggle waves between about 211.2 and 213.5.
+        val squiggly = markup(MarkupType.SQUIGGLY, upright)
+        assertFalse(MarkupPainter.touches(squiggly, 170.0, 202.0, 2.0))
+        assertTrue(MarkupPainter.touches(squiggly, 170.0, 212.3, 1.5))
+        // Turned a quarter, the underline runs down x = 301.
+        val down = markup(MarkupType.UNDERLINE, TextQuad(300f, 100f, 314f, 240f, 1))
+        assertTrue(MarkupPainter.touches(down, 304.0, 170.0, 2.6))
+        assertFalse(MarkupPainter.touches(down, 310.0, 170.0, 2.0))
+        // A note's marker past the line's end is part of the markup.
+        val noted = markup(MarkupType.STRIKEOUT, upright, note = "n")
+        val marker = MarkupPainter.markerOf(noted)!!
+        val past = marker.center.x + marker.radius + 1.0
+        assertTrue(MarkupPainter.touches(noted, past, marker.center.y, 1.5))
+        assertFalse(MarkupPainter.touches(markup(MarkupType.STRIKEOUT, upright), past, marker.center.y, 1.5))
+    }
+
+    @Test
     fun aTurnedMarkerFollowsTheLine() {
         val down = TextQuad(300f, 100f, 314f, 240f, 1)
         val marker = MarkupPainter.markerOf(markup(MarkupType.HIGHLIGHT, down, note = "n"))!!

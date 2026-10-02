@@ -1,5 +1,6 @@
 package com.xnotes.core.pdf
 
+import com.xnotes.core.geometry.Geometry
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.MarkupType
@@ -73,6 +74,20 @@ object MarkupPainter {
             }
         }
         return null
+    }
+
+    /** Whether a circle at ([x], [y]) of [radius], in points, touches what [m] paints: the eraser's test. */
+    fun touches(m: TextMarkup, x: Double, y: Double, radius: Double): Boolean {
+        val c = Pt(x, y)
+        if (m.note != null) markerOf(m)?.let { if (it.center.distanceTo(c) <= radius + it.radius) return true }
+        for (q in m.quads) {
+            // Every mark lies within its quad, so a circle clear of the quad misses it.
+            if (Rect.ltrb(q.left.toDouble(), q.top.toDouble(), q.right.toDouble(), q.bottom.toDouble()).distanceTo(c) > radius) continue
+            if (m.type == MarkupType.HIGHLIGHT) return true
+            val reach = radius + thickness(q) / 2
+            if (lineOf(m.type, q).zipWithNext().any { (a, b) -> Geometry.distancePointToSegment(c, a, b) <= reach }) return true
+        }
+        return false
     }
 
     /** The note marker: a speech bubble just past the markup's end, level with the line's top. */

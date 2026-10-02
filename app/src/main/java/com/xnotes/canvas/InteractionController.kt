@@ -20,6 +20,7 @@ import com.xnotes.core.history.LockItems
 import com.xnotes.core.history.EditText
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.ReorderItems
+import com.xnotes.core.history.RemoveMarkup
 import com.xnotes.core.history.ReplacePageItems
 import com.xnotes.core.history.ResizeItem
 import com.xnotes.core.history.RestyleItems
@@ -48,6 +49,7 @@ import com.xnotes.core.pal.FontSpec
 import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.TextMeasurer
+import com.xnotes.core.pdf.MarkupPainter
 import com.xnotes.core.stroke.RecognizedShape
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.ShapeRecognizer
@@ -311,6 +313,8 @@ class InteractionController(
     /** AREA mode: each touched page's item list snapshotted on first contact this gesture, so the
      *  whole split-and-trim drag undoes/redoes as one [ReplacePageItems] step. */
     private val eraseSnapshots = linkedMapOf<Page, List<CanvasItem>>()
+    /** The text markups this erase took off, one [RemoveMarkup] each in the order taken, so undo puts them back in place. */
+    private val eraseMarkups = mutableListOf<RemoveMarkup>()
     private var eraserCursor: Pt? = null // viewport pixels
     /** Tool armed just before the eraser was selected, for the "switch back after erasing" option. */
     private var toolBeforeEraser: Tool? = null
@@ -1227,6 +1231,7 @@ class InteractionController(
     private fun beginErase(vx: Double, vy: Double) {
         eraseRemovals.clear()
         eraseSnapshots.clear()
+        eraseMarkups.clear()
         mode = PointerMode.ERASE
         eraseAt(vx, vy)
     }
@@ -1256,9 +1261,21 @@ class InteractionController(
                 if (!state.repairRegion(page, rect)) state.invalidatePage(page)
                 changed = true
             }
+            if (eraseMarkupsFromPage(page, cx, cy, radius)) changed = true
         }
         if (changed) onContentChanged()
         requestRender()
+    }
+
+    /** Takes off [page]'s text markups the eraser circle touches, when the eraser is set to; true if any. */
+    private fun eraseMarkupsFromPage(page: Page, cx: Double, cy: Double, radius: Double): Boolean {
+        if (page.markups.isEmpty() || !configFor(Tool.ERASER).eraseMarkups) return false
+        val ptPerPx = 72.0 / state.document.dpi
+        val hit = page.markups.filter { MarkupPainter.touches(it, cx * ptPerPx, cy * ptPerPx, radius * ptPerPx) }
+        if (hit.isEmpty()) return false
+        for (m in hit) eraseMarkups += RemoveMarkup(page, m).also { it.redo() }
+        state.rebakeBackground(page, emptyList())
+        return true
     }
 
     /** STROKE mode: remove every stroke/shape the eraser circle touches. Images and text boxes are
@@ -1312,25 +1329,26 @@ class InteractionController(
     }
 
     private fun endErase() {
+        val cmds = ArrayList<Command>()
         if (areaErase()) {
             // One drag may split/trim many strokes across pages; commit each touched page's
             // net before/after as one undo step.
-            val cmds = eraseSnapshots.mapNotNull { (page, before) ->
+            eraseSnapshots.mapNotNullTo(cmds) { (page, before) ->
                 val after = page.items.toList()
                 if (after != before) ReplacePageItems(page, before, after) else null
             }
-            if (cmds.isNotEmpty()) {
-                history.push(if (cmds.size == 1) cmds[0] else CompositeCommand(cmds))
-                state.document.dirty = true
-                onContentChanged()
-            }
         } else if (eraseRemovals.isNotEmpty()) {
-            history.push(EraseItems(eraseRemovals.toList()))
+            cmds += EraseItems(eraseRemovals.toList())
+        }
+        cmds += eraseMarkups
+        if (cmds.isNotEmpty()) {
+            history.push(cmds.singleOrNull() ?: CompositeCommand(cmds))
             state.document.dirty = true
             onContentChanged()
         }
         eraseRemovals.clear()
         eraseSnapshots.clear()
+        eraseMarkups.clear()
         eraserCursor = null
         mode = PointerMode.IDLE
         requestRender()

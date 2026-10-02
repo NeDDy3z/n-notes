@@ -838,6 +838,7 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     var size by remember { mutableStateOf(base.baseWidth.toFloat()) }
     var switchBack by remember { mutableStateOf(base.switchBackAfterErase) }
     var scale by remember { mutableStateOf(base.scale) }
+    var markups by remember { mutableStateOf(base.eraseMarkups) }
 
     fun emit() = editor.updateToolConfig(
         Tool.ERASER,
@@ -846,6 +847,7 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             eraseMode = if (area) EraseMode.AREA else EraseMode.STROKE,
             switchBackAfterErase = switchBack,
             scale = scale,
+            eraseMarkups = markups,
         ),
     )
 
@@ -863,6 +865,7 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             // Re-arm the previous pen/highlighter once an erase lifts, so a quick fix doesn't strand
             // you in the eraser.
             ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
+            if (editor.hostHasPdf) ToggleRow(stringResource(R.string.caption_erase_markups), markups) { markups = it; emit() }
         }
     }
 }

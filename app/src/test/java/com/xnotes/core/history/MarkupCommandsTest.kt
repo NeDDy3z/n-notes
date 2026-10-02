@@ -52,6 +52,22 @@ class MarkupCommandsTest {
     }
 
     @Test
+    fun markupsErasedOneByOneComeBackInPlace() {
+        val page = Page(100.0, 100.0)
+        val (a, b, c, d) = listOf(markup("a"), markup("b"), markup("c"), markup("d"))
+        page.markups = listOf(a, b, c, d)
+        // As the eraser builds them: each made and applied before the next.
+        val erased = listOf(c, a, d).map { RemoveMarkup(page, it).also { cmd -> cmd.redo() } }
+        assertEquals(listOf(b), page.markups)
+        val step = CompositeCommand(erased)
+        step.undo()
+        assertEquals(listOf(a, b, c, d), page.markups)
+        step.redo()
+        assertEquals(listOf(b), page.markups)
+        assertEquals(listOf(page to c, page to a, page to d), step.touchedMarkups())
+    }
+
+    @Test
     fun replaceSwapsInPlace() {
         val page = Page(100.0, 100.0)
         val (a, b) = listOf(markup("a"), markup("b"))
