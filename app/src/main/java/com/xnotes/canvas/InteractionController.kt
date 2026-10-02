@@ -2922,6 +2922,7 @@ class InteractionController(
         stopFling()
         clearFlipPull()
         clearOverscroll()
+        if (mode == PointerMode.ERASE) endErase() // what a cancelled erase took stays one undo step
         pushStrokeEdit(null) // a cancelled crossing still left segments on the pages behind it
         liveStroke = null
         strokePageIndex = null
