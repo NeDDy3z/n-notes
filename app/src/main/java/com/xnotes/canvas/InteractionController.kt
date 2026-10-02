@@ -157,6 +157,9 @@ class InteractionController(
      */
     var onMarkupTap: ((at: Pt, withLink: Boolean) -> Boolean)? = null
 
+    /** A pan tap or a markup tool tap at viewport point [at], told before anything acts on it. */
+    var onTap: ((at: Pt) -> Unit)? = null
+
     /** PDF text selection: a free pointer's long press on a PDF page selects there (installed by the Editor). */
     var pdfText: PdfTextController? = null
 
@@ -799,6 +802,7 @@ class InteractionController(
                 mode = PointerMode.IDLE
                 val upViewport = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
                 val tap = !downStoppedFling && upViewport.distanceTo(panDownViewport) <= TAP_SLOP
+                if (tap) onTap?.invoke(upViewport)
                 if (panMayCommitText) {
                     // Press off the box while editing: only a tap commits (and re-arms the prior tool);
                     // a drag just scrolled with the edit kept live. Either way settle any elastic/glide.
@@ -846,12 +850,18 @@ class InteractionController(
                 markupPressAt = null
                 pdfText?.release()
                 val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
-                if (pressAt != null && up.distanceTo(pressAt) <= TAP_SLOP) onMarkupTap?.invoke(pressAt, false)
+                if (pressAt != null && up.distanceTo(pressAt) <= TAP_SLOP) {
+                    onTap?.invoke(pressAt)
+                    onMarkupTap?.invoke(pressAt, false)
+                }
             }
             PointerMode.IDLE -> lockedPressAt?.let { at ->
                 lockedPressAt = null
                 val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
-                if (up.distanceTo(at) <= TAP_SLOP) pdfText?.clear()
+                if (up.distanceTo(at) <= TAP_SLOP) {
+                    onTap?.invoke(up)
+                    pdfText?.clear()
+                }
             }
             PointerMode.RULER_MOVE -> { mode = PointerMode.IDLE; requestRender() }
             PointerMode.RULER_TRANSFORM -> { mode = PointerMode.IDLE; requestRender() }

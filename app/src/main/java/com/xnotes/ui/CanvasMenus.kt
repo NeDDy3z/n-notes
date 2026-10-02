@@ -1,6 +1,7 @@
 package com.xnotes.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,11 +11,14 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
@@ -35,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -48,6 +53,7 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
+import kotlin.math.roundToInt
 
 /**
  * What the selection menu needs from whichever editor is open.
@@ -522,6 +528,45 @@ fun MarkupMenu(editor: Editor) {
         if (menu.openLink != null) ActionIcon(XnotesIcons.link, stringResource(R.string.open_link)) { editor.openMarkupLink() }
     }
 }
+
+/**
+ * A markup's note, shown by a first tap on it: placed as its menu would be, then moving with the
+ * page, one size at any zoom. It takes no focus and leaves the page working around it; on itself it
+ * takes touches, so a long note scrolls. It goes once scrolled out of view.
+ */
+@Composable
+fun MarkupNotePeek(editor: Editor) {
+    val peek = editor.notePeek ?: return
+    val note = peek.markup.note ?: return
+    val palette = LocalPalette.current
+    val density = LocalDensity.current
+    val scroll = remember(peek) { ScrollState(0) }
+    val maxHeight = with(density) { (editor.state.viewportH * NOTE_PEEK_MAX_HEIGHT).toDp() }.coerceAtMost(240.dp)
+    Box(
+        Modifier
+            .layout { measurable, constraints ->
+                val p = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                editor.notePeekTick
+                editor.notePeekLaidOut(p.width, p.height)
+                val at = editor.notePeekRect(p.width, p.height)
+                layout(p.width, p.height) {
+                    if (at != null) p.place(at.left.roundToInt(), at.top.roundToInt())
+                }
+            }
+            .widthIn(max = 300.dp)
+            .heightIn(max = maxHeight)
+            .clip(MaterialTheme.shapes.medium)
+            .background(palette.menuBg.toComposeColor())
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium)
+            .verticalScroll(scroll)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(note, style = MaterialTheme.typography.bodyMedium, color = palette.text.toComposeColor())
+    }
+}
+
+/** The most of the view's height a markup's note window takes before it scrolls. */
+private const val NOTE_PEEK_MAX_HEIGHT = 0.4f
 
 /** A markup's note to read or write: plain text, kept on Save, dropped when emptied or deleted. */
 @Composable

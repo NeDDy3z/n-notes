@@ -196,6 +196,12 @@ private const val PROCESS_TEXT_MAX = 100_000
 /** How far off an address written in a PDF's text a tap may land and still open it. */
 private const val AUTO_LINK_SLOP_DP = 4.0
 
+/** How far a markup's note window stands off the markup. */
+private const val NOTE_PEEK_GAP_DP = 10.0
+
+/** How far in from the view's edges a markup's note window opens, at least. */
+private const val NOTE_PEEK_MARGIN_DP = 8.0
+
 /** The one thread every pane's search scans on, at background priority. */
 private val searchWorker: java.util.concurrent.Executor by lazy {
     java.util.concurrent.Executors.newSingleThreadExecutor { r ->
@@ -1024,12 +1030,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun markupSlopPt(): Double = AUTO_LINK_SLOP_DP * state.devicePxPerDp / state.zoom * 72.0 / state.document.dpi
 
     /**
-     * A tap at viewport [at]: opens the menu of the markup there, with "Open link" when [withLink]
-     * and a link lies under the tap. False when no markup is there.
+     * A tap at viewport [at] on a markup: one with a note shows the note first and its menu on the
+     * next tap; any other opens its menu, with "Open link" when [withLink] and a link lies under the
+     * tap. False when no markup is there.
      */
-    private fun openMarkupMenu(at: Pt, withLink: Boolean): Boolean {
+    private fun tapMarkup(at: Pt, withLink: Boolean): Boolean {
         val hit = markupHit(at) ?: return false
         val anchor = markupAnchor(hit.page, hit.markup) ?: return false
+        if (hit.markup.note != null && notePeek?.markup !== hit.markup) {
+            markupMenu = null
+            notePeekSize = null
+            notePeek = NotePeek(hit.page, hit.markup, anchor, state.viewportW, state.viewportH)
+            return true
+        }
+        notePeek = null
         val local = hit.local
         val ptPerPx = 72.0 / state.document.dpi
         val link = if (withLink && local != null) {
@@ -1066,6 +1080,62 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun dismissMarkupMenu() {
         markupMenu = null
+    }
+
+    /** A markup's note shown by a tap: the markup on note page [page], and where it and the view stood then, in px. */
+    class NotePeek(val page: Int, val markup: TextMarkup, val openedAt: Rect, val viewW: Int, val viewH: Int)
+
+    /** The note on show, or null. */
+    var notePeek by mutableStateOf<NotePeek?>(null)
+        private set
+
+    /** Bumped as the view moves, so the note's window moves with its markup. */
+    var notePeekTick by mutableStateOf(0)
+        private set
+
+    /** The note window's size in px as last laid out; null until it is. */
+    private var notePeekSize: Pair<Int, Int>? = null
+
+    fun notePeekLaidOut(w: Int, h: Int) {
+        notePeekSize = w to h
+    }
+
+    /**
+     * Where the note's window goes in viewport px, [w] by [h]: above its markup and icon as the menu
+     * goes (below when there was no room above), centred on it but on screen, as it opened; from then
+     * on it moves with the markup. Null when the markup is not laid out.
+     */
+    fun notePeekRect(w: Int, h: Int): Rect? {
+        val peek = notePeek ?: return null
+        val now = markupAnchor(peek.page, peek.markup) ?: return null
+        val open = peek.openedAt
+        val gap = NOTE_PEEK_GAP_DP * state.devicePxPerDp
+        val margin = NOTE_PEEK_MARGIN_DP * state.devicePxPerDp
+        val above = open.top - gap - h >= margin
+        val x = (open.centerX - w / 2.0).coerceIn(margin, maxOf(margin, peek.viewW - w - margin))
+        val y = (if (above) open.top - gap - h else open.bottom + gap).coerceIn(margin, maxOf(margin, peek.viewH - h - margin))
+        val dy = if (above) now.top - open.top else now.bottom - open.bottom
+        return Rect(x + now.centerX - open.centerX, y + dy, w.toDouble(), h.toDouble())
+    }
+
+    /** Keeps the note's window with its markup as the view moves; it goes with the markup, or once out of view. */
+    private fun followNotePeek() {
+        val peek = notePeek ?: return
+        val page = state.document.pages.getOrNull(peek.page)
+        if (page == null || page.markups.none { it === peek.markup } || peek.page !in state.drawablePageRange()) {
+            notePeek = null
+            return
+        }
+        notePeekTick++
+        val (w, h) = notePeekSize ?: return
+        val r = notePeekRect(w, h)
+        if (r == null || !r.intersects(Rect(0.0, 0.0, state.viewportW.toDouble(), state.viewportH.toDouble()))) notePeek = null
+    }
+
+    /** A tap anywhere at viewport [at]: the note on show goes unless the tap is on its markup. */
+    private fun tapClosesNotePeek(at: Pt) {
+        val peek = notePeek ?: return
+        if (markupHit(at)?.markup !== peek.markup) notePeek = null
     }
 
     /** Puts [after] in the menu markup's place as one undo step, and closes the menu. */
@@ -1437,7 +1507,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onViewSettingsChanged(com.xnotes.canvas.ViewSettings(), viewSettings)
         view.onKey = { e -> e.action == android.view.KeyEvent.ACTION_DOWN && handleKeyDown(e) }
         controller.clipboardHasImage = { clipboardImageUri() != null }
-        controller.onMarkupTap = { at, withLink -> openMarkupMenu(at, withLink) }
+        controller.onMarkupTap = { at, withLink -> tapMarkup(at, withLink) }
+        controller.onTap = { at -> tapClosesNotePeek(at) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
             val src = pdfSource ?: return@onLinkTap false
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
@@ -2366,6 +2437,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun refreshView() {
         if (editingTable != null || tableMenu != null) tableChromeTick++
+        followNotePeek()
         if (!canvasTouched) settlePdfTextMenu()
         zoomPercent = (state.zoom * 100).roundToInt()
         pageIndex = state.currentPageIndex()
