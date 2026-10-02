@@ -14,7 +14,6 @@ import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.TextFlags
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -146,42 +145,33 @@ class MarkupPainterTest {
     }
 
     @Test
-    fun aNoteShowsAMarkerPastTheEndLevelWithTheTop() {
+    fun aNoteLeavesThePageAlone() {
         val first = TextQuad(100f, 180f, 300f, 194f, 0)
-        val noted = markup(MarkupType.UNDERLINE, first, upright, note = "check eq. 4")
-        val marker = MarkupPainter.markerOf(noted)!!
-        assertTrue(marker.center.x - marker.radius > upright.right)
-        near(upright.top + marker.radius, marker.center.y)
-        assertTrue(marker.tail.all { it.x > upright.right && it.y < upright.bottom })
-        val r = Recorder()
-        MarkupPainter.paint(r, noted)
-        assertEquals(listOf("line", "line", "circle", "polygon"), r.ops)
-        val bounds = MarkupPainter.bounds(noted)!!
-        assertTrue(bounds.right >= marker.center.x + marker.radius)
-        near(100.0, bounds.left)
-        near(180.0, bounds.top)
+        val plain = Recorder()
+        val noted = Recorder()
+        MarkupPainter.paint(plain, markup(MarkupType.UNDERLINE, first, upright))
+        MarkupPainter.paint(noted, markup(MarkupType.UNDERLINE, first, upright, note = "check eq. 4"))
+        assertEquals(listOf("line", "line"), noted.ops)
+        assertEquals(plain.lines.map { it.first }, noted.lines.map { it.first })
     }
 
     @Test
-    fun withoutANoteTheBoundsAreTheQuads() {
+    fun theBoundsAreTheQuads() {
         assertEquals(Rect.ltrb(100.0, 200.0, 240.0, 214.0), MarkupPainter.bounds(markup(MarkupType.SQUIGGLY, upright)))
+        assertEquals(Rect.ltrb(100.0, 200.0, 240.0, 214.0), MarkupPainter.bounds(markup(MarkupType.SQUIGGLY, upright, note = "n")))
         assertNull(MarkupPainter.bounds(markup(MarkupType.HIGHLIGHT)))
-        assertNotNull(MarkupPainter.markerOf(markup(MarkupType.HIGHLIGHT, upright)))
     }
 
     @Test
-    fun aTapFindsTheTopmostMarkupOrItsNoteMarker() {
+    fun aTapFindsTheTopmostMarkup() {
         val under = markup(MarkupType.HIGHLIGHT, upright)
         val over = markup(MarkupType.UNDERLINE, TextQuad(150f, 200f, 300f, 214f, 0), note = "n")
         val marks = listOf(under, over)
-        assertEquals(under, MarkupPainter.markupAt(marks, 120.0, 207.0, 2.0, 8.0))
-        assertEquals(over, MarkupPainter.markupAt(marks, 200.0, 207.0, 2.0, 8.0))
-        assertEquals(under, MarkupPainter.markupAt(marks, 99.0, 199.0, 2.0, 8.0))
-        assertNull(MarkupPainter.markupAt(marks, 120.0, 230.0, 2.0, 8.0))
-        // Past the end of the noted line, the marker answers as far as its reach.
-        val marker = MarkupPainter.markerOf(over)!!
-        assertEquals(over, MarkupPainter.markupAt(marks, marker.center.x + 7.0, marker.center.y, 2.0, 8.0))
-        assertNull(MarkupPainter.markupAt(marks, marker.center.x + 9.0, marker.center.y, 2.0, 8.0))
+        assertEquals(under, MarkupPainter.markupAt(marks, 120.0, 207.0, 2.0))
+        assertEquals(over, MarkupPainter.markupAt(marks, 200.0, 207.0, 2.0))
+        assertEquals(under, MarkupPainter.markupAt(marks, 99.0, 199.0, 2.0))
+        assertNull(MarkupPainter.markupAt(marks, 120.0, 230.0, 2.0))
+        assertNull(MarkupPainter.markupAt(marks, 303.0, 207.0, 2.0))
     }
 
     @Test
@@ -202,19 +192,7 @@ class MarkupPainterTest {
         val down = markup(MarkupType.UNDERLINE, TextQuad(300f, 100f, 314f, 240f, 1))
         assertTrue(MarkupPainter.touches(down, 304.0, 170.0, 2.6))
         assertFalse(MarkupPainter.touches(down, 310.0, 170.0, 2.0))
-        // A note's marker past the line's end is part of the markup.
-        val noted = markup(MarkupType.STRIKEOUT, upright, note = "n")
-        val marker = MarkupPainter.markerOf(noted)!!
-        val past = marker.center.x + marker.radius + 1.0
-        assertTrue(MarkupPainter.touches(noted, past, marker.center.y, 1.5))
-        assertFalse(MarkupPainter.touches(markup(MarkupType.STRIKEOUT, upright), past, marker.center.y, 1.5))
-    }
-
-    @Test
-    fun aTurnedMarkerFollowsTheLine() {
-        val down = TextQuad(300f, 100f, 314f, 240f, 1)
-        val marker = MarkupPainter.markerOf(markup(MarkupType.HIGHLIGHT, down, note = "n"))!!
-        assertTrue(marker.center.y - marker.radius > down.bottom)
-        near(down.right - marker.radius, marker.center.x)
+        // A note is no part of what the eraser can reach past the line's end.
+        assertFalse(MarkupPainter.touches(markup(MarkupType.STRIKEOUT, upright, note = "n"), 245.0, 203.0, 1.5))
     }
 }

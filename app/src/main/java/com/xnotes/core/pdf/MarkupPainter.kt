@@ -7,7 +7,6 @@ import com.xnotes.core.model.MarkupType
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.pal.BlendMode
-import com.xnotes.core.pal.FillRule
 import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.Renderer
 import kotlin.math.PI
@@ -46,29 +45,14 @@ object MarkupPainter {
                 if (line.size >= 2) r.strokePolyline(line, Pen(color, thickness(q), cosmetic = false))
             }
         }
-        if (m.note != null) markerOf(m)?.let { marker ->
-            r.fillCircle(marker.center, marker.radius, color)
-            r.fillPolygon(marker.tail, color, FillRule.NONZERO)
-        }
     }
 
-    /** Where [m] paints, in points; null when it has no quads. */
-    fun bounds(m: TextMarkup): Rect? {
-        val quads = quadBounds(m.quads) ?: return null
-        val marker = if (m.note != null) markerOf(m)?.bounds else null
-        return if (marker == null) quads else quads.union(marker)
-    }
+    /** Where [m] paints, in points; null when it has no quads. A note's icon is chrome ([NoteIcon]), not page. */
+    fun bounds(m: TextMarkup): Rect? = quadBounds(m.quads)
 
-    /**
-     * The topmost of [marks] at ([x], [y]), in points: on one of its lines grown by [slop], or within
-     * [markerReach] of its note marker's middle (the marker's own size when that is bigger).
-     */
-    fun markupAt(marks: List<TextMarkup>, x: Double, y: Double, slop: Double, markerReach: Double): TextMarkup? {
+    /** The topmost of [marks] at ([x], [y]), in points: on one of its lines grown by [slop]. */
+    fun markupAt(marks: List<TextMarkup>, x: Double, y: Double, slop: Double): TextMarkup? {
         for (m in marks.asReversed()) {
-            if (m.note != null) {
-                val marker = markerOf(m)
-                if (marker != null && marker.center.distanceTo(Pt(x, y)) <= max(marker.radius, markerReach)) return m
-            }
             for (q in m.quads) {
                 if (x >= q.left - slop && x <= q.right + slop && y >= q.top - slop && y <= q.bottom + slop) return m
             }
@@ -79,7 +63,6 @@ object MarkupPainter {
     /** Whether a circle at ([x], [y]) of [radius], in points, touches what [m] paints: the eraser's test. */
     fun touches(m: TextMarkup, x: Double, y: Double, radius: Double): Boolean {
         val c = Pt(x, y)
-        if (m.note != null) markerOf(m)?.let { if (it.center.distanceTo(c) <= radius + it.radius) return true }
         for (q in m.quads) {
             // Every mark lies within its quad, so a circle clear of the quad misses it.
             if (Rect.ltrb(q.left.toDouble(), q.top.toDouble(), q.right.toDouble(), q.bottom.toDouble()).distanceTo(c) > radius) continue
@@ -88,24 +71,6 @@ object MarkupPainter {
             if (lineOf(m.type, q).zipWithNext().any { (a, b) -> Geometry.distancePointToSegment(c, a, b) <= reach }) return true
         }
         return false
-    }
-
-    /** The note marker: a speech bubble just past the markup's end, level with the line's top. */
-    class Marker(val center: Pt, val radius: Double, val tail: List<Pt>) {
-        val bounds: Rect get() = Rect.bounding(tail).union(Rect(center.x - radius, center.y - radius, 2 * radius, 2 * radius))
-    }
-
-    /** Where [m]'s note marker goes, whether or not it has a note; null when it has no quads. */
-    fun markerOf(m: TextMarkup): Marker? {
-        val q = m.quads.lastOrNull() ?: return null
-        val h = across(q)
-        val radius = MARKER_SIZE * h / 2
-        val u = along(q) + MARKER_GAP * h + radius
-        val v = radius
-        val tail = listOf(Pt(-0.2, 0.9), Pt(-0.75, 0.55), Pt(-0.95, 1.15)).map { (du, dv) ->
-            frame(q, u + du * radius, v + dv * radius)
-        }
-        return Marker(frame(q, u, v), radius, tail)
     }
 
     /** The centre line of a line type along [q]: a straight line, or the squiggle's wave. */
@@ -181,6 +146,4 @@ object MarkupPainter {
     private const val WAVE_PERIODS = 3.5
     private const val WAVE_AMPLITUDE = 1.0 / 12
     private const val WAVE_STEPS = 8
-    private const val MARKER_SIZE = 0.55
-    private const val MARKER_GAP = 0.15
 }

@@ -196,9 +196,6 @@ private const val PROCESS_TEXT_MAX = 100_000
 /** How far off an address written in a PDF's text a tap may land and still open it. */
 private const val AUTO_LINK_SLOP_DP = 4.0
 
-/** The least a markup's note marker takes a tap over, however small it is drawn. */
-private const val MARKUP_MARKER_TARGET_DP = 32.0
-
 /** The one thread every pane's search scans on, at background priority. */
 private val searchWorker: java.util.concurrent.Executor by lazy {
     java.util.concurrent.Executors.newSingleThreadExecutor { r ->
@@ -1007,21 +1004,40 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var markupNote by mutableStateOf<MarkupMenu?>(null)
         private set
 
-    /**
-     * A tap at [pageLocal] on note page [pageIndex]: opens the menu of the markup there, with "Open
-     * link" when [withLink] and a link lies under the tap. False when no markup is there.
-     */
-    private fun openMarkupMenu(pageIndex: Int, pageLocal: Pt, withLink: Boolean): Boolean {
-        val page = state.document.pages.getOrNull(pageIndex) ?: return false
-        if (page.markups.isEmpty()) return false
+    /** What a tap lands on: [markup] on note page [page], and the tap in its page space when it is on the markup itself. */
+    private class MarkupHit(val page: Int, val markup: TextMarkup, val local: Pt?)
+
+    /** The markup a tap at viewport [at] lands on: a note icon first, being drawn on top, then the topmost markup there. */
+    private fun markupHit(at: Pt): MarkupHit? {
+        noteIcons.at(at)?.let { return MarkupHit(it.page, it.markup, null) }
+        val content = state.viewportToContent(at)
+        val pageIndex = state.pageIndexAtContent(content) ?: return null
+        val page = state.document.pages.getOrNull(pageIndex) ?: return null
+        if (page.markups.isEmpty()) return null
+        val local = state.toPageSpace(pageIndex, content)
         val ptPerPx = 72.0 / state.document.dpi
-        val x = pageLocal.x * ptPerPx
-        val y = pageLocal.y * ptPerPx
-        val slop = AUTO_LINK_SLOP_DP * state.devicePxPerDp / state.zoom * ptPerPx
-        val reach = MARKUP_MARKER_TARGET_DP / 2 * state.devicePxPerDp / state.zoom * ptPerPx
-        val m = MarkupPainter.markupAt(page.markups, x, y, slop, reach) ?: return false
-        val anchor = markupAnchor(pageIndex, m) ?: return false
-        markupMenu = MarkupMenu(pageIndex, m, anchor, if (withLink) linkOpener(page, x.toFloat(), y.toFloat(), slop.toFloat()) else null)
+        val m = MarkupPainter.markupAt(page.markups, local.x * ptPerPx, local.y * ptPerPx, markupSlopPt()) ?: return null
+        return MarkupHit(pageIndex, m, local)
+    }
+
+    /** How far off a markup or a written address a tap may land, in points at the current zoom. */
+    private fun markupSlopPt(): Double = AUTO_LINK_SLOP_DP * state.devicePxPerDp / state.zoom * 72.0 / state.document.dpi
+
+    /**
+     * A tap at viewport [at]: opens the menu of the markup there, with "Open link" when [withLink]
+     * and a link lies under the tap. False when no markup is there.
+     */
+    private fun openMarkupMenu(at: Pt, withLink: Boolean): Boolean {
+        val hit = markupHit(at) ?: return false
+        val anchor = markupAnchor(hit.page, hit.markup) ?: return false
+        val local = hit.local
+        val ptPerPx = 72.0 / state.document.dpi
+        val link = if (withLink && local != null) {
+            linkOpener(state.document.pages[hit.page], (local.x * ptPerPx).toFloat(), (local.y * ptPerPx).toFloat(), markupSlopPt().toFloat())
+        } else {
+            null
+        }
+        markupMenu = MarkupMenu(hit.page, hit.markup, anchor, link)
         return true
     }
 
@@ -1035,7 +1051,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return { openUrl(link.uri) }
     }
 
-    /** [m] on note page [pageIndex] in viewport px, for its menu to stand by; null when off the layout. */
+    /** [m] on note page [pageIndex] in viewport px, its note icon included, for its menu to stand by; null when off the layout. */
     private fun markupAnchor(pageIndex: Int, m: TextMarkup): Rect? {
         val b = MarkupPainter.bounds(m) ?: return null
         if (pageIndex !in state.pageRects.indices) return null
@@ -1043,7 +1059,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val c = state.fromPageSpaceRect(pageIndex, Rect(b.x * s, b.y * s, b.w * s, b.h * s))
         val tl = state.contentToViewport(Pt(c.left, c.top))
         val br = state.contentToViewport(Pt(c.right, c.bottom))
-        return Rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y)
+        val marks = Rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y)
+        if (m.note == null) return marks
+        return noteIcons.iconOf(pageIndex, m)?.let { marks.union(noteIcons.bounds(it)) } ?: marks
     }
 
     fun dismissMarkupMenu() {
@@ -1126,6 +1144,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     ).also { controller.searchTints = it }
 
     private val markupOverlay = com.xnotes.canvas.MarkupOverlay(state) { pdfPageFilter() }.also { controller.markupOverlay = it }
+
+    private val noteIcons = com.xnotes.canvas.NoteIcons(state).also { controller.noteIcons = it }
 
     /** Viewport bounds the PDF text selection's menu anchors to, or null when it is hidden. */
     var pdfTextMenu by mutableStateOf<Rect?>(null)
@@ -1417,9 +1437,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onViewSettingsChanged(com.xnotes.canvas.ViewSettings(), viewSettings)
         view.onKey = { e -> e.action == android.view.KeyEvent.ACTION_DOWN && handleKeyDown(e) }
         controller.clipboardHasImage = { clipboardImageUri() != null }
-        controller.onMarkupTap = { pageIndex, pageLocal -> openMarkupMenu(pageIndex, pageLocal, withLink = false) }
+        controller.onMarkupTap = { at, withLink -> openMarkupMenu(at, withLink) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
-            if (openMarkupMenu(pageIndex, pageLocal, withLink = true)) return@onLinkTap true
             val src = pdfSource ?: return@onLinkTap false
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
             val pdfIdx = page.pdfPage ?: return@onLinkTap false

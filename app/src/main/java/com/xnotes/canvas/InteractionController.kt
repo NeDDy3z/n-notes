@@ -151,8 +151,11 @@ class InteractionController(
      *  once it is ready. */
     var onLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
-    /** The markup tool tapped at [pageLocal] on note page [pageIndex]: true when a markup there took it. */
-    var onMarkupTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
+    /**
+     * A tap that may open a markup, at viewport point [at]: a pan tap ([withLink], so a menu can offer
+     * the link under it) or the markup tool's. True when a markup or its note icon took it.
+     */
+    var onMarkupTap: ((at: Pt, withLink: Boolean) -> Boolean)? = null
 
     /** PDF text selection: a free pointer's long press on a PDF page selects there (installed by the Editor). */
     var pdfText: PdfTextController? = null
@@ -162,6 +165,9 @@ class InteractionController(
 
     /** Text markups the page layers don't show yet, under everything else in the overlay. */
     var markupOverlay: MarkupOverlay? = null
+
+    /** The icons over noted markups, above all the page's content. */
+    var noteIcons: NoteIcons? = null
     val document: Document get() = state.document
 
     var tool: Tool = Tool.DEFAULT
@@ -373,9 +379,8 @@ class InteractionController(
     /** A press zoom lock kept from panning, where it went down: a tap there still ends a PDF text selection. */
     private var lockedPressAt: Pt? = null
 
-    /** Where the markup tool pressed, in the viewport and on its page, so a lift there counts as a tap. */
+    /** Where the markup tool pressed, in the viewport, so a lift there counts as a tap. */
     private var markupPressAt: Pt? = null
-    private var markupPressPage: Pair<Int, Pt>? = null
 
     // TEXT EDITING
     private var editingText: TextItem? = null
@@ -567,7 +572,6 @@ class InteractionController(
         panMayCommitText = false // a fresh gesture; the editing branch below re-arms it if it applies
         lockedPressAt = null
         markupPressAt = null
-        markupPressPage = null
         val toolType = e.getToolType(0)
         val vx = e.getX(0).toDouble()
         val vy = e.getY(0).toDouble()
@@ -709,7 +713,6 @@ class InteractionController(
         if (state.document.pages.getOrNull(page)?.pdfPage == null) return
         mode = PointerMode.PDF_TEXT
         markupPressAt = state.contentToViewport(content)
-        markupPressPage = page to local
         text.beginToolDrag(page, local, mark = configFor(Tool.MARKUP).markupMode != MarkupMode.SELECT)
     }
 
@@ -840,14 +843,10 @@ class InteractionController(
                 mode = PointerMode.IDLE
                 // A markup tool tap marks nothing; on a markup it opens that markup's menu.
                 val pressAt = markupPressAt
-                val pressPage = markupPressPage
                 markupPressAt = null
-                markupPressPage = null
                 pdfText?.release()
                 val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
-                if (pressAt != null && pressPage != null && up.distanceTo(pressAt) <= TAP_SLOP) {
-                    onMarkupTap?.invoke(pressPage.first, pressPage.second)
-                }
+                if (pressAt != null && up.distanceTo(pressAt) <= TAP_SLOP) onMarkupTap?.invoke(pressAt, false)
             }
             PointerMode.IDLE -> lockedPressAt?.let { at ->
                 lockedPressAt = null
@@ -861,8 +860,9 @@ class InteractionController(
         }
     }
 
-    /** Map a finger tap's content point to its page + page-space point and offer it to [onLinkTap]. */
+    /** Offer a finger tap at [content] to [onMarkupTap], then as a page + page-space point to [onLinkTap]. */
     private fun tryLinkTap(content: Pt): Boolean {
+        if (onMarkupTap?.invoke(state.contentToViewport(content), true) == true) return true
         val cb = onLinkTap ?: return false
         val pageIndex = state.pageIndexAtContent(content) ?: return false
         return cb(pageIndex, state.toPageSpace(pageIndex, content))
@@ -3044,6 +3044,9 @@ class InteractionController(
                 }
             }
         }
+
+        // Note icons: chrome of one size at any zoom, so in viewport space.
+        noteIcons?.draw(r)
 
         // Eraser cursor (viewport space, after the transform is restored).
         eraserCursor?.let {
