@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
@@ -321,8 +323,21 @@ object PdfExporter {
     }
 
     /** Copy a source page in as vector, then overlay its ruling + annotations; returns where it drew. */
-    private fun vectorImportedPage(ctx: PdfExportContext, srcDoc: PDDocument, srcIdx: Int, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport): PageFrame =
-        annotatePage(ctx, ctx.doc.importPage(srcDoc.getPage(srcIdx)), page, ins, s, paintRuling, flow)
+    private fun vectorImportedPage(ctx: PdfExportContext, srcDoc: PDDocument, srcIdx: Int, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport): PageFrame {
+        val pdfPage = ctx.doc.importPage(srcDoc.getPage(srcIdx))
+        ownAnnotations(pdfPage)
+        return annotatePage(ctx, pdfPage, page, ins, s, paintRuling, flow)
+    }
+
+    /**
+     * Give an imported page an /Annots array of its own. [PDDocument.importPage] copies the page
+     * dictionary shallowly, so two copies of one source page would share it, and an annotation
+     * added to one copy would show on both.
+     */
+    private fun ownAnnotations(pdfPage: PDPage) {
+        val annots = pdfPage.cosObject.getDictionaryObject(COSName.ANNOTS) as? COSArray ?: return
+        pdfPage.cosObject.setItem(COSName.ANNOTS, COSArray().also { it.addAll(annots) })
+    }
 
     /** Append [page]'s ruling + annotations as a new content stream over an existing [pdfPage] of the export; returns where it drew. */
     private fun annotatePage(ctx: PdfExportContext, pdfPage: PDPage, page: Page, ins: PageInsets, s: Double, paintRuling: (Page, Renderer) -> Unit, flow: FlowExport): PageFrame {
