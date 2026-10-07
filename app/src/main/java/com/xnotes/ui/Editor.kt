@@ -7326,6 +7326,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.zoomLocked = zoomLocked
     }
 
+    fun setZoom(scale: Float) {
+        if (zoomLocked) return
+        state.setZoomAnchored(state.clearCenter(), scale.toDouble())
+        afterView()
+    }
+
     fun toggleRuler() {
         controller.toggleRuler()
         rulerVisible = controller.rulerVisible()
