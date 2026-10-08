@@ -171,11 +171,17 @@ class InfiniteInteraction(
     /** Zoom lock: a pinch pans without changing the zoom, mirroring the paged canvas. */
     var zoomLocked: Boolean = false
 
-    /** Disappearing ink is armed, so a held stroke must not become a committed shape. */
-    var wandEnabled: Boolean = false
-
     /** Which pans still move a locked view: "single" (default) | "double" | "none". */
     var zoomLockPan: String = "single"
+
+    // Once zoom is locked the zoomLockPan preference decides which pans still move the view; an
+    // unlocked view always pans. Mirrors the paged canvas so one preference governs both surfaces.
+    private fun singleFingerPanAllowed(): Boolean = !(zoomLocked && zoomLockPan != "single")
+
+    private fun pinchPanAllowed(): Boolean = !(zoomLocked && zoomLockPan == "none")
+
+    /** Disappearing ink is armed, so a held stroke must not become a committed shape. */
+    var wandEnabled: Boolean = false
 
     private val stylusButtons = StylusButtonLatch()
 
@@ -699,8 +705,9 @@ class InfiniteInteraction(
 
     private fun handleUp(e: MotionEvent) {
         cancelLongPress()
-        val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed() && !panFromPenButton) ||
-            (mode == CanvasPointerMode.PINCH && pinchPanAllowed())
+        val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed() ||
+            mode == CanvasPointerMode.PINCH && pinchPanAllowed()) &&
+            panCfg().panCanMove && !(mode == CanvasPointerMode.PAN && panFromPenButton)
         // A pan that never moved is a tap, and a tap on a pill plays it, as a finger opens links on a note.
         val panTap = mode == CanvasPointerMode.PAN && !panFromPenButton && panWasTap(e.getX(0).toDouble(), e.getY(0).toDouble())
         // A tape lies over whatever else the tap could reach, so it takes the tap first.
@@ -1978,17 +1985,15 @@ class InfiniteInteraction(
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
         onUserMovedView()
-        if (singleFingerPanAllowed()) viewport.panByViewport(vx - lastPan.x, vy - lastPan.y)
+        if (panCfg().panCanMove && singleFingerPanAllowed()) viewport.panByViewport(panCfg().panDx(vx - lastPan.x), panCfg().panDy(vy - lastPan.y))
         lastPan = Pt(vx, vy)
         onViewChanged()
         requestRender()
     }
 
-    // Once zoom is locked the zoomLockPan preference decides which pans still move the view; an
-    // unlocked view always pans. Mirrors the paged canvas so one preference governs both surfaces.
-    private fun singleFingerPanAllowed(): Boolean = !(zoomLocked && zoomLockPan != "single")
-
-    private fun pinchPanAllowed(): Boolean = !(zoomLocked && zoomLockPan == "none")
+    // The pan tool's own axis locks, mirroring the paged canvas. The rule itself lives on the config,
+    // so a drag answers the same way on either surface.
+    private fun panCfg() = configFor(Tool.PAN)
 
     // --- pinch ---
 
@@ -2017,10 +2022,11 @@ class InfiniteInteraction(
         // time: the content under the fingers stays under the fingers whether they spread or slide.
         // A locked zoom keeps the zoom it started at, so the pinch is a pan and nothing else.
         viewport.zoom = if (zoomLocked) pinchInitZoom else pinchInitZoom * (dist / pinchInitDist)
-        if (pinchPanAllowed()) {
-            viewport.scrollX = pinchAnchorContent.x - mid.x / viewport.zoom
-            viewport.scrollY = pinchAnchorContent.y - mid.y / viewport.zoom
-        }
+        // A held axis keeps whatever it had instead of following the fingers, which is what "held" means:
+        // the pinch still zooms, and still pans the free axis, but this one does not move.
+        val panAllowed = pinchPanAllowed()
+        if (!panCfg().lockPanX && panAllowed) viewport.scrollX = pinchAnchorContent.x - mid.x / viewport.zoom
+        if (!panCfg().lockPanY && panAllowed) viewport.scrollY = pinchAnchorContent.y - mid.y / viewport.zoom
         lastPan = mid
         onViewChanged()
         requestRender()

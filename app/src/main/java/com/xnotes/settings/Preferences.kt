@@ -42,7 +42,6 @@ data class Preferences(
     /** Whether a finger draws (true) or pans (false, default). The stylus always draws. */
     val fingerDraws: Boolean = false,
     /** Panning allowed while zoom is locked: "single" (default) | "double" | "none". */
-    val zoomLockPan: String = "single",
     /** Whether holding a freehand ink stroke still snaps it to a recognized shape. */
     val detectShapes: Boolean = true,
     /** Whether rotating a selection snaps to the nearest 90 degrees. */
@@ -182,7 +181,6 @@ data class Preferences(
         .put("custom_page_width_mm", customPageWidthMm)
         .put("custom_page_height_mm", customPageHeightMm)
         .put("finger_draws", fingerDraws)
-        .put("zoom_lock_pan", zoomLockPan)
         .put("detect_shapes", detectShapes)
         .put("snap_rotation_90", snapRotation90)
         .put("ocr_language", ocrLanguage)

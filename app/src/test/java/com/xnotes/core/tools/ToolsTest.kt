@@ -122,4 +122,43 @@ class ToolsTest {
         for (t in Tool.entries) assertEquals(t, Tool.fromId(t.id))
         assertEquals(16, Tool.wheelOrder.size)
     }
+
+    /**
+     * The pan's axis locks, which decide how a drag reaches the view on both canvases.
+     *
+     * A locked axis contributes nothing while the other one still moves, which is the whole point of
+     * two separate locks rather than one "panning off" preset: a vertical-only scroll has to be
+     * reachable without also giving up the horizontal one.
+     */
+    @Test fun aLockedAxisContributesNothingWhileTheOtherStillMoves() {
+        val both = ToolConfig()
+        assertEquals(3.0, both.panDx(3.0), 1e-9)
+        assertEquals(4.0, both.panDy(4.0), 1e-9)
+        assertTrue(both.panCanMove)
+
+        val lockedX = both.copy(lockPanX = true)
+        assertEquals(0.0, lockedX.panDx(3.0), 1e-9)
+        assertEquals(4.0, lockedX.panDy(4.0), 1e-9)
+        assertTrue(lockedX.panCanMove)
+
+        val lockedY = both.copy(lockPanY = true)
+        assertEquals(3.0, lockedY.panDx(3.0), 1e-9)
+        assertEquals(0.0, lockedY.panDy(4.0), 1e-9)
+        assertTrue(lockedY.panCanMove)
+
+        // Both held is the one setting where a pan cannot move the view at all, so the gesture is
+        // never begun rather than begun and thrown away every sample.
+        val neither = lockedX.copy(lockPanY = true)
+        assertEquals(0.0, neither.panDx(3.0), 1e-9)
+        assertEquals(0.0, neither.panDy(4.0), 1e-9)
+        assertFalse(neither.panCanMove)
+    }
+
+    /** The locks are the pan's, so they ship off and are remembered like any other tool setting. */
+    @Test fun thePanLocksNothingByDefaultAndArePersisted() {
+        val pan = ToolDefaults.configFor(Tool.PAN)
+        assertFalse(pan.lockPanX)
+        assertFalse(pan.lockPanY)
+        assertTrue(Tool.PAN in ToolDefaults.persistedTools)
+    }
 }

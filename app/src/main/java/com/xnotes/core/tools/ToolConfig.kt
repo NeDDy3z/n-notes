@@ -134,6 +134,10 @@ data class ToolConfig(
     val markupIntensity: Double = DEFAULT_MARKUP_INTENSITY,
     /** Eraser: also take off the PDF text markups it touches. Only used by [Tool.ERASER]. */
     val eraseMarkups: Boolean = true,
+    /** Pan: the horizontal axis is held still, so a drag only moves the view up and down. Only [Tool.PAN]. */
+    val lockPanX: Boolean = false,
+    /** Pan: the vertical axis is held still, so a drag only moves the view sideways. Only [Tool.PAN]. */
+    val lockPanY: Boolean = false,
     /** Eraser: a pen scribbled over ink erases what it touches. Only used by [Tool.ERASER]. */
     val scribbleErase: Boolean = false,
     /** Eraser: the kinds of item it may take off the page. Only used by [Tool.ERASER]. */
@@ -153,6 +157,20 @@ data class ToolConfig(
     /** Stabilization: the speed in dp/s below which movement counts as slow and is steadied hardest. */
     val stabilizeCrossover: Double = Stabilizer.DEFAULT_CROSSOVER,
 ) {
+    /**
+     * The pan's own rule for a drag, so the paged canvas and the unpaged one cannot answer
+     * differently about what a held axis means.
+     *
+     * A locked axis is taken out of the delta rather than cancelling the gesture: a vertical drag
+     * on a horizontally-locked pan is still a drag, it just moves nothing sideways, and a long press
+     * over it still reaches whatever is underneath.
+     */
+    fun panDx(dx: Double): Double = if (lockPanX) 0.0 else dx
+    fun panDy(dy: Double): Double = if (lockPanY) 0.0 else dy
+
+    /** False only when both axes are held — the one case where a pan cannot move the view at all. */
+    val panCanMove: Boolean get() = !(lockPanX && lockPanY)
+
     companion object {
         const val DEFAULT_MARKUP_INTENSITY = 0.9
         const val MARKUP_INTENSITY_MIN = 0.1
@@ -186,7 +204,7 @@ object ToolDefaults {
     }
 
     /** Tools whose config is persisted in settings (spec 09 §2). */
-    val persistedTools = listOf(Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER, Tool.ERASER, Tool.SELECT, Tool.LASSO, Tool.MARKUP, Tool.TAPE)
+    val persistedTools = listOf(Tool.PEN, Tool.DASHED, Tool.CALLIGRAPHY, Tool.SPEED, Tool.TAPER, Tool.HIGHLIGHTER, Tool.ERASER, Tool.SELECT, Tool.LASSO, Tool.MARKUP, Tool.TAPE, Tool.PAN)
 }
 
 /**

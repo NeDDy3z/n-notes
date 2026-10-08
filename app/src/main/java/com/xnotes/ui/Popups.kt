@@ -1015,9 +1015,24 @@ private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: 
  */
 @Composable
 fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
+    val base = remember { editor.toolConfig(Tool.PAN) }
+    var lockX by remember { mutableStateOf(base.lockPanX) }
+    var lockY by remember { mutableStateOf(base.lockPanY) }
+
+    fun emit() = editor.updateToolConfig(Tool.PAN, base.copy(lockPanX = lockX, lockPanY = lockY))
+
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.tool_pan))
+
+            // Which axes the view may move along. Two chips rather than a picker of presets, because
+            // a hand only ever wants one of the four: both axes, one axis, or neither. The zoom lock
+            // is not here — it is the toolbar's own, and it is about the zoom rather than the pan.
+            StyleCaption(stringResource(R.string.caption_pan_axes))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.pan_axis_x), selected = lockX) { lockX = !lockX; emit() }
+                ModeChip(stringResource(R.string.pan_axis_y), selected = lockY) { lockY = !lockY; emit() }
+            }
         }
     }
 }

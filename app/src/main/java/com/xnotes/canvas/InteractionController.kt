@@ -258,9 +258,6 @@ class InteractionController(
     /** Whether a finger draws (true) or pans (false). The stylus always uses the armed tool. */
     var fingerDraws: Boolean = false
 
-    /** Panning allowed while zoom is locked: "single" (default) | "double" | "none". */
-    var zoomLockPan: String = "single"
-
     /** Whether holding a freehand ink stroke still snaps it to a recognized shape (spec: "hold to snap"). */
     var detectShapes: Boolean = false
 
@@ -971,9 +968,9 @@ class InteractionController(
             if (effectiveTool != Tool.PAN) text.clear()
         }
 
-        // Zoom-lock pan preference: swallow a single-finger pan when locked and set to "double"/"none".
-        // The pointer stays free, so a long press still picks up an item or selects text.
-        if (effectiveTool == Tool.PAN && !singleFingerPanAllowed()) {
+        // Both pan axes held: the drag cannot move the view, so it is not begun at all. The pointer
+        // stays free, so a long press still picks up an item or selects text.
+        if (effectiveTool == Tool.PAN && !panCfg().panCanMove) {
             mode = PointerMode.IDLE
             lockedPressAt = Pt(vx, vy)
             armLongPress(Pt(vx, vy), content, isFinger, free)
@@ -4737,10 +4734,9 @@ class InteractionController(
 
     // --- PAN ---
 
-    // When zoom is locked, the zoomLockPan preference decides which pan gestures still move the
-    // viewport: "single" keeps both, "double" drops the single finger, "none" freezes the page.
-    private fun singleFingerPanAllowed(): Boolean = !(state.zoomLocked && zoomLockPan != "single")
-    private fun pinchPanAllowed(): Boolean = !(state.zoomLocked && zoomLockPan == "none")
+    // The pan tool's own axis locks, read per sample rather than latched at pen-down so the setting
+    // can be changed from the menu mid-drag and take hold at once, like every other tool setting.
+    private fun panCfg() = configFor(Tool.PAN)
 
     private fun beginPan(vx: Double, vy: Double, fromPenButton: Boolean = false) {
         mode = PointerMode.PAN
@@ -4752,8 +4748,9 @@ class InteractionController(
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
         onUserMovedView?.invoke()
-        val dx = -(vx - lastPan.x)
-        var dy = -(vy - lastPan.y)
+        val cfg = panCfg()
+        val dx = cfg.panDx(-(vx - lastPan.x))
+        var dy = cfg.panDy(-(vy - lastPan.y))
         if (!state.verticalScroll) {
             extendPanPaginated(dx, dy)
             lastPan = Pt(vx, vy)
@@ -5179,9 +5176,15 @@ class InteractionController(
             if (!wasFit && nowFit) onFitWidthSnapped()
             else if (wasFit && !nowFit) onFitWidthReleased()
         }
-        if (pinchPanAllowed()) {
-            val targetX = pinchAnchorContent.x * z - mid.x
-            val targetY = pinchAnchorContent.y * z - mid.y
+        // The pinch's midpoint pans the view as well as zooming it. A held axis keeps whatever it had
+        // rather than being re-derived from the anchor — that is what "held" means, and it is why
+        // the axis locks are read here as well as in the one-finger pan.
+        val cfg = panCfg()
+        val freeX = !cfg.lockPanX
+        val freeY = !cfg.lockPanY
+        val targetX = if (freeX) pinchAnchorContent.x * z - mid.x else state.scrollX
+        val targetY = if (freeY) pinchAnchorContent.y * z - mid.y else state.scrollY
+        if (freeX || freeY) {
             state.scrollX = targetX
             state.scrollY = targetY
             state.clampScroll()
@@ -5225,7 +5228,7 @@ class InteractionController(
         }
         onViewChanged()
         requestRender()
-        if (!pinchPanAllowed()) return
+        if (!panCfg().panCanMove) return
         when {
             state.overscrollY > 0.0 -> releaseOverscroll()
             !state.verticalScroll && state.flipOffsetX != 0.0 -> endPanPaginated()
