@@ -69,4 +69,10 @@ interface ToolPopupHost : SwatchHost {
 
     /** Peel back every tape in the open note or canvas, or cover them all again. */
     fun setAllTapePeeled(peeled: Boolean)
+
+    /** Whether the view's zoom is locked — the same lock the toolbar's button and the zoom bar own. */
+    val hostZoomLocked: Boolean
+
+    /** Lock or unlock that zoom. One setting with several places to reach it, not several settings. */
+    fun toggleHostZoomLock()
 }

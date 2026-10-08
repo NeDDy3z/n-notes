@@ -2051,9 +2051,12 @@ class InfiniteInteraction(
     }
 
     private fun startFling(fingerVel: Pt) {
-        if (fingerVel.length() < InteractionController.FLING_MIN_START) return
+        // The glide is part of the pan, so it obeys the axis locks the drag did: a held axis does
+        // not carry on moving once the finger is up, and a flick along it alone starts no glide.
+        val vel = panCfg().panVelocity(fingerVel.x, fingerVel.y)
+        if (vel.length() < InteractionController.FLING_MIN_START) return
         setInteractive(true, true) // the glide is still motion, so the render thread stays up for it
-        flingVel = fingerVel
+        flingVel = vel
         flinging = true
         lastFlingMs = System.nanoTime() / 1_000_000L
         choreographer.postFrameCallback(flingFrame)

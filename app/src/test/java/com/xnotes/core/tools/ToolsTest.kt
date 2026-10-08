@@ -154,6 +154,30 @@ class ToolsTest {
         assertFalse(neither.panCanMove)
     }
 
+    /**
+     * The glide that follows a lifted drag is part of the pan, so it obeys the same locks.
+     *
+     * This was the one path that did not: the drag masked its delta, then handed the raw finger
+     * velocity to the fling, so a locked axis held still for exactly as long as the finger was down
+     * and coasted afterwards. A flick along a locked axis alone is now below the start threshold, so
+     * it opens no glide either.
+     */
+    @Test fun aLockedAxisDoesNotCoastAfterTheFingerIsUp() {
+        val lockedX = ToolConfig().copy(lockPanX = true)
+        val glided = lockedX.panVelocity(900.0, 0.0)
+        assertEquals(0.0, glided.x, 1e-9)
+        assertEquals(0.0, glided.length(), 1e-9)
+
+        val both = lockedX.panVelocity(900.0, -400.0)
+        assertEquals(0.0, both.x, 1e-9)
+        assertEquals(-400.0, both.y, 1e-9)
+
+        // Nothing held: the glide is the finger's own velocity, untouched.
+        val free = ToolConfig().panVelocity(900.0, -400.0)
+        assertEquals(900.0, free.x, 1e-9)
+        assertEquals(-400.0, free.y, 1e-9)
+    }
+
     /** The locks are the pan's, so they ship off and are remembered like any other tool setting. */
     @Test fun thePanLocksNothingByDefaultAndArePersisted() {
         val pan = ToolDefaults.configFor(Tool.PAN)

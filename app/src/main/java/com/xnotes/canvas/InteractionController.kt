@@ -4849,7 +4849,10 @@ class InteractionController(
         val pull = state.flipOffsetX
         // A finger that stopped before lifting has no flick left, however fast it moved earlier.
         val stopped = System.nanoTime() / 1_000_000L - lastMoveMs > PaginatedFlipPolicy.RELEASE_MOTION_MAX_AGE_MS
-        val v = if (stopped) Pt.ZERO else panVel
+        val raw = if (stopped) Pt.ZERO else panVel
+        // A flip is a horizontal move, so a held axis refuses it here as it refuses the drag that
+        // would otherwise have earned it.
+        val v = Pt(panCfg().panDx(raw.x), panCfg().panDy(raw.y))
         val deliberate = PaginatedFlipPolicy.shouldCommitOnRelease(
             pull, state.viewportW, state.devicePxPerDp, v.x, v.y, state.zoom,
         )
@@ -4964,8 +4967,12 @@ class InteractionController(
     }
 
     private fun startFling(fingerVel: Pt) {
-        if (fingerVel.length() < FLING_MIN_START) return
-        flingVel = Pt(-fingerVel.x, -fingerVel.y) // scroll moves opposite the finger
+        // The glide is part of the pan, so it obeys the axis locks the drag did: the finger really
+        // did move sideways, but a held axis does not carry on moving once the finger is up. A flick
+        // along a locked axis alone is therefore no flick at all, and starts no glide.
+        val vel = panCfg().panVelocity(fingerVel.x, fingerVel.y)
+        if (vel.length() < FLING_MIN_START) return
+        flingVel = Pt(-vel.x, -vel.y) // scroll moves opposite the finger
         flinging = true
         lastFlingMs = System.nanoTime() / 1_000_000L
         choreographer.postFrameCallback(flingFrame)

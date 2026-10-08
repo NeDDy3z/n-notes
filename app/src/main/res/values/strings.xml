@@ -407,8 +407,9 @@
     <string name="pref_input">Input</string>
     <string name="pref_finger_draws">Draw with finger (off = finger pans)</string>
     <string name="caption_pan_axes">Axes the view moves on</string>
-    <string name="pan_axis_x">Horizontal</string>
-    <string name="pan_axis_y">Vertical</string>
+    <string name="pan_axis_x">X</string>
+    <string name="pan_axis_y">Y</string>
+    <string name="pan_axis_zoom">Zoom</string>
     <string name="pref_detect_shapes">Snap held strokes to shapes (hold the pen still)</string>
     <string name="pref_pen_button_hold">Stylus/Pen side button (hold)</string>
     <string name="pref_pen_button_hover">Activate during hover (no need to touch the screen)</string>

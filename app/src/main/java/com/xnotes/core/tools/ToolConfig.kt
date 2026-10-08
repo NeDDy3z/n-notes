@@ -1,5 +1,6 @@
 package com.xnotes.core.tools
 
+import com.xnotes.core.geometry.Pt
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
@@ -167,6 +168,15 @@ data class ToolConfig(
      */
     fun panDx(dx: Double): Double = if (lockPanX) 0.0 else dx
     fun panDy(dy: Double): Double = if (lockPanY) 0.0 else dy
+
+    /**
+     * The pan's own velocity rule, for the glide that follows a lifted drag.
+     *
+     * A glide is part of the pan, not a separate motion: a held axis stops when the finger stops
+     * rather than coasting on afterwards, and a flick that was only ever along a held axis is not a
+     * flick at all.
+     */
+    fun panVelocity(vx: Double, vy: Double): Pt = Pt(panDx(vx), panDy(vy))
 
     /** False only when both axes are held — the one case where a pan cannot move the view at all. */
     val panCanMove: Boolean get() = !(lockPanX && lockPanY)

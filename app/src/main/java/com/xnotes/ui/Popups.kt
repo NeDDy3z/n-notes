@@ -1018,6 +1018,7 @@ fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     val base = remember { editor.toolConfig(Tool.PAN) }
     var lockX by remember { mutableStateOf(base.lockPanX) }
     var lockY by remember { mutableStateOf(base.lockPanY) }
+    var zoomLocked by remember { mutableStateOf(editor.hostZoomLocked) }
 
     fun emit() = editor.updateToolConfig(Tool.PAN, base.copy(lockPanX = lockX, lockPanY = lockY))
 
@@ -1025,13 +1026,17 @@ fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.tool_pan))
 
-            // Which axes the view may move along. Two chips rather than a picker of presets, because
-            // a hand only ever wants one of the four: both axes, one axis, or neither. The zoom lock
-            // is not here — it is the toolbar's own, and it is about the zoom rather than the pan.
+            // What the view may do, as three independent holds. The zoom lock is the toolbar's own
+            // setting, reached from here as well so a hand that is setting the pan up has one place
+            // to do it — not a second lock that would have to agree with the first.
             StyleCaption(stringResource(R.string.caption_pan_axes))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ModeChip(stringResource(R.string.pan_axis_x), selected = lockX) { lockX = !lockX; emit() }
                 ModeChip(stringResource(R.string.pan_axis_y), selected = lockY) { lockY = !lockY; emit() }
+                ModeChip(stringResource(R.string.pan_axis_zoom), selected = zoomLocked) {
+                    zoomLocked = !zoomLocked
+                    editor.toggleHostZoomLock()
+                }
             }
         }
     }
