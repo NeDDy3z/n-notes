@@ -396,6 +396,7 @@ data class Settings(
             .put("pan_speed_x", c.panSpeedX)
             .put("pan_speed_y", c.panSpeedY)
             .put("zoom_sensitivity", c.zoomSensitivity)
+            .put("pan_glide", c.panGlide)
             .put("switch_back_after_select", c.switchBackAfterSelect)
             .put("select_whole_items", c.selectWholeItems)
             .put("select_kinds", JSONArray(c.selectKinds.map { it.id }))
@@ -450,6 +451,7 @@ data class Settings(
                 panSpeedX = o.optDouble("pan_speed_x", d.panSpeedX).coerceIn(0.0, ToolConfig.PAN_SENSITIVITY_MAX),
                 panSpeedY = o.optDouble("pan_speed_y", d.panSpeedY).coerceIn(0.0, ToolConfig.PAN_SENSITIVITY_MAX),
                 zoomSensitivity = o.optDouble("zoom_sensitivity", d.zoomSensitivity).coerceIn(0.0, ToolConfig.PAN_SENSITIVITY_MAX),
+                panGlide = o.optDouble("pan_glide", d.panGlide).coerceIn(0.0, ToolConfig.PAN_GLIDE_MAX),
                 straightLine = o.optBoolean("straight_line", d.straightLine),
                 scale = o.optBoolean("scale", d.scale),
                 highlighterAlpha = o.optDouble("highlighter_alpha", d.highlighterAlpha),

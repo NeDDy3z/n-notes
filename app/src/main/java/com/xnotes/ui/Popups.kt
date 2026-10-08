@@ -1008,6 +1008,9 @@ private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: 
 /** The sensitivity sliders' range, as a percent of the app's own rate (1.0 is stored as 100). */
 private val PAN_SENSITIVITY_PCT = 0f..(ToolConfig.PAN_SENSITIVITY_MAX.toFloat() * 100f)
 
+/** The glide slider's range: nothing, up to four times the app's own glide. */
+private val PAN_GLIDE_PCT = 0f..(ToolConfig.PAN_GLIDE_MAX.toFloat() * 100f)
+
 /**
  * Pan configuration popup: what a pan may move along, and how fast.
  *
@@ -1026,6 +1029,7 @@ fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     var speedX by remember { mutableStateOf((base.panSpeedX * 100).toFloat()) }
     var speedY by remember { mutableStateOf((base.panSpeedY * 100).toFloat()) }
     var zoomRate by remember { mutableStateOf((base.zoomSensitivity * 100).toFloat()) }
+    var glide by remember { mutableStateOf((base.panGlide * 100).toFloat()) }
 
     fun emit() = editor.updateToolConfig(
         Tool.PAN,
@@ -1035,6 +1039,7 @@ fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             panSpeedX = speedX.toDouble() / 100.0,
             panSpeedY = speedY.toDouble() / 100.0,
             zoomSensitivity = zoomRate.toDouble() / 100.0,
+            panGlide = glide.toDouble() / 100.0,
         ),
     )
 
@@ -1064,6 +1069,14 @@ fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             SliderRow(stringResource(R.string.pan_axis_x), speedX, PAN_SENSITIVITY_PCT) { speedX = it; emit() }
             SliderRow(stringResource(R.string.pan_axis_y), speedY, PAN_SENSITIVITY_PCT) { speedY = it; emit() }
             SliderRow(stringResource(R.string.pan_axis_zoom), zoomRate, PAN_SENSITIVITY_PCT) { zoomRate = it; emit() }
+
+            Spacer(Modifier.size(12.dp))
+            // How far a lifted drag keeps going. Separate from the rate above because they answer
+            // different questions: a fast drag that stops where the finger did is a thing people
+            // want, and no setting of the rate can produce it — halving the friction doubles the
+            // glide rather than shortening it, since the glide is an exponential decay.
+            StyleCaption(stringResource(R.string.caption_pan_glide))
+            SliderRow(stringResource(R.string.caption_glide), glide, PAN_GLIDE_PCT) { glide = it; emit() }
         }
     }
 }

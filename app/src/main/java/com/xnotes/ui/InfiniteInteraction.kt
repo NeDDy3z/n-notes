@@ -2054,7 +2054,7 @@ class InfiniteInteraction(
         // The glide is part of the pan, so it obeys the axis locks the drag did: a held axis does
         // not carry on moving once the finger is up, and a flick along it alone starts no glide.
         val vel = panCfg().panVelocity(fingerVel.x, fingerVel.y)
-        if (vel.length() < InteractionController.FLING_MIN_START) return
+        if (!panCfg().panGlides() || vel.length() < InteractionController.FLING_MIN_START) return
         setInteractive(true, true) // the glide is still motion, so the render thread stays up for it
         flingVel = vel
         flinging = true
@@ -2072,7 +2072,7 @@ class InfiniteInteraction(
         val dt = ((now - lastFlingMs).coerceIn(1L, 40L)) / 1000.0
         lastFlingMs = now
         viewport.panByViewport(flingVel.x * dt, flingVel.y * dt)
-        val decay = exp(-InteractionController.FLING_FRICTION * dt)
+        val decay = exp(-panCfg().panFriction() * dt)
         flingVel = Pt(flingVel.x * decay, flingVel.y * decay)
         onViewChanged()
         requestRender()

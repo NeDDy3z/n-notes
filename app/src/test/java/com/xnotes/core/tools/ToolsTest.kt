@@ -209,6 +209,31 @@ class ToolsTest {
         assertEquals(0.0, lockedX.panVelocity(900.0, 0.0).x, 1e-9)
     }
 
+    /**
+ * The glide's length is stored as a length and reads back as a reciprocal friction.
+ *
+ * A glide is an exponential decay, so how long it lasts is set by how fast the speed falls and not
+ * by a duration. That makes length and friction inverse rather than proportional, and it is why the
+ * slider says "how far" and not "how long": halving the friction does not halve the glide, it
+ * doubles it, because the slower decay is what lets the same starting speed carry further.
+ */
+@Test fun theGlideIsStoredAsALengthAndReadsBackAsItsReciprocal() {
+        val pan = ToolConfig()
+        assertEquals(1.0, pan.panGlide, 1e-9)
+        assertTrue(pan.panGlides())
+        assertEquals(ToolConfig.DEFAULT_GLIDE_FRICTION, pan.panFriction(), 1e-9)
+
+        // Twice the glide, half the friction; four times, a quarter of it.
+        assertEquals(ToolConfig.DEFAULT_GLIDE_FRICTION / 2.0, pan.copy(panGlide = 2.0).panFriction(), 1e-9)
+        assertEquals(ToolConfig.DEFAULT_GLIDE_FRICTION / 4.0, pan.copy(panGlide = 4.0).panFriction(), 1e-9)
+
+        // No glide at all: the view stops where the finger did, which is a refusal to start one
+        // rather than a very fast decay that would still move a frame's worth.
+        val none = pan.copy(panGlide = 0.0)
+        assertFalse(none.panGlides())
+        assertTrue(none.panFriction() > ToolConfig.DEFAULT_GLIDE_FRICTION)
+    }
+
     /** The locks are the pan's, so they ship off and are remembered like any other tool setting. */
     @Test fun thePanLocksNothingByDefaultAndArePersisted() {
         val pan = ToolDefaults.configFor(Tool.PAN)

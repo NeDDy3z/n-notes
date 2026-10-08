@@ -4971,7 +4971,7 @@ class InteractionController(
         // did move sideways, but a held axis does not carry on moving once the finger is up. A flick
         // along a locked axis alone is therefore no flick at all, and starts no glide.
         val vel = panCfg().panVelocity(fingerVel.x, fingerVel.y)
-        if (vel.length() < FLING_MIN_START) return
+        if (!panCfg().panGlides() || vel.length() < FLING_MIN_START) return
         flingVel = Pt(-vel.x, -vel.y) // scroll moves opposite the finger
         flinging = true
         lastFlingMs = System.nanoTime() / 1_000_000L
@@ -4990,7 +4990,7 @@ class InteractionController(
         val beforeX = state.scrollX
         val beforeY = state.scrollY
         state.scrollBy(flingVel.x * dt, flingVel.y * dt)
-        val decay = exp(-FLING_FRICTION * dt)
+        val decay = exp(-panCfg().panFriction() * dt)
         flingVel = Pt(flingVel.x * decay, flingVel.y * decay)
         onViewChanged()
         requestRender()
@@ -5838,7 +5838,6 @@ class InteractionController(
 
         // Inertial fling tuning (viewport px/s).
         const val VEL_SMOOTH = 0.4 // EMA weight on the previous velocity estimate
-        const val FLING_FRICTION = 2.5 // higher = stops sooner; lower = floatier
         const val FLING_MIN_START = 120.0 // minimum flick velocity to start a glide
         const val FLING_MIN_STOP = 24.0 // velocity at which the glide ends
 

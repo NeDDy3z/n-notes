@@ -145,6 +145,8 @@ data class ToolConfig(
     val panSpeedY: Double = 1.0,
     /** Pan: how many times as fast a pinch zooms, applied to the pinch's ratio; 1.0 is the app's own rate. */
     val zoomSensitivity: Double = 1.0,
+    /** Pan: how many times as long a lifted drag keeps gliding; 1.0 is the app's own glide, 0 stops dead. */
+    val panGlide: Double = 1.0,
     /** Eraser: a pen scribbled over ink erases what it touches. Only used by [Tool.ERASER]. */
     val scribbleErase: Boolean = false,
     /** Eraser: the kinds of item it may take off the page. Only used by [Tool.ERASER]. */
@@ -194,6 +196,18 @@ data class ToolConfig(
      */
     fun zoomRatio(ratio: Double): Double = 1.0 + (ratio - 1.0) * zoomSensitivity
 
+    /**
+     * How far a lifted drag keeps going, as a multiple of the app's own glide. 1.0 is the ordinary
+     * length, 0.0 stops dead where the finger did.
+     *
+     * The glide decays exponentially, so what sets its length is how fast the speed falls rather
+     * than a duration — which is why the friction is the reciprocal of the length, and why halving
+     * the friction does not halve the glide but doubles it. A hand describes this as the glide
+     * feeling heavy or floaty, not as a time, so that is what is stored.
+     */
+    fun panGlides(): Boolean = panGlide > 0.0
+    fun panFriction(): Double = DEFAULT_GLIDE_FRICTION / panGlide.coerceAtLeast(GLIDE_MIN)
+
     /** False only when both axes are held — the one case where a pan cannot move the view at all. */
     val panCanMove: Boolean get() = !(lockPanX && lockPanY)
 
@@ -204,6 +218,15 @@ data class ToolConfig(
         /** Ceiling on the pan's sensitivity sliders, as a multiple of the app's own rate. Zero is
          *  the floor: a slider at 0 means "never moves", which is why an axis lock says so in words. */
         const val PAN_SENSITIVITY_MAX = 3.0
+
+        /** Ceiling on the glide slider, likewise a multiple of the app's own glide length. */
+        const val PAN_GLIDE_MAX = 4.0
+
+        /** The app's own glide decay (1/s). Its reciprocal is the ordinary glide length. */
+        const val DEFAULT_GLIDE_FRICTION = 2.5
+
+        /** The shortest glide that still ends by running out of speed rather than by its own clamp. */
+        const val GLIDE_MIN = 0.05
     }
 }
 
