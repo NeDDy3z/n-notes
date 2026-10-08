@@ -1005,13 +1005,15 @@ private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: 
     }
 }
 
+/** The sensitivity sliders' range, as a percent of the app's own rate (1.0 is stored as 100). */
+private val PAN_SENSITIVITY_PCT = 0f..(ToolConfig.PAN_SENSITIVITY_MAX.toFloat() * 100f)
+
 /**
- * Pan configuration popup: what a pan is allowed to do.
+ * Pan configuration popup: what a pan may move along, and how fast.
  *
- * The pan had no settings of its own, so a hand that wanted a horizontal-only scroll had no way to
- * ask for one — the choice lived nowhere, and the tool took whatever the gesture gave it. Its
- * settings belong beside the pen's and the eraser's rather than in the general preferences: they are
- * about how this tool moves, not about the person.
+ * The pan had no settings of its own, so a hand that wanted a horizontal-only scroll — or a faster
+ * one — had no way to ask. Its settings belong beside the pen's and the eraser's rather than in the
+ * general preferences: they are about how this tool moves, not about the person.
  */
 @Composable
 fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
@@ -1019,8 +1021,22 @@ fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     var lockX by remember { mutableStateOf(base.lockPanX) }
     var lockY by remember { mutableStateOf(base.lockPanY) }
     var zoomLocked by remember { mutableStateOf(editor.hostZoomLocked) }
+    // The sliders work in percent of the app's own rate, because that is the unit a hand can read;
+        // the stored value is the same thing as a plain multiple.
+    var speedX by remember { mutableStateOf((base.panSpeedX * 100).toFloat()) }
+    var speedY by remember { mutableStateOf((base.panSpeedY * 100).toFloat()) }
+    var zoomRate by remember { mutableStateOf((base.zoomSensitivity * 100).toFloat()) }
 
-    fun emit() = editor.updateToolConfig(Tool.PAN, base.copy(lockPanX = lockX, lockPanY = lockY))
+    fun emit() = editor.updateToolConfig(
+        Tool.PAN,
+        base.copy(
+            lockPanX = lockX,
+            lockPanY = lockY,
+            panSpeedX = speedX.toDouble() / 100.0,
+            panSpeedY = speedY.toDouble() / 100.0,
+            zoomSensitivity = zoomRate.toDouble() / 100.0,
+        ),
+    )
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -1038,6 +1054,16 @@ fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
                     editor.toggleHostZoomLock()
                 }
             }
+
+            Spacer(Modifier.size(12.dp))
+            // How fast each axis answers, as a multiple of the app's own rate rather than as a
+            // physical width, because that is what a hand is adjusting: "twice as quick". A slider
+            // at 0 and a locked axis look alike until you try to drag, so the holds above say what
+            // the sliders below cannot — that an axis is not going to move at all.
+            StyleCaption(stringResource(R.string.caption_pan_sensitivity))
+            SliderRow(stringResource(R.string.pan_axis_x), speedX, PAN_SENSITIVITY_PCT) { speedX = it; emit() }
+            SliderRow(stringResource(R.string.pan_axis_y), speedY, PAN_SENSITIVITY_PCT) { speedY = it; emit() }
+            SliderRow(stringResource(R.string.pan_axis_zoom), zoomRate, PAN_SENSITIVITY_PCT) { zoomRate = it; emit() }
         }
     }
 }

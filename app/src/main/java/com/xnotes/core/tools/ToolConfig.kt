@@ -139,6 +139,12 @@ data class ToolConfig(
     val lockPanX: Boolean = false,
     /** Pan: the vertical axis is held still, so a drag only moves the view sideways. Only [Tool.PAN]. */
     val lockPanY: Boolean = false,
+    /** Pan: how many times as fast the view follows a drag along x; 1.0 is the app's own rate. */
+    val panSpeedX: Double = 1.0,
+    /** Pan: how many times as fast the view follows a drag along y. */
+    val panSpeedY: Double = 1.0,
+    /** Pan: how many times as fast a pinch zooms, applied to the pinch's ratio; 1.0 is the app's own rate. */
+    val zoomSensitivity: Double = 1.0,
     /** Eraser: a pen scribbled over ink erases what it touches. Only used by [Tool.ERASER]. */
     val scribbleErase: Boolean = false,
     /** Eraser: the kinds of item it may take off the page. Only used by [Tool.ERASER]. */
@@ -166,8 +172,8 @@ data class ToolConfig(
      * on a horizontally-locked pan is still a drag, it just moves nothing sideways, and a long press
      * over it still reaches whatever is underneath.
      */
-    fun panDx(dx: Double): Double = if (lockPanX) 0.0 else dx
-    fun panDy(dy: Double): Double = if (lockPanY) 0.0 else dy
+    fun panDx(dx: Double): Double = if (lockPanX) 0.0 else dx * panSpeedX
+    fun panDy(dy: Double): Double = if (lockPanY) 0.0 else dy * panSpeedY
 
     /**
      * The pan's own velocity rule, for the glide that follows a lifted drag.
@@ -178,12 +184,26 @@ data class ToolConfig(
      */
     fun panVelocity(vx: Double, vy: Double): Pt = Pt(panDx(vx), panDy(vy))
 
+    /**
+     * [ratio] — the pinch's distance over its starting distance — pulled toward 1 by the factor, so
+     * 0.0 stands still, 1.0 is the app's own rate and 2.0 spreads twice as far.
+     *
+     * The factor is applied to the ratio rather than to the resulting scale because that is what
+     * makes it mean the same thing in both directions: doubling the rate zooms in twice as far and
+     * out twice as far, instead of halving the exponent and only ever making zooming-in faster.
+     */
+    fun zoomRatio(ratio: Double): Double = 1.0 + (ratio - 1.0) * zoomSensitivity
+
     /** False only when both axes are held — the one case where a pan cannot move the view at all. */
     val panCanMove: Boolean get() = !(lockPanX && lockPanY)
 
     companion object {
         const val DEFAULT_MARKUP_INTENSITY = 0.9
         const val MARKUP_INTENSITY_MIN = 0.1
+
+        /** Ceiling on the pan's sensitivity sliders, as a multiple of the app's own rate. Zero is
+         *  the floor: a slider at 0 means "never moves", which is why an axis lock says so in words. */
+        const val PAN_SENSITIVITY_MAX = 3.0
     }
 }
 

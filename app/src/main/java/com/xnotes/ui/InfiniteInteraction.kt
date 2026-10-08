@@ -2021,7 +2021,7 @@ class InfiniteInteraction(
         // Zoom about the pinch's own midpoint, and let that midpoint drag the canvas at the same
         // time: the content under the fingers stays under the fingers whether they spread or slide.
         // A locked zoom keeps the zoom it started at, so the pinch is a pan and nothing else.
-        viewport.zoom = if (zoomLocked) pinchInitZoom else pinchInitZoom * (dist / pinchInitDist)
+        viewport.zoom = if (zoomLocked) pinchInitZoom else pinchInitZoom * panCfg().zoomRatio(dist / pinchInitDist)
         // A held axis keeps whatever it had instead of following the fingers, which is what "held" means:
         // the pinch still zooms, and still pans the free axis, but this one does not move.
         val panAllowed = pinchPanAllowed()

@@ -178,6 +178,37 @@ class ToolsTest {
         assertEquals(-400.0, free.y, 1e-9)
     }
 
+    /**
+     * Sensitivity scales what a hand asks for, and it scales it the same in both directions.
+     *
+     * The zoom factor is applied to the pinch's ratio rather than to the resulting scale, which is
+     * what makes "twice as fast" mean twice as far in either direction instead of only ever making
+     * zooming-in faster and zooming-out slower. Zero is the floor, so a slider can hold an axis
+     * still — which is why an axis lock says so in words instead of leaving it to a slider.
+     */
+    @Test fun sensitivityScalesTheGestureRatherThanTheResult() {
+        val pan = ToolConfig()
+        assertEquals(1.0, pan.panSpeedX, 1e-9)
+        assertEquals(1.0, pan.panSpeedY, 1e-9)
+        assertEquals(1.0, pan.zoomSensitivity, 1e-9)
+
+        val fast = pan.copy(panSpeedX = 2.0, panSpeedY = 0.5)
+        assertEquals(20.0, fast.panDx(10.0), 1e-9)
+        assertEquals(5.0, fast.panDy(10.0), 1e-9)
+
+        // A pinch spread to 1.4x, at twice the rate and at none.
+        val quick = pan.copy(zoomSensitivity = 2.0)
+        assertEquals(1.0 + 0.4 * 2.0, quick.zoomRatio(1.4), 1e-9)
+        assertEquals(1.0 - 0.4 * 2.0, quick.zoomRatio(0.6), 1e-9)
+        assertEquals(1.4, pan.zoomRatio(1.4), 1e-9)
+        assertEquals(1.0, pan.copy(zoomSensitivity = 0.0).zoomRatio(1.4), 1e-9)
+
+        // A held axis is still held at any rate, and a fast locked axis still coasts nowhere.
+        val lockedX = fast.copy(lockPanX = true)
+        assertEquals(0.0, lockedX.panDx(10.0), 1e-9)
+        assertEquals(0.0, lockedX.panVelocity(900.0, 0.0).x, 1e-9)
+    }
+
     /** The locks are the pan's, so they ship off and are remembered like any other tool setting. */
     @Test fun thePanLocksNothingByDefaultAndArePersisted() {
         val pan = ToolDefaults.configFor(Tool.PAN)
