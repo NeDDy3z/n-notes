@@ -635,5 +635,25 @@ class SettingsTest {
         assertEquals(shape, back)
         assertEquals("uml_aggregation_elbow", back.connector!!.key)
     }
+    @Test fun starredZoomsSurviveTheSettingsRoundTrip() {
+        val starred = Settings(favoriteZooms = listOf(1.5f, 3f))
+        assertEquals(starred.favoriteZooms, Settings.fromJson(starred.toJson()).favoriteZooms)
+    }
+
+    @Test fun aSettingsFileWithoutStarredZoomsFallsBackToTheDefaults() {
+        assertEquals(DEFAULT_FAVORITE_ZOOMS, Settings.fromJson(JSONObject()).favoriteZooms)
+    }
+
+    @Test fun starringAZoomAddsItAndStarringItAgainDropsIt() {
+        val starred = Settings(favoriteZooms = listOf(2f)).toggleFavoriteZoom(3.25f)
+        assertEquals(listOf(2f, 3.25f), starred.favoriteZooms)
+        assertEquals(listOf(2f), starred.toggleFavoriteZoom(3.25f).favoriteZooms)
+    }
+
+    @Test fun aZoomWithinToleranceOfAStarredOneIsTheSameJump() {
+        val starred = Settings(favoriteZooms = listOf(2f)).toggleFavoriteZoom(2f + ZOOM_MATCH_TOLERANCE / 2f)
+        assertEquals(emptyList<Float>(), starred.favoriteZooms)
+    }
+
 }
 

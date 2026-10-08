@@ -1747,6 +1747,9 @@ private fun EditorPane(
                             isZoomLocked = canvas.zoomLocked,
                             onZoomLockToggle = { canvas.toggleZoomLock() },
                             onFavoriteZoomSelected = { zoom -> canvas.setZoom(zoom) },
+                            favoriteZoomValues = editor.favoriteZooms,
+                            onFavoriteZoomToggled = { zoom -> editor.toggleFavoriteZoom(zoom) },
+                            onFavoriteZoomRemoved = { zoom -> editor.removeFavoriteZoom(zoom) },
                             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
                         )
                         CanvasToastPill(canvas)
@@ -1794,6 +1797,9 @@ private fun EditorPane(
                                 isZoomLocked = editor.zoomLocked,
                                 onZoomLockToggle = { editor.toggleZoomLock() },
                                 onFavoriteZoomSelected = { zoom -> editor.setZoom(zoom) },
+                            favoriteZoomValues = editor.favoriteZooms,
+                            onFavoriteZoomToggled = { zoom -> editor.toggleFavoriteZoom(zoom) },
+                            onFavoriteZoomRemoved = { zoom -> editor.removeFavoriteZoom(zoom) },
                                 modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
                             )
                             }

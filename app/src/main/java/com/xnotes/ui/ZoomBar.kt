@@ -57,7 +57,8 @@ import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-private val DefaultFavoriteZoomValues = listOf(2f, 4f, 6f)
+/** Used only when a caller offers no list of its own; settings hold the user's real set. */
+private val DefaultFavoriteZoomValues = com.xnotes.settings.DEFAULT_FAVORITE_ZOOMS
 private val ZoomBarShape = RoundedCornerShape(12.dp)
 private val ZoomBarElevation = 6.dp
 private val ZoomBarHorizontalPadding = 6.dp
@@ -80,6 +81,16 @@ private fun formatZoomNumber(scale: Float): String =
 
 private fun Float.matchesZoom(other: Float, tolerance: Float): Boolean =
     kotlin.math.abs(this - other) <= tolerance
+
+/** [zoom] starred if it was not, unstarred if it was, kept ascending and de-duped. */
+private fun List<Float>.toggledZoom(zoom: Float): List<Float> {
+    val kept = filterNot { it.matchesZoom(zoom, DefaultZoomMatchTolerance) }
+    return if (kept.size == size) (kept + zoom).sorted() else kept
+}
+
+/** This list without [zoom], dropping anything close enough to it to be the same jump. */
+private fun List<Float>.withoutZoom(zoom: Float): List<Float> =
+    filterNot { it.matchesZoom(zoom, DefaultZoomMatchTolerance) }
 
 data class ZoomBarState(
     val zoomValue: Float,
@@ -242,6 +253,11 @@ fun rememberZoomBarState(
     )
 }
 
+/**
+ * The zoom bar as a surface: the starred zooms belong to the caller, which persists them, so they
+ * outlive the note they were starred in. A caller that gives no [onFavoriteZoomToggled] gets a
+ * list that lives only as long as this composition, which is what a preview or a test wants.
+ */
 @Composable
 fun ZoomIndicator(
     zoomValue: Float,
@@ -249,10 +265,16 @@ fun ZoomIndicator(
     onZoomLockToggle: (Boolean) -> Unit,
     onFavoriteZoomSelected: ((Float) -> Unit)? = null,
     favoriteZoomValues: List<Float> = DefaultFavoriteZoomValues,
+    onFavoriteZoomToggled: ((Float) -> Unit)? = null,
+    onFavoriteZoomRemoved: ((Float) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var position by remember { mutableStateOf(IntOffset.Zero) }
-    var favorites by remember(favoriteZoomValues) { mutableStateOf(favoriteZoomValues) }
+    // Seeded once, then the caller's list is the truth: an edit comes back through
+    // [favoriteZoomValues] a recomposition later, so writing it here too would only fight it.
+    var localFavorites by remember { mutableStateOf(favoriteZoomValues) }
+    val callerOwnsFavorites = onFavoriteZoomToggled != null
+    val favorites = if (callerOwnsFavorites) favoriteZoomValues else localFavorites
 
     ZoomBar(
         state = rememberZoomBarState(
@@ -264,14 +286,12 @@ fun ZoomIndicator(
         onEvent = { event ->
             when (event) {
                 is ZoomBarEvent.FavoriteRemoved -> {
-                    favorites = favorites.filterNot { it.matchesZoom(event.zoom, DefaultZoomMatchTolerance) }
+                    if (!callerOwnsFavorites) localFavorites = localFavorites.withoutZoom(event.zoom)
+                    onFavoriteZoomRemoved?.invoke(event.zoom)
                 }
                 is ZoomBarEvent.FavoriteToggled -> {
-                    favorites = if (favorites.any { it.matchesZoom(event.zoom, DefaultZoomMatchTolerance) }) {
-                        favorites.filterNot { it.matchesZoom(event.zoom, DefaultZoomMatchTolerance) }
-                    } else {
-                        (favorites + event.zoom).sorted()
-                    }
+                    if (!callerOwnsFavorites) localFavorites = localFavorites.toggledZoom(event.zoom)
+                    onFavoriteZoomToggled?.invoke(event.zoom)
                 }
                 is ZoomBarEvent.PositionChanged -> {
                     position = event.position
