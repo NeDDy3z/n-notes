@@ -122,7 +122,7 @@ fun InfiniteToolbar(
                                 if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
                                 if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
                                 if (selectOpen == tool) SelectConfigPopup(editor, tool, onPick = { editor.armTool(it); selectOpen = it }) { selectOpen = null }
-                                if (panOpen) PanConfigPopup(editor) { panOpen = false }
+                                if (tool == Tool.PAN && panOpen) PanConfigPopup(editor) { panOpen = false }
                                 if (tool == Tool.TAPE && tapeOpen) TapeConfigPopup(editor) { tapeOpen = false }
                                 if (penOpen == tool) ToolConfigPopup(editor, tool, onPick = { editor.armTool(it); penOpen = it }) { penOpen = null }
                             }
