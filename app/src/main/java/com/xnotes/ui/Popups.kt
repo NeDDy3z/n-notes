@@ -1005,6 +1005,23 @@ private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: 
     }
 }
 
+/**
+ * Pan configuration popup: what a pan is allowed to do.
+ *
+ * The pan had no settings of its own, so a hand that wanted a horizontal-only scroll had no way to
+ * ask for one — the choice lived nowhere, and the tool took whatever the gesture gave it. Its
+ * settings belong beside the pen's and the eraser's rather than in the general preferences: they are
+ * about how this tool moves, not about the person.
+ */
+@Composable
+fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle(stringResource(R.string.tool_pan))
+        }
+    }
+}
+
 /** Eraser configuration popup: a STROKE/AREA mode picker and a SIZE slider (the eraser radius). */
 @Composable
 fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
