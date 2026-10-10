@@ -243,7 +243,7 @@ class Stroke(
 
     /** How this stroke's translucent ink composites: the highlighter darkens with MULTIPLY, or
      *  lightens with SCREEN when it is the inverse variant; every other ink blends normally. */
-    val blendMode: BlendMode get() = when {
+    override val blendMode: BlendMode get() = when {
         tool != Tool.HIGHLIGHTER -> BlendMode.SRC_OVER
         config.highlighterInverse -> BlendMode.SCREEN
         else -> BlendMode.MULTIPLY

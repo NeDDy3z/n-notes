@@ -3,6 +3,7 @@ package com.xnotes.core.model
 import com.xnotes.core.geometry.Affine
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.pal.BlendMode
 import com.xnotes.core.pal.Renderer
 
 /**
@@ -58,6 +59,13 @@ interface CanvasItem {
 
     /** The region this item actually paints into, including soft-effect overflow such as neon glow. Defaults to [bounds]. */
     fun paintBounds(): Rect = bounds()
+
+    /**
+     * How this item's translucent ink composites. Opaque items paint straight over the page; a
+     * stroke overrides it, because a highlighter darkens with MULTIPLY where a shape has no
+     * equivalent of it.
+     */
+    val blendMode: BlendMode get() = BlendMode.SRC_OVER
 
     /** Shift the item by a page-local delta. */
     fun translate(dx: Double, dy: Double)

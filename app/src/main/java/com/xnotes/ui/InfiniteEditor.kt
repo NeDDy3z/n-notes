@@ -125,6 +125,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onEraserCursor = { at, radius -> view.setEraserCursor(at, radius) },
         onPendingShape = { publishPendingShape(it) },
         onCommitShape = { commitItem(it) },
+        onHoldItem = { holdEphemeral(it) },
         shapeConfig = { shapeConfig },
         inkColor = { inkColor },
         detectShapes = { detectShapes },
@@ -2079,10 +2080,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     // --- disappearing ink (magic wand) ---
 
-    /** A held stroke and the triangles it was meshed into once, recoloured as the batch fades. */
-    private class FadingStroke(val stroke: Stroke, val meshed: MeshedItem)
+    /** A held item and the triangles it was meshed into once, recoloured as the batch fades. Ink
+     *  or shape: the wand holds both, and neither is ever filed. */
+    private class FadingItem(val item: CanvasItem, val meshed: MeshedItem)
 
-    private val fadingStrokes = mutableListOf<FadingStroke>()
+    private val fadingItems = mutableListOf<FadingItem>()
     private var fadeAlpha = 1.0
     private var fading = false
     private var fadeStartMs = 0L
@@ -2095,24 +2097,24 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private val fadeFrame = android.view.Choreographer.FrameCallback { t -> stepFade(t) }
 
     /**
-     * Pen up under the wand: hold the stroke rather than file it.
+     * Pen up under the wand: hold the item rather than file it.
      *
      * It is handed to the renderer like any committed item, but never to the document — so it
      * draws, culls and blends exactly as ink does while touching no model, no history, no autosave
      * and nothing on disk. It is meshed once here and only recoloured as it melts, so a fading
      * batch costs an upload a frame instead of a tessellation.
      */
-    private fun holdEphemeral(stroke: Stroke) {
-        val meshed = ItemMesher.mesh(stroke)
+    private fun holdEphemeral(item: CanvasItem) {
+        val meshed = ItemMesher.mesh(item)
         if (meshed == null || meshed.isEmpty) {
             scene.setWetParts(emptyList(), Rect(0.0, 0.0, 0.0, 0.0))
             view.publish()
             return
         }
-        fadingStrokes.add(FadingStroke(stroke, meshed))
-        // clearsWet releases the buffer under the pen in the same message this stroke arrives in,
+        fadingItems.add(FadingItem(item, meshed))
+        // clearsWet releases the buffer under the pen in the same message this item arrives in,
         // so no frame can fall between the two and blink.
-        scene.upsert(stroke, meshed.parts, meshed.bounds, clearsWet = true)
+        scene.upsert(item, meshed.parts, meshed.bounds, clearsWet = true)
         solidifyFading()
         view.publish()
     }
@@ -2120,7 +2122,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Put the batch back to full strength and restart the hold, so it melts only once drawing
      *  has paused. A no-op when nothing is being held. */
     private fun solidifyFading() {
-        if (fadingStrokes.isEmpty()) return
+        if (fadingItems.isEmpty()) return
         fading = false
         if (fadeAlpha != 1.0) {
             fadeAlpha = 1.0
@@ -2135,9 +2137,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         fading = false
         fadeAlpha = 1.0
         wandLive = null
-        if (fadingStrokes.isEmpty()) return
-        for (f in fadingStrokes) scene.remove(f.stroke)
-        fadingStrokes.clear()
+        if (fadingItems.isEmpty()) return
+        for (f in fadingItems) scene.remove(f.item)
+        fadingItems.clear()
         view.publish()
     }
 
@@ -2155,7 +2157,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     private fun startFade() {
         fadeTimer = null
-        if (fadingStrokes.isEmpty()) return
+        if (fadingItems.isEmpty()) return
         fading = true
         fadeAlpha = 1.0
         fadeStartMs = System.nanoTime() / 1_000_000L
@@ -2168,8 +2170,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         val t = ((now - fadeStartMs) / InteractionController.WAND_FADE_MS).coerceIn(0.0, 1.0)
         fadeAlpha = (1.0 - t) * (1.0 - t) // ease-out, so the batch melts rather than blinking off
         if (t >= 1.0) {
-            for (f in fadingStrokes) scene.remove(f.stroke)
-            fadingStrokes.clear()
+            for (f in fadingItems) scene.remove(f.item)
+            fadingItems.clear()
             fadeAlpha = 1.0
             fading = false
         } else {
@@ -2181,8 +2183,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** Re-file every held stroke at the current alpha, from the triangles it already has. */
     private fun republishFading() {
-        for (f in fadingStrokes) {
-            scene.upsert(f.stroke, f.meshed.parts.map { fadedPart(it, fadeAlpha) }, f.meshed.bounds)
+        for (f in fadingItems) {
+            scene.upsert(f.item, f.meshed.parts.map { fadedPart(it, fadeAlpha) }, f.meshed.bounds)
         }
     }
 
