@@ -80,6 +80,13 @@ data class Preferences(
     val sideMargin: Double = 16.0,
     /** Whether the hairline outline around every page is left undrawn. */
     val hidePageBorders: Boolean = false,
+    /**
+     * Whether the floating zoom bar is drawn over the canvas.
+     *
+     * On by default, since the bar is how the zoom is read and put back to a set value. Off is for a
+     * reader who would rather have the corner to themselves and reaches zoom another way.
+     */
+    val showZoomBar: Boolean = true,
     /** User zoom floor: when enabled, no zoom path goes below [minZoomPercent]%. */
     val minZoomEnabled: Boolean = false,
     val minZoomPercent: Int = 50,
@@ -200,6 +207,7 @@ data class Preferences(
         .put("prefs_categories", prefsCategories)
         .put("side_margin", sideMargin)
         .put("hide_page_borders", hidePageBorders)
+        .put("show_zoom_bar", showZoomBar)
         .put("min_zoom_enabled", minZoomEnabled)
         .put("min_zoom_percent", minZoomPercent)
         .put("max_zoom_enabled", maxZoomEnabled)
@@ -360,6 +368,7 @@ data class Preferences(
                 prefsCategories = o.optBoolean("prefs_categories", true),
                 sideMargin = o.optDouble("side_margin", 16.0).coerceIn(0.0, 80.0),
                 hidePageBorders = o.optBoolean("hide_page_borders", false),
+                showZoomBar = o.optBoolean("show_zoom_bar", true),
                 minZoomEnabled = o.optBoolean("min_zoom_enabled", false),
                 minZoomPercent = o.optInt("min_zoom_percent", 50).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
                 maxZoomEnabled = o.optBoolean("max_zoom_enabled", false),

@@ -403,6 +403,7 @@
     <string name="theme_oled">OLED</string>
     <string name="pref_accent_colour">Accent colour</string>
     <string name="pref_start_fullscreen">Start in fullscreen</string>
+    <string name="pref_show_zoom_bar">Show zoom bar</string>
     <string name="pref_input">Input</string>
     <string name="pref_finger_draws">Draw with finger (off = finger pans)</string>
     <string name="pref_zoom_lock_pan">Panning while zoom is locked</string>

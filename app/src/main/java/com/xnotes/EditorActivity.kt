@@ -1742,16 +1742,18 @@ private fun EditorPane(
                         com.xnotes.ui.TextStyleBar(canvas)
                         com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
                         com.xnotes.ui.CanvasDebugOverlay(canvas)
-                        com.xnotes.ui.ZoomIndicator(
-                            zoomValue = canvas.zoomPercent / 100f,
-                            isZoomLocked = canvas.zoomLocked,
-                            onZoomLockToggle = { canvas.toggleZoomLock() },
-                            onFavoriteZoomSelected = { zoom -> canvas.setZoom(zoom) },
-                            favoriteZoomValues = editor.favoriteZooms,
-                            onFavoriteZoomToggled = { zoom -> editor.toggleFavoriteZoom(zoom) },
-                            onFavoriteZoomRemoved = { zoom -> editor.removeFavoriteZoom(zoom) },
-                            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
-                        )
+                        if (editor.preferences.showZoomBar) {
+                            com.xnotes.ui.ZoomIndicator(
+                                zoomValue = canvas.zoomPercent / 100f,
+                                isZoomLocked = canvas.zoomLocked,
+                                onZoomLockToggle = { canvas.toggleZoomLock() },
+                                onFavoriteZoomSelected = { zoom -> canvas.setZoom(zoom) },
+                                favoriteZoomValues = editor.favoriteZooms,
+                                onFavoriteZoomToggled = { zoom -> editor.toggleFavoriteZoom(zoom) },
+                                onFavoriteZoomRemoved = { zoom -> editor.removeFavoriteZoom(zoom) },
+                                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                            )
+                        }
                         CanvasToastPill(canvas)
                     }
                 }
@@ -1792,16 +1794,18 @@ private fun EditorPane(
                             )
                             editor.editingField?.let { field ->
                                 com.xnotes.ui.TextEditorOverlay(editor, field)
-                            com.xnotes.ui.ZoomIndicator(
-                                zoomValue = editor.zoomPercent / 100f,
-                                isZoomLocked = editor.zoomLocked,
-                                onZoomLockToggle = { editor.toggleZoomLock() },
-                                onFavoriteZoomSelected = { zoom -> editor.setZoom(zoom) },
-                            favoriteZoomValues = editor.favoriteZooms,
-                            onFavoriteZoomToggled = { zoom -> editor.toggleFavoriteZoom(zoom) },
-                            onFavoriteZoomRemoved = { zoom -> editor.removeFavoriteZoom(zoom) },
-                                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
-                            )
+                                if (editor.preferences.showZoomBar) {
+                                    com.xnotes.ui.ZoomIndicator(
+                                        zoomValue = editor.zoomPercent / 100f,
+                                        isZoomLocked = editor.zoomLocked,
+                                        onZoomLockToggle = { editor.toggleZoomLock() },
+                                        onFavoriteZoomSelected = { zoom -> editor.setZoom(zoom) },
+                                        favoriteZoomValues = editor.favoriteZooms,
+                                        onFavoriteZoomToggled = { zoom -> editor.toggleFavoriteZoom(zoom) },
+                                        onFavoriteZoomRemoved = { zoom -> editor.removeFavoriteZoom(zoom) },
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                                    )
+                                }
                             }
                             floatingBar()
                             com.xnotes.ui.SelectionMenu(

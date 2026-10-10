@@ -173,6 +173,14 @@ class SettingsTest {
         assertFalse(back.pdfHeadingBookmarks)
     }
 
+    @Test fun theZoomBarIsShownUntilItIsTurnedOff() {
+        // On by default, so an install whose settings predate the switch keeps the bar it has always
+        // had rather than losing it to a missing field.
+        assertTrue(Settings.fromJson(JSONObject()).prefs.showZoomBar)
+        val back = Settings.fromJson(Settings(prefs = Preferences(showZoomBar = false)).toJson()).prefs
+        assertFalse(back.showZoomBar)
+    }
+
     @Test fun customPageSizeRoundTripsAndSizesANewPage() {
         val prefs = Preferences(
             defaultPageSize = PageSize.CUSTOM,
