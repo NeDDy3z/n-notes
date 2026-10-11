@@ -1836,8 +1836,14 @@ class InfiniteInteraction(
         connectHot = emptyList()
         onPendingShape(null)
         if (draft.worthKeeping(InteractionController.SHAPE_MIN_DRAG)) {
-            onCommitShape(draft.connector)
-            selection()?.select(listOf(draft.connector))
+            // The wand is a mode over everything drawn on the canvas, so a connector melts with the
+            // ink and the shapes around it rather than being the one mark that stays.
+            if (wandEnabled) {
+                onHoldItem(draft.connector)
+            } else {
+                onCommitShape(draft.connector)
+                selection()?.select(listOf(draft.connector))
+            }
         } else {
             selectShapeAt(draft.connector.start.at)
         }

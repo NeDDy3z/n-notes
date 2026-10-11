@@ -3136,13 +3136,23 @@ class InteractionController(
         val page = state.document.pages.getOrNull(pi)
         if (page != null && draft.worthKeeping(SHAPE_MIN_DRAG)) {
             val c = draft.connector
-            page.items.add(c)
-            state.appendToCache(page, c)
-            history.push(AddItem(page, c))
-            state.document.dirty = true
-            onContentChanged()
-            setSelection(listOf(Selected(pi, c)))
-            refreshSelectionMenu()
+            if (wandMode) {
+                // The wand is a mode over everything drawn on the page, so a connector melts with
+                // the ink and the shapes around it rather than being the one mark that stays.
+                fadingItems.add(FadingItem(c, pi))
+                frontInk?.holdFading(c)
+                stopFade()
+                fadeAlpha = 1.0
+                scheduleFade()
+            } else {
+                page.items.add(c)
+                state.appendToCache(page, c)
+                history.push(AddItem(page, c))
+                state.document.dirty = true
+                onContentChanged()
+                setSelection(listOf(Selected(pi, c)))
+                refreshSelectionMenu()
+            }
         } else if (page != null) {
             selectShapeAt(pi, draft.connector.start.at)
         }
