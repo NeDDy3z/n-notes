@@ -101,6 +101,7 @@ import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolConversions
+import com.xnotes.core.tools.WandConfig
 import com.xnotes.platform.FontCatalog
 import com.xnotes.platform.TemplateLibrary
 import com.xnotes.settings.Preferences
@@ -1529,3 +1530,43 @@ fun FontMenuItems(
         }
     }
 }
+/**
+ * The magic wand's settings, opened by holding its toolbar icon: how long the ink is held before it
+ * starts to go, and how long the melt itself takes.
+ *
+ * Both apply live — a fade already on screen takes the new duration from its next frame rather than
+ * finishing out the old one, which is what makes the slider turn the thing it names rather than the
+ * next batch of it.
+ *
+ * The delay is a debounce, not a lifetime: the batch only starts going once the pen has been up for
+ * the whole of it, so lengthening it is how a slow writer keeps their line up on the page.
+ */
+@Composable
+fun WandConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
+    val config = editor.hostWandConfig
+
+    // Both sliders move in whole steps and land inside the range: a fade that could be written as
+    // 433.7ms would only ever be read back as some other number.
+    fun holdAt(ms: Float) = (Math.round(ms / WandConfig.STEP_MS) * WandConfig.STEP_MS)
+        .coerceIn(WandConfig.HOLD_MS_MIN, WandConfig.HOLD_MS_MAX)
+    fun fadeAt(ms: Float) = (Math.round(ms / WandConfig.STEP_MS) * WandConfig.STEP_MS)
+        .toDouble()
+        .coerceIn(WandConfig.FADE_MS_MIN, WandConfig.FADE_MS_MAX)
+
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle(stringResource(R.string.tool_wand))
+            SliderRow(
+                stringResource(R.string.wand_hold),
+                config.holdMs.toFloat(),
+                WandConfig.HOLD_MS_MIN.toFloat()..WandConfig.HOLD_MS_MAX.toFloat(),
+            ) { editor.updateWandConfig(config.copy(holdMs = holdAt(it))) }
+            SliderRow(
+                stringResource(R.string.wand_fade),
+                config.fadeMs.toFloat(),
+                WandConfig.FADE_MS_MIN.toFloat()..WandConfig.FADE_MS_MAX.toFloat(),
+            ) { editor.updateWandConfig(config.copy(fadeMs = fadeAt(it))) }
+        }
+    }
+}
+

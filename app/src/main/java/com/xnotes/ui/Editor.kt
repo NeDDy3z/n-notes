@@ -118,6 +118,7 @@ import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.core.tools.ToolbarLayout
+import com.xnotes.core.tools.WandConfig
 import com.xnotes.core.util.DocumentKind
 import com.xnotes.core.util.FileStamp
 import com.xnotes.core.util.NameTemplate
@@ -701,6 +702,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         private set
     var shapeConfig by mutableStateOf(ShapeConfig())
         private set
+    /**
+     * The wand's timings, mirrored into Compose so the popup can show them. The canvas reads its own
+     * copy live; this is what the chrome edits.
+     */
+    var wandConfig by mutableStateOf(WandConfig())
+        private set
     var message by mutableStateOf<String?>(null)
     /** A button the next [message] carries, such as Undo, with what it does. */
     var messageAction by mutableStateOf<Pair<String, () -> Unit>?>(null)
@@ -867,6 +874,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.onMessage = { m, action -> say(m, action) }
             for (t in ToolDefaults.persistedTools) it.setToolConfig(t, settings.configFor(t))
             it.armShapeConfig(settings.shapeConfig)
+            it.armWandConfig(settings.wandConfig)
+            it.onWandConfigChanged = { config -> updateWandConfig(config) }
             it.onDetectShapesChanged = { v -> snapHeldToShapes = v }
             it.toolbarColors = toolbarColors
             it.recentColors = recentColors
@@ -2954,6 +2963,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         sidebarVisible = settings.sidebarVisible
         shapeConfig = settings.shapeConfig
         controller.shapeConfig = settings.shapeConfig
+        wandConfig = settings.wandConfig
+        controller.setWandConfig(settings.wandConfig)
         controller.tableToolDefaults = { com.xnotes.canvas.TableToolDefaults(tableToolCols, tableToolRows, tableToolWidth, tableToolColor) }
         for (t in ToolDefaults.persistedTools) controller.setToolConfig(t, settings.configFor(t))
         controller.inkColor = toolbarColors[activeColorIndex]
@@ -7159,6 +7170,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.shapeConfig = config
     }
 
+    /**
+     * Apply the wand's timings to both surfaces and persist them, so a melt already running picks the
+     * new fade up from its next frame and the setting survives a restart.
+     */
+    override fun updateWandConfig(config: WandConfig) {
+        val safe = config.clamped()
+        wandConfig = safe
+        controller.setWandConfig(safe)
+        infiniteOrNull?.armWandConfig(safe)
+        settings = settings.copy(wandConfig = safe)
+        settingsRepo.save(settings)
+    }
+
     /** The live config for a stroke tool (read by its config popup). */
     override fun toolConfig(tool: Tool): com.xnotes.core.tools.ToolConfig = controller.configFor(tool)
 
@@ -7174,6 +7198,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
 
     override val hostShapeConfig: ShapeConfig get() = shapeConfig
+    override val hostWandConfig: WandConfig get() = wandConfig
     override val hostToolbarColors: List<Rgba> get() = toolbarColors
     override val hostActiveColorIndex: Int get() = activeColorIndex
     override val hostRecentColors: List<Rgba> get() = recentColors

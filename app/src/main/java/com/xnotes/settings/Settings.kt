@@ -23,6 +23,7 @@ import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.core.tools.ToolbarLayout
+import com.xnotes.core.tools.WandConfig
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -50,6 +51,8 @@ data class Settings(
     val viewDefaults: com.xnotes.canvas.ViewSettings = com.xnotes.canvas.ViewSettings(),
     val tools: Map<Tool, ToolConfig> = emptyMap(),
     val shapeConfig: ShapeConfig = ShapeConfig(),
+    /** The magic wand's timings, shared by both surfaces. */
+    val wandConfig: WandConfig = WandConfig(),
     /** The toolbar swatches while the app is dark, and while it is light; slot for slot partners. */
     val toolbarColorsDark: List<Rgba> = InkPalette.dark,
     val toolbarColorsLight: List<Rgba> = InkPalette.light,
@@ -115,6 +118,7 @@ data class Settings(
             toolsObj.put(tool.id, toolConfigJson(configFor(tool)))
         }
         toolsObj.put("shape", shapeConfigJson(shapeConfig))
+        toolsObj.put("wand", wandConfigJson(wandConfig))
         return JSONObject()
             .put("tools", toolsObj)
             .put("toolbar_colors", JSONArray().apply { toolbarColorsDark.forEach { put(rgbaArr(it)) } })
@@ -159,6 +163,9 @@ data class Settings(
                 }
             }
             val shape = toolsObj?.optJSONObject("shape")?.let { shapeConfig(it) } ?: ShapeConfig()
+            // A file written before the wand had settings carries no "wand" key at all, which reads
+            // back as the timings it has always run at.
+            val wand = toolsObj?.optJSONObject("wand")?.let { wandConfig(it) } ?: WandConfig()
 
             val (darkColors, lightColors) = toolbarColors(o)
 
@@ -168,6 +175,7 @@ data class Settings(
                     ?: legacyViewDefaults(o.optJSONObject("prefs")),
                 tools = tools,
                 shapeConfig = shape,
+                wandConfig = wand,
                 toolbarColorsDark = darkColors,
                 toolbarColorsLight = lightColors,
                 toolbarColorCount = o.optInt("toolbar_color_count", 5).coerceIn(1, InkPalette.MAX_SWATCHES),
@@ -485,6 +493,15 @@ data class Settings(
                 connectorPage = o.optInt("connector_page", connector?.let { com.xnotes.core.shapes.ConnectorPresets.pageOf(it) } ?: 0),
             )
         }
+
+        private fun wandConfigJson(c: WandConfig) = JSONObject()
+            .put("hold_ms", c.holdMs)
+            .put("fade_ms", c.fadeMs)
+
+        private fun wandConfig(o: JSONObject) = WandConfig(
+            holdMs = o.optLong("hold_ms", WandConfig.HOLD_MS),
+            fadeMs = o.optDouble("fade_ms", WandConfig.FADE_MS),
+        ).clamped()
 
         private fun toolbarLayoutJson(layout: ToolbarLayout): JSONObject {
             val secArr = JSONArray()

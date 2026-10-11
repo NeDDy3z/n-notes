@@ -635,5 +635,22 @@ class SettingsTest {
         assertEquals(shape, back)
         assertEquals("uml_aggregation_elbow", back.connector!!.key)
     }
+
+    @Test fun theWandsTimingsRoundTrip() {
+        val wand = com.xnotes.core.tools.WandConfig(holdMs = 2200L, fadeMs = 1400.0)
+        assertEquals(wand, Settings.fromJson(Settings(wandConfig = wand).toJson()).wandConfig)
+    }
+
+    @Test fun aFileWrittenBeforeTheWandHadSettingsKeepsItsTimings() {
+        val older = JSONObject().put("tools", JSONObject().put("shape", JSONObject().put("shape", "rectangle")))
+        assertEquals(com.xnotes.core.tools.WandConfig(), Settings.fromJson(older).wandConfig)
+    }
+
+    @Test fun aHandEditedTimingOutsideTheRangeIsPulledBack() {
+        val edited = JSONObject().put("tools", JSONObject().put("wand", JSONObject().put("hold_ms", 9_000_000).put("fade_ms", 0.0)))
+        val back = Settings.fromJson(edited).wandConfig
+        assertEquals(com.xnotes.core.tools.WandConfig.HOLD_MS_MAX, back.holdMs)
+        assertEquals(com.xnotes.core.tools.WandConfig.FADE_MS_MIN, back.fadeMs, 0.0)
+    }
 }
 

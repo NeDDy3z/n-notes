@@ -66,6 +66,8 @@ import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
+import com.xnotes.core.tools.WandConfig
+import com.xnotes.core.tools.wandAlphaAt
 import com.xnotes.core.vector.VectorMesher
 import com.xnotes.gl.CanvasScene
 import com.xnotes.gl.InfiniteCanvasView
@@ -212,6 +214,23 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      */
     var wandEnabled by mutableStateOf(false)
         private set
+
+    /**
+     * The wand's timings, read live by the fade rather than copied into it: moving a slider takes
+     * hold of the melt already on screen from its next frame, which is what makes the control feel
+     * like it is turning the thing it names rather than the next batch of it.
+     */
+    var wandHoldMs: Long = WandConfig.HOLD_MS
+        private set
+    var wandFadeMs: Double = WandConfig.FADE_MS
+        private set
+
+    /** Apply [config]'s timings — from the popup, or from the settings file on load. */
+    fun armWandConfig(config: WandConfig) {
+        val safe = config.clamped()
+        wandHoldMs = safe.holdMs
+        wandFadeMs = safe.fadeMs
+    }
 
     fun toggleWand() {
         wandEnabled = !wandEnabled
@@ -1129,6 +1148,23 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         shapeConfig = config
     }
 
+    /**
+     * The settings file is the note's to write, so the canvas shows the timings it was handed and
+     * asks the note to apply a change rather than persisting a second copy of its own.
+     */
+    override val hostWandConfig: WandConfig get() = WandConfig(wandHoldMs, wandFadeMs)
+
+    override fun updateWandConfig(config: WandConfig) {
+        armWandConfig(config)
+        onWandConfigChanged?.invoke(config)
+    }
+
+    /**
+     * Fired when the wand's timings are edited on the canvas, so the note that owns the settings file
+     * writes them — the canvas keeps no persisted state of its own.
+     */
+    var onWandConfigChanged: ((WandConfig) -> Unit)? = null
+
     fun configFor(forTool: Tool): ToolConfig {
         val base = toolConfigs.getOrPut(forTool) { ToolDefaults.configFor(forTool) }
         // A tool with a colour override always draws in its own colour; the rest follow the
@@ -1420,12 +1456,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      * are the taper pen and the straight-line tools, which have no settled run to speak of.
      */
     private fun publishWetStroke(stroke: Stroke?) {
-        // Pen back down under the wand: the held batch goes solid again, so a long stroke cannot
-        // outlive a fade that had already started.
-        if (wandEnabled && stroke != null && stroke !== wandLive) {
-            wandLive = stroke
-            solidifyFading()
-        }
+        // Pen back down under the wand: nothing is held back. Each held item melts on the clock
+        // that started when it was drawn, so a new stroke leaves a melting one exactly as it is.
         if (stroke == null) {
             endFrontInk()
             forgetWetStroke()
@@ -2080,21 +2112,25 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     // --- disappearing ink (magic wand) ---
 
-    /** A held item and the triangles it was meshed into once, recoloured as the batch fades. Ink
-     *  or shape: the wand holds both, and neither is ever filed. */
-    private class FadingItem(val item: CanvasItem, val meshed: MeshedItem)
+    /**
+     * A held item, the triangles it was meshed into once, and the moment *it* starts to go.
+     *
+     * [fadeStartMs] is set once, when the item is first held, and never moved again. Each item
+     * melts on that clock alone: a stroke landing now does not push back one that is already
+     * fading, and two strokes drawn a second apart fade a second apart rather than together.
+     */
+    private class FadingItem(val item: CanvasItem, val meshed: MeshedItem, val fadeStartMs: Long)
 
     private val fadingItems = mutableListOf<FadingItem>()
-    private var fadeAlpha = 1.0
     private var fading = false
-    private var fadeStartMs = 0L
     private var fadeTimer: Runnable? = null
 
-    /** The stroke the wand last saw under the pen, so the next one can re-solidify the batch. */
-    private var wandLive: Stroke? = null
     private val fadeHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
     private val choreographer by lazy { android.view.Choreographer.getInstance() }
     private val fadeFrame = android.view.Choreographer.FrameCallback { t -> stepFade(t) }
+
+    /** Wall-clock in the units [FadingItem.fadeStartMs] and the fade loop both use. */
+    private fun nowMs(): Long = System.nanoTime() / 1_000_000L
 
     /**
      * Pen up under the wand: hold the item rather than file it.
@@ -2102,7 +2138,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      * It is handed to the renderer like any committed item, but never to the document — so it
      * draws, culls and blends exactly as ink does while touching no model, no history, no autosave
      * and nothing on disk. It is meshed once here and only recoloured as it melts, so a fading
-     * batch costs an upload a frame instead of a tessellation.
+     * item costs an upload a frame instead of a tessellation.
      */
     private fun holdEphemeral(item: CanvasItem) {
         val meshed = ItemMesher.mesh(item)
@@ -2111,43 +2147,42 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             view.publish()
             return
         }
-        fadingItems.add(FadingItem(item, meshed))
+        // The hold delay needs no per-item timer: an item is only ever held once its own stroke has
+        // finished, so its fade starts now plus the delay. What matters is that something is awake
+        // to fade it — the loop, if an older item is already melting, or one timer for the next due.
+        fadingItems.add(FadingItem(item, meshed, nowMs() + wandHoldMs))
         // clearsWet releases the buffer under the pen in the same message this item arrives in,
         // so no frame can fall between the two and blink.
         scene.upsert(item, meshed.parts, meshed.bounds, clearsWet = true)
-        solidifyFading()
+        if (!fading) armNextFade()
         view.publish()
     }
 
-    /** Put the batch back to full strength and restart the hold, so it melts only once drawing
-     *  has paused. A no-op when nothing is being held. */
-    private fun solidifyFading() {
-        if (fadingItems.isEmpty()) return
-        fading = false
-        if (fadeAlpha != 1.0) {
-            fadeAlpha = 1.0
-            republishFading()
-        }
-        scheduleFade()
-    }
-
-    /** Drop the held batch and stop any pending or running fade. */
+    /** Drop every held item and stop the fade loop and its timer. */
     private fun clearFading() {
         cancelFadeTimer()
         fading = false
-        fadeAlpha = 1.0
-        wandLive = null
         if (fadingItems.isEmpty()) return
         for (f in fadingItems) scene.remove(f.item)
         fadingItems.clear()
         view.publish()
     }
 
-    private fun scheduleFade() {
+    /**
+     * Wake up for whichever held item is due to start melting first.
+     *
+     * One timer rather than one per item: items are held in the order they were drawn, so the
+     * earliest start is the first one that has not begun, and re-arming on each new item keeps it
+     * pointing at the right one. An item inside its hold is simply drawn solid, so the wait costs
+     * no frames.
+     */
+    private fun armNextFade() {
         cancelFadeTimer()
+        val next = fadingItems.minOfOrNull { it.fadeStartMs } ?: return
+        val delay = (next - nowMs()).coerceAtLeast(0L)
         val r = Runnable { startFade() }
         fadeTimer = r
-        fadeHandler.postDelayed(r, InteractionController.WAND_HOLD_MS)
+        fadeHandler.postDelayed(r, delay)
     }
 
     private fun cancelFadeTimer() {
@@ -2159,32 +2194,40 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         fadeTimer = null
         if (fadingItems.isEmpty()) return
         fading = true
-        fadeAlpha = 1.0
-        fadeStartMs = System.nanoTime() / 1_000_000L
         choreographer.postFrameCallback(fadeFrame)
     }
 
+    /**
+     * Advance every held item on its own clock, and take away the ones that are gone.
+     *
+     * Each item's alpha is read off its own [FadingItem.fadeStartMs], so they melt independently:
+     * one reaching the end takes only itself off the canvas and leaves the rest where they were.
+     * Once nothing is mid-melt the loop stops and one timer waits for the next item due.
+     */
     private fun stepFade(frameTimeNanos: Long) {
         if (!fading) return
         val now = frameTimeNanos / 1_000_000L
-        val t = ((now - fadeStartMs) / InteractionController.WAND_FADE_MS).coerceIn(0.0, 1.0)
-        fadeAlpha = (1.0 - t) * (1.0 - t) // ease-out, so the batch melts rather than blinking off
-        if (t >= 1.0) {
-            for (f in fadingItems) scene.remove(f.item)
-            fadingItems.clear()
-            fadeAlpha = 1.0
-            fading = false
-        } else {
-            republishFading()
-        }
-        view.publish()
-        if (fading) choreographer.postFrameCallback(fadeFrame)
-    }
-
-    /** Re-file every held stroke at the current alpha, from the triangles it already has. */
-    private fun republishFading() {
+        var melting = false
         for (f in fadingItems) {
-            scene.upsert(f.item, f.meshed.parts.map { fadedPart(it, fadeAlpha) }, f.meshed.bounds)
+            val elapsed = now - f.fadeStartMs
+            if (elapsed >= wandFadeMs) {
+                scene.remove(f.item)
+                continue
+            }
+            melting = melting || elapsed >= 0L
+            scene.upsert(f.item, f.meshed.parts.map { fadedPart(it, wandAlphaAt(now, f.fadeStartMs, wandFadeMs)) }, f.meshed.bounds)
+        }
+        fadingItems.removeAll { now - it.fadeStartMs >= wandFadeMs }
+        view.publish()
+        if (fadingItems.isEmpty()) {
+            fading = false
+        } else if (melting) {
+            choreographer.postFrameCallback(fadeFrame)
+        } else {
+            // Nothing is fading right now — a newer item is still inside its hold. Wait for it
+            // rather than spin a frame callback through the delay.
+            fading = false
+            armNextFade()
         }
     }
 

@@ -4,6 +4,7 @@ import com.xnotes.core.model.Rgba
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
+import com.xnotes.core.tools.WandConfig
 
 /**
  * The toolbar's ink swatches, which every colour row that offers them reads through here, so a row
@@ -48,6 +49,12 @@ interface ToolPopupHost : SwatchHost {
     val hostShapeConfig: ShapeConfig
 
     fun updateShapeConfig(config: ShapeConfig)
+
+    /** The magic wand's timings: how long the ink is held before it starts to go, and how long the fade takes. */
+    val hostWandConfig: WandConfig get() = WandConfig()
+
+    /** Apply the wand's timings to both surfaces and persist them. */
+    fun updateWandConfig(config: WandConfig) {}
 
     /** The active swatch. */
     val hostActiveColorIndex: Int
