@@ -1640,16 +1640,17 @@ class InfiniteInteraction(
         requestRender()
     }
 
-    private fun endShape(penTool: Tool = tool) {
+    private fun endShape() {
         val shape = pendingShape
         pendingShape = null
         onPendingShape(null)
         // A tap makes no shape; only a real drag commits one. A new shape stays selected, so it can
         // be resized, turned or reshaped straight away; a tap picks up the shape under it instead.
         if (shape != null && shape.start.distanceTo(shape.end) > InteractionController.SHAPE_MIN_DRAG) {
-            // The wand holds shapes the way it holds ink: on screen, out of the document and out of
-            // undo, and so never selected -- an item that is melting is not yet part of the note.
-            if (wandEnabled && penTool.isStroke) {
+            // The wand holds a shape the way it holds ink, whichever tool drew it: on screen, out of the
+            // document and out of undo, and so never selected -- an item that is melting is not yet
+            // part of the note.
+            if (wandEnabled) {
                 onHoldItem(shape)
             } else {
                 onCommitShape(shape)
