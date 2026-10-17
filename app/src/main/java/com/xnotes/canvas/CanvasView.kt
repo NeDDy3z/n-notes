@@ -403,11 +403,11 @@ class CanvasView @JvmOverloads constructor(
 
         val visible = st.visibleContentRect()
         val border = Pen(st.palette.paperBorder, 1.0, cosmetic = true)
-        // Paginated mode shows only the current row; neighbours never draw.
+        // Paginated mode shows only the current row; neighbours never draw. Iterate the range
+        // directly instead of scanning every page on every animation frame in a large document.
         val drawable = st.drawablePageRange()
 
-        for (i in st.document.pages.indices) {
-            if (i !in drawable) continue
+        for (i in drawable) {
             val pr = st.pageRects.getOrNull(i) ?: continue
             if (!pr.intersects(visible)) continue
             val page = st.document.pages[i]
@@ -431,12 +431,50 @@ class CanvasView @JvmOverloads constructor(
         }
         r.restore()
 
+        // Draw the adjacent spread throughout the gesture and settlement animation,
+        // with clipping to the actual viewport and no stale sharp overlay.
+        st.linkedNeighbourRow()?.let { neighbourRow ->
+            val offset = st.linkedNeighbourOffset(neighbourRow)
+            // The neighbour is positioned relative to the current page and viewport;
+            // clipping here avoids painting the offscreen part of the strip.
+            canvas.save()
+            canvas.clipRect(0f, 0f, st.viewportW.toFloat(), st.viewportH.toFloat())
+            r.save()
+                r.translate(origin.x + offset.x, origin.y + offset.y)
+                r.scale(st.zoom, st.zoom)
+                val neighbourOriginX = origin.x + offset.x
+                val neighbourOriginY = origin.y + offset.y
+                val neighbourVisible = Rect.fromPoints(
+                    Pt(-neighbourOriginX / st.zoom, -neighbourOriginY / st.zoom),
+                    Pt((st.viewportW - neighbourOriginX) / st.zoom, (st.viewportH - neighbourOriginY) / st.zoom),
+                )
+                for (i in st.rowRanges()[neighbourRow]) {
+                    val pr = st.pageRects.getOrNull(i) ?: continue
+                    if (!pr.intersects(neighbourVisible)) continue
+                    val page = st.document.pages[i]
+                    r.fillRect(pr, st.paperColor(page))
+                    if (st.pageBorders) r.strokeRect(pr, border)
+                    st.backgroundForOrSchedule(page)?.let { blitPageSurface(r, st, page, pr, it.surface) }
+                    r.withSave {
+                        r.clipRect(pr)
+                        r.translate(pr.left, pr.top)
+                        st.applyPageTransform(r, page)
+                        val region = st.displayRectToPage(page, neighbourVisible.translate(-pr.left, -pr.top))
+                        if (st.flowLifted) st.paintFlow?.invoke(page, r, region)
+                        st.paintMath?.invoke(page, r, region)
+                    }
+                    st.cacheForOrSchedule(page)?.let { blitPageSurface(r, st, page, pr, it.surface) }
+                }
+                r.restore()
+                canvas.restore()
+        }
+
         // Past the resolution cap, cover the (soft, capped) page caches with a razor-sharp,
         // full-resolution render of just the viewport. While panning we slide the previous sharp
         // render with the content (so short pans stay sharp) and let the soft cache show only in
         // the strip panning into view; once the view settles we re-render the sharp viewport for
         // the new area. A zoom change drops back to the soft caches until the settle re-render.
-        if (st.isPastResolutionCap()) {
+        if (st.isPastResolutionCap() && !st.pageFlipAnimating && st.flipOffsetX == 0.0) {
             val blit = st.sharpViewportBlit()
             if (blit != null) {
                 val dw = blit.base.width * blit.scale
@@ -453,8 +491,7 @@ class CanvasView @JvmOverloads constructor(
                         r.clipRect(Rect(blit.dx, blit.dy, dw, dh))
                         r.translate(origin.x, origin.y)
                         r.scale(st.zoom, st.zoom)
-                        for (i in st.document.pages.indices) {
-                            if (i !in drawable) continue
+                        for (i in drawable) {
                             val pr = st.pageRects.getOrNull(i) ?: continue
                             if (!pr.intersects(visible)) continue
                             val page = st.document.pages[i]
@@ -478,7 +515,7 @@ class CanvasView @JvmOverloads constructor(
                 mainHandler.removeCallbacks(sharpDebounce)
                 mainHandler.postDelayed(sharpDebounce, SHARP_SETTLE_MS)
             }
-        } else {
+        } else if (!st.pageFlipAnimating && st.flipOffsetX == 0.0) {
             mainHandler.removeCallbacks(sharpDebounce)
             st.clearSharpViewport()
         }
@@ -490,8 +527,7 @@ class CanvasView @JvmOverloads constructor(
         r.withSave {
             r.translate(origin.x, origin.y)
             r.scale(st.zoom, st.zoom)
-            for (i in st.document.pages.indices) {
-                if (i !in drawable) continue
+            for (i in drawable) {
                 val pr = st.pageRects.getOrNull(i) ?: continue
                 if (!pr.intersects(visible)) continue
                 val page = st.document.pages[i]
@@ -583,13 +619,14 @@ class CanvasView @JvmOverloads constructor(
         val lastPage = rows.lastOrNull()?.last ?: return
         val rect = st.pageRects.getOrNull(lastPage) ?: return
         val d = resources.displayMetrics.density
-        val progress = (pull / InteractionController.FLIP_TRIGGER).coerceIn(0.0, 1.0).toFloat()
+        val threshold = PaginatedFlipPolicy.addPageThreshold(st.viewportW, st.devicePxPerDp)
+        val progress = (pull / threshold).coerceIn(0.0, 1.0).toFloat()
         val radius = (16f * d) * (0.8f + 0.2f * progress)
 
         val anchor = st.contentToViewport(Pt(rect.right, rect.centerY))
         val cx = anchor.x.toFloat() + 12f * d + radius
         val cy = anchor.y.toFloat().coerceIn(radius + 8f * d, st.viewportH.toFloat() - radius - 24f * d)
-        drawAddPageBadge(canvas, st, cx, cy, radius, progress, pull / (InteractionController.FLIP_TRIGGER * 0.4))
+        drawAddPageBadge(canvas, st, cx, cy, radius, progress, pull / (threshold * 0.4))
     }
 
     /** The shared add-page badge: progress ring, "+", and the pull/release caption under it. */

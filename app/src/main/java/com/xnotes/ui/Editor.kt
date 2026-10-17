@@ -2303,6 +2303,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
+        state.paginatedZoomSnap = p.paginatedZoomSnap
+        if (!p.paginatedZoomSnap && !state.verticalScroll) {
+            state.fitWidthActive = false
+            state.fitHeightActive = false
+        }
         controller.detectShapes = p.detectShapes
         flowText.markdownInput = p.markdownInput
         flowText.slashCommands = p.slashCommands
@@ -4768,6 +4773,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     state.fitWidthActive -> state.zoom = state.fitWidthZoom()
                     state.fitHeightActive -> state.fitHeightZoom().takeIf { it > 0.0 }?.let { state.zoom = it }
                 }
+                // A change from continuous to paginated mode may introduce the 60% floor.
+                // Apply it here too, not only on the next pinch or toolbar zoom step.
+                state.clampZoomToLimits()
                 state.invalidateCachesForZoom()
                 state.goToPage(cur)
                 refreshView()

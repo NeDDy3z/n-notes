@@ -328,6 +328,7 @@
     <string name="pref_input">Input</string>
     <string name="pref_finger_draws">Draw with finger (off = finger pans)</string>
     <string name="pref_zoom_lock_pan">Panning while zoom is locked</string>
+    <string name="pref_paginated_zoom_snap">Classic page fit and movement limits (horizontal mode)</string>
     <string name="pan_single">Single-finger pan</string>
     <string name="pan_two">Two-finger pan</string>
     <string name="pan_none">No pan</string>

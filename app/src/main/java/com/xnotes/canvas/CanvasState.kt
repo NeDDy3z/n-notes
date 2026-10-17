@@ -105,6 +105,12 @@ class CanvasState(
     var minZoom: Double = MIN_ZOOM
     var maxZoom: Double = MAX_ZOOM
 
+    /** Horizontal page navigation cannot zoom below 60%, unless a stricter configured
+     * maximum makes that impossible. Continuous vertical scrolling retains its limits. */
+    fun effectiveMinZoom(): Double =
+        (if (verticalScroll) minZoom else max(minZoom, PAGINATED_MIN_ZOOM))
+            .coerceAtMost(maxZoom)
+
     /**
      * Long-edge cap (content px) for the on-screen page caches; zoom past it renders the visible
      * region live (the sharp viewport) instead of caching the whole page. User-set in preferences.
@@ -151,7 +157,7 @@ class CanvasState(
     /**
      * True = continuous vertical scrolling (rows stack top-down). False = paginated: rows
      * lay out as a horizontal strip, the scroll window is clamped to [currentRow]'s span,
-     * and the interaction layer flips between rows (edge-swipe; the change is instant).
+     * and the interaction layer flips between rows after a deliberate edge swipe.
      */
     var verticalScroll: Boolean = true
 
@@ -159,12 +165,58 @@ class CanvasState(
     var currentRow: Int = 0
 
     /**
-     * Paginated edge-pull (viewport px, signed; positive pulls toward the next row). Like
-     * [overscrollY] it is purely visual — [origin] shifts by it so the current row slides
-     * against empty background under the finger — and on release the interaction layer
-     * flips instantly or drops the pull.
+     * Paginated horizontal drag (viewport px, positive toward the next row).
+     * [origin] moves the current row with the finger; the renderer draws the
+     * adjacent row using [linkedNeighbourOffset] until release settles the transition.
      */
     var flipOffsetX: Double = 0.0
+    /**
+     * During a linked-page drag, the adjacent row is drawn beside the current row.
+     * This is visual only: hit testing remains limited to [currentRow] until release.
+     */
+    fun linkedNeighbourRow(): Int? {
+        if (verticalScroll || flipOffsetX == 0.0) return null
+        val target = currentRow + if (flipOffsetX > 0.0) 1 else -1
+        return target.takeIf { it in rowRanges().indices }
+    }
+
+    /** Extra distance required for the adjacent row to enter from beyond the viewport. */
+    fun linkedPageTravel(rowIndex: Int): Double {
+        val rows = rowRanges()
+        if (rows.isEmpty() || rowIndex !in rows.indices) return viewportW.toDouble()
+        val neighbour = rowBounds(rows[rowIndex])
+        val offset = linkedNeighbourOffset(rowIndex)
+        // At the end of this drag the neighbour must occupy its regular resting position.
+        // Derive travel from the very same geometry used to draw it to avoid snapping.
+        val travel = offset.x + rowTargetScroll(rowIndex).x - scrollX
+        return kotlin.math.abs(travel)
+    }
+
+    /**
+     * Keep at least 100 dp between the two page edges, while ensuring the entering
+     * page starts outside the viewport. The page-to-page gap is measured on screen,
+     * so zoom and panning cannot cause the pages to overlap.
+     */
+    fun linkedNeighbourOffset(rowIndex: Int): Pt {
+        val rows = rowRanges()
+        val current = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)])
+        val neighbour = rowBounds(rows[rowIndex])
+        val gapPx = 100.0 * devicePxPerDp
+        val currentLeft = current.left * zoom - scrollX
+        val currentRight = current.right * zoom - scrollX
+        val targetEdge = if (rowIndex > currentRow) {
+            max(viewportW.toDouble(), currentRight + gapPx)
+        } else {
+            min(0.0, currentLeft - gapPx)
+        }
+        val neighbourEdge = if (rowIndex > currentRow) neighbour.left else neighbour.right
+        return Pt(
+            targetEdge - (neighbourEdge * zoom - scrollX),
+            (current.top - neighbour.top) * zoom,
+        )
+    }
+    /** True only while an incoming paginated row or cancelled edge-pull is animating. */
+    var pageFlipAnimating: Boolean = false
 
     /**
      * Whole-file clockwise page rotation (0/90/180/270), applied by the view: pages lay
@@ -314,6 +366,8 @@ class CanvasState(
 
     /** When true, zoom is fixed (pinch pans only, zoom buttons/fit are no-ops). */
     var zoomLocked: Boolean = false
+    /** User preference: enable automatic pinch-to-fit magnets in paginated mode only. */
+    var paginatedZoomSnap: Boolean = true
 
     /**
      * True while the view is sitting at fit-to-width. Set when a pinch snaps to fit-width (or
@@ -442,6 +496,7 @@ class CanvasState(
         val sy: Double,
         val z: Double,
         val gen: Int,
+        val row: Int,
         /** The last markup edit its base layer holds, like [CacheEntry.seq]. */
         val seq: Int,
     )
@@ -581,7 +636,13 @@ class CanvasState(
         val minX = (rb.left - sideMargin) * zoom - insetLeft
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val sx = if (maxX < minX) (minX + maxX) / 2.0 else minX
-        val sy = (rb.top * zoom - TOP_GAP - insetTop).coerceAtLeast(-insetTop)
+        val sy = if (rb.h * zoom < clearH) {
+            // Preserve the old centred appearance when entering a short page, while keeping its
+            // vertical position in scrollY so a later drag can reposition it permanently.
+            rb.centerY * zoom - clearCenter().y
+        } else {
+            (rb.top * zoom - TOP_GAP - insetTop).coerceAtLeast(-insetTop)
+        }
         return Pt(sx, sy)
     }
 
@@ -625,7 +686,9 @@ class CanvasState(
         // Paginated: the row clamp centres the row when it fits, so the scroll always wins; the
         // whole strip must never be centred (two pages would push each single-page row off centre).
         val ox = (if (!verticalScroll || cw >= clearW) -scrollX else insetLeft + (clearW - cw) / 2.0) - flipOffsetX
-        val oy = (if (ch < clearH) insetTop + (clearH - ch) / 2.0 else -scrollY) - overscrollY
+        // Continuous mode may centre a short document. Paginated mode always honours scrollY so
+        // users can position a short page vertically and keep that position after releasing it.
+        val oy = (if (verticalScroll && ch < clearH) insetTop + (clearH - ch) / 2.0 else -scrollY) - overscrollY
         return Pt(ox, oy)
     }
 
@@ -669,8 +732,19 @@ class CanvasState(
         val minX = (rb.left - sideMargin) * zoom - insetLeft
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val cx = if (maxX < minX) (minX + maxX) / 2.0 else sx.coerceIn(minX, maxX)
-        val maxY = ((rb.bottom + vertMargin) * zoom - viewportH + insetBottom).coerceAtLeast(-insetTop)
-        return Pt(cx, sy.coerceIn(-insetTop, maxY))
+        if (paginatedZoomSnap && rb.h * zoom >= clearH) {
+            // Original master clamp for the enlarged paginated page. This creates the
+            // familiar top-edge boundary at the fit threshold without changing continuous
+            // vertical scrolling, or forcing short pages into the top edge.
+            val maxY = ((rb.bottom + vertMargin) * zoom - viewportH + insetBottom)
+                .coerceAtLeast(-insetTop)
+            return Pt(cx, sy.coerceIn(-insetTop, maxY))
+        }
+        // Free movement remains the default, with enough of the page visible to recover it.
+        val visible = min(48.0 * devicePxPerDp, rb.h * zoom / 2.0)
+        val minY = rb.top * zoom - (viewportH - insetBottom) + visible
+        val maxY = rb.bottom * zoom - insetTop - visible
+        return Pt(cx, sy.coerceIn(minY, maxY))
     }
 
     fun scrollBy(dx: Double, dy: Double) {
@@ -804,7 +878,7 @@ class CanvasState(
 
     fun setZoomAnchored(focusViewport: Pt, newZoom: Double) {
         if (zoomLocked) return
-        val z = newZoom.coerceIn(minZoom, maxZoom)
+        val z = newZoom.coerceIn(effectiveMinZoom(), maxZoom)
         if (abs(z - zoom) < 1e-9) return
         fitWidthActive = false // an explicit zoom step leaves the fit magnets
         fitHeightActive = false
@@ -824,7 +898,7 @@ class CanvasState(
     /** Pull the live zoom back inside [minZoom]..[maxZoom] after the limits changed, anchored at
      *  the viewport centre. Deliberately ignores the zoom lock: a limit edit must always win. */
     fun clampZoomToLimits() {
-        val z = zoom.coerceIn(minZoom, maxZoom)
+        val z = zoom.coerceIn(effectiveMinZoom(), maxZoom)
         if (abs(z - zoom) < 1e-9) return
         if (viewportW == 0 || viewportH == 0) {
             zoom = z // not laid out yet; the initial view will place the scroll
@@ -856,7 +930,7 @@ class CanvasState(
         if (zoomLocked || pages.isEmpty() || viewportH == 0) return
         val cur = currentPageIndex()
         val magnet = fitHeightZoom() // paginated: land exactly where a pinch's height magnet does
-        zoom = if (magnet > 0.0) magnet else ((clearH - 60.0) / displayH(pages[cur])).coerceIn(minZoom, maxZoom)
+        zoom = if (magnet > 0.0) magnet else ((clearH - 60.0) / displayH(pages[cur])).coerceIn(effectiveMinZoom(), maxZoom)
         fitWidthActive = false
         fitHeightActive = magnet > 0.0
         invalidateCachesForZoom()
@@ -871,7 +945,7 @@ class CanvasState(
         val w = displayW(page) + 2 * sideMargin
         val h = displayH(page) + 2 * vertMargin
         if (w <= 0.0 || h <= 0.0) return
-        zoom = min(clearW / w, clearH / h).coerceIn(minZoom, maxZoom)
+        zoom = min(clearW / w, clearH / h).coerceIn(effectiveMinZoom(), maxZoom)
         fitWidthActive = false
         fitHeightActive = false
         invalidateCachesForZoom()
@@ -888,10 +962,10 @@ class CanvasState(
             val rows = rowRanges()
             if (rows.isEmpty()) return 0.0
             val w = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).w + 2 * sideMargin
-            return if (w <= 0.0) 0.0 else (clearW / w).coerceIn(minZoom, maxZoom)
+            return if (w <= 0.0) 0.0 else (clearW / w).coerceIn(effectiveMinZoom(), maxZoom)
         }
         if (contentW <= 0.0) return 0.0
-        return (clearW / contentW).coerceIn(minZoom, maxZoom)
+        return (clearW / contentW).coerceIn(effectiveMinZoom(), maxZoom)
     }
 
     /** The zoom at which the current paginated row (plus the vertical margins) exactly fills
@@ -901,7 +975,7 @@ class CanvasState(
         val rows = rowRanges()
         if (rows.isEmpty()) return 0.0
         val h = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).h + 2 * vertMargin
-        return if (h <= 0.0) 0.0 else (clearH / h).coerceIn(minZoom, maxZoom)
+        return if (h <= 0.0) 0.0 else (clearH / h).coerceIn(effectiveMinZoom(), maxZoom)
     }
 
     /**
@@ -912,10 +986,19 @@ class CanvasState(
      * zoom the caller applies; the false→true transition of either flag surfaces the lock hint.
      */
     fun snapZoomToFit(raw: Double): Double {
+        if (!verticalScroll && !paginatedZoomSnap) {
+            fitWidthActive = false
+            fitHeightActive = false
+            return raw
+        }
         val fitW = fitWidthZoom()
         val fitH = fitHeightZoom()
-        val nearW = fitW > 0.0 && abs(raw - fitW) <= fitW * SNAP_TO_FIT_WIDTH
-        val nearH = fitH > 0.0 && abs(raw - fitH) <= fitH * SNAP_TO_FIT_WIDTH
+        // Restore the original bidirectional fit magnets when the classic paginated
+        // behavior is enabled. Free mode skips them; continuous vertical mode is unchanged.
+        val canSnapW = fitW > 0.0 && (verticalScroll || paginatedZoomSnap)
+        val canSnapH = fitH > 0.0 && paginatedZoomSnap
+        val nearW = canSnapW && abs(raw - fitW) <= fitW * SNAP_TO_FIT_WIDTH
+        val nearH = canSnapH && abs(raw - fitH) <= fitH * SNAP_TO_FIT_WIDTH
         val pickH = nearH && (!nearW || abs(raw - fitH) < abs(raw - fitW))
         fitHeightActive = pickH
         fitWidthActive = nearW && !pickH
@@ -962,7 +1045,7 @@ class CanvasState(
      * document must land at its own view rather than inherit the previous one's.
      */
     fun setView(newZoom: Double, sx: Double, sy: Double) {
-        zoom = newZoom.coerceIn(minZoom, maxZoom)
+        zoom = newZoom.coerceIn(effectiveMinZoom(), maxZoom)
         scrollX = sx
         scrollY = sy
         syncCurrentRowToScroll() // paginated: land on the restored row before the clamp
@@ -1588,7 +1671,10 @@ class CanvasState(
      */
     fun sharpViewportBlit(): SharpBlit? {
         val f = sharpFrame ?: return null
-        if (f.gen != sharpGen) return null
+        // A viewport raster holds complete pixels, including paper/background. Unlike the
+        // per-page caches it cannot be re-used on a different paginated row: otherwise the
+        // previous page is drawn across the new one until its fresh sharp frame finishes.
+        if (f.gen != sharpGen || pageFlipAnimating || (!verticalScroll && (flipOffsetX != 0.0 || f.row != currentRow))) return null
         val scale = zoom / f.z
         val o = origin() // live origin, incl. overscroll lift, so the sharp page rides the pull too
         val o0 = originFor(f.sx, f.sy, f.z)
@@ -1609,9 +1695,11 @@ class CanvasState(
      * [sharpSurfaceForView]) and re-rendered when the user pans/zooms to a new area.
      */
     fun requestSharpViewport() {
-        if (pendingSharp || zoomingInProgress || viewportW <= 0 || viewportH <= 0) return
+        if (pendingSharp || zoomingInProgress || pageFlipAnimating || (!verticalScroll && flipOffsetX != 0.0) ||
+            viewportW <= 0 || viewportH <= 0) return
         if (!isPastResolutionCap()) return
         val gen = sharpGen
+        val row = currentRow
         val sx = scrollX
         val sy = scrollY
         val z = zoom
@@ -1647,8 +1735,10 @@ class CanvasState(
             renderSharpFrame(base, ink, o, z, res, draws, withFlow)
             postToMain {
                 pendingSharp = false
-                if (gen == sharpGen && sx == scrollX && sy == scrollY && z == zoom) {
-                    sharpFrame = SharpFrame(base, ink, sx, sy, z, gen, seq)
+                if (gen == sharpGen && row == currentRow && !pageFlipAnimating &&
+                    sx == scrollX && sy == scrollY && z == zoom
+                ) {
+                    sharpFrame = SharpFrame(base, ink, sx, sy, z, gen, row, seq)
                     // Replay edits committed during the build; the item snapshot predates them.
                     for ((p, rect) in pendingSharpEdits) repairSharpInk(p, rect)
                     onCacheReady?.invoke()
@@ -1741,11 +1831,15 @@ class CanvasState(
         r.restore()
     }
 
-    private fun originFor(sx: Double, sy: Double, z: Double): Pt {
+    internal fun originFor(sx: Double, sy: Double, z: Double): Pt {
         val cw = contentW * z
         val ch = contentH * z
         val ox = if (!verticalScroll || cw >= clearW) -sx else insetLeft + (clearW - cw) / 2.0
-        val oy = if (ch < clearH) insetTop + (clearH - ch) / 2.0 else -sy
+        // Match origin(): only continuous scrolling centres a short document. In paginated mode
+        // rowTargetScroll already records the initial centring in scrollY; switching this renderer
+        // to implicit centring when page height crosses clearH creates a discontinuous jump (often
+        // around 140% zoom) and makes the touch transform disagree with the painted page.
+        val oy = if (verticalScroll && ch < clearH) insetTop + (clearH - ch) / 2.0 else -sy
         return Pt(ox, oy)
     }
 
@@ -1836,6 +1930,7 @@ class CanvasState(
     companion object {
         const val MARGIN = 48.0
         const val MIN_ZOOM = 0.12
+        const val PAGINATED_MIN_ZOOM = 0.60
         const val MAX_ZOOM = 16.0
         const val ZOOM_STEP = 1.25
 
