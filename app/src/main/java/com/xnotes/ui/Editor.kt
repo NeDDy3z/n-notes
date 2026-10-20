@@ -2303,6 +2303,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
+        val reseatPage = state.paginatedZoomSnap != p.paginatedZoomSnap && !state.verticalScroll
         state.paginatedZoomSnap = p.paginatedZoomSnap
         if (!p.paginatedZoomSnap && !state.verticalScroll) {
             state.fitWidthActive = false
@@ -2321,6 +2322,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .coerceAtLeast(state.minZoom)
         state.clampZoomToLimits()
         state.relayout()
+        if (reseatPage) state.goToPage(state.currentPageIndex()) // the page lands where the new rules put it
     }
 
     /** Whether typed markdown markers convert; the text tool's config popup toggles it. */

@@ -366,7 +366,7 @@ class CanvasState(
 
     /** When true, zoom is fixed (pinch pans only, zoom buttons/fit are no-ops). */
     var zoomLocked: Boolean = false
-    /** User preference: enable automatic pinch-to-fit magnets in paginated mode only. */
+    /** Paginated preference: on keeps the classic fit magnets and fixed vertical clamp, off drops both. */
     var paginatedZoomSnap: Boolean = true
 
     /**
@@ -636,9 +636,8 @@ class CanvasState(
         val minX = (rb.left - sideMargin) * zoom - insetLeft
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val sx = if (maxX < minX) (minX + maxX) / 2.0 else minX
-        val sy = if (rb.h * zoom < clearH) {
-            // Preserve the old centred appearance when entering a short page, while keeping its
-            // vertical position in scrollY so a later drag can reposition it permanently.
+        // Free mode never centres in origin(), so a page that fits lands centred through the scroll.
+        val sy = if (!paginatedZoomSnap && rb.h * zoom < clearH) {
             rb.centerY * zoom - clearCenter().y
         } else {
             (rb.top * zoom - TOP_GAP - insetTop).coerceAtLeast(-insetTop)
@@ -686,11 +685,12 @@ class CanvasState(
         // Paginated: the row clamp centres the row when it fits, so the scroll always wins; the
         // whole strip must never be centred (two pages would push each single-page row off centre).
         val ox = (if (!verticalScroll || cw >= clearW) -scrollX else insetLeft + (clearW - cw) / 2.0) - flipOffsetX
-        // Continuous mode may centre a short document. Paginated mode always honours scrollY so
-        // users can position a short page vertically and keep that position after releasing it.
-        val oy = (if (verticalScroll && ch < clearH) insetTop + (clearH - ch) / 2.0 else -scrollY) - overscrollY
+        val oy = (if (ch < clearH && centresShortContent()) insetTop + (clearH - ch) / 2.0 else -scrollY) - overscrollY
         return Pt(ox, oy)
     }
+
+    /** Whether content shorter than the clear area is drawn centred; free paginated mode follows the scroll. */
+    private fun centresShortContent(): Boolean = verticalScroll || paginatedZoomSnap
 
     fun contentToViewport(p: Pt): Pt {
         val o = origin()
@@ -732,15 +732,13 @@ class CanvasState(
         val minX = (rb.left - sideMargin) * zoom - insetLeft
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val cx = if (maxX < minX) (minX + maxX) / 2.0 else sx.coerceIn(minX, maxX)
-        if (paginatedZoomSnap && rb.h * zoom >= clearH) {
-            // Original master clamp for the enlarged paginated page. This creates the
-            // familiar top-edge boundary at the fit threshold without changing continuous
-            // vertical scrolling, or forcing short pages into the top edge.
+        if (paginatedZoomSnap) {
+            // Classic: a page that fits can't move, and a tall one stops at its margins.
             val maxY = ((rb.bottom + vertMargin) * zoom - viewportH + insetBottom)
                 .coerceAtLeast(-insetTop)
             return Pt(cx, sy.coerceIn(-insetTop, maxY))
         }
-        // Free movement remains the default, with enough of the page visible to recover it.
+        // Free: any page moves, keeping enough of it on screen to drag it back.
         val visible = min(48.0 * devicePxPerDp, rb.h * zoom / 2.0)
         val minY = rb.top * zoom - (viewportH - insetBottom) + visible
         val maxY = rb.bottom * zoom - insetTop - visible
@@ -1835,11 +1833,7 @@ class CanvasState(
         val cw = contentW * z
         val ch = contentH * z
         val ox = if (!verticalScroll || cw >= clearW) -sx else insetLeft + (clearW - cw) / 2.0
-        // Match origin(): only continuous scrolling centres a short document. In paginated mode
-        // rowTargetScroll already records the initial centring in scrollY; switching this renderer
-        // to implicit centring when page height crosses clearH creates a discontinuous jump (often
-        // around 140% zoom) and makes the touch transform disagree with the painted page.
-        val oy = if (verticalScroll && ch < clearH) insetTop + (clearH - ch) / 2.0 else -sy
+        val oy = if (ch < clearH && centresShortContent()) insetTop + (clearH - ch) / 2.0 else -sy
         return Pt(ox, oy)
     }
 

@@ -51,8 +51,9 @@ class PaginatedLayoutTest {
         assertEquals((rb1.left - st.sideMargin) * st.zoom, st.scrollX, 1e-6)
     }
 
-    @Test fun paginatedRenderOriginDoesNotJumpWhenPageCrossesViewportHeight() {
+    @Test fun freeModeOriginDoesNotJumpWhenPageCrossesViewportHeight() {
         val st = state(3)
+        st.paginatedZoomSnap = false
         st.scrollY = 217.0
         val threshold = st.clearH / st.contentH
         val below = st.originFor(st.scrollX, st.scrollY, threshold * (1.0 - 1e-4))
@@ -100,6 +101,30 @@ class PaginatedLayoutTest {
         st.zoom = threshold * (1.0 + 1e-4)
         val above = st.rowClampedScroll(st.currentRow, st.scrollX, sy).y
         assertEquals("vertical scroll clamp must be continuous across fit-height", below, above, 1.0)
+    }
+
+    @Test fun classicModeKeepsAPageThatFitsCentredAndStill() {
+        val st = state(3)
+        st.paginatedZoomSnap = true
+        st.zoom = 0.9 * st.clearH / st.contentH
+        st.goToPage(1)
+        val centre = st.contentToViewport(st.pageRects[1].center).y
+        assertEquals(st.clearCenter().y, centre, 1e-6)
+        st.scrollBy(0.0, 300.0)
+        assertEquals(centre, st.contentToViewport(st.pageRects[1].center).y, 1e-9)
+        st.scrollBy(0.0, -600.0)
+        assertEquals(centre, st.contentToViewport(st.pageRects[1].center).y, 1e-9)
+    }
+
+    @Test fun freeModeLandsAPageThatFitsCentredThenLetsItMove() {
+        val st = state(3)
+        st.paginatedZoomSnap = false
+        st.zoom = 0.9 * st.clearH / st.contentH
+        st.goToPage(1)
+        val centre = st.contentToViewport(st.pageRects[1].center).y
+        assertEquals(st.clearCenter().y, centre, 1e-6)
+        st.scrollBy(0.0, 300.0)
+        assertEquals(centre - 300.0, st.contentToViewport(st.pageRects[1].center).y, 1e-9)
     }
 
     @Test fun goToPageJumpsTheWindowToTheRow() {
