@@ -68,6 +68,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -108,6 +118,34 @@ import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
+
+/**
+ * The dialog's own window, made to behave like the activity's: the system bars hidden when the app
+ * hides them, and no resizing when the keyboard comes and goes, so neither flashes a bar or jumps.
+ */
+@Composable
+private fun MatchActivityWindow() {
+    val view = LocalView.current
+    val context = LocalContext.current
+    DisposableEffect(view) {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        if (window != null) {
+            @Suppress("DEPRECATION")
+            window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+            var c: android.content.Context? = context
+            while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+            val host = (c as? android.app.Activity)?.window?.decorView
+            val barsHidden = host?.let { ViewCompat.getRootWindowInsets(it)?.isVisible(WindowInsetsCompat.Type.statusBars()) == false } ?: false
+            if (barsHidden) {
+                WindowInsetsControllerCompat(window, window.decorView).apply {
+                    hide(WindowInsetsCompat.Type.systemBars())
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            }
+        }
+        onDispose { }
+    }
+}
 
 /** Which sheet the screen is styling. */
 private enum class Face { PAGES, COVER }
@@ -152,7 +190,8 @@ internal fun NewNoteScreen(
     onClose: () -> Unit,
     coverEdit: CoverEdit? = null,
 ) {
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        MatchActivityWindow()
         val palette = LocalPalette.current
         val text = palette.text.toComposeColor()
         val dim = palette.textDim.toComposeColor()
@@ -667,7 +706,7 @@ internal fun NewNoteScreen(
         val focusManager = LocalFocusManager.current
         var nameBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
         Surface(
-            Modifier.fillMaxSize().pointerInput(Unit) {
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     if (!nameBounds.contains(down.position)) focusManager.clearFocus()
