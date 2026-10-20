@@ -85,6 +85,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -295,7 +296,8 @@ internal fun NewNoteScreen(
                     } else {
                         TemplateThumbs.Spec(key, pageMm, look.ink, look.accent, look.paper, values.numbers, values.colors, thumbPx(w))
                     }
-                    rememberTemplateThumb(t, spec, keep)?.let { Image(it, contentDescription = t.name, Modifier.size(w, h)) }
+                    // Cropping, not fitting: a pixel of rounding between the bitmap and its box never shows as a band.
+                    rememberTemplateThumb(t, spec, keep)?.let { Image(it, contentDescription = t.name, Modifier.size(w, h), contentScale = ContentScale.Crop) }
                 }
             }
         }
@@ -437,10 +439,14 @@ internal fun NewNoteScreen(
         }
 
         @Composable
-        fun Sheets(maxW: Dp, maxH: Dp) {
+        fun Sheets(maxW: Dp, maxH: Dp) = BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // Each sheet adds its ring's padding (4 dp) and its own (6 dp) on both sides; sized
+            // without them, the second sheet was squeezed and its picture shrank inside it.
+            val count = if (coverOnly) 1 else 2
+            val fits = (maxWidth - 16.dp * (count - 1) - 20.dp * count) / count
             val aspect = (pageMm.second / pageMm.first).toFloat()
-            var w = maxW
-            var h = maxW * aspect
+            var w = minOf(maxW, fits)
+            var h = w * aspect
             if (h > maxH) {
                 h = maxH
                 w = maxH / aspect
@@ -784,7 +790,7 @@ internal fun NewNoteScreen(
                                 Modifier.width(stageW).fillMaxHeight().background(palette.bg.toComposeColor()).padding(horizontal = 24.dp, vertical = 20.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp),
                             ) {
-                                Sheets((stageW - 48.dp - 16.dp - 24.dp) / 2, 300.dp)
+                                Sheets(260.dp, 300.dp)
                                 if (!coverOnly) FormatRow()
                                 HorizontalDivider(color = border)
                                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { Tune() }
