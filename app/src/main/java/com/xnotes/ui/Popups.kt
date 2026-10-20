@@ -406,7 +406,7 @@ private fun TemplateCustomizer(
             }
         }
 
-        TemplateParamControls(t, style, lower, dpi, apply)
+        TemplateParamControls(t, style, lower, dpi, editor, apply)
 
         Spacer(Modifier.size(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -491,11 +491,12 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TemplateParamControls(
+internal fun TemplateParamControls(
     t: com.xnotes.core.template.Template,
     style: PageStyle,
     lower: PageStyle?,
     dpi: Int,
+    store: SwatchStore,
     apply: (PageStyle) -> Unit,
 ) {
     val k = dpi / 25.4
@@ -526,12 +527,9 @@ private fun TemplateParamControls(
                 ModeChip(stringResource(R.string.default_choice), own == null) {
                     apply(style.copy(colors = style.colors?.minus(p.name)?.takeIf { it.isNotEmpty() }))
                 }
-                ColorPickerDot(
-                    own,
-                    custom = own != null,
-                    onPick = { apply(style.copy(colors = (style.colors ?: emptyMap()) + (p.name to it))) },
-                    dismissOnPick = false,
-                ) { d, pick -> PageColorGridPopup(own, d, pick) }
+                SwatchCircles(store, SwatchRole.TEMPLATE, own) {
+                    apply(style.copy(colors = (style.colors ?: emptyMap()) + (p.name to it)))
+                }
             }
             continue
         }
