@@ -372,8 +372,9 @@ object TemplateLibrary {
     private fun picture(doc: Document?, key: String, src: String): ImageData? {
         val id = "$key/$src"
         pictures[id]?.let { if (it.file.exists()) return it }
-        if (id in missingPictures) return null
         val pkg = doc?.templatePackages?.get(key) ?: entry(key)?.file ?: packageFiles[key] ?: return null
+        val miss = "${pkg.path}|$src"
+        if (miss in missingPictures) return null
         val dir = cacheDir ?: return null
         val out = File(dir, "pic-$key-" + keyOf(src))
         if (!out.exists()) {
@@ -381,7 +382,7 @@ object TemplateLibrary {
             if (!TemplatePackage.extract(pkg, src, tmp) || !tmp.renameTo(out)) {
                 tmp.delete()
                 if (!out.exists()) {
-                    missingPictures += id
+                    missingPictures += miss
                     return null
                 }
             }
@@ -389,7 +390,7 @@ object TemplateLibrary {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(out.path, o)
         if (o.outWidth <= 0 || o.outHeight <= 0) {
-            missingPictures += id
+            missingPictures += miss
             return null
         }
         return ImageData(out, o.outWidth, o.outHeight).also { pictures[id] = it }

@@ -3247,6 +3247,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val r = surface.renderer()
         r.scale(scale, scale)
         r.translate(-cover.left, -cover.top)
+        // Only a cover shows its design on a tile; ruled first pages stay as they always were.
+        if (page.cover) TemplateLibrary.paint(r, doc, page, cover, cover)
         doc.pdfFile?.let { file ->
             runCatching {
                 com.xnotes.platform.PdfSource.create(file)?.let { src ->
@@ -3478,6 +3480,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         for (page in doc.pages) for (item in page.items) {
             if (item is ImageItem) runCatching { item.image.file.delete() }
         }
+        for (file in doc.templatePackages.values) runCatching { file.delete() }
     }
 
     /** [deleteImageTemps] for a canvas, whose items are one flat list rather than per page. */
@@ -5788,6 +5791,53 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         refreshContent()
         view.requestRender()
         return at
+    }
+
+    // --- the cover: always the first page, marked so, and only ever added, restyled or removed ---
+
+    /** Whether the note starts with a cover. */
+    val hasCover: Boolean get() = state.document.pages.firstOrNull()?.cover == true
+
+    /** The cover's style, null without one. */
+    val coverStyle: PageStyle? get() = state.document.pages.firstOrNull()?.takeIf { it.cover }?.style
+
+    /** Whether the page in view is the cover. */
+    val currentPageIsCover: Boolean get() = state.document.pages.getOrNull(state.currentPageIndex())?.cover == true
+
+    /** The first page's size in mm, which a cover takes. */
+    val firstPageMm: Pair<Double, Double>
+        get() {
+            val p = state.document.pages.firstOrNull() ?: return 210.0 to 297.0
+            val k = 25.4 / state.document.dpi
+            return p.width * k to p.height * k
+        }
+
+    /** Give the note a cover of [style], or restyle the one it has. Adding one is undoable like adding a page. */
+    fun setCover(style: PageStyle) {
+        val pages = state.document.pages
+        TemplateLibrary.embed(state.document, style.template, imageDir)
+        val current = pages.firstOrNull()?.takeIf { it.cover }
+        if (current != null) {
+            val prev = current.style
+            if (prev == style) return
+            current.style = style
+            applyStyleChange(prev, style, listOf(current))
+            return
+        }
+        val ref = pages.firstOrNull()
+        val (w, h) = if (ref != null) ref.width to ref.height else PageSize.A4.pixels(Orientation.PORTRAIT, state.document.dpi)
+        // The cover's design runs to the paper's edge, whatever margins the pages have.
+        val page = Page(w, h, style = style, margins = PageMargins(0.0, 0.0, 0.0, 0.0)).also { it.cover = true }
+        controller.clearSelection()
+        pages.add(0, page)
+        history.push(AddPage(state.document, page, 0))
+        afterPageEdit()
+        goToPage(0)
+    }
+
+    /** Take the cover away, as deleting its page would. */
+    fun removeCover() {
+        if (hasCover) deletePages(listOf(0))
     }
 
     /** Common tail for a side-panel page edit: re-layout, refresh the chrome, repaint. */

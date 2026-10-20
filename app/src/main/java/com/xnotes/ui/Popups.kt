@@ -263,7 +263,11 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
             }
             Spacer(Modifier.size(6.dp))
             val libraryVersion = TemplateLibraryUi.version
-            val choices = remember(libraryVersion, tab) { editor.templateChoices() }
+            // On the cover, its own tab lists cover designs instead of page templates.
+            val coverPage = tab == 1 && editor.currentPageIsCover
+            val choices = remember(libraryVersion, tab, coverPage) {
+                editor.templateChoices(if (coverPage) com.xnotes.core.template.TemplateKind.COVER else com.xnotes.core.template.TemplateKind.PAGE)
+            }
             TemplateStrip(
                 entries = choices,
                 selected = style.template,

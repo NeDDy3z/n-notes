@@ -121,11 +121,15 @@ private fun valuesOf(s: PageStyle, t: Template?): TemplateValues {
     return TemplateValues(numbers, s.colors ?: emptyMap())
 }
 
+/** The screen's cover part alone, for a note that exists: its page size, its cover's style if any, and where the choice goes. */
+internal class CoverEdit(val pageMm: Pair<Double, Double>, val current: PageStyle?, val onDone: (PageStyle) -> Unit)
+
 /**
  * The full-screen New note. The note sits on the left: its cover and its pages side by side (a tap
  * picks which one to style), their size and orientation, then the picked one's colours and
  * settings. The gallery sits on the right with Pages and Cover tabs. Narrow screens stack the same
- * parts and move the settings into a bottom sheet. Nothing is written until Create.
+ * parts and move the settings into a bottom sheet. Nothing is written until Create. Given a
+ * [coverEdit], it is that note's cover picker instead: the cover alone, and Done.
  */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -139,6 +143,7 @@ internal fun NewNoteScreen(
     onTemplateFromImage: (TemplateKind) -> Unit,
     onCreate: (String, Editor.NewNoteSetup) -> Unit,
     onClose: () -> Unit,
+    coverEdit: CoverEdit? = null,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val palette = LocalPalette.current
@@ -158,9 +163,10 @@ internal fun NewNoteScreen(
         val all = remember(version) { TemplateLibrary.all() }
         val pages = remember(all) { all.filter { it.template.kind == TemplateKind.PAGE } }
         val covers = remember(all) { all.filter { it.template.kind == TemplateKind.COVER } }
-        var coverOn by remember { mutableStateOf(false) }
-        var coverStyle by remember { mutableStateOf(PageStyle(template = covers.firstOrNull()?.key)) }
-        var face by remember { mutableStateOf(Face.PAGES) }
+        val coverOnly = coverEdit != null
+        var coverOn by remember { mutableStateOf(coverOnly) }
+        var coverStyle by remember { mutableStateOf(coverEdit?.current ?: PageStyle(template = covers.firstOrNull()?.key)) }
+        var face by remember { mutableStateOf(if (coverOnly) Face.COVER else Face.PAGES) }
         var tag by remember { mutableStateOf<String?>(null) }
 
         // A template the library gains while this is open was imported from here: select it.
@@ -185,6 +191,7 @@ internal fun NewNoteScreen(
         val cw = customW.toDoubleOrNull()?.takeIf { it in range }
         val ch = customH.toDoubleOrNull()?.takeIf { it in range }
         val pageMm = when {
+            coverEdit != null -> coverEdit.pageMm
             custom -> (cw ?: prefs.customPageWidthMm) to (ch ?: prefs.customPageHeightMm)
             orientation == Orientation.PORTRAIT -> size.shortMm to size.longMm
             else -> size.longMm to size.shortMm
@@ -200,6 +207,10 @@ internal fun NewNoteScreen(
         val hasCover = coverOn && coverT != null
 
         fun create() {
+            if (coverEdit != null) {
+                if (hasCover) coverEdit.onDone(coverStyle)
+                return
+            }
             if (!canCreate) return
             onCreate(name.text, Editor.NewNoteSetup(pageMm.first, pageMm.second, style, coverStyle.takeIf { hasCover }))
         }
@@ -401,8 +412,10 @@ internal fun NewNoteScreen(
                         }
                     }
                 }
-                Sheet(stringResource(R.string.pages), face == Face.PAGES, { face = Face.PAGES }) {
-                    Thumb(pageT, pageKey, valuesOf(style, pageT), w, h, keep = false)
+                if (!coverOnly) {
+                    Sheet(stringResource(R.string.pages), face == Face.PAGES, { face = Face.PAGES }) {
+                        Thumb(pageT, pageKey, valuesOf(style, pageT), w, h, keep = false)
+                    }
                 }
             }
         }
@@ -614,7 +627,7 @@ internal fun NewNoteScreen(
                 item { ActionTile(XnotesIcons.importDoc, stringResource(R.string.import_template_file), onImportTemplate) }
                 item { ActionTile(XnotesIcons.image, stringResource(R.string.page_from_image)) { onTemplateFromImage(TemplateKind.PAGE) } }
             } else {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                if (!coverOnly) item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -653,7 +666,7 @@ internal fun NewNoteScreen(
         }
 
         val focus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+        LaunchedEffect(Unit) { if (!coverOnly) runCatching { focus.requestFocus() } }
 
         Surface(Modifier.fillMaxSize(), color = palette.panel.toComposeColor()) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -666,7 +679,9 @@ internal fun NewNoteScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         IconButton(onClick = onClose) { Icon(XnotesIcons.close, stringResource(R.string.close_new_note), tint = text) }
-                        Column(Modifier.weight(1f)) {
+                        if (coverOnly) {
+                            Text(stringResource(R.string.cover), color = text, fontSize = 22.sp, modifier = Modifier.weight(1f))
+                        } else Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.new_note_in, folderName), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             BasicTextField(
                                 value = name,
@@ -683,12 +698,12 @@ internal fun NewNoteScreen(
                         }
                         Button(
                             onClick = { create() },
-                            enabled = canCreate,
+                            enabled = if (coverOnly) hasCover else canCreate,
                             colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = palette.onAccent.toComposeColor()),
                         ) {
                             Icon(XnotesIcons.check, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.size(8.dp))
-                            Text(stringResource(R.string.create), fontWeight = FontWeight.Medium)
+                            Text(stringResource(if (coverOnly) R.string.done else R.string.create), fontWeight = FontWeight.Medium)
                         }
                     }
                     HorizontalDivider(color = border)
@@ -700,13 +715,15 @@ internal fun NewNoteScreen(
                                 verticalArrangement = Arrangement.spacedBy(16.dp),
                             ) {
                                 Sheets((stageW - 48.dp - 16.dp - 24.dp) / 2, 300.dp)
-                                FormatRow()
+                                if (!coverOnly) FormatRow()
                                 HorizontalDivider(color = border)
                                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { Tune() }
                             }
                             Column(Modifier.weight(1f).fillMaxHeight()) {
-                                Tabs()
-                                HorizontalDivider(color = border)
+                                if (!coverOnly) {
+                                    Tabs()
+                                    HorizontalDivider(color = border)
+                                }
                                 LazyVerticalGrid(
                                     columns = GridCells.Adaptive(112.dp),
                                     modifier = Modifier.fillMaxSize(),
@@ -732,10 +749,10 @@ internal fun NewNoteScreen(
                                         verticalArrangement = Arrangement.spacedBy(12.dp),
                                     ) {
                                         Sheets(120.dp, 170.dp)
-                                        FormatRow()
+                                        if (!coverOnly) FormatRow()
                                     }
                                 }
-                                item(span = { GridItemSpan(maxLineSpan) }) { Tabs() }
+                                if (!coverOnly) item(span = { GridItemSpan(maxLineSpan) }) { Tabs() }
                                 gallery()
                             }
                             Row(

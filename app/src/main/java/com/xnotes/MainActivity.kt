@@ -894,6 +894,10 @@ private fun EditorScreen(
                 },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
                 onImportTemplate = { importTemplateLauncher.launch(arrayOf("*/*")) },
+                onTemplateFromImage = { kind ->
+                    pendingTemplateKind = kind
+                    templateFromImageLauncher.launch(arrayOf("image/*"))
+                },
                 onSharePages = { pane, pages, asPdf -> sharePages(pane, pages, asPdf) },
                 onSavePagesAsPdf = { pane, pages -> savePagesAsPdf(pane, pages) },
                 onSavePagesAsImages = { pane, pages -> savePagesAsImages(pane, pages) },
@@ -1048,6 +1052,7 @@ private class PaneActions(
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onAddStickers: () -> Unit,
     val onImportTemplate: () -> Unit,
+    val onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
     val onSavePagesAsPdf: (Editor, List<Int>) -> Unit,
     val onSavePagesAsImages: (Editor, List<Int>) -> Unit,
@@ -1251,6 +1256,8 @@ private fun EditorPane(
                             onSavePagesAsPdf = { pages -> actions.onSavePagesAsPdf(editor, pages) },
                             onSavePagesAsImages = { pages -> actions.onSavePagesAsImages(editor, pages) },
                             onInsertPdf = { after -> actions.onInsertPdf(editor, after) },
+                            onImportTemplate = actions.onImportTemplate,
+                            onTemplateFromImage = actions.onTemplateFromImage,
                         )
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
