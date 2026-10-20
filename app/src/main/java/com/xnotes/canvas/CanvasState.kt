@@ -105,12 +105,6 @@ class CanvasState(
     var minZoom: Double = MIN_ZOOM
     var maxZoom: Double = MAX_ZOOM
 
-    /** Horizontal page navigation cannot zoom below 60%, unless a stricter configured
-     * maximum makes that impossible. Continuous vertical scrolling retains its limits. */
-    fun effectiveMinZoom(): Double =
-        (if (verticalScroll) minZoom else max(minZoom, PAGINATED_MIN_ZOOM))
-            .coerceAtMost(maxZoom)
-
     /**
      * Long-edge cap (content px) for the on-screen page caches; zoom past it renders the visible
      * region live (the sharp viewport) instead of caching the whole page. User-set in preferences.
@@ -874,7 +868,7 @@ class CanvasState(
 
     fun setZoomAnchored(focusViewport: Pt, newZoom: Double) {
         if (zoomLocked) return
-        val z = newZoom.coerceIn(effectiveMinZoom(), maxZoom)
+        val z = newZoom.coerceIn(minZoom, maxZoom)
         if (abs(z - zoom) < 1e-9) return
         fitWidthActive = false // an explicit zoom step leaves the fit magnets
         fitHeightActive = false
@@ -894,7 +888,7 @@ class CanvasState(
     /** Pull the live zoom back inside [minZoom]..[maxZoom] after the limits changed, anchored at
      *  the viewport centre. Deliberately ignores the zoom lock: a limit edit must always win. */
     fun clampZoomToLimits() {
-        val z = zoom.coerceIn(effectiveMinZoom(), maxZoom)
+        val z = zoom.coerceIn(minZoom, maxZoom)
         if (abs(z - zoom) < 1e-9) return
         if (viewportW == 0 || viewportH == 0) {
             zoom = z // not laid out yet; the initial view will place the scroll
@@ -926,7 +920,7 @@ class CanvasState(
         if (zoomLocked || pages.isEmpty() || viewportH == 0) return
         val cur = currentPageIndex()
         val magnet = fitHeightZoom() // paginated: land exactly where a pinch's height magnet does
-        zoom = if (magnet > 0.0) magnet else ((clearH - 60.0) / displayH(pages[cur])).coerceIn(effectiveMinZoom(), maxZoom)
+        zoom = if (magnet > 0.0) magnet else ((clearH - 60.0) / displayH(pages[cur])).coerceIn(minZoom, maxZoom)
         fitWidthActive = false
         fitHeightActive = magnet > 0.0
         invalidateCachesForZoom()
@@ -941,7 +935,7 @@ class CanvasState(
         val w = displayW(page) + 2 * sideMargin
         val h = displayH(page) + 2 * vertMargin
         if (w <= 0.0 || h <= 0.0) return
-        zoom = min(clearW / w, clearH / h).coerceIn(effectiveMinZoom(), maxZoom)
+        zoom = min(clearW / w, clearH / h).coerceIn(minZoom, maxZoom)
         fitWidthActive = false
         fitHeightActive = false
         invalidateCachesForZoom()
@@ -958,10 +952,10 @@ class CanvasState(
             val rows = rowRanges()
             if (rows.isEmpty()) return 0.0
             val w = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).w + 2 * sideMargin
-            return if (w <= 0.0) 0.0 else (clearW / w).coerceIn(effectiveMinZoom(), maxZoom)
+            return if (w <= 0.0) 0.0 else (clearW / w).coerceIn(minZoom, maxZoom)
         }
         if (contentW <= 0.0) return 0.0
-        return (clearW / contentW).coerceIn(effectiveMinZoom(), maxZoom)
+        return (clearW / contentW).coerceIn(minZoom, maxZoom)
     }
 
     /** The zoom at which the current paginated row (plus the vertical margins) exactly fills
@@ -971,7 +965,7 @@ class CanvasState(
         val rows = rowRanges()
         if (rows.isEmpty()) return 0.0
         val h = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)]).h + 2 * vertMargin
-        return if (h <= 0.0) 0.0 else (clearH / h).coerceIn(effectiveMinZoom(), maxZoom)
+        return if (h <= 0.0) 0.0 else (clearH / h).coerceIn(minZoom, maxZoom)
     }
 
     /**
@@ -1037,7 +1031,7 @@ class CanvasState(
      * document must land at its own view rather than inherit the previous one's.
      */
     fun setView(newZoom: Double, sx: Double, sy: Double) {
-        zoom = newZoom.coerceIn(effectiveMinZoom(), maxZoom)
+        zoom = newZoom.coerceIn(minZoom, maxZoom)
         scrollX = sx
         scrollY = sy
         syncCurrentRowToScroll() // paginated: land on the restored row before the clamp
@@ -1918,7 +1912,6 @@ class CanvasState(
     companion object {
         const val MARGIN = 48.0
         const val MIN_ZOOM = 0.12
-        const val PAGINATED_MIN_ZOOM = 0.60
         const val MAX_ZOOM = 16.0
         const val ZOOM_STEP = 1.25
 

@@ -261,39 +261,21 @@ class PaginatedLayoutTest {
         assertTrue(currentLeft - previousEnd >= 100.0 * st.devicePxPerDp - 1e-6)
     }
 
-    @Test fun paginatedModeClampsZoomAtSixtyPercentButVerticalDoesNot() {
-        val st = state(3)
-        st.zoom = 0.9
-        st.setZoomAnchored(st.clearCenter(), 0.25)
-        assertEquals(0.60, st.zoom, 1e-9)
-        st.verticalScroll = true
-        st.setZoomAnchored(st.clearCenter(), 0.25)
-        assertEquals(0.25, st.zoom, 1e-9)
+    @Test fun fitWidthFitsATwoPageSpreadWhateverZoomItNeeds() {
+        val st = state(4, ViewingMode.DOUBLE)
+        val spread = st.rowBounds(st.rowRanges()[0])
+        val fit = st.fitWidthZoom()
+        assertEquals(st.clearW / (spread.w + 2 * st.sideMargin), fit, 1e-9)
+        assertTrue("a spread on a portrait screen needs well under 60%", fit < 0.6)
     }
 
-    @Test fun restoringOldZoomRespectsHorizontalMinimum() {
-        val st = state(3)
-        st.setView(0.3, 0.0, 0.0)
-        assertEquals(0.60, st.zoom, 1e-9)
-        st.verticalScroll = true
-        st.setView(0.3, 0.0, 0.0)
-        assertEquals(0.30, st.zoom, 1e-9)
-    }
-
-    @Test fun switchingToHorizontalModeAppliesZoomFloor() {
-        val st = state(2)
-        st.verticalScroll = true
-        st.zoom = 0.3
-        st.verticalScroll = false
-        st.clampZoomToLimits()
-        assertEquals(0.60, st.zoom, 1e-9)
-    }
-
-    @Test fun paginatedFloorDoesNotOverrideConfiguredHigherMin() {
-        val st = state(2)
-        st.minZoom = 0.75
-        st.setZoomAnchored(st.clearCenter(), 0.15)
-        assertEquals(0.75, st.zoom, 1e-9)
+    @Test fun restoringALowZoomViewLandsOnTheSavedRow() {
+        val st = state(30)
+        st.zoom = 0.4
+        val t = st.rowTargetScroll(20)
+        st.setView(0.4, t.x, t.y)
+        assertEquals(0.4, st.zoom, 1e-9)
+        assertEquals(20, st.currentRow)
     }
 
     @Test fun terminalRowHasNoPhantomNeighbour() {
