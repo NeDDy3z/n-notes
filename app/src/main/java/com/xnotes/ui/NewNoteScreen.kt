@@ -61,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -151,7 +152,11 @@ internal fun NewNoteScreen(
         val border = palette.border.toComposeColor()
         val prefs = editor.preferences
 
-        var name by remember { mutableStateOf(TextFieldValue(initialName, TextRange(0, initialName.length))) }
+        var name by remember { mutableStateOf(TextFieldValue(initialName, TextRange(initialName.length))) }
+        // The first tap on the name selects all of it, so typing replaces it. The tap itself moves the
+        // caret just after focusing, so for a moment a caret-only change keeps the whole name selected.
+        var selectedOnce by remember { mutableStateOf(false) }
+        var keepAllUntil by remember { mutableStateOf(0L) }
         var size by remember { mutableStateOf(prefs.defaultPageSize) }
         var orientation by remember { mutableStateOf(prefs.defaultPageOrientation) }
         var customW by remember { mutableStateOf(mmText(prefs.customPageWidthMm)) }
@@ -680,13 +685,24 @@ internal fun NewNoteScreen(
                             Text(stringResource(R.string.new_note_in, folderName), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             BasicTextField(
                                 value = name,
-                                onValueChange = { name = it },
+                                onValueChange = { v ->
+                                    val caretOnly = v.text == name.text
+                                    name = if (caretOnly && android.os.SystemClock.uptimeMillis() < keepAllUntil) {
+                                        v.copy(selection = TextRange(0, v.text.length))
+                                    } else v
+                                },
                                 singleLine = true,
                                 textStyle = TextStyle(color = text, fontSize = 22.sp),
                                 cursorBrush = SolidColor(accent),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { create() }),
-                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(vertical = 4.dp),
+                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(vertical = 4.dp).onFocusChanged {
+                                    if (it.isFocused && !selectedOnce) {
+                                        selectedOnce = true
+                                        keepAllUntil = android.os.SystemClock.uptimeMillis() + 500
+                                        name = name.copy(selection = TextRange(0, name.text.length))
+                                    }
+                                },
                             )
                             Box(Modifier.widthIn(max = 480.dp).fillMaxWidth().height(2.dp).background(accent))
                             if (error != null) Text(error, color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
