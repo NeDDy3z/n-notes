@@ -49,7 +49,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +61,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -516,18 +522,10 @@ internal fun NewNoteScreen(
                             .padding(horizontal = 16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                stringResource(if (f == Face.PAGES) R.string.pages else R.string.cover),
-                                color = if (on) accent else dim, fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                            )
-                            if (f == Face.COVER && !hasCover) {
-                                Text(
-                                    stringResource(R.string.cover_off), color = dim, fontSize = 11.sp,
-                                    modifier = Modifier.background(palette.surface.toComposeColor(), CircleShape).padding(horizontal = 8.dp, vertical = 2.dp),
-                                )
-                            }
-                        }
+                        Text(
+                            stringResource(if (f == Face.PAGES) R.string.pages else R.string.cover),
+                            color = if (on) accent else dim, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                        )
                     }
                 }
             }
@@ -638,28 +636,17 @@ internal fun NewNoteScreen(
                 item { ActionTile(XnotesIcons.importDoc, stringResource(R.string.import_template_file), onImportTemplate) }
                 item { ActionTile(XnotesIcons.image, stringResource(R.string.page_from_image)) { onTemplateFromImage(TemplateKind.PAGE) } }
             } else {
-                if (!coverOnly) item(span = { GridItemSpan(maxLineSpan) }) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(palette.menuBg.toComposeColor(), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 18.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(stringResource(R.string.start_with_cover), color = text, fontSize = 15.sp)
-                            Text(stringResource(R.string.start_with_cover_help), color = dim, fontSize = 12.sp)
-                        }
-                        Switch(checked = hasCover, onCheckedChange = { on ->
-                            if (on && coverT == null) coverStyle = PageStyle(template = covers.firstOrNull()?.key)
-                            coverOn = on
-                        })
-                    }
-                }
                 val bundled = covers.filter { it.source != TemplateLibrary.Source.IMPORTED }
                 val imported = covers.filter { it.source == TemplateLibrary.Source.IMPORTED }
-                heading(sDesigns, bundled.size)
+                heading(sDesigns, bundled.size + if (coverOnly) 0 else 1)
+                // None is the note without a cover; picking a design turns one on. A cover being
+                // changed has no None here: the pages panel's Remove cover does that.
+                if (!coverOnly) item {
+                    Tile(stringResource(R.string.none), !hasCover, {
+                        coverOn = false
+                        face = Face.COVER
+                    }, null) { w, h -> Thumb(null, PageTemplates.NONE, TemplateValues.DEFAULTS, w, h, keep = true) }
+                }
                 items(bundled, key = { it.key }) { e ->
                     Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, null) { w, h ->
                         Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true)
@@ -676,7 +663,18 @@ internal fun NewNoteScreen(
             }
         }
 
-        Surface(Modifier.fillMaxSize(), color = palette.panel.toComposeColor()) {
+        // A press anywhere but the name ends its editing: the caret goes and the keyboard closes.
+        val focusManager = LocalFocusManager.current
+        var nameBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+        Surface(
+            Modifier.fillMaxSize().pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (!nameBounds.contains(down.position)) focusManager.clearFocus()
+                }
+            },
+            color = palette.panel.toComposeColor(),
+        ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val screenW = maxWidth
                 val wide = screenW >= 720.dp
@@ -704,7 +702,9 @@ internal fun NewNoteScreen(
                                 cursorBrush = SolidColor(accent),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { create() }),
-                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(vertical = 4.dp).onFocusChanged {
+                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(vertical = 4.dp)
+                                    .onGloballyPositioned { nameBounds = it.boundsInRoot() }
+                                    .onFocusChanged {
                                     if (it.isFocused && !selectedOnce) {
                                         selectedOnce = true
                                         keepAllUntil = android.os.SystemClock.uptimeMillis() + 500

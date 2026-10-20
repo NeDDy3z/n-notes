@@ -389,14 +389,11 @@
     <string name="new_note_in">New note in %1$s</string>
     <string name="close_new_note">Close without creating</string>
     <string name="cover">Cover</string>
-    <string name="cover_off">Off</string>
     <string name="no_cover">No cover</string>
     <string name="add_cover">Add cover</string>
     <string name="add_cover_ellipsis">Add cover…</string>
     <string name="change_cover">Change cover…</string>
     <string name="remove_cover">Remove cover</string>
-    <string name="start_with_cover">Start the note with a cover</string>
-    <string name="start_with_cover_help">Same size and orientation as the pages. Change or remove it later from the pages panel.</string>
     <string name="templates_built_in">Built-in</string>
     <string name="templates_examples">Examples</string>
     <string name="templates_imported">Imported</string>
