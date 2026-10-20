@@ -743,6 +743,68 @@ class DocumentCodecTest {
         assertEquals(mapOf("0123456789abcdef" to text), back.templates)
     }
 
+    @Test fun theCoverFlagRoundTripsAndOnlyACoverWritesIt() {
+        val doc = Document(dpi = 150)
+        doc.pages += Page(100.0, 100.0)
+        doc.pages += Page(100.0, 100.0)
+        val plain = ByteArrayOutputStream().also { codec.write(doc, it) }.toByteArray()
+        assertFalse(manifestOf(plain).contains("\"cover\""))
+
+        doc.pages[0].cover = true
+        val back = roundTrip(doc)
+
+        assertTrue(back.pages[0].cover)
+        assertFalse(back.pages[1].cover)
+    }
+
+    @Test fun aCoverFlagOffTheFirstPageIsDropped() {
+        val doc = Document(dpi = 150)
+        doc.pages += Page(100.0, 100.0)
+        doc.pages += Page(100.0, 100.0)
+        doc.pages[1].cover = true
+
+        val back = roundTrip(doc)
+
+        assertFalse(back.pages[0].cover)
+        assertFalse(back.pages[1].cover)
+    }
+
+    @Test fun aPackagedTemplateIsAStoredAssetAheadOfTheManifest() {
+        val key = "0123456789abcdef"
+        val pkg = imageFile(byteArrayOf(0x50, 0x4b, 3, 4, 9, 9))
+        val doc = Document(dpi = 150)
+        doc.pages += Page(100.0, 100.0)
+        doc.pages[0].style = PageStyle(template = key)
+        doc.templatePackages = mapOf(key to pkg, "fedcba9876543210" to imageFile())
+        val bundle = ByteArrayOutputStream().also { codec.write(doc, it) }.toByteArray()
+
+        val names = entryNames(bundle)
+        assertEquals(listOf("assets/template-$key.xtemplate", "manifest.json"), names)
+        val method = ZipInputStream(ByteArrayInputStream(bundle)).use { it.nextEntry.method }
+        assertEquals(java.util.zip.ZipEntry.STORED, method)
+
+        val back = codec.read(ByteArrayInputStream(bundle), imageDir = Files.createTempDirectory("xnotes-img").toFile())
+        assertEquals(setOf(key), back.templatePackages.keys)
+        assertTrue(back.templatePackages.getValue(key).readBytes().contentEquals(pkg.readBytes()))
+        assertTrue(back.templates.isEmpty())
+    }
+
+    @Test fun storedEntriesListImagesThenPackagesThenThePdf() {
+        val img = imageFile()
+        val pkg = imageFile()
+        val pdf = imageFile()
+        val doc = Document(dpi = 150, pdfFile = pdf)
+        doc.pages += Page(100.0, 100.0)
+        doc.pages[0].items.add(ImageItem(ImageData(img, 2, 2), Rect(0.0, 0.0, 2.0, 2.0)))
+        doc.style = PageStyle(template = "0123456789abcdef")
+        doc.templatePackages = mapOf("0123456789abcdef" to pkg)
+
+        val entries = codec.storedEntries(doc, codec.imageAssets(doc))
+
+        assertEquals(listOf("assets/image-000.png", "assets/template-0123456789abcdef.xtemplate", "assets/source.pdf"), entries.map { it.first })
+        assertEquals(listOf(img, pkg, pdf), entries.map { it.second })
+    }
+
     @Test fun builtInTemplatesKeepTheOldPatternName() {
         val doc = Document(dpi = 150)
         doc.style = PageStyle(template = "dots")

@@ -24,6 +24,9 @@ class Page(
      */
     val uid: Long = nextUid()
 
+    /** Whether this is the note's cover. Only the first page can be one, and a copied page never is. */
+    var cover: Boolean = false
+
     companion object {
         private val uidCounter = java.util.concurrent.atomic.AtomicLong(0L)
         private fun nextUid(): Long = uidCounter.incrementAndGet()

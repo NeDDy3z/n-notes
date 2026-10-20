@@ -38,6 +38,11 @@ class Document(
      * draws the same on any device. Built-in rulings are never here. Replaced whole, never mutated.
      */
     var templates: Map<String, String> = emptyMap(),
+    /**
+     * The packaged templates (zips holding pictures) this note's styles name, by key, as files on
+     * disk so their pictures never sit in the heap. Like [templates], replaced whole.
+     */
+    var templatePackages: Map<String, java.io.File> = emptyMap(),
 ) {
     /** Transient: set by the codec when legacy ink was compacted at load (debug overlay readout). */
     var compactedOnLoad = false

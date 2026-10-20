@@ -4454,9 +4454,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     private fun writeNoteInPlace(uri: String, doc: Document): Boolean = runCatching {
         val assets = codec.imageAssets(doc)
-        val expected = ArrayList<Pair<String, Long>>(assets.size + 1)
-        for ((name, file) in assets) expected.add(name to file.length())
-        doc.pdfFile?.let { expected.add("assets/source.pdf" to it.length()) }
+        val expected = codec.storedEntries(doc, assets).map { (name, file) -> name to file.length() }
         if (expected.isEmpty()) return@runCatching false
 
         val target = android.net.Uri.parse(uri)
@@ -5988,6 +5986,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         sub.pages.addAll(pages) // share the page objects; export only reads them
         sub.style = state.document.style // carry the note's "all pages" style into the subset export
         sub.templates = state.document.templates
+        sub.templatePackages = state.document.templatePackages
         // A private source per export, see [exportPdf]. The shared PDF file is read-only and owned
         // by the open document, so closing src won't delete it.
         val src = sub.pdfFile?.let { com.xnotes.platform.PdfSource.create(it) }

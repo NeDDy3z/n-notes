@@ -61,7 +61,7 @@ fun Page.deepCopy(measurer: TextMeasurer): Page =
  * model (no [ConcurrentModificationException]).
  */
 fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
-    pages = pages.mapTo(mutableListOf()) { it.deepCopy(measurer) },
+    pages = pages.mapTo(mutableListOf()) { p -> p.deepCopy(measurer).also { it.cover = p.cover } },
     dpi = dpi,
     path = path,
     displayName = displayName,
@@ -74,6 +74,7 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
     flow = flow.deepCopy(),
     created = created,
     templates = templates,
+    templatePackages = templatePackages,
 )
 
 /**
@@ -91,8 +92,8 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
  * deep-copied. It is small. Use [deepCopy] wherever the copy has to be independently editable.
  */
 fun Document.snapshot(): Document = Document(
-    pages = pages.mapTo(mutableListOf()) {
-        Page(it.width, it.height, ArrayList(it.items), it.pdfPage, it.style, it.margins, it.markups)
+    pages = pages.mapTo(mutableListOf()) { p ->
+        Page(p.width, p.height, ArrayList(p.items), p.pdfPage, p.style, p.margins, p.markups).also { it.cover = p.cover }
     },
     dpi = dpi,
     path = path,
@@ -105,4 +106,5 @@ fun Document.snapshot(): Document = Document(
     flow = flow.deepCopy(),
     created = created,
     templates = templates,
+    templatePackages = templatePackages,
 )
