@@ -14,7 +14,6 @@ import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.model.insets
 import com.xnotes.core.model.resolvedPageColor
 import com.xnotes.core.model.resolvedTemplate
-import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.RasterSurface
 import com.xnotes.core.pal.Renderer
 import com.xnotes.core.pal.SurfaceFactory
@@ -496,7 +495,7 @@ class CanvasState(
 
     // Two layers, like the page cache, so an erase can clear ink in a region without
     // disturbing the (PDF/paper) background underneath: [base] holds window bg + paper +
-    // border + background + labels, [ink] holds just the strokes on a transparent surface.
+    // background + labels, [ink] holds just the strokes on a transparent surface.
     private class SharpFrame(
         val base: RasterSurface,
         val ink: RasterSurface,
@@ -1759,7 +1758,7 @@ class CanvasState(
         }
     }
 
-    /** Paint the [base] (paper/border/background/labels) and [ink] (flow + strokes) sharp layers. */
+    /** Paint the [base] (paper/background/labels) and [ink] (flow + strokes) sharp layers. */
     private fun renderSharpFrame(
         base: RasterSurface,
         ink: RasterSurface,
@@ -1775,10 +1774,8 @@ class CanvasState(
         val ri = ink.renderer()
         ri.translate(o.x, o.y)
         ri.scale(z, z)
-        val border = Pen(palette.paperBorder, 1.0, cosmetic = true)
         for (d in draws) {
             rb.fillRect(d.pr, paperColor(d.page))
-            if (pageBorders) rb.strokeRect(d.pr, border)
             rb.save()
             rb.clipRect(d.pr)
             rb.translate(d.pr.left, d.pr.top)
