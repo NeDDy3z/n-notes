@@ -131,7 +131,6 @@ import com.xnotes.core.template.Template
 import com.xnotes.core.template.TemplateKind
 import com.xnotes.core.template.TemplateValues
 import com.xnotes.platform.TemplateLibrary
-import com.xnotes.settings.Preferences
 import com.xnotes.settings.SwatchRole
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.ColorMath
@@ -270,7 +269,7 @@ internal fun NewNoteScreen(
         }
 
         val custom = size == PageSize.CUSTOM
-        val range = Preferences.CUSTOM_PAGE_MIN_MM..Preferences.CUSTOM_PAGE_MAX_MM
+        val range = PageSize.CUSTOM_MIN_MM..PageSize.CUSTOM_MAX_MM
         val cw = customW.toDoubleOrNull()?.takeIf { it in range }
         val ch = customH.toDoubleOrNull()?.takeIf { it in range }
         val pageMm = when {

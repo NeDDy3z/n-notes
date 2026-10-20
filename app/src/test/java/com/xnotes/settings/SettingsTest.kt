@@ -173,8 +173,8 @@ class SettingsTest {
             JSONObject().put("custom_page_width_mm", 9000.0).put("custom_page_height_mm", 0.0),
         )
         val back = Settings.fromJson(o).prefs
-        assertEquals(Preferences.CUSTOM_PAGE_MAX_MM, back.customPageWidthMm, 1e-9)
-        assertEquals(Preferences.CUSTOM_PAGE_MIN_MM, back.customPageHeightMm, 1e-9)
+        assertEquals(PageSize.CUSTOM_MAX_MM, back.customPageWidthMm, 1e-9)
+        assertEquals(PageSize.CUSTOM_MIN_MM, back.customPageHeightMm, 1e-9)
     }
 
     @Test fun malformedAppearanceFallsBackToSystem() {

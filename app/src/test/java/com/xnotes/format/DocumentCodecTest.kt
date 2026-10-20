@@ -18,6 +18,7 @@ import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
+import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Routing
@@ -872,6 +873,41 @@ class DocumentCodecTest {
         val read = roundTrip(doc)
         assertEquals(1.0, read.pages[0].margins.left!!, 1e-9)
         assertEquals(0.0, read.pages[0].margins.right!!, 1e-9)
+    }
+
+    @Test fun aNewPageSizeRoundTripsAndANoteWithoutOneWritesNothing() {
+        val doc = Document(pages = mutableListOf(Page(400.0, 800.0)))
+        val plain = ByteArrayOutputStream().also { codec.write(doc, it) }
+        assertFalse(manifestOf(plain.toByteArray()).contains("new_page_size"))
+        assertNull(roundTrip(doc).newPageSize)
+
+        doc.newPageSize = PageSizeChoice(PageSize.SLIDE_16_9, Orientation.LANDSCAPE, 100.0, 150.0)
+        assertEquals(doc.newPageSize, roundTrip(doc).newPageSize)
+        doc.newPageSize = PageSizeChoice(PageSize.CUSTOM, customWidthMm = 90.5, customHeightMm = 160.0)
+        assertEquals(doc.newPageSize, roundTrip(doc).newPageSize)
+    }
+
+    @Test fun aNewPageSizeFromElsewhereReadsForgivingly() {
+        fun read(newPageSize: String): PageSizeChoice? {
+            val out = ByteArrayOutputStream()
+            java.util.zip.ZipOutputStream(out).use {
+                it.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+                it.write(
+                    ("{\"format\":\"xnote\",\"pages\":[{\"width\":100,\"height\":100,\"items\":[]}]," +
+                        "\"new_page_size\":$newPageSize}").toByteArray(),
+                )
+                it.closeEntry()
+            }
+            return codec.read(ByteArrayInputStream(out.toByteArray())).newPageSize
+        }
+        // A size this build lacks, or no object at all, leaves added pages copying the page before.
+        assertNull(read("{\"size\":\"b5\",\"orientation\":\"landscape\"}"))
+        assertNull(read("\"a4\""))
+        assertEquals(PageSizeChoice(PageSize.A5), read("{\"size\":\"A5\"}"))
+        assertEquals(
+            PageSizeChoice(PageSize.CUSTOM, Orientation.PORTRAIT, PageSize.CUSTOM_MAX_MM, PageSize.A4.longMm),
+            read("{\"size\":\"custom\",\"custom_width_mm\":9000,\"custom_height_mm\":\"NaN\"}"),
+        )
     }
 
     @Test fun aPageWithNoAreaLoadsAtItsNeighboursSize() {

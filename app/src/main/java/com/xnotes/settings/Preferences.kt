@@ -2,6 +2,7 @@ package com.xnotes.settings
 
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.PageSize
+import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.util.NameTemplate
 import org.json.JSONObject
@@ -116,12 +117,11 @@ data class Preferences(
      * [defaultPageOrientation]; a custom one is taken as typed, since the two fields already say
      * which way round the page goes.
      */
-    fun newPagePixels(dpi: Int = PageSize.DEFAULT_DPI): Pair<Double, Double> =
-        if (defaultPageSize == PageSize.CUSTOM) {
-            PageSize.mmToPx(customPageWidthMm, dpi) to PageSize.mmToPx(customPageHeightMm, dpi)
-        } else {
-            defaultPageSize.pixels(defaultPageOrientation, dpi)
-        }
+    fun newPagePixels(dpi: Int = PageSize.DEFAULT_DPI): Pair<Double, Double> = defaultPageChoice.pixels(dpi)
+
+    /** The default page size, orientation and custom sides as one choice. */
+    val defaultPageChoice: PageSizeChoice
+        get() = PageSizeChoice(defaultPageSize, defaultPageOrientation, customPageWidthMm, customPageHeightMm)
 
     fun toJson(): JSONObject = JSONObject()
         .put("ui_appearance", uiAppearance)
@@ -205,10 +205,6 @@ data class Preferences(
         /** [trashDays] for keeping deleted items until Trash is emptied by hand. */
         const val TRASH_FOREVER = -1
 
-        /** Settable range of a custom page's sides, in millimetres. */
-        const val CUSTOM_PAGE_MIN_MM = 10.0
-        const val CUSTOM_PAGE_MAX_MM = 2000.0
-
         /** Settable range of the min/max zoom limits, in percent (within the hard zoom bounds). */
         const val ZOOM_LIMIT_MIN_PCT = 20
         const val ZOOM_LIMIT_MAX_PCT = 1600
@@ -255,9 +251,9 @@ data class Preferences(
                     .ifBlank { NameTemplate.DEFAULT },
                 defaultPageOrientation = Orientation.fromName(o.optString("default_page_orientation", "portrait")),
                 customPageWidthMm = o.optDouble("custom_page_width_mm", 210.0)
-                    .coerceIn(CUSTOM_PAGE_MIN_MM, CUSTOM_PAGE_MAX_MM),
+                    .coerceIn(PageSize.CUSTOM_MIN_MM, PageSize.CUSTOM_MAX_MM),
                 customPageHeightMm = o.optDouble("custom_page_height_mm", 297.0)
-                    .coerceIn(CUSTOM_PAGE_MIN_MM, CUSTOM_PAGE_MAX_MM),
+                    .coerceIn(PageSize.CUSTOM_MIN_MM, PageSize.CUSTOM_MAX_MM),
                 fingerDraws = o.optBoolean("finger_draws", false),
                 zoomLockPan = zoomLockPan,
                 detectShapes = o.optBoolean("detect_shapes", true),

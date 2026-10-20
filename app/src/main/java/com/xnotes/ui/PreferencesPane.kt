@@ -928,7 +928,7 @@ private fun MillimetreField(label: String, value: Double, onChange: (Double) -> 
         onValueChange = { raw ->
             text = raw
             raw.trim().toDoubleOrNull()?.let {
-                if (it in Preferences.CUSTOM_PAGE_MIN_MM..Preferences.CUSTOM_PAGE_MAX_MM) onChange(it)
+                if (it in PageSize.CUSTOM_MIN_MM..PageSize.CUSTOM_MAX_MM) onChange(it)
             }
         },
         singleLine = true,

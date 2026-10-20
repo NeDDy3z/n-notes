@@ -15,6 +15,7 @@ import com.xnotes.core.model.Page
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageSize
+import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
@@ -281,6 +282,7 @@ class DocumentCodec(
         j.endArray()
         writeStyle(j, doc.style)
         writeMargins(j, doc.margins)
+        doc.newPageSize?.let { writeNewPageSize(j, it) }
         j.endObject()
     }
 
@@ -602,6 +604,16 @@ class DocumentCodec(
         j.endObject()
     }
 
+    /** The size of pages added to the note, written only when it sets one (else they copy the page before). */
+    private fun writeNewPageSize(j: JsonWrite, c: PageSizeChoice) {
+        j.name("new_page_size").beginObject()
+        j.name("size").value(c.size.name.lowercase())
+        j.name("orientation").value(c.orientation.toName())
+        j.name("custom_width_mm").value(c.customWidthMm)
+        j.name("custom_height_mm").value(c.customHeightMm)
+        j.endObject()
+    }
+
     /**
      * Read a `.xnote` from [input]. When [pdfDir] is non-null an embedded source PDF, and when
      * [imageDir] is non-null the inserted images, are streamed out to fresh temp files in those dirs
@@ -693,6 +705,7 @@ class DocumentCodec(
         doc.templatePackages = packages
         doc.style = m.style
         doc.margins = m.margins
+        doc.newPageSize = m.newPageSize
 
         if (m.hasPdf) {
             doc.pdfFile = pdfFile
@@ -761,6 +774,7 @@ class DocumentCodec(
         var hasPdf = false
         var style = PageStyle()
         var margins = PageMargins()
+        var newPageSize: PageSizeChoice? = null
         val bookmarks = ArrayList<Bookmark>()
         val pages = ArrayList<Page>()
         val pageImages = ArrayList<Triple<Page, List<PendingImage>, GlueRead>>()
@@ -843,6 +857,7 @@ class DocumentCodec(
                 "has_pdf" -> m.hasPdf = boolOr(p, false)
                 "style" -> m.style = parseStyle(p)
                 "margins" -> m.margins = parseMargins(p)
+                "new_page_size" -> m.newPageSize = parseNewPageSize(p)
                 "bookmarks" -> parseBookmarks(p, m.bookmarks)
                 "pages" -> parsePages(p, m)
                 else -> p.skipValue()
@@ -1421,6 +1436,31 @@ class DocumentCodec(
         // A file from a newer/looser writer can carry anything; clamp to the range the UI offers.
         fun clamp(v: Double?) = v?.coerceIn(0.0, PageMargins.MAX)
         return PageMargins(clamp(left), clamp(top), clamp(right), clamp(bottom))
+    }
+
+    /** The note's size for added pages; null (copy the page before) when absent or naming a size this build lacks. */
+    private fun parseNewPageSize(p: JsonPull): PageSizeChoice? {
+        if (p.peek() != JsonPull.Token.BEGIN_OBJECT) {
+            p.skipValue()
+            return null
+        }
+        var size: PageSize? = null
+        var orientation = Orientation.PORTRAIT
+        var width = PageSize.A4.shortMm
+        var height = PageSize.A4.longMm
+        p.beginObject()
+        while (p.hasNext()) {
+            when (p.nextName()) {
+                "size" -> size = stringOrNull(p)?.let { name -> PageSize.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+                "orientation" -> orientation = Orientation.fromName(stringOrNull(p))
+                "custom_width_mm" -> width = doubleOrNull(p)?.takeIf { it.isFinite() } ?: width
+                "custom_height_mm" -> height = doubleOrNull(p)?.takeIf { it.isFinite() } ?: height
+                else -> p.skipValue()
+            }
+        }
+        p.endObject()
+        fun clamp(mm: Double) = mm.coerceIn(PageSize.CUSTOM_MIN_MM, PageSize.CUSTOM_MAX_MM)
+        return size?.let { PageSizeChoice(it, orientation, clamp(width), clamp(height)) }
     }
 
     private fun materializeImage(spec: PendingImage, imageFiles: Map<String, File>): ImageItem? {

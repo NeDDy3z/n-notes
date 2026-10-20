@@ -75,6 +75,7 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
     created = created,
     templates = templates,
     templatePackages = templatePackages,
+    newPageSize = newPageSize,
 )
 
 /**
@@ -107,4 +108,5 @@ fun Document.snapshot(): Document = Document(
     created = created,
     templates = templates,
     templatePackages = templatePackages,
+    newPageSize = newPageSize,
 )
