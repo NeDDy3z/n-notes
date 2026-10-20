@@ -20,6 +20,8 @@ class Template(
     val tags: List<String>,
     val params: List<TemplateParam>,
     val root: TNode.Group,
+    /** Where hosts offer it (SPEC §1 `kind`); never changes how it draws. */
+    val kind: TemplateKind = TemplateKind.PAGE,
 ) {
     /** The parameter the host's spacing control drives (SPEC §4 `role`), if any. */
     val spacingParam: TemplateParam? = params.firstOrNull { it.role == TemplateParam.ROLE_SPACING }
@@ -36,6 +38,9 @@ class Template(
             else -> false
         }
 }
+
+/** SPEC §1 `kind`: paper for every page, or a notebook's cover. An unknown value reads as [PAGE]. */
+enum class TemplateKind { PAGE, COVER }
 
 enum class ParamType { LENGTH, NUMBER, INTEGER, COLOR }
 

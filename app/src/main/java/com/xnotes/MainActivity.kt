@@ -480,14 +480,9 @@ private fun EditorScreen(
         }
     }
 
-    // A user page template (.xtemplate), checked and stored in the template library.
+    // A user page template (.xtemplate, plain or packaged), checked and stored in the template library.
     val importTemplateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }
-                .getOrNull()
-                ?.let { editor.importTemplate(it) }
-                ?: run { editor.message = context.getString(R.string.err_read_file) }
-        }
+        if (uri != null) editor.importTemplate(uri)
     }
 
     // A user font (.ttf/.otf), stored + registered by the editor.

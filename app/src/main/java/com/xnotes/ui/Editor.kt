@@ -187,6 +187,9 @@ private const val COLOR_NAMES_FILE = "color-names.json"
 private const val TRASH_DIR = "trash"
 private const val TRASH_INFO = "trash.json"
 
+/** Inside the top folder's sidecar: the template library, made on the first import. */
+private const val TEMPLATES_DIR = "templates"
+
 /** How long after a tap its settings change is written, clear of the 150 ms animations it starts. */
 private const val SETTINGS_SAVE_DELAY_MS = 400L
 
@@ -1506,6 +1509,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     init {
         com.xnotes.platform.MathRendering.addListener(mathLanded)
+        if (pane == Pane.PRIMARY) reloadTemplateLibrary()
         view.input = { ev ->
             // Any fresh canvas touch quietly retires the flow action bar and still does its job.
             when (ev.actionMasked) {
@@ -2628,10 +2632,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Stamp the saved new-note defaults (page style + flow config) onto a fresh [doc]. */
     private fun stampNewNoteDefaults(doc: Document): Document {
         doc.style = settings.newNoteStyle
-        TemplateLibrary.embed(doc, doc.style.template)
+        TemplateLibrary.embed(doc, doc.style.template, imageDir)
         // A default whose template left the library falls back to the built-in ruling.
         doc.style.template?.let { key ->
-            if (key != PageTemplates.NONE && !PageTemplates.isBuiltIn(key) && key !in doc.templates) {
+            if (key != PageTemplates.NONE && !PageTemplates.isBuiltIn(key) && key !in doc.templates && key !in doc.templatePackages) {
                 doc.style = doc.style.withTemplate(null, PageTemplates.NONE)
             }
         }
@@ -2643,7 +2647,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun setDocumentStyle(style: PageStyle) {
         val prev = state.document.style
         if (prev == style) return
-        TemplateLibrary.embed(state.document, style.template)
+        TemplateLibrary.embed(state.document, style.template, imageDir)
         state.document.style = style
         applyStyleChange(prev, style, state.document.pages.toList())
     }
@@ -2653,7 +2657,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val page = state.document.pages.getOrNull(state.currentPageIndex()) ?: return
         val prev = page.style
         if (prev == style) return
-        TemplateLibrary.embed(state.document, style.template)
+        TemplateLibrary.embed(state.document, style.template, imageDir)
         page.style = style
         applyStyleChange(prev, style, listOf(page))
     }
@@ -3531,6 +3535,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         settingsRepo.save(settings)
         browseCache.clear()
         rootNameCache.clear()
+        reloadTemplateLibrary()
     }
 
     /** Browse the app's own private storage instead of a granted folder; no SAF grant needed. */
@@ -6791,41 +6796,167 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         fontsChanged()
     }
 
-    /** Adopt [bytes] as a user page template, reporting the outcome as a message. */
-    fun importTemplate(bytes: ByteArray) {
-        if (bytes.size > com.xnotes.format.TemplateReader.MAX_BYTES) {
-            message = appContext.getString(R.string.err_import_template, appContext.getString(R.string.template_too_large))
-            return
-        }
-        runCatching { TemplateLibrary.import(String(bytes, Charsets.UTF_8)) }
-            .onSuccess {
-                message = appContext.getString(R.string.template_imported, it.template.name)
-                TemplateLibraryUi.version++
+    /** Adopt the template file at [uri], plain or packaged, reporting the outcome as a message. */
+    fun importTemplate(uri: android.net.Uri) {
+        val name = runCatching {
+            appContext.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull()?.let { com.xnotes.core.util.Paths.stem(it) }
+        adoptTemplate {
+            val tmp = java.io.File.createTempFile("imp", ".xtemplate", appContext.cacheDir)
+            try {
+                val input = appContext.contentResolver.openInputStream(uri)
+                    ?: throw com.xnotes.format.TemplateFormatException(appContext.getString(R.string.err_read_file))
+                input.use { src ->
+                    java.io.FileOutputStream(tmp).use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val n = src.read(buf)
+                            if (n < 0) break
+                            total += n
+                            if (total > com.xnotes.format.TemplatePackage.MAX_BYTES) {
+                                throw com.xnotes.format.TemplateFormatException("template package is larger than 16 MiB")
+                            }
+                            out.write(buf, 0, n)
+                        }
+                    }
+                }
+                TemplateLibrary.import(tmp, name)
+            } finally {
+                tmp.delete()
             }
-            .onFailure { message = appContext.getString(R.string.err_import_template, it.message ?: "") }
+        }
+    }
+
+    /** Make a cover or page template from the picture at [uri] and add it to the library. */
+    fun templateFromImage(uri: android.net.Uri, kind: com.xnotes.core.template.TemplateKind) {
+        val name = runCatching {
+            appContext.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull()?.let { com.xnotes.core.util.Paths.stem(it) } ?: "Picture"
+        adoptTemplate {
+            val image = java.io.File.createTempFile("img", null, appContext.cacheDir)
+            try {
+                appContext.contentResolver.openInputStream(uri)?.use { src -> java.io.FileOutputStream(image).use { src.copyTo(it) } }
+                    ?: throw com.xnotes.format.TemplateFormatException(appContext.getString(R.string.err_read_file))
+                val pkg = TemplateLibrary.packageFromImage(image, kind, name)
+                try {
+                    TemplateLibrary.import(pkg, name)
+                } finally {
+                    pkg.delete()
+                }
+            } finally {
+                image.delete()
+            }
+        }
+    }
+
+    /** Run [work] off the main thread, then report it and refresh the pickers. */
+    private fun adoptTemplate(work: () -> TemplateLibrary.Entry) {
+        autosaveScope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching(work) }
+            result
+                .onSuccess {
+                    message = appContext.getString(R.string.template_imported, it.template.name)
+                    TemplateLibraryUi.version++
+                }
+                .onFailure { message = appContext.getString(R.string.err_import_template, it.message ?: "") }
+        }
     }
 
     /** Forget an imported template. Notes that use it keep drawing it from their own copy. */
     fun removeTemplate(key: String) {
-        TemplateLibrary.remove(key)
-        TemplateLibraryUi.version++
+        autosaveScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { TemplateLibrary.remove(key) }
+            TemplateLibraryUi.version++
+        }
     }
 
     /** Add a template this note carries, but the library lacks, to the library. */
     fun keepNoteTemplate(key: String) {
-        state.document.templates[key]?.let { importTemplate(it.toByteArray(Charsets.UTF_8)) }
+        val pkg = state.document.templatePackages[key]
+        val text = state.document.templates[key]
+        when {
+            pkg != null -> adoptTemplate { TemplateLibrary.import(pkg, null) }
+            text != null -> adoptTemplate { TemplateLibrary.importText(text) }
+        }
     }
 
     /** The templates to offer: the library's, then any this note carries that the library lacks. */
     fun templateChoices(): List<TemplateLibrary.Entry> {
         val lib = TemplateLibrary.all()
         val known = lib.mapTo(HashSet()) { it.key }
-        val carried = state.document.templates.mapNotNull { (key, text) ->
+        val doc = state.document
+        val carried = (doc.templates.keys + doc.templatePackages.keys).mapNotNull { key ->
             if (key in known) return@mapNotNull null
-            val t = TemplateLibrary.template(state.document, key) ?: return@mapNotNull null
-            TemplateLibrary.Entry(key, t, text, TemplateLibrary.Source.NOTE)
+            val t = TemplateLibrary.template(doc, key) ?: return@mapNotNull null
+            TemplateLibrary.Entry(key, t, doc.templates[key].orEmpty(), TemplateLibrary.Source.NOTE, doc.templatePackages[key])
         }
         return lib + carried.sortedBy { it.template.name.lowercase() }
+    }
+
+    /** Re-read the template library from the notes folder off the main thread, then refresh the pickers. */
+    private fun reloadTemplateLibrary() {
+        val root = browseRoot
+        autosaveScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                TemplateLibrary.reload(root?.let { TemplateStore(it) })
+            }
+            TemplateLibraryUi.version++
+        }
+    }
+
+    /** The notes folder's `.xnote/templates/`, through the same SAF calls as the other sidecar files. */
+    private inner class TemplateStore(private val root: String) : TemplateLibrary.Store {
+        private val tree = android.net.Uri.parse(root)
+        private val resolver get() = appContext.contentResolver
+
+        private fun dir(create: Boolean): String? {
+            val side = sidecarDir(tree, browseRootDocId(root), create) ?: return null
+            findChildDocId(tree, side, TEMPLATES_DIR, dir = true)?.let { return it }
+            if (!create) return null
+            val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, side)
+            val made = android.provider.DocumentsContract.createDocument(
+                resolver, parent, android.provider.DocumentsContract.Document.MIME_TYPE_DIR, TEMPLATES_DIR,
+            ) ?: return null
+            return android.provider.DocumentsContract.getDocumentId(made)
+        }
+
+        override fun list(): List<TemplateLibrary.StoredFile> {
+            val dirId = dir(create = false) ?: return emptyList()
+            val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, dirId)
+            val out = ArrayList<TemplateLibrary.StoredFile>()
+            resolver.query(
+                childrenUri,
+                arrayOf(
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
+                ),
+                null, null, null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(2) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) continue
+                    val id = c.getString(1)
+                    val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                    out += TemplateLibrary.StoredFile(id, c.getString(0) ?: continue) { resolver.openInputStream(uri) }
+                }
+            }
+            return out
+        }
+
+        override fun write(name: String, from: java.io.File): String? {
+            val dirId = dir(create = true) ?: return null
+            val made = android.provider.DocumentsContract.createDocument(
+                resolver, android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, dirId), "application/octet-stream", name,
+            ) ?: return null
+            resolver.openOutputStream(made, "wt")?.use { out -> from.inputStream().use { it.copyTo(out) } } ?: return null
+            return android.provider.DocumentsContract.getDocumentId(made)
+        }
+
+        override fun delete(handle: String): Boolean =
+            android.provider.DocumentsContract.deleteDocument(resolver, android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, handle))
     }
 
     fun templateFor(key: String): com.xnotes.core.template.Template? = TemplateLibrary.template(state.document, key)

@@ -13,6 +13,7 @@ import com.xnotes.core.template.TFont
 import com.xnotes.core.template.TNode
 import com.xnotes.core.template.TStyle
 import com.xnotes.core.template.Template
+import com.xnotes.core.template.TemplateKind
 import com.xnotes.core.template.TemplateParam
 import com.xnotes.core.template.TextPart
 import java.io.StringReader
@@ -105,6 +106,7 @@ object TemplateReader {
                 tags = (top["tags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
                 params = params,
                 root = root,
+                kind = if (top["kind"] == "cover") TemplateKind.COVER else TemplateKind.PAGE,
             )
         }
 
