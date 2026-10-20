@@ -61,8 +61,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -665,9 +663,6 @@ internal fun NewNoteScreen(
             }
         }
 
-        val focus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { if (!coverOnly) runCatching { focus.requestFocus() } }
-
         Surface(Modifier.fillMaxSize(), color = palette.panel.toComposeColor()) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val screenW = maxWidth
@@ -691,7 +686,7 @@ internal fun NewNoteScreen(
                                 cursorBrush = SolidColor(accent),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { create() }),
-                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().focusRequester(focus).padding(vertical = 4.dp),
+                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(vertical = 4.dp),
                             )
                             Box(Modifier.widthIn(max = 480.dp).fillMaxWidth().height(2.dp).background(accent))
                             if (error != null) Text(error, color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
