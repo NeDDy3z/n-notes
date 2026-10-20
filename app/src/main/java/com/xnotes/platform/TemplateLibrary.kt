@@ -73,6 +73,13 @@ object TemplateLibrary {
     @Volatile
     private var cacheDir: File? = null
     @Volatile
+    private var assets: AssetManager? = null
+    /** When the installed APK last changed, so bundled packages are copied out once per install. */
+    @Volatile
+    private var apkStamp = 0L
+    @Volatile
+    private var packagesLoaded = false
+    @Volatile
     private var store: Store? = null
     @Volatile
     private var bundled: List<Entry> = emptyList()
@@ -94,8 +101,10 @@ object TemplateLibrary {
         val app = context.applicationContext
         legacyDir = File(app.filesDir, "templates")
         cacheDir = File(app.cacheDir, "template-library").apply { mkdirs() }
+        assets = app.assets
+        apkStamp = File(app.applicationInfo.sourceDir).lastModified()
         bundled = loadBundled(app.assets)
-        reload(null)
+        readImports(null)
     }
 
     /** Every template to offer, built-ins first, then the bundled examples, then imports. */
@@ -154,8 +163,13 @@ object TemplateLibrary {
         doc.templatePackages = doc.templatePackages + (key to copy)
     }
 
-    /** Read the store's templates, and the legacy folder's, replacing the imports. IO; call off the main thread. */
+    /** Read the bundled packages once, then the store's and the legacy folder's templates as the imports. IO; call off the main thread. */
     fun reload(newStore: Store?) {
+        loadBundledPackages()
+        readImports(newStore)
+    }
+
+    private fun readImports(newStore: Store?) {
         synchronized(lock) {
             store = newStore
             val found = HashMap<String, Entry>()
@@ -381,6 +395,7 @@ object TemplateLibrary {
         return ImageData(out, o.outWidth, o.outHeight).also { pictures[id] = it }
     }
 
+    /** The built-ins and the plain bundled examples; packages wait for [loadBundledPackages]. */
     private fun loadBundled(am: AssetManager): List<Entry> {
         fun read(path: String) = runCatching { am.open(path).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
         val out = ArrayList<Entry>()
@@ -389,14 +404,68 @@ object TemplateLibrary {
             val t = runCatching { TemplateReader.read(text) }.getOrNull() ?: continue
             out += Entry(id, t, text, Source.BUILT_IN)
         }
-        val examples = (runCatching { am.list(EXAMPLES_DIR) }.getOrNull() ?: emptyArray()).filter { it.endsWith(EXT) }
-        out += examples.mapNotNull { name ->
+        out += examples(am).filterNot { isPackageAsset(am, it) }.mapNotNull { name ->
             val text = read("$EXAMPLES_DIR/$name") ?: return@mapNotNull null
             val t = runCatching { TemplateReader.read(text) }.getOrNull() ?: return@mapNotNull null
             Entry(keyOf(text), t, text, Source.BUNDLED)
         }.sortedBy { it.template.name.lowercase() }
         return out
     }
+
+    /** Add the bundled examples that are packages, the first time only. IO. */
+    private fun loadBundledPackages() {
+        synchronized(lock) {
+            if (packagesLoaded) return
+            packagesLoaded = true
+            val am = assets ?: return
+            val dir = cacheDir ?: return
+            val found = examples(am).filter { isPackageAsset(am, it) }.mapNotNull { name -> runCatching { bundledPackage(am, dir, name) }.getOrNull() }
+            if (found.isEmpty()) return
+            val (builtIn, examples) = bundled.partition { it.source == Source.BUILT_IN }
+            bundled = builtIn + (examples + found).sortedBy { it.template.name.lowercase() }
+        }
+    }
+
+    /** Bundled package [name] as a file, copied out of the APK once per install; a marker keeps its key so later launches never hash it. */
+    private fun bundledPackage(am: AssetManager, dir: File, name: String): Entry {
+        val marker = File(dir, "bundled-$name.key")
+        val known = runCatching { marker.readLines() }.getOrNull()
+            ?.takeIf { it.size == 2 && it[0] == apkStamp.toString() && File(dir, it[1] + EXT).exists() }?.get(1)
+        val key = known ?: copyOut(am, dir, name).also { marker.writeText("$apkStamp\n$it") }
+        val file = File(dir, key + EXT)
+        val text = TemplatePackage.readJson(file)
+        return Entry(key, TemplateReader.read(text), text, Source.BUNDLED, file)
+    }
+
+    /** Copy bundled package [name] into [dir] under its key, returning the key. */
+    private fun copyOut(am: AssetManager, dir: File, name: String): String {
+        val tmp = File.createTempFile("bnd", EXT, dir)
+        try {
+            am.open("$EXAMPLES_DIR/$name").use { input -> FileOutputStream(tmp).use { input.copyTo(it) } }
+            val key = keyOf(tmp)
+            val kept = File(dir, key + EXT)
+            if (!kept.exists() && !tmp.renameTo(kept)) tmp.copyTo(kept, overwrite = true)
+            return key
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    private fun examples(am: AssetManager): List<String> =
+        (runCatching { am.list(EXAMPLES_DIR) }.getOrNull() ?: emptyArray()).filter { it.endsWith(EXT) }
+
+    private fun isPackageAsset(am: AssetManager, name: String): Boolean = runCatching {
+        am.open("$EXAMPLES_DIR/$name").use { input ->
+            val head = ByteArray(2)
+            var n = 0
+            while (n < 2) {
+                val r = input.read(head, n, 2 - n)
+                if (r < 0) break
+                n += r
+            }
+            TemplatePackage.isPackage(head.copyOf(n))
+        }
+    }.getOrDefault(false)
 
     // --- painting ---
 

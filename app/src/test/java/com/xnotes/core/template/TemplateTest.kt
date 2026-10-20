@@ -6,6 +6,7 @@ import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.paintPagePattern
 import com.xnotes.format.TemplateFormatException
+import com.xnotes.format.TemplatePackage
 import com.xnotes.format.TemplateReader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -446,5 +447,48 @@ class TemplateTest {
         val without = FakeRenderer()
         TemplatePainter.paint(without, out, 2.0, Rect(0.0, 0.0, 200.0, 100.0))
         assertTrue(without.ops.isEmpty())
+    }
+    @Test
+    fun everyBundledCoverIsACoverAndDrawsOnAnyPageShape() {
+        val covers = File("src/main/assets/templates/examples").listFiles { f -> f.name.startsWith("cover-") }!!.sortedBy { it.name }
+        assertEquals(10, covers.size)
+        for (f in covers) {
+            assertTrue("${f.name} is a package", TemplatePackage.isPackage(f))
+            val t = TemplateReader.read(TemplatePackage.readJson(f))
+            assertEquals(f.name, TemplateKind.COVER, t.kind)
+            for ((w, h) in listOf(210.0 to 297.0, 297.0 to 210.0, 190.5 to 338.7)) {
+                val out = TemplateEval().evaluate(t, TemplatePage(w, h, Rect(0.0, 0.0, w, h), ink, accent))
+                // The board fills the whole page first, in its own colour, so a picture that fails still leaves a cover.
+                val board = out.layers.first().prims.first()
+                assertTrue("${f.name} starts with its board", board is TPrim.FillRect && board.rect == Rect(0.0, 0.0, w, h))
+                assertTrue("${f.name} at $w x $h draws a picture", out.layers.any { it.image != null })
+            }
+        }
+    }
+
+    @Test
+    fun everyPictureABundledCoverNamesIsAWebPInItsPackage() {
+        val covers = File("src/main/assets/templates/examples").listFiles { f -> f.name.startsWith("cover-") }!!
+        for (f in covers) {
+            val out = TemplateEval().evaluate(TemplateReader.read(TemplatePackage.readJson(f)), TemplatePage(210.0, 297.0, ink = ink, accent = accent))
+            for (src in out.layers.mapNotNull { it.image?.src }.toSet()) {
+                val tmp = File.createTempFile("pic", ".webp")
+                try {
+                    assertTrue("${f.name} holds $src", TemplatePackage.extract(f, src, tmp))
+                    val head = tmp.readBytes().copyOf(12)
+                    assertEquals("${f.name} $src", "RIFF", String(head, 0, 4, Charsets.US_ASCII))
+                    assertEquals("${f.name} $src", "WEBP", String(head, 8, 4, Charsets.US_ASCII))
+                } finally {
+                    tmp.delete()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun everyOtherBundledTemplateIsAPage() {
+        val pages = File("src/main/assets/templates").walk().filter { it.isFile && it.name.endsWith(".xtemplate") && !it.name.startsWith("cover-") }.toList()
+        assertTrue(pages.size >= 20)
+        for (f in pages) assertEquals(f.name, TemplateKind.PAGE, TemplateReader.read(f.readText()).kind)
     }
 }

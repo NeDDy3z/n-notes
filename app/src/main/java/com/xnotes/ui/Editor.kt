@@ -6883,14 +6883,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** The templates to offer: the library's, then any this note carries that the library lacks. */
-    fun templateChoices(): List<TemplateLibrary.Entry> {
-        val lib = TemplateLibrary.all()
-        val known = lib.mapTo(HashSet()) { it.key }
+    /** The templates of [kind] to offer: the library's, then any this note carries that the library lacks. */
+    fun templateChoices(kind: com.xnotes.core.template.TemplateKind = com.xnotes.core.template.TemplateKind.PAGE): List<TemplateLibrary.Entry> {
+        val lib = TemplateLibrary.all().filter { it.template.kind == kind }
+        val known = TemplateLibrary.all().mapTo(HashSet()) { it.key }
         val doc = state.document
         val carried = (doc.templates.keys + doc.templatePackages.keys).mapNotNull { key ->
             if (key in known) return@mapNotNull null
-            val t = TemplateLibrary.template(doc, key) ?: return@mapNotNull null
+            val t = TemplateLibrary.template(doc, key)?.takeIf { it.kind == kind } ?: return@mapNotNull null
             TemplateLibrary.Entry(key, t, doc.templates[key].orEmpty(), TemplateLibrary.Source.NOTE, doc.templatePackages[key])
         }
         return lib + carried.sortedBy { it.template.name.lowercase() }
