@@ -70,4 +70,10 @@ internal object PaginatedFlipPolicy {
             abs(fingerVelocityX) > abs(fingerVelocityY) * 1.5
         return outward && horizontalFlick && abs(pullPx) >= normal * FAST_PULL_FRACTION
     }
+
+    /** Unwinds [pull] by the scroll [dx] at the [gain] it was built with; returns the new pull and the scroll left over. */
+    fun retract(pull: Double, dx: Double, gain: Double): Pair<Double, Double> {
+        val relaxed = pull + dx * gain
+        return if (relaxed * pull <= 0.0) 0.0 to dx + pull / gain else relaxed to 0.0
+    }
 }

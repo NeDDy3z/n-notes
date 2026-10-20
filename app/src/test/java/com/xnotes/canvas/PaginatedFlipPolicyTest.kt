@@ -85,6 +85,20 @@ class PaginatedFlipPolicyTest {
         assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(35.0, 1600, 2.0, -4000.0, 0.0))
     }
 
+    @Test fun retractingUndoesAStretchAtTheRateItWasBuilt() {
+        val gain = 0.48
+        val pull = -200.0 * gain // dragged 200 px past the first page's empty side
+        val (back, rest) = PaginatedFlipPolicy.retract(pull, 200.0, gain)
+        assertEquals(0.0, back, 1e-9)
+        assertEquals(0.0, rest, 1e-9) // nothing left to scroll the page or pull the next one in
+        val (half, none) = PaginatedFlipPolicy.retract(pull, 100.0, gain)
+        assertEquals(pull / 2, half, 1e-9)
+        assertEquals(0.0, none, 1e-9)
+        val (zero, beyond) = PaginatedFlipPolicy.retract(pull, 300.0, gain)
+        assertEquals(0.0, zero, 1e-9)
+        assertEquals(100.0, beyond, 1e-9) // only travel past the start carries on
+    }
+
     @Test fun fullDistanceStillWorksWithoutFlick() {
         assertTrue(PaginatedFlipPolicy.shouldFlip(225.0, 1600, 2.0))
         assertTrue(PaginatedFlipPolicy.shouldFlip(-225.0, 1600, 2.0))

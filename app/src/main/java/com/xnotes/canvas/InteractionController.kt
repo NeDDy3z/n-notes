@@ -3661,16 +3661,10 @@ class InteractionController(
         var dx = dx0
         val pull = state.flipOffsetX
         if (pull != 0.0 && dx * pull < 0.0) {
-            // Retracting a pull first slides the two attached pages back together. Any
-            // leftover movement after zero resumes ordinary in-page panning.
-            val relaxed = pull + dx
-            if (relaxed * pull <= 0.0) {
-                state.flipOffsetX = 0.0
-                dx += pull
-            } else {
-                state.flipOffsetX = relaxed
-                dx = 0.0
-            }
+            // Retracting unwinds at the rate the pull was built, so dragging back to the start lands where it began.
+            val (relaxed, rest) = PaginatedFlipPolicy.retract(pull, dx, pullGain(if (pull > 0.0) 1 else -1))
+            state.flipOffsetX = relaxed
+            dx = rest
         }
         val beforeX = state.scrollX
         state.scrollBy(dx, dy)
@@ -3685,13 +3679,19 @@ class InteractionController(
             // A mild boundary resistance indicates that there is no existing next row.
             // The separate, longer add-page threshold protects against accidental creation.
             val isAddPageEdge = direction > 0 && state.currentRow == state.rowRanges().lastIndex
-            val gain = if (hasNeighbour) 1.0 else if (isAddPageEdge) ADD_PAGE_PULL_GAIN else FLIP_RESIST
-            state.flipOffsetX = (previous + leftover * gain).coerceIn(-cap, cap)
+            state.flipOffsetX = (previous + leftover * pullGain(direction)).coerceIn(-cap, cap)
             val threshold = if (isAddPageEdge) {
                 PaginatedFlipPolicy.addPageThreshold(state.viewportW, state.devicePxPerDp)
             } else pageFlipThreshold()
             if (abs(previous) < threshold && abs(state.flipOffsetX) >= threshold) onHaptic()
         }
+    }
+
+    /** Share of finger travel past the row edge that becomes pull: all of it toward a neighbour, damped at the note's ends. */
+    private fun pullGain(direction: Int): Double = when {
+        state.currentRow + direction in state.rowRanges().indices -> 1.0
+        direction > 0 -> ADD_PAGE_PULL_GAIN
+        else -> FLIP_RESIST
     }
 
     /** A page changes after a full edge pull or a shorter deliberate outward flick. */
