@@ -101,6 +101,7 @@ import com.xnotes.platform.AndroidSurfaceFactory
 import com.xnotes.platform.AndroidTextMeasurer
 import com.xnotes.settings.ExplorerView
 import com.xnotes.settings.LiveSettings
+import com.xnotes.settings.SwatchRole
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.CornerStyle
 import com.xnotes.settings.ToolbarLook
@@ -231,7 +232,7 @@ private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xno
 enum class Pane { PRIMARY, SECONDARY }
 
 @Stable
-class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost {
+class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore {
 
     private val appContext = context.applicationContext
 
@@ -658,6 +659,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // The new-canvas background lives in the settings file this editor owns.
             it.newCanvasBackground = newCanvasBackground
             it.onSaveNewCanvasBackground = { bg -> saveNewCanvasBackground(bg) }
+            it.swatchStore = this
             it.onColorRemembered = { color ->
                 settings = settings.rememberColor(color)
                 it.recentColors = recentColors
@@ -2607,6 +2609,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         newCanvasBackground = background
         settings = settings.copy(newCanvasBackground = background)
         settingsRepo.save(settings)
+    }
+
+    override fun swatches(role: SwatchRole): List<Rgba> = settings.swatchesFor(role)
+
+    /** Recolour one circle; notes keep the colours they already use. */
+    override fun setSwatch(role: SwatchRole, index: Int, color: Rgba) {
+        settings = settings.withSwatch(role, index, color)
+        saveSettingsSoon()
     }
 
     /** A blank document at the user's default page size, custom dimensions included. */

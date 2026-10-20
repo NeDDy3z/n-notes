@@ -973,6 +973,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Fired when the styles popup saved (or cleared) that background, so the host can persist it. */
     var onSaveNewCanvasBackground: ((CanvasBackground?) -> Unit)? = null
 
+    /** The colour circles the styles popup offers, kept in the host's settings. */
+    lateinit var swatchStore: SwatchStore
+
     /** Save (or, passing null, forget) the background new canvases start with. */
     fun saveNewCanvasBackground(background: CanvasBackground?) {
         if (newCanvasBackground == background) return

@@ -209,6 +209,36 @@ class SettingsTest {
         assertEquals(24, s.recentColors.size)
     }
 
+    @Test fun swatchesStartAtTheirDefaultsAndWriteNothing() {
+        val s = Settings.fromJson(JSONObject())
+        SwatchRole.entries.forEach { assertEquals(it.defaults, s.swatchesFor(it)) }
+        assertEquals(false, s.toJson().has("swatches"))
+    }
+
+    @Test fun aRecolouredSwatchRoundTripsAndLeavesOtherRolesAlone() {
+        val s = Settings().withSwatch(SwatchRole.LINES, 2, Rgba(1, 2, 3))
+        val back = Settings.fromJson(s.toJson())
+        assertEquals(Rgba(1, 2, 3), back.swatchesFor(SwatchRole.LINES)[2])
+        assertEquals(SwatchRole.LINES.defaults[0], back.swatchesFor(SwatchRole.LINES)[0])
+        assertEquals(SwatchRole.PAPER.defaults, back.swatchesFor(SwatchRole.PAPER))
+    }
+
+    @Test fun aShortSavedSwatchListIsPaddedFromTheDefaults() {
+        val o = JSONObject().put(
+            "swatches",
+            JSONObject().put("accent", org.json.JSONArray().put(org.json.JSONArray().put(9).put(9).put(9).put(255))),
+        )
+        val accent = Settings.fromJson(o).swatchesFor(SwatchRole.ACCENT)
+        assertEquals(SwatchRole.COUNT, accent.size)
+        assertEquals(Rgba(9, 9, 9), accent[0])
+        assertEquals(SwatchRole.ACCENT.defaults[4], accent[4])
+    }
+
+    @Test fun recolouringAMissingSwatchChangesNothing() {
+        val s = Settings()
+        assertEquals(s, s.withSwatch(SwatchRole.PAPER, SwatchRole.COUNT, Rgba(1, 1, 1)))
+    }
+
     @Test fun pageColorNullByDefault() {
         assertNull(Settings.fromJson(JSONObject()).prefs.pageColor)
     }

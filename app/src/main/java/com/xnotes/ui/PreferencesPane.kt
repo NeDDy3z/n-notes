@@ -84,14 +84,12 @@ import com.xnotes.settings.CornerStyle
 import com.xnotes.settings.ToolbarPosition
 import com.xnotes.settings.ToolbarSize
 import com.xnotes.settings.MaterialColourMode
+import com.xnotes.settings.SwatchRole
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.delay
 
-internal val pageColorPresets = listOf(
-    Rgba(22, 22, 22), Rgba(13, 13, 13), Rgba(255, 255, 255), Rgba(247, 243, 233), Rgba(232, 232, 232),
-)
 /** One-tap filename templates offered beside the free-text field. */
 private val NAME_TEMPLATE_PRESETS = listOf(
     NameTemplate.DEFAULT,
@@ -370,18 +368,10 @@ fun PreferencesPane(
             )
             FieldLabel(stringResource(R.string.pref_page_colour))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                pageColorPresets.forEach { c ->
-                    ColorDot(c.toComposeColor(), prefs.pageColor == c) { update(prefs.copy(pageColor = c)) }
-                }
-                ColorPickerDot(
-                    prefs.pageColor,
-                    custom = prefs.pageColor != null && prefs.pageColor !in pageColorPresets,
-                    onPick = { update(prefs.copy(pageColor = it)) },
-                    dismissOnPick = false,
-                ) { onDismiss, onPick -> PageColorGridPopup(prefs.pageColor, onDismiss, onPick) }
+                SwatchCircles(editor, SwatchRole.PAPER, prefs.pageColor) { update(prefs.copy(pageColor = it)) }
             }
             CheckRow(stringResource(R.string.pref_page_colour_follows_theme), prefs.pageColor == null) {
-                update(prefs.copy(pageColor = if (it) null else pageColorPresets.first()))
+                update(prefs.copy(pageColor = if (it) null else editor.swatches(SwatchRole.PAPER).first()))
             }
 
             HorizontalDivider(color = palette.border.toComposeColor())
@@ -851,6 +841,33 @@ internal fun ColorPickerDot(
         // A live picker (e.g. the page/ink popup) edits across several taps, so it stays open until a
         // tap outside; a one-shot grid (the accent swatches) closes the moment a colour is chosen.
         if (open) grid({ open = false }, { onPick(it); if (dismissOnPick) open = false })
+    }
+}
+
+/** Where each [SwatchRole]'s circles are kept: the settings file, shared by every row of that role. */
+interface SwatchStore {
+    fun swatches(role: SwatchRole): List<Rgba>
+    fun setSwatch(role: SwatchRole, index: Int, color: Rgba)
+}
+
+/**
+ * A role's five colour circles. A tap applies one; a tap on the one already [selected] opens the
+ * picker and recolours that circle, as the toolbar's pen swatches do. Emits the circles straight
+ * into the caller's row, so a Default chip can sit before them.
+ */
+@Composable
+internal fun SwatchCircles(store: SwatchStore, role: SwatchRole, selected: Rgba?, onPick: (Rgba) -> Unit) {
+    var swatches by remember(role) { mutableStateOf(store.swatches(role)) }
+    var editing by remember { mutableStateOf<Int?>(null) }
+    swatches.forEachIndexed { i, c ->
+        Box {
+            ColorDot(c.toComposeColor(), selected == c) { if (selected == c) editing = i else onPick(c) }
+            if (editing == i) PageColorGridPopup(c, onDismiss = { editing = null }) { picked ->
+                swatches = swatches.toMutableList().also { it[i] = picked }
+                store.setSwatch(role, i, picked)
+                onPick(picked)
+            }
+        }
     }
 }
 

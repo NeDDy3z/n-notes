@@ -66,6 +66,7 @@ import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolConversions
 import com.xnotes.platform.FontCatalog
 import com.xnotes.settings.Preferences
+import com.xnotes.settings.SwatchRole
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -246,15 +247,7 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 ModeChip(stringResource(R.string.default_choice), style.pageColor == null) { apply(style.copy(pageColor = null)) }
-                pageColorPresets.forEach { c ->
-                    ColorDot(c.toComposeColor(), style.pageColor == c) { apply(style.copy(pageColor = c)) }
-                }
-                ColorPickerDot(
-                    style.pageColor,
-                    custom = style.pageColor != null && style.pageColor !in pageColorPresets,
-                    onPick = { apply(style.copy(pageColor = it)) },
-                    dismissOnPick = false,
-                ) { d, p -> PageColorGridPopup(style.pageColor, d, p) }
+                SwatchCircles(editor, SwatchRole.PAPER, style.pageColor) { apply(style.copy(pageColor = it)) }
             }
 
             Spacer(Modifier.size(12.dp))
@@ -386,12 +379,10 @@ private fun TemplateCustomizer(
         Spacer(Modifier.size(4.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ModeChip(stringResource(R.string.default_choice), style.patternColor == null) { apply(style.copy(patternColor = null)) }
-            ColorPickerDot(
-                style.patternColor?.copy(a = 255), // show the hue at full strength; OPACITY sets the alpha
-                custom = style.patternColor != null,
-                onPick = { apply(style.copy(patternColor = it.copy(a = look.ink.a))) }, // keep current opacity
-                dismissOnPick = false,
-            ) { d, p -> PageColorGridPopup(style.patternColor?.copy(a = 255), d, p) }
+            // Circles hold the hue at full strength; OPACITY sets the alpha, so a pick keeps it.
+            SwatchCircles(editor, SwatchRole.LINES, style.patternColor?.copy(a = 255)) {
+                apply(style.copy(patternColor = it.copy(a = look.ink.a)))
+            }
         }
         Spacer(Modifier.size(12.dp))
         val opacityPct = look.ink.a * 100f / 255f
@@ -409,12 +400,9 @@ private fun TemplateCustomizer(
             Spacer(Modifier.size(4.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ModeChip(stringResource(R.string.default_choice), style.accentColor == null) { apply(style.copy(accentColor = null)) }
-                ColorPickerDot(
-                    style.accentColor?.copy(a = 255),
-                    custom = style.accentColor != null,
-                    onPick = { apply(style.copy(accentColor = it.copy(a = look.accent.a))) },
-                    dismissOnPick = false,
-                ) { d, p -> PageColorGridPopup(style.accentColor?.copy(a = 255), d, p) }
+                SwatchCircles(editor, SwatchRole.ACCENT, style.accentColor?.copy(a = 255)) {
+                    apply(style.copy(accentColor = it.copy(a = look.accent.a)))
+                }
             }
         }
 
