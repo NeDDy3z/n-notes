@@ -74,6 +74,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -705,6 +706,17 @@ internal fun NewNoteScreen(
         // A press anywhere but the name ends its editing: the caret goes and the keyboard closes.
         val focusManager = LocalFocusManager.current
         var nameBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+        // Back closes the keyboard without telling the field, so the keyboard going away ends editing too.
+        val imeVisible = WindowInsets.isImeVisible
+        var imeWasVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(imeVisible) {
+            if (imeVisible) {
+                imeWasVisible = true
+            } else if (imeWasVisible) {
+                imeWasVisible = false
+                focusManager.clearFocus()
+            }
+        }
         Surface(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).pointerInput(Unit) {
                 awaitEachGesture {
