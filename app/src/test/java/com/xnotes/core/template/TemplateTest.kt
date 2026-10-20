@@ -467,6 +467,25 @@ class TemplateTest {
     }
 
     @Test
+    fun everyBundledCoverHasALabelOnThePageThatSizeZeroHides() {
+        val covers = File("src/main/assets/templates/examples").listFiles { f -> f.name.startsWith("cover-") }!!
+        for (f in covers) {
+            val t = TemplateReader.read(TemplatePackage.readJson(f))
+            for ((w, h) in listOf(210.0 to 297.0, 297.0 to 210.0, 190.5 to 338.7)) {
+                fun eval(numbers: Map<String, Double>) =
+                    TemplateEval().evaluate(t, TemplatePage(w, h, Rect(0.0, 0.0, w, h), ink, accent, TemplateValues(numbers)))
+                val shown = eval(emptyMap())
+                // The label is the last three shapes, its shadow, its paper and its rule, each a colour of its own.
+                assertEquals("${f.name} at $w x $h", 3, shown.primCount - eval(mapOf("labelSize" to 0.0)).primCount)
+                for (p in shown.layers.takeLast(3).flatMap { it.prims }) {
+                    val b = p.bounds
+                    assertTrue("${f.name} label on a $w x $h page", b.x >= 0.0 && b.y >= 0.0 && b.x + b.w <= w && b.y + b.h <= h)
+                }
+            }
+        }
+    }
+
+    @Test
     fun everyPictureABundledCoverNamesIsAWebPInItsPackage() {
         val covers = File("src/main/assets/templates/examples").listFiles { f -> f.name.startsWith("cover-") }!!
         for (f in covers) {
