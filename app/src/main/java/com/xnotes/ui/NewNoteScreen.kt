@@ -63,6 +63,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -273,7 +275,7 @@ internal fun NewNoteScreen(
             Column(
                 Modifier.size(w, h).drawBehind {
                     drawRoundRect(
-                        color = border.copy(alpha = 1f),
+                        color = dim.copy(alpha = 0.55f),
                         cornerRadius = CornerRadius(3.dp.toPx()),
                         style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
                     )
@@ -499,10 +501,17 @@ internal fun NewNoteScreen(
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp)) {
                 for (f in Face.entries) {
                     val on = face == f
+                    // The underline is drawn, not laid out: a full-width child would widen this tab over the other.
                     Box(
                         Modifier
                             .fillMaxHeight()
                             .semantics { selected = on }
+                            .drawBehind {
+                                if (on) {
+                                    val h = 3.dp.toPx()
+                                    drawRoundRect(accent, topLeft = Offset(0f, this.size.height - h), size = Size(this.size.width, h), cornerRadius = CornerRadius(h))
+                                }
+                            }
                             .clickable { face = f }
                             .padding(horizontal = 16.dp),
                         contentAlignment = Alignment.Center,
@@ -519,7 +528,6 @@ internal fun NewNoteScreen(
                                 )
                             }
                         }
-                        if (on) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp).background(accent, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)))
                     }
                 }
             }
