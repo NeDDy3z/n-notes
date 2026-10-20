@@ -333,7 +333,7 @@ fun PreferencesPane(
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle(stringResource(R.string.pref_page))
             FieldLabel(stringResource(R.string.pref_default_page_size))
-            SizeDropdown(prefs.defaultPageSize) { update(prefs.copy(defaultPageSize = it)) }
+            SizeDropdown(prefs.defaultPageSize) { it?.let { size -> update(prefs.copy(defaultPageSize = size)) } }
             if (prefs.defaultPageSize == PageSize.CUSTOM) {
                 // A custom page is taken as typed, so the orientation chips have nothing to say
                 // about it and are left out rather than shown doing nothing.
@@ -927,41 +927,13 @@ private fun MillimetreField(label: String, value: Double, onChange: (Double) -> 
         value = text,
         onValueChange = { raw ->
             text = raw
-            raw.trim().toDoubleOrNull()?.let {
-                if (it in PageSize.CUSTOM_MIN_MM..PageSize.CUSTOM_MAX_MM) onChange(it)
-            }
+            parseMm(raw)?.let(onChange)
         },
         singleLine = true,
         label = { Text(label, fontSize = 12.sp) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
         modifier = Modifier.width(136.dp),
     )
-}
-
-/** Drop a whole number's ".0" so the field reads "210", not "210.0". */
-private fun formatMm(v: Double): String =
-    if (v == Math.floor(v) && !v.isInfinite()) v.toInt().toString() else v.toString()
-
-@Composable
-private fun SizeDropdown(size: PageSize, onSelect: (PageSize) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val palette = LocalPalette.current
-    Box {
-        Box(
-            Modifier
-                .clip(MaterialTheme.shapes.small)
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
-                .clickable { expanded = true }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            Text(pageSizeLabel(size), color = palette.text.toComposeColor(), fontSize = 14.sp)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            PageSize.entries.forEach { s ->
-                DropdownMenuItem(text = { Text(pageSizeLabel(s)) }, onClick = { onSelect(s); expanded = false })
-            }
-        }
-    }
 }
 
 @Composable
