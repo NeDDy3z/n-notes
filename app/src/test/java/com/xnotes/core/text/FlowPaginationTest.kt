@@ -46,6 +46,15 @@ class FlowPaginationTest {
     }
 
     @Test
+    fun overflowIsCountedInPagesOfTheAddedSize() {
+        // Added pages half as tall hold one line each, not three.
+        val flow = flowOf(*Array(8) { "" })
+        val frame = layout.layout(flow, pages(1), 150, addedPage = PageBox(100.0, 25.0))
+        assertEquals(3, frame.pages[0].lines.size)
+        assertEquals(5, frame.extraPagesNeeded)
+    }
+
+    @Test
     fun continuationRebreaksAtTheNextPageWidth() {
         val flow = flowOf("aaaa bbbb cccc dddd eeee")
         val boxes = listOf(PageBox(100.0, 16.0), PageBox(60.0, 100.0))

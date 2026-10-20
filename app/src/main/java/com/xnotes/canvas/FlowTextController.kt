@@ -559,15 +559,15 @@ class FlowTextController(
         onFlushed()
     }
 
-    /** Append pages sized like the last one until the published layout stops overflowing. */
+    /** Append pages, each the size the note gives an added page, until the published layout stops overflowing. */
     private fun autoAppendPages(): List<Command> {
         val need = frame()?.extraPagesNeeded ?: 0
         if (need <= 0) return emptyList()
         val doc = state.document
         val out = mutableListOf<Command>()
         repeat(need) {
-            val last = doc.pages.lastOrNull() ?: return out
-            out += AddPageAuto(doc, Page(last.width, last.height), doc.pages.size).also { it.redo() }
+            val (w, h) = doc.blankPageSize(doc.pages.lastOrNull() ?: return out)
+            out += AddPageAuto(doc, Page(w, h), doc.pages.size).also { it.redo() }
         }
         state.relayout()
         onChanged(active)

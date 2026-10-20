@@ -1953,7 +1953,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val doc = state.document
         val oldFlow = publishedFlow
         val oldPages = publishedPageList
-        val frame = flowLayout.layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, firstPage = flowStart(doc))
+        val (addedW, addedH) = doc.blankPageSize(doc.pages.lastOrNull())
+        val frame = flowLayout.layout(
+            doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi,
+            firstPage = flowStart(doc), addedPage = PageBox(addedW, addedH),
+        )
         // What this frame actually shows, not what the caller meant it to: an edit
         // republishes before it moves the caret, so a frame can be laid out against
         // a caret the edit has already invalidated. Recording the intent instead
@@ -5789,14 +5793,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun flowStart(doc: Document): Int = if (doc.pages.size > 1 && doc.pages[0].cover) 1 else 0
 
     /**
-     * Insert a blank page at [index] (clamped into range), sized from the page at [refIndex] so the
-     * note stays uniform (falling back to A4 portrait). Undoable; relayouts and refreshes. Returns
-     * the new page's final index.
+     * Insert a blank page at [index] (clamped into range), at the note's new page size or else the
+     * size of the page at [refIndex]. Undoable; relayouts and refreshes. Returns the new page's
+     * final index.
      */
     private fun insertBlankPageAt(index: Int, refIndex: Int): Int {
         val pages = state.document.pages
         val ref = pages.getOrNull(refIndex) ?: pages.getOrNull(index) ?: pages.lastOrNull()
-        val (w, h) = if (ref != null) ref.width to ref.height else PageSize.A4.pixels(Orientation.PORTRAIT, state.document.dpi)
+        val (w, h) = state.document.blankPageSize(ref)
         val at = index.coerceIn(0, pages.size)
         val page = Page(w, h)
         controller.clearSelection() // inserting shifts later page indices; drop any stale item selection
