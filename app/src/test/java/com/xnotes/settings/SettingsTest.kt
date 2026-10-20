@@ -33,6 +33,7 @@ class SettingsTest {
                 invert = 100,
                 keepImages = true,
                 scrollbar = true,
+                freeMovement = true,
             ),
         )
         val back = Settings.fromJson(original.toJson())

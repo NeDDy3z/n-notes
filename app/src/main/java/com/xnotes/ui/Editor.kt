@@ -2303,12 +2303,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
-        val reseatPage = state.paginatedZoomSnap != p.paginatedZoomSnap && !state.verticalScroll
-        state.paginatedZoomSnap = p.paginatedZoomSnap
-        if (!p.paginatedZoomSnap && !state.verticalScroll) {
-            state.fitWidthActive = false
-            state.fitHeightActive = false
-        }
         controller.detectShapes = p.detectShapes
         flowText.markdownInput = p.markdownInput
         flowText.slashCommands = p.slashCommands
@@ -2322,7 +2316,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .coerceAtLeast(state.minZoom)
         state.clampZoomToLimits()
         state.relayout()
-        if (reseatPage) state.goToPage(state.currentPageIndex()) // the page lands where the new rules put it
     }
 
     /** Whether typed markdown markers convert; the text tool's config popup toggles it. */
@@ -4758,6 +4751,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Push a settings change into the canvas/caches; each View-menu feature reacts here. */
     private fun onViewSettingsChanged(prev: com.xnotes.canvas.ViewSettings, new: com.xnotes.canvas.ViewSettings) {
+        state.freeMovement = new.freeMovement
         if (prev.mode != new.mode || prev.rotation != new.rotation || prev.verticalScroll != new.verticalScroll) {
             // Re-group / re-orient / re-flow the pages, keep the reader on the same page, and
             // re-fit a fit-width view to the new row width (a Double spread is about twice as
@@ -4782,6 +4776,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 state.goToPage(cur)
                 refreshView()
             }
+        } else if (prev.freeMovement != new.freeMovement && !new.verticalScroll && state.didInitialFit) {
+            if (new.freeMovement) {
+                state.fitWidthActive = false // free pinches never hold a fit
+                state.fitHeightActive = false
+            }
+            state.goToPage(state.currentPageIndex()) // the page lands where the new rules put it
+            refreshView()
         }
         if (prev.rotation != new.rotation) {
             // Every thumbnail mirrors the canvas orientation: drop them all to re-render.

@@ -672,6 +672,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     }
     fun setMode(v: ViewingMode) = apply(overrides.copy(mode = v))
     fun setVerticalScroll(v: Boolean) = apply(overrides.copy(verticalScroll = v))
+    fun setFreeMovement(v: Boolean) = apply(overrides.copy(freeMovement = v))
     fun setContrast(v: Int) = apply(overrides.copy(contrast = v))
     fun setInvert(v: Int) = apply(overrides.copy(invert = v))
     fun setBrightness(v: Int) = apply(overrides.copy(brightness = v))
@@ -694,6 +695,9 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
 
             Spacer(Modifier.size(10.dp))
             ToggleRow(stringResource(R.string.caption_vertical_scrolling), vs.verticalScroll) { setVerticalScroll(it) }
+            if (!vs.verticalScroll) {
+                ToggleRow(stringResource(R.string.caption_free_movement), vs.freeMovement) { setFreeMovement(it) }
+            }
 
             Spacer(Modifier.size(10.dp))
             StyleCaption(stringResource(R.string.caption_pdf_filters))

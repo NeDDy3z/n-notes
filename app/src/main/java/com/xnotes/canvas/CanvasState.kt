@@ -366,8 +366,8 @@ class CanvasState(
 
     /** When true, zoom is fixed (pinch pans only, zoom buttons/fit are no-ops). */
     var zoomLocked: Boolean = false
-    /** Paginated preference: on keeps the classic fit magnets and fixed vertical clamp, off drops both. */
-    var paginatedZoomSnap: Boolean = true
+    /** Paginated only: pages move up and down freely and pinches never snap to a fit (the View menu toggle). */
+    var freeMovement: Boolean = false
 
     /**
      * True while the view is sitting at fit-to-width. Set when a pinch snaps to fit-width (or
@@ -637,7 +637,7 @@ class CanvasState(
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val sx = if (maxX < minX) (minX + maxX) / 2.0 else minX
         // Free mode never centres in origin(), so a page that fits lands centred through the scroll.
-        val sy = if (!paginatedZoomSnap && rb.h * zoom < clearH) {
+        val sy = if (freeMovement && rb.h * zoom < clearH) {
             rb.centerY * zoom - clearCenter().y
         } else {
             (rb.top * zoom - TOP_GAP - insetTop).coerceAtLeast(-insetTop)
@@ -690,7 +690,7 @@ class CanvasState(
     }
 
     /** Whether content shorter than the clear area is drawn centred; free paginated mode follows the scroll. */
-    private fun centresShortContent(): Boolean = verticalScroll || paginatedZoomSnap
+    private fun centresShortContent(): Boolean = verticalScroll || !freeMovement
 
     fun contentToViewport(p: Pt): Pt {
         val o = origin()
@@ -732,13 +732,13 @@ class CanvasState(
         val minX = (rb.left - sideMargin) * zoom - insetLeft
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val cx = if (maxX < minX) (minX + maxX) / 2.0 else sx.coerceIn(minX, maxX)
-        if (paginatedZoomSnap) {
-            // Classic: a page that fits can't move, and a tall one stops at its margins.
+        if (!freeMovement) {
+            // A page that fits can't move, and a tall one stops at its margins.
             val maxY = ((rb.bottom + vertMargin) * zoom - viewportH + insetBottom)
                 .coerceAtLeast(-insetTop)
             return Pt(cx, sy.coerceIn(-insetTop, maxY))
         }
-        // Free: a page moves until its top or bottom edge reaches the middle of the clear area.
+        // Free movement: a page moves until its top or bottom edge reaches the middle of the clear area.
         val mid = clearCenter().y
         return Pt(cx, sy.coerceIn(rb.top * zoom - mid, rb.bottom * zoom - mid))
     }
@@ -982,19 +982,15 @@ class CanvasState(
      * zoom the caller applies; the false→true transition of either flag surfaces the lock hint.
      */
     fun snapZoomToFit(raw: Double): Double {
-        if (!verticalScroll && !paginatedZoomSnap) {
+        if (!verticalScroll && freeMovement) { // free movement pinches straight past both magnets
             fitWidthActive = false
             fitHeightActive = false
             return raw
         }
         val fitW = fitWidthZoom()
         val fitH = fitHeightZoom()
-        // Restore the original bidirectional fit magnets when the classic paginated
-        // behavior is enabled. Free mode skips them; continuous vertical mode is unchanged.
-        val canSnapW = fitW > 0.0 && (verticalScroll || paginatedZoomSnap)
-        val canSnapH = fitH > 0.0 && paginatedZoomSnap
-        val nearW = canSnapW && abs(raw - fitW) <= fitW * SNAP_TO_FIT_WIDTH
-        val nearH = canSnapH && abs(raw - fitH) <= fitH * SNAP_TO_FIT_WIDTH
+        val nearW = fitW > 0.0 && abs(raw - fitW) <= fitW * SNAP_TO_FIT_WIDTH
+        val nearH = fitH > 0.0 && abs(raw - fitH) <= fitH * SNAP_TO_FIT_WIDTH
         val pickH = nearH && (!nearW || abs(raw - fitH) < abs(raw - fitW))
         fitHeightActive = pickH
         fitWidthActive = nearW && !pickH

@@ -258,9 +258,6 @@ fun PreferencesPane(
             HorizontalDivider(color = palette.border.toComposeColor())
             SectionTitle(stringResource(R.string.pref_input))
             CheckRow(stringResource(R.string.pref_finger_draws), prefs.fingerDraws) { update(prefs.copy(fingerDraws = it)) }
-            CheckRow(stringResource(R.string.pref_paginated_zoom_snap), prefs.paginatedZoomSnap) {
-                update(prefs.copy(paginatedZoomSnap = it))
-            }
             FieldLabel(stringResource(R.string.pref_zoom_lock_pan))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -54,7 +54,7 @@ class PaginatedLayoutTest {
 
     @Test fun freeModeOriginDoesNotJumpWhenPageCrossesViewportHeight() {
         val st = state(3)
-        st.paginatedZoomSnap = false
+        st.freeMovement = true
         st.scrollY = 217.0
         val threshold = st.clearH / st.contentH
         val below = st.originFor(st.scrollX, st.scrollY, threshold * (1.0 - 1e-4))
@@ -66,7 +66,7 @@ class PaginatedLayoutTest {
 
     @Test fun tallRowKeepsVerticalMovementInsteadOfLockingAtFitHeight() {
         val st = state(4)
-        st.paginatedZoomSnap = false
+        st.freeMovement = true
         st.currentRow = 2
         val row = st.rowBounds(st.rowRanges()[st.currentRow])
         st.zoom = (st.clearH + 100.0) / row.h
@@ -82,18 +82,18 @@ class PaginatedLayoutTest {
         val st = state(3)
         val row = st.rowBounds(st.rowRanges()[st.currentRow])
         st.zoom = (st.clearH + 100.0) / row.h
-        st.paginatedZoomSnap = true
+        st.freeMovement = false
 
         val restricted = st.rowClampedScroll(st.currentRow, st.scrollX, -1e9)
         assertEquals(-st.insetTop, restricted.y, 1e-6)
-        st.paginatedZoomSnap = false
+        st.freeMovement = true
         val free = st.rowClampedScroll(st.currentRow, st.scrollX, -1e9)
         assertTrue(free.y < restricted.y)
     }
 
     @Test fun verticalClampDoesNotJumpWhenPageCrossesViewportHeight() {
         val st = state(3)
-        st.paginatedZoomSnap = false
+        st.freeMovement = true
         val row = st.rowBounds(st.rowRanges()[st.currentRow])
         val threshold = st.clearH / row.h
         val sy = row.centerY * threshold - st.clearCenter().y
@@ -106,7 +106,7 @@ class PaginatedLayoutTest {
 
     @Test fun classicModeKeepsAPageThatFitsCentredAndStill() {
         val st = state(3)
-        st.paginatedZoomSnap = true
+        st.freeMovement = false
         st.zoom = 0.9 * st.clearH / st.contentH
         st.goToPage(1)
         val centre = st.contentToViewport(st.pageRects[1].center).y
@@ -119,7 +119,7 @@ class PaginatedLayoutTest {
 
     @Test fun freeModeLandsAPageThatFitsCentredThenLetsItMove() {
         val st = state(3)
-        st.paginatedZoomSnap = false
+        st.freeMovement = true
         st.zoom = 0.9 * st.clearH / st.contentH
         st.goToPage(1)
         val centre = st.contentToViewport(st.pageRects[1].center).y
@@ -130,7 +130,7 @@ class PaginatedLayoutTest {
 
     @Test fun freeModeStopsEitherEdgeAtTheMiddleOfTheClearArea() {
         val st = state(3)
-        st.paginatedZoomSnap = false
+        st.freeMovement = true
         st.insetTop = 120.0 // a floating toolbar moves the middle below the screen's own centre
         st.zoom = 0.9 * st.clearH / st.contentH
         st.goToPage(1)

@@ -370,7 +370,7 @@ private fun MarginsButton(editor: Editor) {
     }
 }
 
-/** Opens the view menu (viewing mode, scroll direction, PDF filters, rotation, scrollbar). */
+/** Opens the view menu (viewing mode, scroll direction, free movement, PDF filters, rotation, scrollbar). */
 @Composable
 private fun ViewButton(editor: Editor) {
     var open by remember { mutableStateOf(false) }
