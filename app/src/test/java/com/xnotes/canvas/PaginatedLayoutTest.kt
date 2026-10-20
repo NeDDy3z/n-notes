@@ -3,6 +3,7 @@ package com.xnotes.canvas
 import com.xnotes.core.FakeSurfaceFactory
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.model.Document
+import com.xnotes.core.model.Page
 import com.xnotes.ui.theme.Palette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -19,6 +20,17 @@ class PaginatedLayoutTest {
             viewportH = 1400
             relayout()
         }
+
+    /** A portrait page and then a shorter landscape one, like a PDF of mixed page sizes. */
+    private fun mixedState(): CanvasState {
+        val doc = Document.blankPixels(width = 800.0, height = 1100.0).apply { pages.add(Page(1100.0, 600.0)) }
+        return CanvasState(doc, FakeSurfaceFactory(), Palette.DEFAULT).apply {
+            verticalScroll = false
+            viewportW = 1000
+            viewportH = 1400
+            relayout()
+        }
+    }
 
     @Test fun rowsRunLeftToRight() {
         val st = state(3)
@@ -377,5 +389,44 @@ class PaginatedLayoutTest {
         st.goToPage(1)
         val c1 = st.contentToViewport(st.rowBounds(st.rowRanges()[1]).center)
         assertEquals(st.viewportW / 2.0, c1.x, 1e-6)
+    }
+
+    @Test fun aShorterPageSitsCentredWhetherOrNotTheTallestFits() {
+        val st = mixedState()
+        for (z in listOf(1.0, 1.5)) { // the portrait page fits at 100% but not at 150%
+            st.zoom = z
+            st.goToPage(1)
+            val centre = st.contentToViewport(st.pageRects[1].center).y
+            assertEquals(st.clearCenter().y, centre, 1e-6)
+            st.scrollBy(0.0, 300.0)
+            assertEquals(centre, st.contentToViewport(st.pageRects[1].center).y, 1e-9)
+        }
+    }
+
+    @Test fun aShorterPageSlidesInCentredAndLandsWhereItWasDrawn() {
+        for (free in listOf(false, true)) {
+            val st = mixedState()
+            st.freeMovement = free
+            st.goToPage(0)
+            st.scrollBy(0.0, 200.0) // a page that fits arrives centred, however the last one was moved
+            st.flipOffsetX = 380.0
+            val drawn = st.pageRects[1].centerY * st.zoom + st.origin().y + st.linkedNeighbourOffset(1).y
+            assertEquals(st.clearCenter().y, drawn, 1e-6)
+            st.landFlip(1)
+            assertEquals(drawn, st.contentToViewport(st.pageRects[1].center).y, 1e-6)
+        }
+    }
+
+    @Test fun aTurnBetweenTallPagesKeepsTheReadingHeight() {
+        val st = state(3)
+        st.zoom = (st.clearH + 400.0) / st.document.pages[0].height
+        st.goToPage(1)
+        st.scrollBy(0.0, 300.0)
+        val readingY = st.scrollY
+        st.flipOffsetX = 380.0
+        val drawnTop = st.pageRects[2].top * st.zoom + st.origin().y + st.linkedNeighbourOffset(2).y
+        st.landFlip(2)
+        assertEquals(readingY, st.scrollY, 1e-6)
+        assertEquals(drawnTop, st.contentToViewport(Pt(st.pageRects[2].centerX, st.pageRects[2].top)).y, 1e-6)
     }
 }

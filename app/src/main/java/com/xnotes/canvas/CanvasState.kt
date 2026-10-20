@@ -206,9 +206,23 @@ class CanvasState(
         val neighbourEdge = if (rowIndex > currentRow) neighbour.left else neighbour.right
         return Pt(
             targetEdge - (neighbourEdge * zoom - scrollX),
-            (current.top - neighbour.top) * zoom,
+            scrollY - flipLandingScrollY(rowIndex), // drawn where the turn will land it
         )
     }
+
+    /** The scroll Y a turn to [row] lands at: where the row rests, or the same reading height between two tall pages. */
+    private fun flipLandingScrollY(row: Int): Double {
+        val rows = rowRanges()
+        val before = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)])
+        val after = rowBounds(rows[row])
+        val sy = if (before.h * zoom >= clearH && after.h * zoom >= clearH) {
+            scrollY + (after.top - before.top) * zoom
+        } else {
+            rowTargetScroll(row).y
+        }
+        return rowClampedScroll(row, scrollX, sy).y
+    }
+
     /** True only while an incoming paginated row or cancelled edge-pull is animating. */
     var pageFlipAnimating: Boolean = false
 
@@ -622,7 +636,7 @@ class CanvasState(
         return acc ?: Rect(0.0, 0.0, 1.0, 1.0)
     }
 
-    /** The paginated scroll target for [rowIndex]: keep the zoom, land at the row's top. */
+    /** The paginated scroll target for [rowIndex]: keep the zoom, land centred if the row fits, else at its top. */
     fun rowTargetScroll(rowIndex: Int): Pt {
         val rows = rowRanges()
         if (rows.isEmpty()) return Pt(0.0, 0.0)
@@ -630,8 +644,7 @@ class CanvasState(
         val minX = (rb.left - sideMargin) * zoom - insetLeft
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val sx = if (maxX < minX) (minX + maxX) / 2.0 else minX
-        // Free mode never centres in origin(), so a page that fits lands centred through the scroll.
-        val sy = if (freeMovement && rb.h * zoom < clearH) {
+        val sy = if (rb.h * zoom < clearH) {
             rb.centerY * zoom - clearCenter().y
         } else {
             (rb.top * zoom - TOP_GAP - insetTop).coerceAtLeast(-insetTop)
@@ -677,14 +690,11 @@ class CanvasState(
         val cw = contentW * zoom
         val ch = contentH * zoom
         // Paginated: the row clamp centres the row when it fits, so the scroll always wins; the
-        // whole strip must never be centred (two pages would push each single-page row off centre).
+        // whole strip must never be centred (a spread or a taller page would push a page off centre).
         val ox = (if (!verticalScroll || cw >= clearW) -scrollX else insetLeft + (clearW - cw) / 2.0) - flipOffsetX
-        val oy = (if (ch < clearH && centresShortContent()) insetTop + (clearH - ch) / 2.0 else -scrollY) - overscrollY
+        val oy = (if (!verticalScroll || ch >= clearH) -scrollY else insetTop + (clearH - ch) / 2.0) - overscrollY
         return Pt(ox, oy)
     }
-
-    /** Whether content shorter than the clear area is drawn centred; free paginated mode follows the scroll. */
-    private fun centresShortContent(): Boolean = verticalScroll || !freeMovement
 
     fun contentToViewport(p: Pt): Pt {
         val o = origin()
@@ -727,10 +737,10 @@ class CanvasState(
         val maxX = (rb.right + sideMargin) * zoom - viewportW + insetRight
         val cx = if (maxX < minX) (minX + maxX) / 2.0 else sx.coerceIn(minX, maxX)
         if (!freeMovement) {
-            // A page that fits can't move, and a tall one stops at its margins.
-            val maxY = ((rb.bottom + vertMargin) * zoom - viewportH + insetBottom)
-                .coerceAtLeast(-insetTop)
-            return Pt(cx, sy.coerceIn(-insetTop, maxY))
+            // A page that fits sits centred and can't move, and a tall one stops at its margins.
+            val minY = (rb.top - vertMargin) * zoom - insetTop
+            val maxY = (rb.bottom + vertMargin) * zoom - viewportH + insetBottom
+            return Pt(cx, if (maxY < minY) (minY + maxY) / 2.0 else sy.coerceIn(minY, maxY))
         }
         // Free movement: a page moves until its top or bottom edge reaches the middle of the clear area.
         val mid = clearCenter().y
@@ -864,15 +874,13 @@ class CanvasState(
         clampScroll()
     }
 
-    /** End a paginated turn on [row], keeping the height the slide showed it at. */
+    /** End a paginated turn on [row], at the height the slide showed it at. */
     fun landFlip(row: Int) {
         val rows = rowRanges()
         if (row !in rows.indices) return
-        val before = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)])
-        val after = rowBounds(rows[row])
-        val carriedY = scrollY + (after.top - before.top) * zoom
+        val landing = flipLandingScrollY(row)
         goToPage(rows[row].first)
-        scrollY = carriedY
+        scrollY = landing
         clampScroll()
         clearSharpViewport()
     }
@@ -1834,7 +1842,7 @@ class CanvasState(
         val cw = contentW * z
         val ch = contentH * z
         val ox = if (!verticalScroll || cw >= clearW) -sx else insetLeft + (clearW - cw) / 2.0
-        val oy = if (ch < clearH && centresShortContent()) insetTop + (clearH - ch) / 2.0 else -sy
+        val oy = if (!verticalScroll || ch >= clearH) -sy else insetTop + (clearH - ch) / 2.0
         return Pt(ox, oy)
     }
 
