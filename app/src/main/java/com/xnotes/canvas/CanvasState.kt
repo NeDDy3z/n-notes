@@ -738,11 +738,9 @@ class CanvasState(
                 .coerceAtLeast(-insetTop)
             return Pt(cx, sy.coerceIn(-insetTop, maxY))
         }
-        // Free: any page moves, keeping enough of it on screen to drag it back.
-        val visible = min(48.0 * devicePxPerDp, rb.h * zoom / 2.0)
-        val minY = rb.top * zoom - (viewportH - insetBottom) + visible
-        val maxY = rb.bottom * zoom - insetTop - visible
-        return Pt(cx, sy.coerceIn(minY, maxY))
+        // Free: a page moves until its top or bottom edge reaches the middle of the clear area.
+        val mid = clearCenter().y
+        return Pt(cx, sy.coerceIn(rb.top * zoom - mid, rb.bottom * zoom - mid))
     }
 
     fun scrollBy(dx: Double, dy: Double) {

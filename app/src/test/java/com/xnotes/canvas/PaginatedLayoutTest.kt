@@ -1,6 +1,7 @@
 package com.xnotes.canvas
 
 import com.xnotes.core.FakeSurfaceFactory
+import com.xnotes.core.geometry.Pt
 import com.xnotes.core.model.Document
 import com.xnotes.ui.theme.Palette
 import org.junit.Assert.assertEquals
@@ -72,8 +73,8 @@ class PaginatedLayoutTest {
         assertTrue(row.h * st.zoom > st.clearH)
         val top = st.rowClampedScroll(st.currentRow, st.scrollX, -1e9)
         val bottom = st.rowClampedScroll(st.currentRow, st.scrollX, 1e9)
-        assertEquals(row.top * st.zoom - (st.viewportH - st.insetBottom) + minOf(48.0 * st.devicePxPerDp, row.h * st.zoom / 2.0), top.y, 1e-6)
-        assertEquals(row.bottom * st.zoom - st.insetTop - minOf(48.0 * st.devicePxPerDp, row.h * st.zoom / 2.0), bottom.y, 1e-6)
+        assertEquals(row.top * st.zoom - st.clearCenter().y, top.y, 1e-6)
+        assertEquals(row.bottom * st.zoom - st.clearCenter().y, bottom.y, 1e-6)
         assertTrue("tall pages must remain vertically pannable", bottom.y - top.y > 100.0)
     }
 
@@ -125,6 +126,19 @@ class PaginatedLayoutTest {
         assertEquals(st.clearCenter().y, centre, 1e-6)
         st.scrollBy(0.0, 300.0)
         assertEquals(centre - 300.0, st.contentToViewport(st.pageRects[1].center).y, 1e-9)
+    }
+
+    @Test fun freeModeStopsEitherEdgeAtTheMiddleOfTheClearArea() {
+        val st = state(3)
+        st.paginatedZoomSnap = false
+        st.insetTop = 120.0 // a floating toolbar moves the middle below the screen's own centre
+        st.zoom = 0.9 * st.clearH / st.contentH
+        st.goToPage(1)
+        val page = st.pageRects[1]
+        st.scrollBy(0.0, -1e6)
+        assertEquals(st.clearCenter().y, st.contentToViewport(Pt(page.centerX, page.top)).y, 1e-6)
+        st.scrollBy(0.0, 1e6)
+        assertEquals(st.clearCenter().y, st.contentToViewport(Pt(page.centerX, page.bottom)).y, 1e-6)
     }
 
     @Test fun goToPageJumpsTheWindowToTheRow() {
