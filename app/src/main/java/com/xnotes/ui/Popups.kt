@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -51,8 +52,11 @@ import com.xnotes.canvas.PdfColorFilter
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
+import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.PageEdge
 import com.xnotes.core.model.PageMargins
+import com.xnotes.core.model.PageSize
+import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageStyle
@@ -202,7 +206,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
  * own, with its colours and parameters. Like [ToolConfigPopup], the popup holds the edited style
  * locally and pushes each change to the [Editor] (which persists, but never undoes). The All Pages
  * tab also offers making its style the default stamped onto new notes, plus a Reset back to
- * all-Default.
+ * all-Default. Below both tabs sits the note's new page size, which neither tab nor Reset touches.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -320,6 +324,70 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                     ModeChip(stringResource(R.string.reset), false) { apply(PageStyle()) }
                 }
             }
+
+            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = LocalPalette.current.border.toComposeColor())
+            NewPageSizeControls(editor)
+        }
+    }
+}
+
+/** The size of pages added to the note: the page before's, a named size turned either way, or Custom's sides. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NewPageSizeControls(editor: Editor) {
+    var choice by remember { mutableStateOf(editor.newPageSize) }
+    fun apply(next: PageSizeChoice?) {
+        choice = next
+        editor.setNewPageSize(next)
+    }
+
+    StyleCaption(stringResource(R.string.caption_new_page_size))
+    Spacer(Modifier.size(6.dp))
+    // A first pick starts from the Preferences size, so Custom opens on the sides typed there.
+    SizeDropdown(choice?.size, stringResource(R.string.same_as_previous)) { size ->
+        apply(size?.let { (choice ?: editor.preferences.defaultPageChoice).copy(size = it) })
+    }
+    val c = choice
+    if (c != null) {
+        Spacer(Modifier.size(8.dp))
+        if (c.size == PageSize.CUSTOM) {
+            // The fields keep the callback they were built with, so it reads the choice as it is now.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SideField(stringResource(R.string.width_mm), c.customWidthMm, Modifier.weight(1f)) { mm ->
+                    choice?.let { apply(it.copy(customWidthMm = mm)) }
+                }
+                SideField(stringResource(R.string.height_mm), c.customHeightMm, Modifier.weight(1f)) { mm ->
+                    choice?.let { apply(it.copy(customHeightMm = mm)) }
+                }
+            }
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.orientation_portrait), c.orientation == Orientation.PORTRAIT) {
+                    apply(c.copy(orientation = Orientation.PORTRAIT))
+                }
+                ModeChip(stringResource(R.string.orientation_landscape), c.orientation == Orientation.LANDSCAPE) {
+                    apply(c.copy(orientation = Orientation.LANDSCAPE))
+                }
+            }
+        }
+    }
+}
+
+/** One side of a custom page in millimetres; only a value inside the settable range reaches [onChange]. */
+@Composable
+private fun SideField(label: String, mm: Double, modifier: Modifier, onChange: (Double) -> Unit) {
+    Column(modifier) {
+        StyleCaption(label)
+        Spacer(Modifier.size(4.dp))
+        FieldFrame(Modifier.fillMaxWidth()) {
+            NativeField(
+                value = formatMm(mm),
+                onText = { raw -> parseMm(raw)?.let(onChange) },
+                modifier = Modifier.weight(1f),
+                decimal = true,
+                maxLen = 7,
+                endAlign = true,
+            )
         }
     }
 }

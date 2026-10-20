@@ -38,6 +38,7 @@ import com.xnotes.core.model.MarkupType
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageMargins
+import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageStyle
@@ -2717,6 +2718,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.document.dirty = true
         refreshContent()
         view.requestRender()
+    }
+
+    /** The size pages added to the note take, or null when each takes the size of the page before it. */
+    val newPageSize: PageSizeChoice? get() = state.document.newPageSize
+
+    /** Replace [newPageSize]; saved with the note but, like a style change, not an undo step. */
+    fun setNewPageSize(size: PageSizeChoice?) {
+        if (state.document.newPageSize == size) return
+        state.document.newPageSize = size
+        state.document.dirty = true
+        refreshContent()
     }
 
     /**
