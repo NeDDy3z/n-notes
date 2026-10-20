@@ -28,12 +28,9 @@ class PaginatedFlipPolicyTest {
     }
 
     @Test fun zoomAwareReleaseUsesSameThreshold() {
-        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(
-            160.0, 1600, 2.0, -80.0, 0.0, 60L, -1, 1.0))
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(
-            160.0, 1600, 2.0, -80.0, 0.0, 60L, -1, 2.5))
-        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(
-            185.0, 1600, 2.0, -80.0, 0.0, 60L, -1, 2.5))
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(160.0, 1600, 2.0, -80.0, 0.0, 1.0))
+        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(160.0, 1600, 2.0, -80.0, 0.0, 2.5))
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(185.0, 1600, 2.0, -80.0, 0.0, 2.5))
     }
 
     @Test fun addPageRequiresMoreTravelThanOrdinaryNavigation() {
@@ -59,32 +56,33 @@ class PaginatedFlipPolicyTest {
         assertFalse(PaginatedFlipPolicy.shouldFlip(0.0, 1600, 2.0, -4000.0))
     }
 
-    @Test fun pausedReleaseDoesNotCommitEvenAfterLongPull() {
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(850.0, 1600, 2.0, -4000.0, 0.0, 220L))
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(850.0, 1600, 2.0, 0.0, 0.0, 0L))
+    @Test fun aHeldPullPastTheThresholdStillTurnsThePage() {
+        // A stopped finger reaches the policy with zero velocity, however long it was held.
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(850.0, 1600, 2.0, 0.0, 0.0))
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(-150.0, 1600, 2.0, 0.0, 0.0))
+        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(149.0, 1600, 2.0, 0.0, 0.0))
     }
 
     @Test fun continuousOutwardReleaseCommitsAfterDeliberatePull() {
-        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, -500.0, 30.0, 35L, -1))
-        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(-260.0, 1600, 2.0, 500.0, 30.0, 35L, 1))
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, -500.0, 30.0))
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(-260.0, 1600, 2.0, 500.0, 30.0))
     }
 
     @Test fun naturalReleaseWorksAfterDeceleration() {
-        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, -45.0, 12.0, 125L, -1))
-        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(-260.0, 1600, 2.0, 0.0, 0.0, 150L, 1))
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, 0.0, 0.0, 220L, -1))
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, -45.0, 12.0))
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(-260.0, 1600, 2.0, 0.0, 0.0))
     }
 
-    @Test fun tinyTouchJitterOrReversalCannotCommit() {
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, 0.0, 0.0, 15L, 1))
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, 650.0, 0.0, 15L, -1))
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(35.0, 1600, 2.0, 0.0, 0.0, 15L, -1))
+    @Test fun onlyAClearFlickBackCancelsAPull() {
+        assertTrue(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, 120.0, 0.0)) // a lift-off twitch
+        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(260.0, 1600, 2.0, 650.0, 0.0))
+        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(35.0, 1600, 2.0, 0.0, 0.0))
     }
 
     @Test fun reverseOrMostlyVerticalReleaseDoesNotCommit() {
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(600.0, 1600, 2.0, 400.0, 0.0, 10L))
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(600.0, 1600, 2.0, -400.0, 500.0, 10L, -1))
-        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(35.0, 1600, 2.0, -4000.0, 0.0, 10L))
+        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(600.0, 1600, 2.0, 400.0, 0.0))
+        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(600.0, 1600, 2.0, -400.0, 500.0))
+        assertFalse(PaginatedFlipPolicy.shouldCommitOnRelease(35.0, 1600, 2.0, -4000.0, 0.0))
     }
 
     @Test fun fullDistanceStillWorksWithoutFlick() {

@@ -272,8 +272,6 @@ class InteractionController(
     // PAN + inertial fling
     private var lastPan = Pt.ZERO
     private var lastMoveMs = 0L
-    private var lastMeaningfulHorizontalMs = 0L
-    private var lastHorizontalDirection = 0
     private var panVel = Pt.ZERO // smoothed finger velocity, viewport px/s
     private var panDownViewport = Pt.ZERO // where the current pan began (viewport px), for tap-to-dismiss
     private var panFromPenButton = false // a side-button pan parks where the pen lifted: no glide
@@ -3609,11 +3607,6 @@ class InteractionController(
         val dx = -(vx - lastPan.x)
         var dy = -(vy - lastPan.y)
         if (!state.verticalScroll) {
-            val fingerDx = vx - lastPan.x
-            if (kotlin.math.abs(fingerDx) >= 1.5 * state.devicePxPerDp) {
-                lastMeaningfulHorizontalMs = System.nanoTime() / 1_000_000L
-                lastHorizontalDirection = if (fingerDx > 0.0) 1 else -1
-            }
             extendPanPaginated(dx, dy)
             lastPan = Pt(vx, vy)
             onViewChanged()
@@ -3709,10 +3702,11 @@ class InteractionController(
     private fun endPanPaginated() {
         val rows = state.rowRanges().size
         val pull = state.flipOffsetX
-        val ageMs = (System.nanoTime() / 1_000_000L - lastMeaningfulHorizontalMs).coerceAtLeast(0L)
+        // A finger that stopped before lifting has no flick left, however fast it moved earlier.
+        val stopped = System.nanoTime() / 1_000_000L - lastMoveMs > PaginatedFlipPolicy.RELEASE_MOTION_MAX_AGE_MS
+        val v = if (stopped) Pt.ZERO else panVel
         val deliberate = PaginatedFlipPolicy.shouldCommitOnRelease(
-            pull, state.viewportW, state.devicePxPerDp, panVel.x, panVel.y, ageMs,
-            lastHorizontalDirection, state.zoom,
+            pull, state.viewportW, state.devicePxPerDp, v.x, v.y, state.zoom,
         )
         when {
             // Appending a new page remains distance-only to avoid unintended document edits.
@@ -3813,8 +3807,6 @@ class InteractionController(
         stopFling()
         lastPan = Pt(vx, vy)
         lastMoveMs = System.nanoTime() / 1_000_000L
-        lastMeaningfulHorizontalMs = lastMoveMs
-        lastHorizontalDirection = 0
         panVel = Pt.ZERO
     }
 
