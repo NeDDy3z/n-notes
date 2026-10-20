@@ -181,6 +181,8 @@ class FlowFrame(
     val codeBg: Rgba? = null,
     /** Where each laid-out paragraph sits in tables, as of this layout. */
     val cells: CellIndex = CellIndex(emptyList()),
+    /** The page the flow starts on: past a note's cover. */
+    val firstPage: Int = 0,
 ) {
     private val byPara = HashMap<Int, MutableList<Pair<Int, PlacedLine>>>()
 
@@ -479,9 +481,10 @@ class FlowFrame(
      */
     fun emptyLinesToReach(pageIndex: Int, y: Double, slotH: Double): Int {
         if (pages.isEmpty() || slotH <= 0.0 || pageIndex !in pages.indices) return 0
+        val start = firstPage.coerceIn(0, pages.lastIndex)
         val end = lastLineEnd()
-        val endPage = end?.first ?: 0
-        val endY = end?.second ?: pages[0].contentRect.top
+        val endPage = end?.first ?: start
+        val endY = end?.second ?: pages[start].contentRect.top
         if (pageIndex < endPage || (pageIndex == endPage && y < endY)) return 0
         fun slotsIn(h: Double): Int = maxOf(1, kotlin.math.floor(h / slotH).toInt())
         if (pageIndex == endPage) {

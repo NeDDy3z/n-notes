@@ -469,8 +469,9 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
      * when it continues onto a page of different width, and count how many
      * virtual pages the tail overflowed past the real ones. Past [throughPage]
      * it stops, for a caller painting only that far: nothing later is shaped.
+     * The flow starts on [firstPage], so a note's cover takes none of it.
      */
-    fun layout(flow: TextFlow, pageBoxes: List<PageBox>, dpi: Int, throughPage: Int = Int.MAX_VALUE): FlowFrame {
+    fun layout(flow: TextFlow, pageBoxes: List<PageBox>, dpi: Int, throughPage: Int = Int.MAX_VALUE, firstPage: Int = 0): FlowFrame {
         val defColor = flow.defaultColor ?: autoColor() ?: TextFlow.DEFAULT_COLOR
         val cells = CellIndex(flow.paragraphs)
         if (pageBoxes.isEmpty()) return FlowFrame(emptyList(), flow.rev, 0, defColor, codeBackground(), cells)
@@ -480,8 +481,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         val contentRects = pageBoxes.map { contentRectOf(it, flow.margins, dpi) }
         val pageLines = List(pageBoxes.size) { mutableListOf<PlacedLine>() }
         val pageTables = List(pageBoxes.size) { mutableListOf<TableFrag>() }
-        var page = 0
-        var y = contentRects[0].top
+        var page = firstPage.coerceIn(0, pageBoxes.lastIndex)
+        var y = contentRects[page].top
         var ordinal = 0
         var skipTo = 0
         for ((paraIndex, para) in flow.paragraphs.withIndex()) {
@@ -533,7 +534,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         }
         val extra = (page - (pageBoxes.size - 1)).coerceAtLeast(0)
         val pages = pageBoxes.indices.map { PageFlow(contentRects[it], pageLines[it], pageTables[it]) }
-        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells)
+        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells, firstPage.coerceIn(0, pageBoxes.lastIndex))
     }
 
     private class Cursor(var page: Int, var y: Double)

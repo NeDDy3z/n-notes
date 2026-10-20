@@ -1937,7 +1937,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val doc = state.document
         val oldFlow = publishedFlow
         val oldPages = publishedPageList
-        val frame = flowLayout.layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi)
+        val frame = flowLayout.layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, firstPage = flowStart(doc))
         // What this frame actually shows, not what the caller meant it to: an edit
         // republishes before it moves the caret, so a frame can be laid out against
         // a caret the edit has already invalidated. Recording the intent instead
@@ -2150,7 +2150,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun flowExportHooks(doc: Document): com.xnotes.platform.PdfExporter.FlowExport {
         if (doc.flow.isEmpty) return com.xnotes.platform.PdfExporter.FlowExport.NONE
         val frame = themedFlowLayout(doc.flow)
-            .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi)
+            .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, firstPage = flowStart(doc))
         val index = HashMap<Page, Int>(doc.pages.size * 2)
         doc.pages.forEachIndexed { i, p -> index[p] = i }
         return com.xnotes.platform.PdfExporter.FlowExport(doc.flow, frame) { index[it] }
@@ -3269,7 +3269,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // and only as far as this page, so a tile never sets the formulas further on.
         if (!doc.flow.isEmpty) {
             val frame = themedFlowLayout(doc.flow)
-                .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, throughPage = index)
+                .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, throughPage = index, firstPage = flowStart(doc))
             FlowPainter.paintPage(r, frame, index, Rect(0.0, 0.0, page.width, page.height))
         }
         for (item in itemsSnapshot(page)) item.paint(r)
@@ -5765,6 +5765,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun hideZoomLockHint() { zoomLockHintDismiss += 1 }
 
     // --- pages ---
+
+    /** The page typed text starts on: past the cover, when the note has one. */
+    private fun flowStart(doc: Document): Int = if (doc.pages.size > 1 && doc.pages[0].cover) 1 else 0
 
     /**
      * Insert a blank page at [index] (clamped into range), sized from the page at [refIndex] so the
