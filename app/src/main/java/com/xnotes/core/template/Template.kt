@@ -173,7 +173,22 @@ sealed class TNode(val style: TStyle) {
 
     /** [texts] has one entry for a plain string, several for an array picked by [select]. */
     class Text(style: TStyle, val texts: List<List<TextPart>>, val x: Expr, val y: Expr, val select: Expr) : TNode(style)
+
+    /** A picture from the package (SPEC §5.3); [posX] and [posY] are 0, 0.5 or 1 across and down. */
+    class Image(
+        style: TStyle,
+        val src: String,
+        val x: Expr,
+        val y: Expr,
+        val w: Expr,
+        val h: Expr,
+        val fit: ImageFit,
+        val posX: Double,
+        val posY: Double,
+    ) : TNode(style)
 }
+
+enum class ImageFit { CONTAIN, COVER, STRETCH }
 
 /** Parameter values a host passes in; unset names take the template's defaults. Lengths in mm. */
 class TemplateValues(

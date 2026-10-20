@@ -2,6 +2,7 @@ package com.xnotes.core.template
 
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FillRule
 import com.xnotes.core.pal.Pen
@@ -12,13 +13,18 @@ import com.xnotes.core.pal.Renderer
  * the origin, [scale] content px per mm). Each colour layer is drawn opaque inside one alpha layer,
  * so crossings never darken and PDF export (which honours a layer's alpha but not a fill's) matches
  * the screen. [region] is the page-local rect being painted; shapes outside it are skipped.
+ * [picture] finds an image layer's picture by its `src`; without one, images draw nothing.
  */
 object TemplatePainter {
 
-    fun paint(r: Renderer, out: TemplateOutput, scale: Double, region: Rect) {
+    fun paint(r: Renderer, out: TemplateOutput, scale: Double, region: Rect, picture: (String) -> ImageData? = { null }) {
         if (scale <= 0.0) return
         val area = Rect(region.x / scale, region.y / scale, region.w / scale, region.h / scale)
         for (layer in out.layers) {
+            layer.image?.let { img ->
+                if (img.clip.intersects(area)) drawImage(r, img, layer.color.a, scale, region, picture)
+                continue
+            }
             var bounds: Rect? = null
             val visible = layer.prims.filter { p ->
                 p.bounds.intersects(area).also { if (it) bounds = bounds?.union(p.bounds) ?: p.bounds }
@@ -33,6 +39,18 @@ object TemplatePainter {
             for (p in visible) draw(r, p, ink, scale)
             if (translucent) r.restore()
         }
+    }
+
+    private fun drawImage(r: Renderer, img: TImage, alpha: Int, s: Double, region: Rect, picture: (String) -> ImageData?) {
+        val data = picture(img.src) ?: return
+        val shown = TemplateClip.intersect(Rect(img.clip.x * s, img.clip.y * s, img.clip.w * s, img.clip.h * s), region) ?: return
+        val d = img.dest(data.width.toDouble(), data.height.toDouble())
+        r.save()
+        r.clipRect(shown)
+        if (alpha < 255) r.saveLayerAlpha(shown, alpha / 255.0)
+        r.drawImage(data, Rect(d.x * s, d.y * s, d.w * s, d.h * s))
+        if (alpha < 255) r.restore()
+        r.restore()
     }
 
     private fun draw(r: Renderer, p: TPrim, ink: Rgba, s: Double) {

@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Document
+import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.marginStrips
@@ -80,6 +81,10 @@ object TemplateLibrary {
     @Volatile
     private var handles: Map<String, String> = emptyMap()
     private val parsed = ConcurrentHashMap<String, Template>()
+    /** Package files seen for a key, the notes' own included, so their pictures can be found again. */
+    private val packageFiles = ConcurrentHashMap<String, File>()
+    private val pictures = ConcurrentHashMap<String, ImageData>()
+    private val missingPictures = ConcurrentHashMap.newKeySet<String>()
     private val lock = Any()
 
     private val eval = TemplateEval(AndroidGlyphOutliner())
@@ -341,8 +346,40 @@ object TemplateLibrary {
     private fun parse(key: String, text: String): Template? =
         parsed[key] ?: runCatching { TemplateReader.read(text) }.getOrNull()?.also { parsed[key] = it }
 
-    private fun parsePackage(key: String, file: File): Template? =
-        parsed[key] ?: runCatching { TemplateReader.read(TemplatePackage.readJson(file)) }.getOrNull()?.also { parsed[key] = it }
+    private fun parsePackage(key: String, file: File): Template? {
+        packageFiles[key] = file
+        return parsed[key] ?: runCatching { TemplateReader.read(TemplatePackage.readJson(file)) }.getOrNull()?.also { parsed[key] = it }
+    }
+
+    /** Template [key]'s pictures by `src`: [doc]'s copy first, then the library's. */
+    fun pictures(doc: Document?, key: String): (String) -> ImageData? = { src -> picture(doc, key, src) }
+
+    /** One picture, copied out of its package into the cache the first time; IO then, instant after. */
+    private fun picture(doc: Document?, key: String, src: String): ImageData? {
+        val id = "$key/$src"
+        pictures[id]?.let { if (it.file.exists()) return it }
+        if (id in missingPictures) return null
+        val pkg = doc?.templatePackages?.get(key) ?: entry(key)?.file ?: packageFiles[key] ?: return null
+        val dir = cacheDir ?: return null
+        val out = File(dir, "pic-$key-" + keyOf(src))
+        if (!out.exists()) {
+            val tmp = File.createTempFile("pic", null, dir)
+            if (!TemplatePackage.extract(pkg, src, tmp) || !tmp.renameTo(out)) {
+                tmp.delete()
+                if (!out.exists()) {
+                    missingPictures += id
+                    return null
+                }
+            }
+        }
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(out.path, o)
+        if (o.outWidth <= 0 || o.outHeight <= 0) {
+            missingPictures += id
+            return null
+        }
+        return ImageData(out, o.outWidth, o.outHeight).also { pictures[id] = it }
+    }
 
     private fun loadBundled(am: AssetManager): List<Entry> {
         fun read(path: String) = runCatching { am.open(path).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
@@ -392,7 +429,7 @@ object TemplateLibrary {
                 Rect(paper.x / mm, paper.y / mm, paper.w / mm, paper.h / mm),
                 ink, accent, values,
             )
-            TemplatePainter.paint(r, layouts.layout(t, tp), mm, region)
+            TemplatePainter.paint(r, layouts.layout(t, tp), mm, region, pictures(doc, key))
         }
     }
 }

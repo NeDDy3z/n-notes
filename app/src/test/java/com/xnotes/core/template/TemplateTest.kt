@@ -374,4 +374,77 @@ class TemplateTest {
             }
         }
     }
+    @Test
+    fun anImageIsALayerOfItsOwnInPaintOrder() {
+        val out = eval(
+            tpl(
+                """{ "type": "hline", "y": 10 }, { "type": "image", "src": "images/a.jpg", "opacity": 0.5 },
+                   { "type": "hline", "y": 20, "stroke": "accent" }, { "type": "hline", "y": 30 }""",
+            ),
+        )
+        assertEquals(3, out.layers.size)
+        assertEquals(ink, out.layers[0].color)
+        assertEquals(2, out.layers[0].prims.size)
+        val img = out.layers[1].image!!
+        assertEquals(128, out.layers[1].color.a)
+        assertEquals("images/a.jpg", img.src)
+        assertEquals(Rect(0.0, 0.0, 100.0, 100.0), img.box)
+        assertEquals(accent, out.layers[2].color)
+    }
+
+    @Test
+    fun anImageIsClippedToItsBoxAndTheClipInEffect() {
+        val out = eval(
+            tpl(
+                """{ "type": "group", "x": 10, "y": 10, "w": 50, "h": 50, "clip": true, "children": [
+                     { "type": "image", "src": "a.png", "x": 20, "y": 20, "w": 60, "h": 60, "fit": "cover", "position": "top left" } ] }""",
+            ),
+        )
+        val img = out.layers.single().image!!
+        assertEquals(Rect(30.0, 30.0, 60.0, 60.0), img.box)
+        assertEquals(Rect(30.0, 30.0, 30.0, 30.0), img.clip)
+        assertEquals(ImageFit.COVER, img.fit)
+        assertEquals(0.0, img.posX, 0.0)
+        assertEquals(0.0, img.posY, 0.0)
+    }
+
+    @Test
+    fun anImageWithABadSourceOrNoAreaDrawsNothing() {
+        val out = eval(
+            tpl(
+                """{ "type": "image", "src": "../a.png" }, { "type": "image", "src": "/a.png" }, { "type": "image" },
+                   { "type": "image", "src": "a.png", "w": 0 }, { "type": "image", "src": "a.png", "opacity": 0 }""",
+            ),
+        )
+        assertTrue(out.layers.isEmpty())
+    }
+
+    @Test
+    fun fitAndPositionPlaceThePicture() {
+        val box = Rect(0.0, 0.0, 100.0, 50.0)
+        fun place(fit: ImageFit, px: Double, py: Double, iw: Double, ih: Double) = TImage("a", box, box, fit, px, py).dest(iw, ih)
+        // A square picture in a wide box: contain fits its height, cover its width.
+        assertEquals(Rect(25.0, 0.0, 50.0, 50.0), place(ImageFit.CONTAIN, 0.5, 0.5, 10.0, 10.0))
+        assertEquals(Rect(0.0, 0.0, 50.0, 50.0), place(ImageFit.CONTAIN, 0.0, 0.5, 10.0, 10.0))
+        assertEquals(Rect(50.0, 0.0, 50.0, 50.0), place(ImageFit.CONTAIN, 1.0, 0.5, 10.0, 10.0))
+        assertEquals(Rect(0.0, -25.0, 100.0, 100.0), place(ImageFit.COVER, 0.5, 0.5, 10.0, 10.0))
+        assertEquals(Rect(0.0, 0.0, 100.0, 100.0), place(ImageFit.COVER, 0.5, 0.0, 10.0, 10.0))
+        assertEquals(Rect(0.0, -50.0, 100.0, 100.0), place(ImageFit.COVER, 0.5, 1.0, 10.0, 10.0))
+        assertEquals(box, place(ImageFit.STRETCH, 0.0, 0.0, 10.0, 10.0))
+    }
+
+    @Test
+    fun aPictureIsDrawnClippedAndFadedAndSkippedWithoutOne() {
+        val out = eval(tpl("""{ "type": "image", "src": "a.png", "fit": "cover", "opacity": 0.5 }"""), w = 100.0, h = 50.0)
+        val withPicture = FakeRenderer()
+        val data = com.xnotes.core.model.ImageData(File("a.png"), 10, 10)
+        TemplatePainter.paint(withPicture, out, 2.0, Rect(0.0, 0.0, 200.0, 100.0)) { if (it == "a.png") data else null }
+        assertEquals(listOf("save", "clipRect", "saveLayerAlpha", "drawImage", "restore", "restore"), withPicture.ops)
+        assertEquals(Rect(0.0, 0.0, 200.0, 100.0), withPicture.clips.single())
+        assertEquals(Rect(0.0, -50.0, 200.0, 200.0), withPicture.images.single())
+
+        val without = FakeRenderer()
+        TemplatePainter.paint(without, out, 2.0, Rect(0.0, 0.0, 200.0, 100.0))
+        assertTrue(without.ops.isEmpty())
+    }
 }

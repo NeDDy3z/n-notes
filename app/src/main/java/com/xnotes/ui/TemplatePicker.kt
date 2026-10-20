@@ -233,7 +233,7 @@ internal object TemplateThumbs {
             c.drawColor(s.paper.toArgb())
             val values = TemplateValues(s.numbers, s.colors)
             val out = TemplateLibrary.layouts.layout(t, TemplatePage(w, h, Rect(0.0, 0.0, w, h), s.ink, s.accent, values))
-            TemplatePainter.paint(AndroidRenderer(c), out, s.wPx / w, Rect(0.0, 0.0, s.wPx.toDouble(), hPx.toDouble()))
+            TemplatePainter.paint(AndroidRenderer(c), out, s.wPx / w, Rect(0.0, 0.0, s.wPx.toDouble(), hPx.toDouble()), TemplateLibrary.pictures(null, s.key))
             bmp.asImageBitmap()
         }.getOrNull() ?: return null
         if (keep) synchronized(cache) { cache[s] = img }
