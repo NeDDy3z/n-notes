@@ -864,6 +864,19 @@ class CanvasState(
         clampScroll()
     }
 
+    /** End a paginated turn on [row], keeping the height the slide showed it at. */
+    fun landFlip(row: Int) {
+        val rows = rowRanges()
+        if (row !in rows.indices) return
+        val before = rowBounds(rows[currentRow.coerceIn(0, rows.lastIndex)])
+        val after = rowBounds(rows[row])
+        val carriedY = scrollY + (after.top - before.top) * zoom
+        goToPage(rows[row].first)
+        scrollY = carriedY
+        clampScroll()
+        clearSharpViewport()
+    }
+
     // --- zoom ---
 
     fun setZoomAnchored(focusViewport: Pt, newZoom: Double) {

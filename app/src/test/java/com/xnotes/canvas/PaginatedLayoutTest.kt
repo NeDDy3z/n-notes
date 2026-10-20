@@ -278,6 +278,16 @@ class PaginatedLayoutTest {
         assertEquals(20, st.currentRow)
     }
 
+    @Test fun landingATurnMovesToTheNewRowAndDropsThePull() {
+        val st = state(5)
+        st.goToPage(2)
+        st.flipOffsetX = 380.0 // mid-slide toward the next row
+        st.landFlip(3)
+        assertEquals(3, st.currentRow)
+        assertEquals(0.0, st.flipOffsetX, 1e-9)
+        assertEquals(3..3, st.drawablePageRange())
+    }
+
     @Test fun terminalRowHasNoPhantomNeighbour() {
         val st = state(3)
         st.goToPage(2)

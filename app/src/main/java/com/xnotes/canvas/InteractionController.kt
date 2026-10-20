@@ -694,7 +694,7 @@ class InteractionController(
         if (hoverActionTool != null) endHoverAction() // a hovering side-button gesture yields to contact
         downStoppedFling = flinging // captured before stopping: a tap that only halts a glide must not dismiss
         stopFling() // a new touch halts any in-progress glide
-        stopPageFlipAnimation()
+        if (pageFlipAnimating) finishPageFlip() // a touch mid-turn lands it rather than undoing it
         if (!state.verticalScroll) clearFlipPull()
         stopOverscrollSettle() // ...and lets a re-grab take over the elastic mid-spring
         panMayCommitText = false // a fresh gesture; the editing branch below re-arms it if it applies
@@ -3753,6 +3753,16 @@ class InteractionController(
         choreographer.removeFrameCallback(pageFlipFrame)
     }
 
+    /** Land the turn in flight now: on its new page, or at rest for a cancelled pull. */
+    private fun finishPageFlip() {
+        val destination = pageFlipDestinationRow
+        stopPageFlipAnimation()
+        destination?.let { state.landFlip(it) }
+        state.flipOffsetX = 0.0
+        onViewChanged()
+        requestRender()
+    }
+
     private fun beginPageFlipAnimation(from: Double, to: Double, destination: Int?) {
         stopPageFlipAnimation()
         pageFlipStartOffset = from
@@ -3779,22 +3789,7 @@ class InteractionController(
         state.flipOffsetX = pageFlipStartOffset +
             (pageFlipTargetOffset - pageFlipStartOffset) * eased
         if (t >= 1.0 || abs(state.flipOffsetX - pageFlipTargetOffset) < 0.35) {
-            val destination = pageFlipDestinationRow
-            if (destination != null) {
-                val rows = state.rowRanges()
-                if (destination in rows.indices) {
-                    val before = state.rowBounds(rows[state.currentRow.coerceIn(0, rows.lastIndex)])
-                    val after = state.rowBounds(rows[destination])
-                    val carriedY = state.scrollY + (after.top - before.top) * state.zoom
-                    state.goToPage(rows[destination].first)
-                    state.scrollY = carriedY
-                    state.clampScroll()
-                    state.clearSharpViewport()
-                }
-            }
-            state.flipOffsetX = 0.0
-            stopPageFlipAnimation()
-            onViewChanged()
+            finishPageFlip()
         } else {
             choreographer.postFrameCallback(pageFlipFrame)
         }
