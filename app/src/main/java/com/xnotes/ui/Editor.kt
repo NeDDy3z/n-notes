@@ -3817,6 +3817,28 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return createNoteFile(treeUri, parentDocId, name) { codec.write(blank, it) }
     }
 
+    /** What the New note screen chose: the page size in mm, every page's style, and the cover's when there is one. */
+    class NewNoteSetup(val widthMm: Double, val heightMm: Double, val style: PageStyle, val cover: PageStyle?)
+
+    /** Creates a `.xnote` under [parentDocId] as [setup] describes, a cover first when it has one; returns its URI, or null. IO. */
+    fun createNoteFile(treeUri: String, parentDocId: String, rawName: String, setup: NewNoteSetup): String? {
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        val dpi = PageSize.DEFAULT_DPI
+        val w = PageSize.mmToPx(setup.widthMm, dpi)
+        val h = PageSize.mmToPx(setup.heightMm, dpi)
+        val doc = Document.blankPixels(Document.DEFAULT_NEW_PAGES, w, h, dpi).also { it.created = System.currentTimeMillis() }
+        doc.style = setup.style
+        TemplateLibrary.embed(doc, setup.style.template, imageDir)
+        (settings.newNoteFlow ?: factoryFlow).applyTo(doc.flow)
+        setup.cover?.let { style ->
+            // The cover's design runs to the paper's edge, whatever margins the pages get later.
+            val cover = Page(w, h, style = style, margins = PageMargins(0.0, 0.0, 0.0, 0.0)).also { it.cover = true }
+            TemplateLibrary.embed(doc, style.template, imageDir)
+            doc.pages.add(0, cover)
+        }
+        return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) }
+    }
+
     /** Imports the PDF at [pdfFile] into a new `.xnote` under [parentDocId] (named after [rawName]);
      *  returns its URI, or null. The PDF is streamed straight into the bundle, never held in RAM. IO. */
     fun createPdfNoteFile(treeUri: String, parentDocId: String, rawName: String, pdfFile: java.io.File): String? {
@@ -6852,6 +6874,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
+    /** The key of the template last added to the library, so a picker that asked for it can select it. */
+    var adoptedTemplate by mutableStateOf<String?>(null)
+        private set
+
     /** Run [work] off the main thread, then report it and refresh the pickers. */
     private fun adoptTemplate(work: () -> TemplateLibrary.Entry) {
         autosaveScope.launch {
@@ -6860,6 +6886,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 .onSuccess {
                     message = appContext.getString(R.string.template_imported, it.template.name)
                     TemplateLibraryUi.version++
+                    adoptedTemplate = it.key
                 }
                 .onFailure { message = appContext.getString(R.string.err_import_template, it.message ?: "") }
         }

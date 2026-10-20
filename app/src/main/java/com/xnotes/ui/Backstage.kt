@@ -206,6 +206,10 @@ fun Backstage(
     onOpenBeside: (String) -> (() -> Unit)? = { null },
     /** Picked items are to be exported as PDFs, zipped under the given name; the callback runs once a destination is chosen. */
     onExportPdfs: (List<BrowseEntry>, String, () -> Unit) -> Unit = { _, _, _ -> },
+    /** The New note screen asked to import a template file. */
+    onImportTemplate: () -> Unit = {},
+    /** The New note screen asked to make a cover or page template from a picture. */
+    onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit = {},
 ) {
     // Below this width the sidebar becomes a slide-over drawer instead of a persistent pane.
     val compact = LocalConfiguration.current.screenWidthDp < COMPACT_WIDTH_DP
@@ -221,6 +225,8 @@ fun Backstage(
         openSplit = onOpenSplit,
         openBeside = onOpenBeside,
         exportPdfs = onExportPdfs,
+        importTemplate = onImportTemplate,
+        templateFromImage = onTemplateFromImage,
     )
     // The backstage is the root of the stack — ordinary base content, not a dialog. The activity
     // window already runs edge-to-edge with the system bars hidden (MainActivity.applyFullscreen).
@@ -800,6 +806,8 @@ private class ExplorerCalls(
     val openBeside: (String) -> (() -> Unit)?,
     /** Exports picked items as PDFs, zipped under the given name; the callback runs once a destination is chosen. */
     val exportPdfs: (List<BrowseEntry>, String, () -> Unit) -> Unit,
+    val importTemplate: () -> Unit,
+    val templateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit,
 )
 
 @Composable
@@ -1746,9 +1754,38 @@ private fun ExplorerSection(
     val pendingImport = editor.pendingImport
     // Clear any stale error when a fresh name dialog opens for a new operation.
     LaunchedEffect(createMode, pendingImport) { fieldError = null }
-    // Name entry for a new note, new folder, or a pending PDF import. Hidden while an import is
+    // A new note gets the full-screen New note; it opens once it is made.
+    if (createMode == CreateMode.FILE && pendingImport == null && !editor.importing) {
+        var busy by remember { mutableStateOf(false) }
+        NewNoteScreen(
+            editor = editor,
+            folderName = stack.lastOrNull()?.second ?: rootName ?: stringResource(R.string.folder),
+            initialName = remember { nextUntitled(editor, editor.cachedChildren(root, currentDocId)) },
+            error = fieldError,
+            busy = busy,
+            onImportTemplate = { callsNow.value.importTemplate() },
+            onTemplateFromImage = { callsNow.value.templateFromImage(it) },
+            onCreate = { n, setup ->
+                busy = true
+                scope.launch {
+                    val uri = withContext(Dispatchers.IO) { editor.createNoteFile(root, currentDocId, n, setup) }
+                    busy = false
+                    if (uri != null) {
+                        fieldError = null
+                        onCreateMode(CreateMode.NONE)
+                        refreshKey++
+                        callsNow.value.openFile(uri)
+                    } else {
+                        fieldError = context.getString(R.string.err_create_note)
+                    }
+                }
+            },
+            onClose = { fieldError = null; onCreateMode(CreateMode.NONE) },
+        )
+    }
+    // Name entry for a new canvas, new folder, or a pending PDF import. Hidden while an import is
     // actually being written, so only the "Importing…" dialog shows.
-    if ((createMode != CreateMode.NONE || pendingImport != null) && !editor.importing) {
+    if ((createMode == CreateMode.CANVAS || createMode == CreateMode.FOLDER || pendingImport != null) && !editor.importing) {
         val isFolder = pendingImport == null && createMode == CreateMode.FOLDER
         val default = when {
             pendingImport != null -> pendingImport.defaultName // import names default to the source file

@@ -186,11 +186,11 @@ internal fun TemplatePreview(
 }
 
 @Composable
-private fun thumbPx(width: Dp): Int = with(LocalDensity.current) { width.toPx() }.toInt().coerceAtLeast(8)
+internal fun thumbPx(width: Dp): Int = with(LocalDensity.current) { width.toPx() }.toInt().coerceAtLeast(8)
 
 /** [spec] drawn off the main thread, straight from [TemplateThumbs] when it is there already. */
 @Composable
-private fun rememberTemplateThumb(t: Template, spec: TemplateThumbs.Spec, keep: Boolean): ImageBitmap? {
+internal fun rememberTemplateThumb(t: Template, spec: TemplateThumbs.Spec, keep: Boolean): ImageBitmap? {
     val state = produceState(if (keep) TemplateThumbs.cached(spec) else null, spec) {
         value = (if (keep) TemplateThumbs.cached(spec) else null) ?: withContext(Dispatchers.Default) { TemplateThumbs.render(t, spec, keep) }
     }

@@ -485,6 +485,12 @@ private fun EditorScreen(
         if (uri != null) editor.importTemplate(uri)
     }
 
+    // A picture made into a one-image cover or page template, whichever the New note screen asked for.
+    var pendingTemplateKind by remember { mutableStateOf(com.xnotes.core.template.TemplateKind.PAGE) }
+    val templateFromImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) editor.templateFromImage(uri, pendingTemplateKind)
+    }
+
     // A user font (.ttf/.otf), stored + registered by the editor.
     val importFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -848,6 +854,11 @@ private fun EditorScreen(
                     val lone = com.xnotes.ui.lonePdf(picked)
                     if (lone != null) exportPdfLauncher.launch("${com.xnotes.core.util.DocumentKind.stripSuffix(lone.name)}.pdf")
                     else exportZipLauncher.launch("$name.zip")
+                },
+                onImportTemplate = { importTemplateLauncher.launch(arrayOf("*/*")) },
+                onTemplateFromImage = { kind ->
+                    pendingTemplateKind = kind
+                    templateFromImageLauncher.launch(arrayOf("image/*"))
                 },
             )
 
