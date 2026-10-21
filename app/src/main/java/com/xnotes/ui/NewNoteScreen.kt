@@ -626,7 +626,7 @@ internal fun NewNoteScreen(
         }
 
         @Composable
-        fun Tile(label: String, selected: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)?, thumb: @Composable (Dp, Dp) -> Unit) {
+        fun Tile(label: String, selected: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)?, framed: Boolean = true, thumb: @Composable (Dp, Dp) -> Unit) {
             var menu by remember { mutableStateOf(false) }
             Column(
                 Modifier
@@ -641,8 +641,14 @@ internal fun NewNoteScreen(
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .border(if (selected) 2.dp else 1.dp, if (selected) accent else border, RoundedCornerShape(3.dp))
-                            .padding(if (selected) 2.dp else 1.dp),
+                            .then(
+                                when {
+                                    selected -> Modifier.border(2.dp, accent, RoundedCornerShape(3.dp))
+                                    framed -> Modifier.border(1.dp, border, RoundedCornerShape(3.dp))
+                                    else -> Modifier
+                                },
+                            )
+                            .padding(if (selected) 2.dp else if (framed) 1.dp else 0.dp),
                     ) { thumb(w - 4.dp, h - 4.dp) }
                     if (selected) {
                         Box(
@@ -707,7 +713,7 @@ internal fun NewNoteScreen(
                 val examples = pages.filter { it.source == TemplateLibrary.Source.BUNDLED && shown(it) }
                 val imported = pages.filter { it.source == TemplateLibrary.Source.IMPORTED && shown(it) }
                 if (tag == null || builtIn.isNotEmpty()) {
-                    heading(sBuiltIn, builtIn.size + if (tag == null) 1 else 0)
+                    heading(sBuiltIn, builtIn.size)
                     if (tag == null) item {
                         Tile(stringResource(R.string.none), pageKey == PageTemplates.NONE, { pickPage(PageTemplates.NONE) }, null) { w, h -> Thumb(null, PageTemplates.NONE, TemplateValues.DEFAULTS, w, h, keep = true) }
                     }
@@ -732,14 +738,14 @@ internal fun NewNoteScreen(
             } else {
                 val bundled = covers.filter { it.source != TemplateLibrary.Source.IMPORTED }
                 val imported = covers.filter { it.source == TemplateLibrary.Source.IMPORTED }
-                heading(sDesigns, bundled.size + if (coverOnly) 0 else 1)
-                // None is the note without a cover; picking a design turns one on. A cover being
-                // changed has no None here: the pages panel's Remove cover does that.
+                heading(sDesigns, bundled.size)
+                // None is the note without a cover, drawn as the empty frame the stage shows; picking a design turns one
+                // on. A cover being changed has no None here: the pages panel's Remove cover does that.
                 if (!coverOnly) item {
                     Tile(stringResource(R.string.none), !hasCover, {
                         coverOn = false
                         face = Face.COVER
-                    }, null) { w, h -> Thumb(null, PageTemplates.NONE, TemplateValues.DEFAULTS, w, h, keep = true) }
+                    }, null, framed = false) { w, h -> Dashed(w, h) {} }
                 }
                 items(bundled, key = { it.key }) { e ->
                     Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, null) { w, h ->
