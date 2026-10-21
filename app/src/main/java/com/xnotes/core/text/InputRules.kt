@@ -61,7 +61,7 @@ object InputRules {
 
     private object HRule : Rule
 
-    private enum class Strip : Rule { RULE, CODE, LIST, LIST_EXIT, HEADING, INDENT }
+    private enum class Strip : Rule { BREAK, RULE, CODE, LIST, LIST_EXIT, HEADING, INDENT }
 
     // --- detection ---
 
@@ -101,13 +101,14 @@ object InputRules {
 
     /**
      * The rule a backspace at the very start of [pos]'s paragraph triggers: strip
-     * one block property (rule, code line, list, heading, then indent) instead of
+     * one block property (page break, rule, code line, list, heading, then indent) instead of
      * merging into the line above. Null when the key should just delete.
      */
     fun forBackspace(flow: TextFlow, pos: FlowPos): Rule? {
         val para = flow.paragraphs.getOrNull(pos.para) ?: return null
         if (para.table != null) return null
         return when {
+            para.breakBefore -> Strip.BREAK
             para.rule -> Strip.RULE
             para.codeLang != null -> if (para.length == 0) Strip.CODE else null
             para.list != ListKind.NONE -> Strip.LIST
@@ -322,6 +323,7 @@ object InputRules {
         val caret = FlowPos(pos.para, 0)
         val len = flow.paragraphs[pos.para].length
         return when (rule) {
+            Strip.BREAK -> Result(ed.setParaStyle(FlowRange.caret(caret)) { it.breakBefore = false }, caret)
             Strip.RULE -> Result(ed.setParaStyle(FlowRange.caret(caret)) { it.rule = false }, caret, CharStyle.DEFAULT)
             Strip.CODE -> Result(ed.setParaStyle(FlowRange.caret(caret)) { it.codeLang = null }, caret, CharStyle.DEFAULT)
             Strip.LIST -> Result(

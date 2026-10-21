@@ -573,4 +573,23 @@ class InputRulesTest {
         assertFalse(flow.paragraphs[0].rule)
         assertEquals("x", flow.paragraphs[0].plainText())
     }
+
+    @Test
+    fun backspaceTakesAPageBreakOutFirst() {
+        val flow = TextFlow().apply {
+            paragraphs.add(para("a"))
+            paragraphs.add(Paragraph(mutableListOf(Run("b")), list = ListKind.BULLET, breakBefore = true))
+        }
+        InputRules.apply(flow, FlowPos(1, 0), InputRules.forBackspace(flow, FlowPos(1, 0))!!)
+        assertFalse(flow.paragraphs[1].breakBefore)
+        assertEquals(ListKind.BULLET, flow.paragraphs[1].list)
+    }
+
+    @Test
+    fun splittingAParagraphLeavesItsBreakOnTheFirstHalf() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("ab")), breakBefore = true)) }
+        FlowEditor(flow).insertText(FlowPos(0, 1), "\n")
+        assertTrue(flow.paragraphs[0].breakBefore)
+        assertFalse(flow.paragraphs[1].breakBefore)
+    }
 }

@@ -80,6 +80,9 @@ object MarkdownParser {
 
     private val FENCE_LANG = Regex("^[A-Za-z0-9+#-]*")
 
+    /** LaTeX's page breaks, which is how markdown headed for print writes one. */
+    private val PAGE_BREAK = Regex("\\s*\\\\(pagebreak|newpage)\\s*")
+
     private val parser: Parser by lazy {
         Parser.builder()
             .extensions(
@@ -101,10 +104,27 @@ object MarkdownParser {
 
     /** Parse [text] into flow paragraphs; pipe tables take [tableStyle] (with its header row on). */
     fun parse(text: String, tableStyle: TableStyle = TableStyle()): List<Paragraph> =
-        Emitter(tableStyle).apply { blocks(parser.parse(text), indent = 0, gaps = true) }.out
+        Emitter(tableStyle).apply { blocks(parser.parse(text), indent = 0, gaps = true) }.finish()
 
     private class Emitter(private val tableStyle: TableStyle) {
-        val out = mutableListOf<Paragraph>()
+        private val paras = mutableListOf<Paragraph>()
+
+        /** Set by a `\pagebreak` or `\newpage` line: the next paragraph starts a page. */
+        private var pendingBreak = false
+
+        /** Everything emitted; a break with nothing after it still breaks, on an empty line. */
+        fun finish(): List<Paragraph> {
+            if (pendingBreak) emit(Paragraph())
+            return paras
+        }
+
+        private fun emit(p: Paragraph) {
+            if (pendingBreak && p.table == null) {
+                p.breakBefore = true
+                pendingBreak = false
+            }
+            paras += p
+        }
 
         /** Every block child of [parent]; with [gaps], blank source lines between two leave an empty paragraph. */
         fun blocks(parent: Node, indent: Int, gaps: Boolean) {
@@ -112,11 +132,19 @@ object MarkdownParser {
             var child = parent.firstChild
             while (child != null) {
                 if (child is Block) {
-                    val before = out.size
-                    if (gaps && prev != null && gapBetween(prev, child)) out += Paragraph(indent = indent)
-                    val mark = out.size
+                    val before = paras.size
+                    // A break already starts the page, so the gap before what follows it goes.
+                    if (gaps && prev != null && !pendingBreak && gapBetween(prev, child)) emit(Paragraph(indent = indent))
+                    val mark = paras.size
+                    val broke = pendingBreak
                     block(child, indent)
-                    if (out.size > mark) prev = child else while (out.size > before) out.removeAt(out.size - 1)
+                    if (paras.size > mark) {
+                        prev = child
+                    } else {
+                        // Nothing came of it, so neither does the gap before it.
+                        while (paras.size > before) paras.removeAt(paras.size - 1)
+                        if (pendingBreak != broke) prev = child
+                    }
                 }
                 child = child.next
             }
@@ -130,24 +158,35 @@ object MarkdownParser {
 
         private fun block(node: Node, indent: Int) {
             when (node) {
-                is MdParagraph -> lines(node, CharStyle.DEFAULT) { runs, _ -> prose(runs, indent) }
+                is MdParagraph -> if (PAGE_BREAK.matches(plain(node))) {
+                    pendingBreak = true
+                } else {
+                    lines(node, CharStyle.DEFAULT) { runs, _ -> prose(runs, indent) }
+                }
                 is Heading -> lines(node, Paragraph.HEADING_STYLE) { runs, _ ->
                     Paragraph(runs, indent = indent, headingLevel = node.level.coerceIn(1, Paragraph.MAX_HEADING))
                 }
                 is FencedCodeBlock -> code(node.literal, lang(node.info), indent)
                 is IndentedCodeBlock -> code(node.literal, "", indent)
-                is MathBlock -> out += displayParagraph(node.latex, indent)
+                is MathBlock -> emit(displayParagraph(node.latex, indent))
                 is BulletList, is OrderedList -> list(node as ListBlock, indent)
                 is BlockQuote -> blocks(node, (indent + 1).coerceAtMost(Paragraph.MAX_INDENT), gaps = true)
-                is ThematicBreak -> out += Paragraph(indent = indent, rule = true)
+                is ThematicBreak -> emit(Paragraph(indent = indent, rule = true))
                 is HtmlBlock -> for (line in node.literal.trimEnd('\n').split('\n')) {
-                    out += Paragraph(runsOf(line, CharStyle.DEFAULT), indent = indent)
+                    emit(Paragraph(runsOf(line, CharStyle.DEFAULT), indent = indent))
                 }
                 is TableBlock -> table(node)
                 is FootnoteDefinition -> footnote(node, indent)
                 is YamlFrontMatterBlock, is LinkReferenceDefinition -> Unit
                 else -> blocks(node, indent, gaps = false)
             }
+        }
+
+        /** [node]'s text with no styling, for recognising a line by what it says. */
+        private fun plain(node: Node): String {
+            val lines = mutableListOf(mutableListOf<Run>())
+            inlines(node, CharStyle.DEFAULT, lines)
+            return lines.joinToString("\n") { l -> l.joinToString("") { it.text } }
         }
 
         /** A paragraph of prose; a display equation alone in it is set as one. */
@@ -162,12 +201,12 @@ object MarkdownParser {
         private fun lines(node: Node, base: CharStyle, make: (MutableList<Run>, Int) -> Paragraph) {
             val lines = mutableListOf(mutableListOf<Run>())
             inlines(node, base, lines)
-            for ((i, runs) in lines.withIndex()) out += make(runs, i)
+            for ((i, runs) in lines.withIndex()) emit(make(runs, i))
         }
 
         private fun code(literal: String, lang: String, indent: Int) {
             if (literal.isEmpty()) return
-            for (line in literal.removeSuffix("\n").split('\n')) out +=Paragraph(runsOf(line, CharStyle.DEFAULT), indent = indent, codeLang = lang)
+            for (line in literal.removeSuffix("\n").split('\n')) emit(Paragraph(runsOf(line, CharStyle.DEFAULT), indent = indent, codeLang = lang))
         }
 
         private fun lang(info: String?): String =
@@ -212,19 +251,19 @@ object MarkdownParser {
                         }
                     }
                     child is ListBlock -> {
-                        if (first) out += markerOnly(kind, task, indent)
+                        if (first) emit(markerOnly(kind, task, indent))
                         first = false
                         list(child, inner)
                     }
                     else -> {
-                        if (first) out += markerOnly(kind, task, indent)
+                        if (first) emit(markerOnly(kind, task, indent))
                         first = false
                         block(child, inner)
                     }
                 }
                 child = child.next
             }
-            if (first) out += markerOnly(kind, task, indent)
+            if (first) emit(markerOnly(kind, task, indent))
         }
 
         private fun markerOnly(kind: ListKind, task: TaskListItemMarker?, indent: Int) = Paragraph(
@@ -238,14 +277,14 @@ object MarkdownParser {
 
         /** A footnote's definition, kept as the text it was written as. */
         private fun footnote(node: FootnoteDefinition, indent: Int) {
-            val at = out.size
+            val at = paras.size
             blocks(node, indent, gaps = false)
             val label = "[^${node.label}]:"
-            if (out.size == at) {
-                out += Paragraph(runsOf(label, CharStyle.DEFAULT), indent = indent)
+            if (paras.size == at) {
+                emit(Paragraph(runsOf(label, CharStyle.DEFAULT), indent = indent))
             } else {
-                out[at].runs.add(0, Run("$label ", CharStyle.DEFAULT))
-                mergeRuns(out[at].runs)
+                paras[at].runs.add(0, Run("$label ", CharStyle.DEFAULT))
+                mergeRuns(paras[at].runs)
             }
         }
 
@@ -269,6 +308,8 @@ object MarkdownParser {
                     else -> ParaAlign.LEFT
                 }
             }
+            // A table cannot carry a break, so one waiting for it stands on an empty line before it.
+            if (pendingBreak) emit(Paragraph())
             val table = FlowTable(FlowTable.even(cols), List(rows.size) { 0.0 }, tableStyle.copy(headerRow = true))
             for (row in rows) {
                 for (c in 0 until cols) {
@@ -279,7 +320,7 @@ object MarkdownParser {
                         if (i > 0) appendRun(flat, " ", CharStyle.DEFAULT)
                         line.forEach { appendRun(flat, it.text, it.style) }
                     }
-                    out += Paragraph(flat, align = aligns[c], table = table, cellStart = true)
+                    emit(Paragraph(flat, align = aligns[c], table = table, cellStart = true))
                 }
             }
         }

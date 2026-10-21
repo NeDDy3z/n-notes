@@ -1461,6 +1461,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.codeLang = null
             it.indent = 0
             it.rule = false
+            it.breakBefore = false
         }
         val lastIndex: Int
         when {
@@ -1827,7 +1828,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.paintFlow = { page, renderer, region ->
             val pf = publishedFlow
             val idx = pf?.indexOf?.get(page)
-            if (pf != null && idx != null) FlowPainter.paintPage(renderer, pf.frame, idx, region, math = false)
+            if (pf != null && idx != null) FlowPainter.paintPage(renderer, pf.frame, idx, region, math = false, chrome = true)
         }
         state.paintMath = { page, renderer, region ->
             val pf = publishedFlow
@@ -1892,6 +1893,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowLayout.accentColor = { palette.accent }
         flowLayout.ruleColor = { tableRuleColor() }
         flowLayout.revealedMath = { revealedMathIn(it) }
+        flowLayout.pageBreakLabel = appContext.getString(R.string.page_break)
     }
 
     /**
@@ -6391,6 +6393,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> flowMoveWord(forward = true, extend = shift)
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_DEL -> flowDeleteWord(forward = false)
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> flowDeleteWord(forward = true)
+            ctrl && (e.keyCode == android.view.KeyEvent.KEYCODE_ENTER || e.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER) ->
+                flowInsertPageBreak()
             ctrl -> return false // other Ctrl combos (save, zoom...) stay global
             e.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
                 e.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER ->
@@ -6669,6 +6673,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             SlashCommands.Kind.TODO -> flowSetList(ListKind.CHECK)
             SlashCommands.Kind.CODE -> flowSetCodeLanguage(slashCodeLanguage(arg))
             SlashCommands.Kind.TABLE -> slashInsertTable(arg)
+            SlashCommands.Kind.PAGE_BREAK -> flowInsertPageBreak()
             SlashCommands.Kind.SIZE -> flowSetChar { it.copy(sizePt = size.coerceIn(6.0, 96.0)) }
             SlashCommands.Kind.COLOR -> flowSetCharColor(color)
             SlashCommands.Kind.MATH -> flowInsertMath(arg)
@@ -6697,6 +6702,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The language "/code xyz" means: a known token, else whatever the bar last used. */
     private fun slashCodeLanguage(arg: String): String =
         codeLanguageChoices().firstOrNull { it.equals(arg, ignoreCase = true) } ?: lastCodeLanguage()
+
+    /** Break the page at the caret: what follows it starts the next page. Tables cannot hold one. */
+    fun flowInsertPageBreak() {
+        if (!flowText.active) return
+        val flow = state.document.flow
+        val sel = flowText.selection.normalized()
+        if (flow.paragraphs.getOrNull(sel.start.para)?.table != null) return
+        flowText.flushBurst()
+        flowText.mirrorStale = true
+        val ed = FlowEditor(flow)
+        val (split, caret) = ed.replaceRange(sel, "\n")
+        val mark = ed.setParaStyle(FlowRange.caret(caret)) { it.breakBefore = true }
+        flowText.commitEdit(ed.combined(listOfNotNull(split, mark)), caret)
+    }
 
     /** "/table 3x4" sizes the grid; anything unparsed falls back to the saved default. */
     private fun slashInsertTable(arg: String) {

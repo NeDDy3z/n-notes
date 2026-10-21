@@ -282,4 +282,34 @@ class FlowPaginationTest {
         assertEquals(3, frame.emptyLinesToReach(1, 2 * 15.6 + 1.0, 15.6))
         assertEquals(0, frame.emptyLinesToReach(0, 40.0, 15.6))
     }
+
+    // --- page breaks ---
+
+    @Test
+    fun aPageBreakStartsTheNextPage() {
+        val flow = flowOf("a", "b", "c")
+        flow.paragraphs[1].breakBefore = true
+        val frame = layout.layout(flow, pages(2), 150)
+        assertEquals(listOf(1, 2), frame.pages.map { it.lines.size })
+        assertEquals(1, frame.pages[1].lines[0].paraIndex)
+        val mark = frame.pages[0].breaks.single()
+        assertTrue(mark.y > frame.pages[0].lines[0].bottom)
+        assertTrue(frame.pages[1].breaks.isEmpty())
+    }
+
+    @Test
+    fun aBreakAlreadyAtThePageTopPushesNothingButStillShows() {
+        val flow = flowOf("a", "b")
+        flow.paragraphs[0].breakBefore = true
+        val frame = layout.layout(flow, pages(2), 150)
+        assertEquals(listOf(2, 0), frame.pages.map { it.lines.size })
+        assertTrue(frame.pages[0].breaks.single().y < 0.0)
+    }
+
+    @Test
+    fun aBreakOnTheLastPageAsksForAnotherPage() {
+        val flow = flowOf("a", "b")
+        flow.paragraphs[1].breakBefore = true
+        assertEquals(1, layout.layout(flow, pages(1), 150).extraPagesNeeded)
+    }
 }

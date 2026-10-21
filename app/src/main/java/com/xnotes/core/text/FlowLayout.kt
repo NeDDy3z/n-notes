@@ -74,6 +74,9 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
      */
     var revealedMath: (Paragraph) -> Int = { -1 }
 
+    /** What a page break's on-screen mark says, installed by the host so it can be translated. */
+    var pageBreakLabel: String = "Page break"
+
     // --- per-paragraph measurement (cached) ---
 
     /** Advances and per-run fonts/metrics for one paragraph at given flow defaults. */
@@ -491,6 +494,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         val spare = addedPage?.let { contentRectOf(it, flow.margins, dpi) } ?: contentRects.last()
         val pageLines = List(pageBoxes.size) { mutableListOf<PlacedLine>() }
         val pageTables = List(pageBoxes.size) { mutableListOf<TableFrag>() }
+        val pageBreaks = List(pageBoxes.size) { mutableListOf<BreakMark>() }
         var page = firstPage.coerceIn(0, pageBoxes.lastIndex)
         var y = contentRects[page].top
         var ordinal = 0
@@ -507,6 +511,19 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 ordinal = 0
                 skipTo = block.last + 1
                 continue
+            }
+            if (para.breakBefore) {
+                val here = contentRects.getOrElse(page) { spare }
+                // Already at the top of a page, the break has nothing to push: its mark goes
+                // in the margin above, so it can still be seen and taken out.
+                if (y > here.top + EPS) {
+                    pageBreaks.getOrNull(page)?.add(breakMark(flow, here, y, below = true))
+                    page++
+                    y = contentRects.getOrElse(page) { spare }.top
+                } else {
+                    pageBreaks.getOrNull(page)?.add(breakMark(flow, here, y, below = false))
+                }
+                if (page > throughPage) break
             }
             ordinal = if (para.list == ListKind.ORDERED) ordinal + 1 else 0
             val indentPx = para.indent * INDENT_STEP_PX +
@@ -543,8 +560,18 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             }
         }
         val extra = (page - (pageBoxes.size - 1)).coerceAtLeast(0)
-        val pages = pageBoxes.indices.map { PageFlow(contentRects[it], pageLines[it], pageTables[it]) }
+        val pages = pageBoxes.indices.map { PageFlow(contentRects[it], pageLines[it], pageTables[it], pageBreaks[it]) }
         return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells, firstPage.coerceIn(0, pageBoxes.lastIndex))
+    }
+
+    /** The mark for a break whose page's text ends at [y]: just [below] it, or else just above it. */
+    private fun breakMark(flow: TextFlow, rect: Rect, y: Double, below: Boolean): BreakMark {
+        val font = FontSpec(flow.defaultSizePt * BREAK_LABEL_SCALE, flow.defaultFace)
+        val m = measurer.metrics(font)
+        val centre = if (below) y + m.height / 2.0 else y - m.height / 2.0
+        val w = measurer.advances(pageBreakLabel, font).sum()
+        val x = rect.left + (rect.w - w) / 2.0
+        return BreakMark(centre, rect.left, rect.right, pageBreakLabel, x, w, centre + (m.ascent - m.descent) / 2.0, font)
     }
 
     private class Cursor(var page: Int, var y: Double)
@@ -926,6 +953,9 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
 
         /** A content rect is never shorter than this, however extreme the margins. */
         const val MIN_CONTENT_HEIGHT = 16.0
+
+        /** A page break's label sets this much smaller than the text. */
+        private const val BREAK_LABEL_SCALE = 0.75
 
         const val HEADER_ALPHA = 64
         const val BAND_ALPHA = 26

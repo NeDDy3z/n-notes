@@ -157,8 +157,28 @@ class TableFrag(
     }
 }
 
-/** The flow laid onto one page: its content rect, the lines placed there, and its table slices. */
-class PageFlow(val contentRect: Rect, val lines: List<PlacedLine>, val tables: List<TableFrag> = emptyList())
+/**
+ * Where a page break sits, for the screen only: a dashed line centred on [y] from [left] to
+ * [right], broken around its [label], set at [labelX] on [baseline] in [font].
+ */
+class BreakMark(
+    val y: Double,
+    val left: Double,
+    val right: Double,
+    val label: String,
+    val labelX: Double,
+    val labelW: Double,
+    val baseline: Double,
+    val font: FontSpec,
+)
+
+/** The flow laid onto one page: its content rect, the lines placed there, its table slices and page breaks. */
+class PageFlow(
+    val contentRect: Rect,
+    val lines: List<PlacedLine>,
+    val tables: List<TableFrag> = emptyList(),
+    val breaks: List<BreakMark> = emptyList(),
+)
 
 /** What a text-tool tap landed on. */
 sealed class FlowHit {
@@ -246,6 +266,7 @@ class FlowFrame(
                 mix((d.math?.ordinal ?: -1).toLong())
             }
         }
+        for (b in page.breaks) mix(b.y.toRawBits())
         for (t in page.tables) {
             for (row in t.rows) {
                 mix(row.top.toRawBits())

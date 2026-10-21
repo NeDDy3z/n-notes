@@ -15,7 +15,7 @@ import com.xnotes.core.history.Command
 object SlashCommands {
 
     /** What a committed entry does. The host dispatches on it. */
-    enum class Kind { HEADING, BODY, BULLET, ORDERED, TODO, CODE, TABLE, SIZE, COLOR, MATH, DATE, TIME }
+    enum class Kind { HEADING, BODY, BULLET, ORDERED, TODO, CODE, TABLE, PAGE_BREAK, SIZE, COLOR, MATH, DATE, TIME }
 
     /**
      * One menu entry. [keys] are matched by prefix, so "h" offers all six headings
@@ -71,6 +71,7 @@ object SlashCommands {
         add(Entry(Kind.TODO, "todo", listOf("todo", "task", "check"), markdown = "[]"))
         add(Entry(Kind.CODE, "code", listOf("code", "pre"), markdown = "```", param = "LANG"))
         add(Entry(Kind.TABLE, "table", listOf("table", "grid"), param = "ROWSxCOLS"))
+        add(Entry(Kind.PAGE_BREAK, "pagebreak", listOf("pagebreak", "newpage", "break")))
         add(Entry(Kind.SIZE, "size", listOf("size", "fontsize", "pt"), needsArg = true, param = "NUMBER"))
         add(Entry(Kind.COLOR, "color", listOf("color", "colour"), needsArg = true, param = "NAME"))
         add(Entry(

@@ -43,11 +43,10 @@ object FlowXml {
 
     fun write(flow: TextFlow): ByteArray = buildString {
         val charStyles = LinkedHashMap<CharStyle, String>()
-        val paraStyles = LinkedHashMap<Pair<ParaAlign, Int>, String>()
+        val paraStyles = LinkedHashMap<ParaProps, String>()
         for (para in flow.paragraphs) {
-            if (para.align != ParaAlign.LEFT || para.indent != 0) {
-                paraStyles.getOrPut(para.align to para.indent) { "P${paraStyles.size + 1}" }
-            }
+            val props = ParaProps.of(para)
+            if (props != ParaProps.PLAIN) paraStyles.getOrPut(props) { "P${paraStyles.size + 1}" }
             for (run in para.runs) {
                 val style = writtenStyle(flow, para, run.style)
                 if (style != CharStyle.DEFAULT) {
@@ -79,7 +78,7 @@ object FlowXml {
 
         append(" <office:automatic-styles>\n")
         for ((style, name) in charStyles) appendTextStyle(name, style)
-        for ((key, name) in paraStyles) appendParaStyle(name, key.first, key.second)
+        for ((props, name) in paraStyles) appendParaStyle(name, props)
         for (b in tables) appendTableStyles(b)
         append(" </office:automatic-styles>\n")
 
@@ -131,11 +130,21 @@ object FlowXml {
         append("/>\n  </style:style>\n")
     }
 
-    private fun StringBuilder.appendParaStyle(name: String, align: ParaAlign, indent: Int) {
+    private fun StringBuilder.appendParaStyle(name: String, p: ParaProps) {
         append("  <style:style style:name=\"$name\" style:family=\"paragraph\">\n   <style:paragraph-properties")
-        if (align != ParaAlign.LEFT) append(" fo:text-align=\"${align.id}\"")
-        if (indent != 0) append(" fo:margin-left=\"${indent * INDENT_MM_PER_LEVEL}mm\" xnotes:indent=\"$indent\"")
+        if (p.align != ParaAlign.LEFT) append(" fo:text-align=\"${p.align.id}\"")
+        if (p.indent != 0) append(" fo:margin-left=\"${p.indent * INDENT_MM_PER_LEVEL}mm\" xnotes:indent=\"${p.indent}\"")
+        if (p.breakBefore) append(" fo:break-before=\"page\"")
         append("/>\n  </style:style>\n")
+    }
+
+    /** What a paragraph's automatic style holds. */
+    private data class ParaProps(val align: ParaAlign, val indent: Int, val breakBefore: Boolean) {
+        companion object {
+            val PLAIN = ParaProps(ParaAlign.LEFT, 0, false)
+
+            fun of(p: Paragraph) = ParaProps(p.align, p.indent, p.breakBefore)
+        }
     }
 
     private fun tableName(b: TableBlock) = "Table${b.ordinal + 1}"
@@ -165,7 +174,7 @@ object FlowXml {
         flow: TextFlow,
         b: TableBlock,
         paras: List<Paragraph>,
-        paraStyles: Map<Pair<ParaAlign, Int>, String>,
+        paraStyles: Map<ParaProps, String>,
         charStyles: Map<CharStyle, String>,
     ) {
         val name = tableName(b)
@@ -207,12 +216,12 @@ object FlowXml {
     private fun StringBuilder.appendParagraph(
         flow: TextFlow,
         para: Paragraph,
-        paraStyles: Map<Pair<ParaAlign, Int>, String>,
+        paraStyles: Map<ParaProps, String>,
         charStyles: Map<CharStyle, String>,
         pad: String,
     ) {
         append(pad).append("<text:p")
-        paraStyles[para.align to para.indent]?.let { append(" text:style-name=\"$it\"") }
+        paraStyles[ParaProps.of(para)]?.let { append(" text:style-name=\"$it\"") }
         if (para.list != ListKind.NONE) append(" xnotes:list=\"${para.list.id}\"")
         if (para.checked) append(" xnotes:checked=\"true\"")
         if (para.headingLevel > 0) append(" xnotes:heading=\"${para.headingLevel}\"")
@@ -321,7 +330,7 @@ object FlowXml {
 
     private class Styles {
         val chars = HashMap<String, CharStyle>()
-        val paras = HashMap<String, Pair<ParaAlign, Int>>()
+        val paras = HashMap<String, ParaProps>()
         val tableWidths = HashMap<String, Double>()
         val colWidths = HashMap<String, Double>()
         val rowHeights = HashMap<String, Double>()
@@ -450,7 +459,7 @@ object FlowXml {
         face = attr(props, "font-name")?.takeIf { it.isNotEmpty() }?.let { FontFace(it) },
     )
 
-    private fun parseParaProps(props: Element): Pair<ParaAlign, Int> {
+    private fun parseParaProps(props: Element): ParaProps {
         val align = when (attr(props, "text-align")) {
             "center" -> ParaAlign.CENTER
             "right", "end" -> ParaAlign.RIGHT
@@ -461,23 +470,24 @@ object FlowXml {
             ?: attr(props, "margin-left")?.removeSuffix("mm")?.toDoubleOrNull()
                 ?.let { (it / INDENT_MM_PER_LEVEL).toInt() }
             ?: 0
-        return align to indent.coerceIn(0, Paragraph.MAX_INDENT)
+        return ParaProps(align, indent.coerceIn(0, Paragraph.MAX_INDENT), attr(props, "break-before") == "page")
     }
 
     private fun parseParagraph(
         p: Element,
         charStyles: Map<String, CharStyle>,
-        paraStyles: Map<String, Pair<ParaAlign, Int>>,
+        paraStyles: Map<String, ParaProps>,
     ): Paragraph {
-        val (align, indent) = paraStyles[attr(p, "style-name")] ?: (ParaAlign.LEFT to 0)
+        val props = paraStyles[attr(p, "style-name")] ?: ParaProps.PLAIN
         val para = Paragraph(
-            align = align,
-            indent = indent,
+            align = props.align,
+            indent = props.indent,
             list = ListKind.fromId(attr(p, "list")),
             checked = attr(p, "checked") == "true",
             codeLang = attr(p, "code-lang"),
             headingLevel = attr(p, "heading")?.toIntOrNull()?.coerceIn(0, Paragraph.MAX_HEADING) ?: 0,
             rule = attr(p, "rule") == "true",
+            breakBefore = props.breakBefore,
         )
         collectRuns(p, CharStyle.DEFAULT, charStyles, para.runs)
         // The size written on a heading's text is for older readers; the level sizes it here.

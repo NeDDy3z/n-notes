@@ -169,6 +169,7 @@ private fun slashLabel(entry: SlashCommands.Entry): String = when (entry.kind) {
     SlashCommands.Kind.TODO -> stringResource(R.string.checkbox_item)
     SlashCommands.Kind.CODE -> stringResource(R.string.code_block)
     SlashCommands.Kind.TABLE -> stringResource(R.string.insert_table)
+    SlashCommands.Kind.PAGE_BREAK -> stringResource(R.string.page_break)
     SlashCommands.Kind.SIZE -> stringResource(R.string.size_pt)
     SlashCommands.Kind.COLOR -> stringResource(R.string.colour)
     SlashCommands.Kind.MATH -> stringResource(R.string.equation)

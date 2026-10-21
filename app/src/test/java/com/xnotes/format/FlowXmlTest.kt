@@ -262,4 +262,18 @@ class FlowXmlTest {
         assertFalse(back[0].rule)
         assertTrue(back[1].rule)
     }
+
+    @Test
+    fun aPageBreakRoundTripsAsOdfBreakBefore() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("a"))))
+            paragraphs.add(Paragraph(mutableListOf(Run("b")), indent = 1, breakBefore = true))
+        }
+        val xml = String(FlowXml.write(flow))
+        assertTrue(xml.contains("fo:break-before=\"page\""))
+        val back = roundTrip(flow).paragraphs
+        assertFalse(back[0].breakBefore)
+        assertTrue(back[1].breakBefore)
+        assertEquals(1, back[1].indent)
+    }
 }

@@ -327,4 +327,11 @@ class MarkdownParserTest {
         assertTrue(paras.filter { it.rule }.all { it.length == 0 })
         assertEquals("b", paras.last().plainText())
     }
+
+    @Test
+    fun latexPageBreaksBreakThePage() {
+        val paras = parse("a\n\n\\newpage\n\nb\n\n\\pagebreak")
+        assertEquals(listOf("a", "b", ""), paras.map { it.plainText() })
+        assertEquals(listOf(false, true, true), paras.map { it.breakBefore })
+    }
 }

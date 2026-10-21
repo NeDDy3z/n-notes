@@ -21,6 +21,7 @@ object FlowPainter {
      * [breaks] holds, per paragraph, offsets where a backend writing text needs a run to end and
      * the next begin, so each piece can be tagged on its own (a link inside a word, for one).
      * Without [math] the formulas are left out, for a caller that draws them with [paintMath].
+     * [chrome] adds what only the screen shows, such as where page breaks sit.
      */
     fun paintPage(
         r: Renderer,
@@ -29,8 +30,12 @@ object FlowPainter {
         region: Rect,
         breaks: Map<Int, IntArray> = emptyMap(),
         math: Boolean = true,
+        chrome: Boolean = false,
     ) {
         val page = frame.pages.getOrNull(pageIndex) ?: return
+        if (chrome) {
+            for (b in page.breaks) if (b.y >= region.top - b.font.pointSize && b.y <= region.bottom + b.font.pointSize) paintBreak(r, frame, b)
+        }
         if (r.writesText) r.beginMark(Mark.Decoration)
         for (table in page.tables) {
             if (table.bottom < region.top || table.top > region.bottom) continue
@@ -54,6 +59,21 @@ object FlowPainter {
                 if (seg.math) drawFormula(r, line, seg, seg.style.color ?: frame.defaultColor)
             }
         }
+    }
+
+    /** A page break's dashed line, broken around its label. */
+    private fun paintBreak(r: Renderer, frame: FlowFrame, b: BreakMark) {
+        val color = frame.defaultColor.withAlpha(BREAK_ALPHA)
+        fun dashes(from: Double, to: Double) {
+            var x = from
+            while (x < to) {
+                r.fillRect(Rect(x, b.y - BREAK_LINE / 2.0, minOf(BREAK_DASH, to - x), BREAK_LINE), color)
+                x += BREAK_DASH + BREAK_GAP
+            }
+        }
+        dashes(b.left, b.labelX - BREAK_LABEL_PAD)
+        dashes(b.labelX + b.labelW + BREAK_LABEL_PAD, b.right)
+        r.drawTextRun(b.label, b.labelX, b.baseline, b.font, color)
     }
 
     /** [seg]'s formula, or a stand-in while it is pending or the backend is still setting it. */
@@ -293,6 +313,12 @@ object FlowPainter {
     val MATH_BG = Rgba(88, 140, 216, 44)
     val MATH_ERROR_BG = Rgba(214, 74, 68, 52)
     val MATH_ERROR_RULE = Rgba(214, 74, 68, 190)
+
+    private const val BREAK_ALPHA = 110
+    private const val BREAK_LINE = 1.5
+    private const val BREAK_DASH = 8.0
+    private const val BREAK_GAP = 6.0
+    private const val BREAK_LABEL_PAD = 10.0
 
     /** A horizontal rule: a fraction of a line thick, in the text colour toned down. */
     private const val RULE_THICKNESS_PER_LINE = 10.0
