@@ -70,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.focus.onFocusChanged
@@ -94,6 +95,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -913,7 +915,28 @@ internal fun NewNoteScreen(
                                 Sheets(260.dp, 300.dp)
                                 if (!coverOnly) FormatRow()
                                 HorizontalDivider(color = border)
-                                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { Tune() }
+                                // The settings fade at an edge with more beyond it, so a cut-off row reads as scrollable.
+                                val tuneScroll = rememberScrollState()
+                                val stage = palette.bg.toComposeColor()
+                                Column(
+                                    Modifier
+                                        .weight(1f)
+                                        .drawWithContent {
+                                            drawContent()
+                                            val fade = 28.dp.toPx()
+                                            val box = this.size
+                                            if (tuneScroll.canScrollForward) {
+                                                drawRect(
+                                                    Brush.verticalGradient(listOf(Color.Transparent, stage), startY = box.height - fade, endY = box.height),
+                                                    topLeft = Offset(0f, box.height - fade), size = Size(box.width, fade),
+                                                )
+                                            }
+                                            if (tuneScroll.canScrollBackward) {
+                                                drawRect(Brush.verticalGradient(listOf(stage, Color.Transparent), endY = fade / 2), size = Size(box.width, fade / 2))
+                                            }
+                                        }
+                                        .verticalScroll(tuneScroll),
+                                ) { Tune() }
                             }
                             Column(Modifier.weight(1f).fillMaxHeight()) {
                                 if (!coverOnly) {
