@@ -511,7 +511,9 @@ internal fun TemplateParamControls(
         val lo = ((sp.min ?: (sp.default / 4)) * k).toFloat()
         val hi = ((sp.max ?: (sp.default * 4)) * k).toFloat().coerceAtLeast(lo + 1f)
         val spacing = style.spacing ?: lower?.spacing ?: (sp.default * k)
-        StyleCaption(stringResource(R.string.caption_spacing_px, spacing.roundToInt()) + if (style.spacing == null) stringResource(R.string.default_suffix) else "")
+        // In mm under the template's own name for it, like every other length.
+        val label = sp.label ?: stringResource(R.string.caption_spacing)
+        StyleCaption("$label  ${"%.1f mm".format(spacing / k)}" + if (style.spacing == null) stringResource(R.string.default_suffix) else "")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModeChip(stringResource(R.string.default_choice), style.spacing == null) { apply(style.copy(spacing = null)) }
             Slider(
