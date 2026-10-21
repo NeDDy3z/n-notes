@@ -267,9 +267,10 @@ class RefillShapes(private val entries: List<Entry>) : Command {
     override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(entries.map { it.shape }, locate)
 
     companion object {
-        /** The entries that recolour [shapes]' fills in [color] (null: each in its outline's), unchanged ones left out. */
+        /** The entries that recolour [shapes]' fills in [color] (null: each in its outline's, which a dropped colour has none of), unchanged ones left out. */
         fun of(shapes: List<ShapeItem>, color: Rgba?): List<Entry> = shapes.mapNotNull { s ->
             val f = s.fillRgba ?: return@mapNotNull null
+            if (color == null && s.isFill) return@mapNotNull null
             val next = (color ?: s.strokeRgba).copy(a = f.a)
             if (next == f) null else Entry(s, f, next)
         }

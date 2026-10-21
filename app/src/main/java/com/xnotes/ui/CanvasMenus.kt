@@ -173,12 +173,12 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     onDismissRequest = { overflowOpen = false },
                     properties = PopupProperties(focusable = false),
                 ) {
-                    // Empty when nothing selected carries ink: an image or a text box has no
-                    // colour-and-width pair to restyle.
+                    // Empty when nothing selected carries ink or a fill: an image or a text box has
+                    // no colour-and-width pair to restyle.
                     val styles = host.selectionStyles()
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.change_style)) },
-                        enabled = styles.isNotEmpty(),
+                        enabled = styles.isNotEmpty() || host.selectionFills().isNotEmpty(),
                         onClick = { overflowOpen = false; styleOpen = true },
                     )
                     if (host.canLabelSelection()) {
@@ -233,13 +233,16 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
     val shared = opened.firstOrNull()?.color?.takeIf { c -> opened.all { it.color == c } }
     var color by remember { mutableStateOf(shared ?: first?.color ?: Rgba(0, 0, 0)) }
     var width by remember { mutableStateOf((first?.width ?: 1.0).toFloat()) }
-    if (first == null) return
+    val fills = remember { host.selectionFills() }
+    // Only dropped colours selected: they have a fill and nothing else to restyle.
+    val fillsOnly = first == null
+    if (fillsOnly && fills.isEmpty()) return
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss, properties = PopupProperties(focusable = false)) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_change_style))
-            StyleCaption(stringResource(R.string.caption_colour))
-            FlowRow(
+            if (!fillsOnly) StyleCaption(stringResource(R.string.caption_colour))
+            if (!fillsOnly) FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -263,7 +266,6 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
                     )
                 }
             }
-            val fills = remember { host.selectionFills() }
             if (fills.isNotEmpty()) {
                 var fill by remember { mutableStateOf<Rgba?>(fills.first().copy(a = 255)) }
                 var editingFill by remember { mutableStateOf<Int?>(null) }
@@ -271,9 +273,11 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
                 StyleCaption(stringResource(R.string.caption_fill_colour))
                 // The toolbar's own swatches; tapping the chosen one again opens the picker on it, as the toolbar does.
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MatchDot(outline, selected = fill == null || fill == outline) {
-                        fill = null
-                        host.refillSelection(null)
+                    if (!fillsOnly) {
+                        MatchDot(outline, selected = fill == null || fill == outline) {
+                            fill = null
+                            host.refillSelection(null)
+                        }
                     }
                     host.shownSwatches.forEachIndexed { i, c ->
                         val on = fill == c
@@ -319,6 +323,7 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
                     StepDot("+", stringResource(R.string.count_more), enabled = count < range.last) { host.setSelectionCount(count + 1) }
                 }
             }
+            if (fillsOnly) return@Column
             Spacer(Modifier.size(8.dp))
             // The drag previews live and commits on release, so it is one undo step, not fifty.
             SliderRow(
