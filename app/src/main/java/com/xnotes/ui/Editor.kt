@@ -1510,12 +1510,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * A repaint was asked for. The canvas skips it while the front buffer owns the stroke under the
-     * pen: it is not drawing that ink, so the frame would come out the same, and the blit is work
-     * on the thread the pen's samples have to get through.
+     * A repaint was asked for. While the front buffer owns the stroke under the pen the canvas is not
+     * drawing that ink and keeps its last recording, but the window still posts a frame: some devices
+     * only composite the pad when another layer queues a buffer, and show nothing until pen up
+     * otherwise. Invalidating the container re-renders the canvas without calling its onDraw.
      */
     private fun onRender() {
-        if (controller.frontInk?.live != true) view.requestRender()
+        if (controller.frontInk?.live == true) surfaces.postInvalidateOnAnimation() else view.requestRender()
     }
 
     /** Formulas set off the main thread landing: a box moves the layout, a raster only repaints. */
