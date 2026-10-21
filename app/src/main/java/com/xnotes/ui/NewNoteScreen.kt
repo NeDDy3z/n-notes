@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,6 +53,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -520,7 +522,10 @@ internal fun NewNoteScreen(
         @Composable
         fun Tune() {
             Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Reset returns to how the screen began: the saved new-note style with this template, or the design as drawn.
+                val start = if (face == Face.PAGES) editor.newNoteStyle.withTemplate(style.template, PageTemplates.NONE) else PageStyle(template = coverStyle.template)
+                val changed = if (face == Face.PAGES) style != start else hasCover && coverStyle != start
+                Row(Modifier.heightIn(min = 40.dp), verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(if (face == Face.PAGES) R.string.every_page else R.string.cover), color = dim, fontSize = 12.sp)
                         Text(
@@ -540,12 +545,11 @@ internal fun NewNoteScreen(
                             )
                         }
                     }
-                    ModeChip(stringResource(R.string.reset), false) {
-                        if (face == Face.PAGES) {
-                            style = PageStyle(template = style.template)
-                        } else {
-                            coverStyle = PageStyle(template = coverStyle.template)
-                        }
+                    if (changed) {
+                        TextButton(
+                            onClick = { if (face == Face.PAGES) style = start else coverStyle = start },
+                            colors = ButtonDefaults.textButtonColors(contentColor = accent),
+                        ) { Text(stringResource(R.string.reset), fontWeight = FontWeight.Medium) }
                     }
                 }
                 if (face == Face.PAGES) {
