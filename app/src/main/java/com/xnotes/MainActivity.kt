@@ -143,8 +143,8 @@ class MainActivity : ComponentActivity() {
     // cutout); this activity just applies it to the window. Fullscreen draws edge to edge and lets
     // the swipe-in transient bars overlay (no resize), non-fullscreen insets under the bars.
     private var editor: Editor? = null
-    // A PDF handed to us by another app ("Open with" / Share); consumed once the editor is ready.
-    private var pendingPdfImport by mutableStateOf<Uri?>(null)
+    // A PDF or markdown file handed to us by another app ("Open with" / Share); consumed once the editor is ready.
+    private var pendingImport by mutableStateOf<Uri?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -155,7 +155,7 @@ class MainActivity : ComponentActivity() {
         // The intent that started the task comes back whenever Android rebuilds it, from a saved state
         // or from Recents after the process died or the app was updated; it was handled the first time.
         val rebuilt = savedInstanceState != null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        if (!rebuilt) pendingPdfImport = pdfImportUri(intent)
+        if (!rebuilt) pendingImport = importUri(intent)
         setContent {
             val context = LocalContext.current
             val ed = remember { Editor(context).also { editor = it } }
@@ -176,8 +176,8 @@ class MainActivity : ComponentActivity() {
                             ed,
                             fullscreen = ed.fullscreen,
                             onToggleFullscreen = ed::toggleFullscreen,
-                            importPdfUri = pendingPdfImport,
-                            onImportConsumed = { pendingPdfImport = null },
+                            importUri = pendingImport,
+                            onImportConsumed = { pendingImport = null },
                         )
                         androidx.compose.animation.AnimatedVisibility(
                             visible = !ready,
@@ -219,19 +219,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // A PDF arriving while we're already running: singleTask reuses this instance via onNewIntent.
+    // A file arriving while we're already running: singleTask reuses this instance via onNewIntent.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pdfImportUri(intent)?.let { pendingPdfImport = it }
+        importUri(intent)?.let { pendingImport = it }
     }
 
-    // The PDF uri carried by an inbound VIEW ("Open with") or SEND ("Share") intent, else null.
-    private fun pdfImportUri(intent: Intent?): Uri? = when (intent?.action) {
-        // Only the PDF filter takes VIEW, but a task started by another build's filters keeps its intent.
-        Intent.ACTION_VIEW -> intent.data?.takeIf { (intent.type ?: runCatching { contentResolver.getType(it) }.getOrNull()) == "application/pdf" }
+    // The PDF or markdown uri carried by an inbound VIEW ("Open with") or SEND ("Share") intent, else null.
+    private fun importUri(intent: Intent?): Uri? = when (intent?.action) {
+        // Only the import filters take VIEW, but a task started by another build's filters keeps its intent.
+        Intent.ACTION_VIEW -> intent.data?.takeIf { (intent.type ?: runCatching { contentResolver.getType(it) }.getOrNull()) in IMPORT_TYPES }
         Intent.ACTION_SEND ->
-            if (intent.type == "application/pdf")
+            if (intent.type in IMPORT_TYPES)
                 IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
             else null
         else -> null
@@ -281,7 +281,7 @@ private fun EditorScreen(
     editor: Editor,
     fullscreen: Boolean,
     onToggleFullscreen: () -> Unit,
-    importPdfUri: Uri? = null,
+    importUri: Uri? = null,
     onImportConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -796,16 +796,20 @@ private fun EditorScreen(
         }
     }
 
-    // A PDF opened from another app ("Open with"/Share): set up a pending import and land on the
-    // backstage so its name dialog appears, exactly like the in-app "Import PDF" button. With no
-    // folder chosen yet, fall back to App storage so the explorer renders and the note autosaves.
-    LaunchedEffect(importPdfUri) {
-        val src = importPdfUri ?: return@LaunchedEffect
+    // A PDF or markdown file opened from another app ("Open with"/Share): set up a pending import
+    // and land on the backstage so its name dialog appears, exactly like the in-app "Import PDF"
+    // button. With no folder chosen yet, fall back to App storage so the explorer renders and the
+    // note autosaves. A markdown file becomes a new note whose text it is.
+    LaunchedEffect(importUri) {
+        val src = importUri ?: return@LaunchedEffect
         onImportConsumed() // consume once; the body has no suspend point so it runs to completion
-        val stem = com.xnotes.core.util.Paths.stem(displayNameOf(resolver, src) ?: "Document")
+        val name = displayNameOf(resolver, src)
+        val markdown = runCatching { resolver.getType(src) }.getOrNull() in MARKDOWN_TYPES ||
+            name?.substringAfterLast('.', "")?.lowercase() in MARKDOWN_EXTENSIONS
+        val stem = com.xnotes.core.util.Paths.stem(name ?: "Document")
         guardedAll {
             if (editor.browseRoot == null) editor.useInternalStorage()
-            editor.requestImport(stem, src.toString())
+            editor.requestImport(stem, src.toString(), markdown)
             backstageView = com.xnotes.ui.BackstageView.HOME
             editor.goHomeAll()
         }
@@ -978,7 +982,10 @@ private fun EditorScreen(
         // A batch counts files, so it gets a determinate ring; a single import has nothing to count.
         val batch = importer.importProgress
         if (batch != null) PdfImportBatchDialog(batch.done, batch.total) { importer.cancelImportInProgress() }
-        else PdfImportDialog(onCancel = { importer.cancelImportInProgress() }) // the stream-copy stops at its next buffer
+        else PdfImportDialog(
+            markdown = importer.pendingImport?.markdown == true,
+            onCancel = { importer.cancelImportInProgress() }, // the stream-copy stops at its next buffer
+        )
     }
     // Tapping a note reads it off-thread (editor.opening). Only show the spinner once the read has run
     // long enough to matter, so opening a small note never flashes a dialog; a big PDF gets the loader.
@@ -1506,7 +1513,8 @@ private fun SavingDialog() {
  * cost is copying the (possibly large) source bytes — so it shows an animated spinner.
  */
 @Composable
-private fun PdfImportDialog(onCancel: () -> Unit) = SpinnerDialog(stringResource(R.string.importing_pdf), onCancel)
+private fun PdfImportDialog(markdown: Boolean, onCancel: () -> Unit) =
+    SpinnerDialog(stringResource(if (markdown) R.string.importing_markdown else R.string.importing_pdf), onCancel)
 
 /**
  * Determinate "Importing PDFs…" dialog for a multi-file import: a ring filled by files finished plus
@@ -1689,6 +1697,13 @@ private fun BoxScope.ZoomLockHint(editor: Editor) {
 }
 
 /** Queries the storage provider for a document's user-visible file name, if available. */
+/** The types "Open with" and Share hand over for markdown, and its usual extensions. */
+private val MARKDOWN_TYPES = setOf("text/markdown", "text/x-markdown")
+private val MARKDOWN_EXTENSIONS = setOf("md", "markdown")
+
+/** What the import filters take: a PDF becomes a note on its pages, markdown a note of its text. */
+private val IMPORT_TYPES = MARKDOWN_TYPES + "application/pdf"
+
 private fun displayNameOf(resolver: android.content.ContentResolver, uri: Uri): String? = runCatching {
     resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
         if (c.moveToFirst()) {

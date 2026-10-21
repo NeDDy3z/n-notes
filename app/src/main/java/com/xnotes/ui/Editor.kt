@@ -186,7 +186,7 @@ class TrashItem(val wrapperDocId: String, val entry: BrowseEntry, val path: List
 class RecentEntry(val entry: BrowseEntry, val opened: Long, val where: String?)
 
 /** A picked PDF awaiting a name before it's imported into the explorer's current folder. */
-data class PendingImport(val defaultName: String, val uri: String)
+data class PendingImport(val defaultName: String, val uri: String, val markdown: Boolean = false)
 
 /** How far a multi-file PDF import has got; drives the count in the import dialog. */
 data class ImportProgress(val done: Int, val total: Int)
@@ -218,6 +218,12 @@ private const val PROCESS_TEXT_MAX = 100_000
 
 /** How far off an address written in a PDF's text a tap may land and still open it. */
 private const val AUTO_LINK_SLOP_DP = 4.0
+
+/** A markdown file bigger than this is not notes; the import refuses it rather than lay out a book. */
+private const val MAX_MARKDOWN_BYTES = 8 * 1024 * 1024
+
+/** Page-adding passes for an imported markdown note; one is exact unless the pages differ in size. */
+private const val MARKDOWN_PAGE_PASSES = 4
 
 /** How far a markup's note window stands off the markup. */
 private const val NOTE_PEEK_GAP_DP = 10.0
@@ -3936,6 +3942,49 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return uri
     }
 
+    /**
+     * Creates a `.xnote` under [parentDocId] whose text is [markdown], read the way Paste as
+     * Markdown reads it, on the new-note defaults with as many pages as the text fills; returns
+     * its URI, or null. IO.
+     */
+    fun createMarkdownNoteFile(treeUri: String, parentDocId: String, rawName: String, markdown: String): String? {
+        val doc = blankDocument().also { stampNewNoteDefaults(it) }
+        doc.flow.paragraphs.addAll(
+            com.xnotes.core.text.MarkdownParser.parse(markdown, newTableDefaults.style, toolbarInk()),
+        )
+        val layout = themedFlowLayout(doc.flow)
+        fun frame() = layout.layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, firstPage = flowStart(doc))
+        frame().pages.firstOrNull()?.contentRect?.w?.let { width ->
+            for (b in CellIndex(doc.flow.paragraphs).tables) b.table.widths = layout.fitColumns(doc.flow, b.table, width)
+        }
+        var extra = frame().extraPagesNeeded
+        var passes = 0
+        while (extra > 0 && passes++ < MARKDOWN_PAGE_PASSES) {
+            repeat(extra) {
+                val (w, h) = doc.blankPageSize(doc.pages.lastOrNull())
+                doc.pages.add(Page(w, h))
+            }
+            extra = frame().extraPagesNeeded
+        }
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
+    }
+
+    /** The text of the markdown file at [uri], or null when it cannot be read or is too big to be one. IO. */
+    private fun readMarkdown(uri: String): String? = runCatching {
+        appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                if (out.size() > MAX_MARKDOWN_BYTES) return@use null
+            }
+            String(out.toByteArray(), Charsets.UTF_8).removePrefix("\uFEFF")
+        }
+    }.getOrNull()
+
     /** Why the last PDF given to [createPdfNoteFile] or [insertPdfAfter] did not open, null when it did. */
     var lastImportError: com.xnotes.platform.PdfOpenError? = null
         private set
@@ -3968,8 +4017,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** A picked PDF (referenced by content [uri]) now awaits a name before being saved into the
      *  folder. The file is deliberately **not** copied yet — that happens at [commitImport], under the
      *  import loader — so the name dialog can appear instantly instead of after a big copy. */
-    fun requestImport(defaultName: String, uri: String) {
-        pendingImport = PendingImport(defaultName, uri)
+    fun requestImport(defaultName: String, uri: String, markdown: Boolean = false) {
+        pendingImport = PendingImport(defaultName, uri, markdown)
     }
 
     /** Discards a pending import (the user cancelled the name prompt). Nothing was copied yet. */
@@ -3982,13 +4031,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun commitImport(treeUri: String, parentDocId: String, rawName: String): String? {
         val pending = pendingImport ?: return null
         importCancelled.set(false)
-        val staged = runCatching {
-            appContext.contentResolver.openInputStream(android.net.Uri.parse(pending.uri))?.let { stageImport(it) }
-        }.getOrNull()
-        val uri = if (staged == null) null else try {
-            createPdfNoteFile(treeUri, parentDocId, rawName, staged)
-        } finally {
-            staged.delete()
+        val uri = if (pending.markdown) {
+            lastImportError = null
+            readMarkdown(pending.uri)?.let { createMarkdownNoteFile(treeUri, parentDocId, rawName, it) }
+        } else {
+            val staged = runCatching {
+                appContext.contentResolver.openInputStream(android.net.Uri.parse(pending.uri))?.let { stageImport(it) }
+            }.getOrNull()
+            if (staged == null) null else try {
+                createPdfNoteFile(treeUri, parentDocId, rawName, staged)
+            } finally {
+                staged.delete()
+            }
         }
         if (uri != null || importCancelled.get()) {
             pendingImport = null
