@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,6 +68,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -124,6 +127,7 @@ import com.xnotes.platform.TemplateLibrary
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.SwatchRole
 import com.xnotes.ui.icons.XnotesIcons
+import com.xnotes.ui.theme.ColorMath
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
@@ -492,12 +496,15 @@ internal fun NewNoteScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                // Sheets of paper: a hairline edge and a soft shadow keep a dark page apart from the dark stage.
+                val edge = palette.paperBorder.toComposeColor().copy(alpha = 0.7f)
+                val paper = Modifier.shadow(3.dp, RectangleShape).border(1.dp, edge)
                 Sheet(stringResource(if (hasCover) R.string.cover else R.string.no_cover), face == Face.COVER, {
                     face = Face.COVER
                     if (!coverOn && coverT != null) coverOn = true
                 }) {
                     if (hasCover) {
-                        Thumb(coverT, coverKey!!, valuesOf(coverStyle, coverT), w, h, keep = false)
+                        Box(paper) { Thumb(coverT, coverKey!!, valuesOf(coverStyle, coverT), w, h, keep = false) }
                     } else {
                         Dashed(w, h) {
                             Icon(XnotesIcons.plus, null, tint = dim, modifier = Modifier.size(22.dp))
@@ -507,7 +514,14 @@ internal fun NewNoteScreen(
                 }
                 if (!coverOnly) {
                     Sheet(stringResource(R.string.pages), face == Face.PAGES, { face = Face.PAGES }) {
-                        Thumb(pageT, pageKey, valuesOf(style, pageT), w, h, keep = false)
+                        // Every page after the cover, so a second sheet shows behind the first.
+                        val lift = 4.dp
+                        val pw = w - lift
+                        val ph = pw * aspect
+                        Box(Modifier.size(w, ph + lift)) {
+                            Box(Modifier.offset(lift, lift).size(pw, ph).background(ColorMath.darken(look.paper, 0.06).toComposeColor()).border(1.dp, edge))
+                            Box(paper) { Thumb(pageT, pageKey, valuesOf(style, pageT), pw, ph, keep = false) }
+                        }
                     }
                 }
             }
