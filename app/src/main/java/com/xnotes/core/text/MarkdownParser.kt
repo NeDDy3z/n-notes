@@ -1,6 +1,7 @@
 package com.xnotes.core.text
 
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.pdf.LinkFinder
 import org.commonmark.ext.footnotes.FootnoteDefinition
 import org.commonmark.ext.footnotes.FootnoteReference
 import org.commonmark.ext.footnotes.FootnotesExtension
@@ -63,13 +64,11 @@ import org.commonmark.node.Paragraph as MdParagraph
  * `$`, `$$`, `\(...\)` and `\[...\]`. Its tree flattens into flow paragraphs: wrapped lines join, a
  * gap of blank lines leaves one empty paragraph, nested lists and quotes indent
  * a level each, code blocks become code paragraphs (one per line, language from
- * the fence info), links keep a link look, images their alt text. Raw HTML and
+ * the fence info), links and written-out addresses open what they name, images
+ * keep their alt text. Raw HTML and
  * footnotes stay as the text they were written as; front matter is dropped.
  */
 object MarkdownParser {
-
-    /** Inert link styling: the text keeps a link look, the URL is dropped. */
-    val LINK_COLOR = Rgba(100, 160, 255, 255)
 
     private val LANG_ALIASES = mapOf(
         "js" to "javascript", "jsx" to "javascript", "ts" to "javascript",
@@ -80,6 +79,21 @@ object MarkdownParser {
 
     /** Common fence-info aliases to the bundled grammar ids. */
     fun normalizeLang(id: String): String = LANG_ALIASES[id] ?: id
+
+    /**
+     * The address a link written to [dest] opens, or null when it is not one this app can
+     * open: a web or mail address. A "www." host is taken as the web address it names.
+     */
+    fun linkTarget(dest: String): String? {
+        val d = dest.trim()
+        return when {
+            d.startsWith("http://", ignoreCase = true) || d.startsWith("https://", ignoreCase = true) ->
+                d.takeIf { it.substringAfter("://").isNotEmpty() }
+            d.startsWith("mailto:", ignoreCase = true) -> d.takeIf { it.length > "mailto:".length }
+            d.startsWith("www.", ignoreCase = true) -> "https://$d"
+            else -> null
+        }
+    }
 
     private val FENCE_LANG = Regex("^[A-Za-z0-9+#-]*")
 
@@ -212,7 +226,7 @@ object MarkdownParser {
         private fun lines(node: Node, base: CharStyle, make: (MutableList<Run>, Int) -> Paragraph) {
             val lines = mutableListOf(mutableListOf<Run>())
             inlines(node, base, lines)
-            for ((i, runs) in lines.withIndex()) emit(make(runs, i))
+            for ((i, runs) in lines.withIndex()) emit(make(linkBareUrls(runs), i))
         }
 
         private fun code(literal: String, lang: String, indent: Int) {
@@ -337,7 +351,7 @@ object MarkdownParser {
                         if (i > 0) appendRun(flat, " ", CharStyle.DEFAULT)
                         line.forEach { appendRun(flat, it.text, it.style) }
                     }
-                    emit(Paragraph(flat, align = aligns[c], table = table, cellStart = true))
+                    emit(Paragraph(linkBareUrls(flat), align = aligns[c], table = table, cellStart = true))
                 }
             }
         }
@@ -355,7 +369,7 @@ object MarkdownParser {
                     is StrongEmphasis -> inlines(node, style.copy(bold = true), lines)
                     is Strikethrough -> inlines(node, style.copy(strike = true), lines)
                     is Marked -> inlines(node, style.copy(highlight = highlight), lines)
-                    is Link -> inlines(node, style.copy(underline = true, color = LINK_COLOR), lines)
+                    is Link -> inlines(node, linkTarget(node.destination.orEmpty())?.let { style.copy(link = it) } ?: style, lines)
                     is Image -> inlines(node, style, lines)
                     is SoftLineBreak -> appendRun(runs, " ", style)
                     is HardLineBreak -> lines += mutableListOf<Run>()
@@ -388,6 +402,32 @@ object MarkdownParser {
         if (text.isEmpty()) return
         val last = out.lastOrNull()
         if (last != null && last.style == style) last.text += text else out.add(Run(text, style))
+    }
+
+    /** [runs] with the addresses written out in their prose made links, as typing would. */
+    private fun linkBareUrls(runs: MutableList<Run>): MutableList<Run> {
+        val text = runs.joinToString("") { it.text }
+        val found = LinkFinder.find(text)
+        if (found.isEmpty()) return runs
+        val out = mutableListOf<Run>()
+        var at = 0
+        for (run in runs) {
+            val end = at + run.text.length
+            var cut = at
+            if (run.style.link == null && !run.style.code && !run.style.math) {
+                for (l in found) {
+                    val a = maxOf(l.start, at)
+                    val b = minOf(l.end, end)
+                    if (b <= a) continue
+                    if (a > cut) appendRun(out, text.substring(cut, a), run.style)
+                    appendRun(out, text.substring(a, b), run.style.copy(link = l.uri))
+                    cut = b
+                }
+            }
+            if (end > cut) appendRun(out, text.substring(cut, end), run.style)
+            at = end
+        }
+        return out
     }
 
     private fun mergeRuns(runs: MutableList<Run>) {

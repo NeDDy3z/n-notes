@@ -48,6 +48,8 @@ data class CharStyle(
     val math: Boolean = false,
     /** A [math] run set as display rather than inline: bigger operators, its own line. */
     val mathDisplay: Boolean = false,
+    /** The address this text links to; it draws in the link look and a finger tap opens it. */
+    val link: String? = null,
 ) {
     companion object {
         val DEFAULT = CharStyle()

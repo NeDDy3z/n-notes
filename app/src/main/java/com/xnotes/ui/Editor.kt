@@ -1580,6 +1580,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.onMarkupTap = { at, withLink -> tapMarkup(at, withLink) }
         controller.onTap = { at -> tapClosesNotePeek(at) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
+            flowLinkAt(pageIndex, pageLocal)?.let {
+                openUrl(it)
+                return@onLinkTap true
+            }
             val src = pdfSource ?: return@onLinkTap false
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
             val pdfIdx = page.pdfPage ?: return@onLinkTap false
@@ -2033,6 +2037,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             view.post { if (pdfSource === src && t != null) com.xnotes.core.pdf.PageLinks.at(t, x, y, slop)?.let { openUrl(it.uri) } }
         }
         return false
+    }
+
+    /** The address of a link in the text at [pageLocal] on page [pageIndex], within a finger's reach. */
+    private fun flowLinkAt(pageIndex: Int, pageLocal: Pt): String? {
+        val pf = publishedFlow ?: return null
+        val idx = state.document.pages.getOrNull(pageIndex)?.let { pf.indexOf[it] } ?: return null
+        return pf.frame.linkAt(idx, pageLocal, AUTO_LINK_SLOP_DP * state.devicePxPerDp / state.zoom)
     }
 
     /** Open an external web/mail URL in the system handler. Restricted to safe schemes; never throws. */

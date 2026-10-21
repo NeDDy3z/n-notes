@@ -214,12 +214,17 @@ class FlowEditor(private val flow: TextFlow) {
      * the same reach over which the caret shows its source. Its closing edge
      * belongs to whatever comes next, so typing on past an equation writes beside
      * it; that boundary has to match the one reveal uses, or text would land
-     * inside a formula that is not showing what it is doing with it. An empty
+     * inside a formula that is not showing what it is doing with it. A link
+     * likewise only grows from inside it, never at either end. An empty
      * heading has nothing to copy, so it types as a heading's own text.
      */
     private fun styleForInsert(para: Paragraph, offset: Int): CharStyle {
-        val base = styleOfCharAt(para, if (offset > 0) offset - 1 else 0)
+        var base = styleOfCharAt(para, if (offset > 0) offset - 1 else 0)
             ?: if (para.headingLevel > 0) Paragraph.HEADING_STYLE else CharStyle.DEFAULT
+        if (base.link != null) {
+            val inside = offset > 0 && offset < para.length && styleOfCharAt(para, offset)?.link == base.link
+            if (!inside) base = base.copy(link = null)
+        }
         if (!base.math) return base
         var seen = 0
         for (run in para.runs) {

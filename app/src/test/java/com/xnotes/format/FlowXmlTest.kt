@@ -288,4 +288,33 @@ class FlowXmlTest {
         assertEquals(4, back[0].listStart)
         assertEquals(null, back[1].listStart)
     }
+
+    @Test
+    fun aLinkRoundTripsAsOdfTextA() {
+        val flow = TextFlow().apply {
+            paragraphs.add(
+                Paragraph(
+                    mutableListOf(
+                        Run("go "),
+                        Run("bold", CharStyle(bold = true, link = "https://a.org/?x=1&y=2")),
+                        Run(" on", CharStyle(link = "https://a.org/?x=1&y=2")),
+                        Run(" end"),
+                    ),
+                ),
+            )
+        }
+        val xml = String(FlowXml.write(flow))
+        assertEquals(1, Regex("<text:a ").findAll(xml).count())
+        assertTrue(xml.contains("xlink:href=\"https://a.org/?x=1&amp;y=2\""))
+        val runs = roundTrip(flow).paragraphs.single().runs
+        assertEquals(listOf("go ", "bold", " on", " end"), runs.map { it.text })
+        assertEquals(listOf(null, "https://a.org/?x=1&y=2", "https://a.org/?x=1&y=2", null), runs.map { it.style.link })
+        assertTrue(runs[1].style.bold)
+    }
+
+    @Test
+    fun aFlowWithoutLinksDeclaresNoXlink() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("a")))) }
+        assertFalse(String(FlowXml.write(flow)).contains("xlink"))
+    }
 }

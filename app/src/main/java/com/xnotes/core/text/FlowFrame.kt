@@ -453,6 +453,19 @@ class FlowFrame(
         return Triple(frag.table, row.row, frag.colAt(local.x))
     }
 
+    /** The address of the link drawn at page-local [local] on [pageIndex], within [slop], or null. */
+    fun linkAt(pageIndex: Int, local: Pt, slop: Double): String? {
+        val page = pages.getOrNull(pageIndex) ?: return null
+        for (line in page.lines) {
+            if (local.y < line.top - slop || local.y > line.bottom + slop) continue
+            for (seg in line.segs) {
+                val link = seg.style.link ?: continue
+                if (local.x >= seg.x - slop && local.x <= line.caretX(seg.end) + slop) return link
+            }
+        }
+        return null
+    }
+
     /** Page-local highlight rects (page index keyed) covering [range]. */
     fun selectionRects(range: FlowRange): List<Pair<Int, Rect>> {
         val r = range.normalized()

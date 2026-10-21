@@ -56,7 +56,7 @@ object FlowPainter {
         for (line in page.lines) {
             if (line.mathStarts.isEmpty() || line.bottom < region.top || line.top > region.bottom) continue
             for (seg in line.segs) {
-                if (seg.math) drawFormula(r, line, seg, seg.style.color ?: frame.defaultColor)
+                if (seg.math) drawFormula(r, line, seg, inkOf(seg.style, frame))
             }
         }
     }
@@ -197,7 +197,7 @@ object FlowPainter {
         // after it: a reader copies in content order, so trailing them all behind would scramble it.
         var next = line.startChar
         for (seg in line.segs) {
-            val color = seg.style.color ?: frame.defaultColor
+            val color = inkOf(seg.style, frame)
             if (tag) {
                 for (k in next until seg.start) {
                     r.beginMark(Mark.FlowText(para, k, k + 1))
@@ -221,7 +221,7 @@ object FlowPainter {
         if (tag) {
             // A line wrapped at a space keeps it, so the words either side of the break stay two words.
             val last = line.segs.lastOrNull()
-            val color = last?.style?.color ?: frame.defaultColor
+            val color = last?.style?.let { inkOf(it, frame) } ?: frame.defaultColor
             for (k in next until line.endChar) {
                 r.beginMark(Mark.FlowText(para, k, k + 1))
                 r.drawTextRun(" ", line.caretX(k), line.baseline, last?.font ?: line.font, color)
@@ -244,8 +244,8 @@ object FlowPainter {
         val descent = line.bottom - line.baseline
         val thickness = (line.height / 14.0).coerceAtLeast(1.0)
         for (deco in line.decos) {
-            val color = deco.style.color ?: frame.defaultColor
-            if (deco.style.underline) {
+            val color = inkOf(deco.style, frame)
+            if (deco.style.underline || deco.style.link != null) {
                 r.fillRect(Rect(deco.x0, line.baseline + descent * 0.35, deco.x1 - deco.x0, thickness), color)
             }
             if (deco.style.strike) {
@@ -299,6 +299,13 @@ object FlowPainter {
         // Copied, a marker is followed by a real space, so "• item" does not read "•item".
         if (r.writesText) r.drawTextRun(" ", m.rect.right - FlowLayout.MARKER_GAP, line.baseline, m.font, color)
     }
+
+    /** What [style]'s text draws in: its own colour, else a link's, else the flow's. */
+    private fun inkOf(style: CharStyle, frame: FlowFrame): Rgba =
+        style.color ?: if (style.link != null) LINK_COLOR else frame.defaultColor
+
+    /** A link's look unless its text picks a colour: this blue, underlined. */
+    val LINK_COLOR = Rgba(100, 160, 255, 255)
 
     /** Code line/chip backgrounds: neutral translucent grey, legible on light and dark paper. */
     val CODE_BG = Rgba(128, 128, 128, 42)

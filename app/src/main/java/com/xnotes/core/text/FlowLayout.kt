@@ -806,7 +806,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             if (to > from) {
                 val font = shape.runFonts[r]
                 val style = para.runs[r].style
-                if (style.underline || style.strike || style.highlight != null || style.code) {
+                if (style.underline || style.strike || style.highlight != null || style.code || style.link != null) {
                     decos.add(Deco(xs[from - bl.startChar], xs[to - bl.startChar], font, style))
                 }
                 // A formula is one segment whatever is inside it: splitting at its

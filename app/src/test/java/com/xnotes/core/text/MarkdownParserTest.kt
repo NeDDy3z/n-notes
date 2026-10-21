@@ -69,14 +69,32 @@ class MarkdownParserTest {
     }
 
     @Test
-    fun linksKeepStyledTextAndDropTheUrl() {
+    fun linksKeepTheirAddress() {
         val runs = parse("see [the docs](https://x.y) now")[0].runs
         assertEquals("see the docs now", runs.joinToString("") { it.text })
         val link = runs.first { it.text == "the docs" }
-        assertTrue(link.style.underline)
-        assertEquals(MarkdownParser.LINK_COLOR, link.style.color)
+        assertEquals("https://x.y", link.style.link)
+        assertFalse(link.style.underline)
+        assertEquals(null, link.style.color)
         val img = parse("![alt text](pic.png)")[0]
         assertEquals("alt text", img.plainText())
+        assertTrue(img.runs.all { it.style.link == null })
+    }
+
+    @Test
+    fun onlyAddressesThatOpenStayLinks() {
+        assertEquals(null, parse("[up](#setup)")[0].runs.single().style.link)
+        assertEquals(null, parse("[file](docs/a.md)")[0].runs.single().style.link)
+        assertEquals("https://www.a.org", parse("[a](www.a.org)")[0].runs.single().style.link)
+        assertEquals("mailto:x@y.z", parse("[mail](mailto:x@y.z)")[0].runs.single().style.link)
+    }
+
+    @Test
+    fun writtenOutAddressesBecomeLinks() {
+        val p = parse("go to <https://a.org> or www.b.org. Not `https://c.org`")[0]
+        assertEquals("https://a.org", p.runs.first { it.text == "https://a.org" }.style.link)
+        assertEquals("https://www.b.org", p.runs.first { it.text == "www.b.org" }.style.link)
+        assertEquals(null, p.runs.first { it.text == "https://c.org" }.style.link)
     }
 
     @Test

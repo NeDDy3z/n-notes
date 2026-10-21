@@ -634,4 +634,35 @@ class InputRulesTest {
         assertEquals(null, p.runs.last().style.highlight)
         assertTrue(typed("x == y ==").runs.all { it.style.highlight == null })
     }
+
+    // --- links ---
+
+    @Test
+    fun bracketsAndAnAddressMakeALink() {
+        val p = typed("see [docs](https://x.org) now")
+        assertEquals("see docs now", p.plainText())
+        assertEquals("https://x.org", p.runs.first { it.text == "docs" }.style.link)
+        assertEquals(null, p.runs.last().style.link)
+        assertEquals("[a](notes)", typed("[a](notes)").plainText())
+    }
+
+    @Test
+    fun anAddressLinksOnTheSpaceAfterIt() {
+        val p = typed("go https://x.org/a, then")
+        assertEquals("go https://x.org/a, then", p.plainText())
+        assertEquals("https://x.org/a", p.runs.first { it.text == "https://x.org/a" }.style.link)
+        assertTrue(p.runs.filter { it.text != "https://x.org/a" }.all { it.style.link == null })
+        assertEquals("mailto:a@b.co", typed("a@b.co ").runs.first().style.link)
+    }
+
+    @Test
+    fun typingAtALinksEndDoesNotGrowIt() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("ab", CharStyle(link = "https://x.org")))))
+        }
+        FlowEditor(flow).insertText(FlowPos(0, 2), "c")
+        FlowEditor(flow).insertText(FlowPos(0, 1), "z")
+        FlowEditor(flow).insertText(FlowPos(0, 0), "y")
+        assertEquals(listOf("y" to null, "azb" to "https://x.org", "c" to null), flow.paragraphs[0].runs.map { it.text to it.style.link })
+    }
 }

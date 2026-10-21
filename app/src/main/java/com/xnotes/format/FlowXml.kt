@@ -62,6 +62,7 @@ object FlowXml {
         append(" xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"")
         append(" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"")
         if (tables.isNotEmpty()) append(" xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"")
+        if (flow.paragraphs.any { p -> p.runs.any { it.style.link != null } }) append(" xmlns:xlink=\"http://www.w3.org/1999/xlink\"")
         append(" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"")
         append(" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"")
         append(" xmlns:xnotes=\"urn:xnotes:flow:1.0\"")
@@ -229,7 +230,14 @@ object FlowXml {
         para.codeLang?.let { append(" xnotes:code-lang=\"${escapeAttr(it)}\"") }
         if (para.rule) append(" xnotes:rule=\"true\"")
         append(">")
+        // A link is ODF's own text:a around the spans it covers, however they are styled.
+        var link: String? = null
         for (run in para.runs) {
+            if (run.style.link != link) {
+                if (link != null) append("</text:a>")
+                link = run.style.link
+                link?.let { append("<text:a xlink:type=\"simple\" xlink:href=\"${escapeAttr(it)}\">") }
+            }
             val styleName = charStyles[writtenStyle(flow, para, run.style)]
             if (styleName == null) {
                 appendEncodedText(run.text)
@@ -239,12 +247,18 @@ object FlowXml {
                 append("</text:span>")
             }
         }
+        if (link != null) append("</text:a>")
         append("</text:p>\n")
     }
 
-    /** A heading's text sizes from its level; spelled out, older readers still size it. */
-    private fun writtenStyle(flow: TextFlow, para: Paragraph, style: CharStyle): CharStyle =
-        if (para.headingLevel > 0 && style.sizePt == null) style.copy(sizePt = para.textSizePt(flow)) else style
+    /**
+     * The text style written for [style]: a heading's text sizes from its level, spelled out so
+     * older readers still size it, and a link is no style at all but the text:a around it.
+     */
+    private fun writtenStyle(flow: TextFlow, para: Paragraph, style: CharStyle): CharStyle {
+        val s = if (style.link != null) style.copy(link = null) else style
+        return if (para.headingLevel > 0 && s.sizePt == null) s.copy(sizePt = para.textSizePt(flow)) else s
+    }
 
     /** Escape markup and ODF-encode whitespace (lone interior spaces stay literal). */
     private fun StringBuilder.appendEncodedText(text: String) {
@@ -515,7 +529,13 @@ object FlowXml {
                 child is Element -> when (child.localName ?: child.nodeName) {
                     "span" -> collectRuns(
                         child,
-                        charStyles[attr(child, "style-name")] ?: style,
+                        charStyles[attr(child, "style-name")]?.copy(link = style.link) ?: style,
+                        charStyles,
+                        out,
+                    )
+                    "a" -> collectRuns(
+                        child,
+                        style.copy(link = attr(child, "href")?.trim()?.takeIf { it.isNotEmpty() }),
                         charStyles,
                         out,
                     )

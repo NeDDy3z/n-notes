@@ -2,6 +2,7 @@ package com.xnotes.core.text
 
 import com.xnotes.core.history.Command
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.pdf.LinkFinder
 
 /**
  * Markdown shortcuts applied while typing: the markers convert the paragraph and
@@ -28,6 +29,7 @@ object InputRules {
     private val QUOTE = Regex("^(>+) $")
     private val FENCE = Regex("^\\s{0,3}```\\s*([A-Za-z0-9+#-]*)\\s*$")
     private val RULE = Regex("^ {0,3}([-*_])(?: *\\1){2,} *$")
+    private val LINK = Regex("\\[([^\\[\\]]+)]\\(([^()\\s]+)\\)$")
 
     /** What a marker does to a style; a highlight takes the colour the caller hands over. */
     private enum class Emph(val apply: (CharStyle, Rgba) -> CharStyle) {
@@ -65,6 +67,12 @@ object InputRules {
 
     private class Fence(val lang: String) : Rule
 
+    /** `[text](url)` just closed at [open]: [text] links to [uri]. */
+    private class LinkUp(val open: Int, val text: String, val uri: String) : Rule
+
+    /** An address typed out over [start, end) gets the link it names. */
+    private class AutoLink(val start: Int, val end: Int, val uri: String) : Rule
+
     private object HRule : Rule
 
     private enum class Strip : Rule { BREAK, RULE, CODE, LIST, LIST_EXIT, HEADING, INDENT }
@@ -84,7 +92,7 @@ object InputRules {
         if (pos.offset > text.length) return null
         val before = text.take(pos.offset)
         if (!typed.endsWith(" ")) return inlineRule(before)
-        return if (para.table != null) null else blockRule(before)
+        return (if (para.table != null) null else blockRule(before)) ?: autoLinkRule(para, before)
     }
 
     /**
@@ -150,6 +158,7 @@ object InputRules {
 
     private fun inlineRule(before: String): Rule? {
         mathRule(before)?.let { return it }
+        linkRule(before)?.let { return it }
         if (before.endsWith("`")) {
             val close = before.length - 1
             val open = before.lastIndexOf('`', close - 1)
@@ -161,6 +170,31 @@ object InputRules {
             return Inline(open, marker, emph)
         }
         return null
+    }
+
+    /** The `[text](url)` that just closed, when the url is an address a link can open. */
+    private fun linkRule(before: String): Rule? {
+        if (!before.endsWith(")")) return null
+        val m = LINK.find(before) ?: return null
+        val uri = MarkdownParser.linkTarget(m.groupValues[2]) ?: return null
+        return LinkUp(m.range.first, m.groupValues[1], uri)
+    }
+
+    /**
+     * The address the space just typed ends, as a link, when it is not one already. Trailing
+     * punctuation stays out of it, so "see www.a.org. " links just the host.
+     */
+    private fun autoLinkRule(para: Paragraph, before: String): Rule? {
+        val text = before.dropLast(1)
+        val l = LinkFinder.find(text).lastOrNull() ?: return null
+        if (text.substring(l.end).any { it.isWhitespace() }) return null
+        var at = 0
+        for (run in para.runs) {
+            val end = at + run.text.length
+            if (end > l.start && at < l.end && (run.style.link != null || run.style.code || run.style.math)) return null
+            at = end
+        }
+        return AutoLink(l.start, l.end, l.uri)
     }
 
     /**
@@ -244,6 +278,13 @@ object InputRules {
         is Inline -> applyInline(flow, pos, rule, highlight)
         is Math -> applyMath(flow, pos, rule)
         is Fence -> applyFence(flow, pos, rule)
+        is LinkUp -> applyLink(flow, pos, rule)
+        is AutoLink -> Result(
+            FlowEditor(flow).setCharStyle(FlowRange(FlowPos(pos.para, rule.start), FlowPos(pos.para, rule.end))) {
+                it.copy(link = rule.uri)
+            },
+            pos,
+        )
         HRule -> applyRule(flow, pos)
         is Strip -> applyStrip(flow, pos, rule)
     }
@@ -326,6 +367,20 @@ object InputRules {
         ed.deleteRange(FlowRange(caret, FlowPos(pos.para, flow.paragraphs[pos.para].length))).first?.let { cmds += it }
         ed.setParaStyle(FlowRange.caret(caret)) { it.codeLang = r.lang }?.let { cmds += it }
         return Result(ed.combined(cmds), caret, CharStyle.DEFAULT)
+    }
+
+    /** The brackets and address go, and the text left between them links to it. */
+    private fun applyLink(flow: TextFlow, pos: FlowPos, r: LinkUp): Result {
+        val p = pos.para
+        val ed = FlowEditor(flow)
+        val outside = ed.charStyleAt(FlowPos(p, r.open))
+        val textEnd = r.open + 1 + r.text.length
+        val cmds = mutableListOf<Command>()
+        ed.deleteRange(FlowRange(FlowPos(p, textEnd), pos)).first?.let { cmds += it }
+        ed.deleteRange(FlowRange(FlowPos(p, r.open), FlowPos(p, r.open + 1))).first?.let { cmds += it }
+        val end = r.open + r.text.length
+        ed.setCharStyle(FlowRange(FlowPos(p, r.open), FlowPos(p, end))) { it.copy(link = r.uri) }?.let { cmds += it }
+        return Result(ed.combined(cmds), FlowPos(p, end), outside.copy(link = null))
     }
 
     /** The line becomes a rule and Enter goes on to the line after it, as it would have anyway. */
