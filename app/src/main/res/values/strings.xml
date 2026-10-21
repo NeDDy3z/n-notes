@@ -421,7 +421,7 @@
     <string name="ai_prompt_page_habits">A habit tracker page template: the days of the week across the top, 12 rows for habits down the left, and a narrow box at the end of each row for notes.</string>
     <string name="ai_prompt_page_lab">A lab notebook page template: a 5 mm grid with a heavier line every 25 mm, a header with Date, Experiment and Page fields, and a line at the bottom to sign.</string>
     <string name="ai_prompt_page_reading">A reading log page template with one book per row: title, author, date finished and five small stars to fill in, with rows 12 mm apart.</string>
-    <string name="ai_prompt_cover_photo">Make a cover template from the photo I attached: fill the page with it, keep its subject in view on a landscape page too, and add a cream label in the upper third for the title.</string>
+    <string name="ai_prompt_cover_photo">Make a cover template from the photo I attached: fill the page with it, keep its subject in view on a landscape page too, and add a cream label for the title wherever it suits the photo best.</string>
     <string name="ai_prompt_cover_painting">Paint a misty pine forest at dawn in soft watercolour and make it a cover template with a small white label near the top. Package it as an .xtemplate file I can download.</string>
     <string name="ai_prompt_cover_pattern">With Python, draw a generative pattern of overlapping translucent circles in deep blues and teal, and make it a cover template with a thin gold frame and a label for the title.</string>
     <string name="ai_prompt_cover_leather">A cover template that looks like a leather notebook: draw a dark leather grain with Python as light and shade over a colour I can change, and add a blind-stamped border and a gold label.</string>
