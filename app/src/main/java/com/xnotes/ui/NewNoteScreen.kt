@@ -1,5 +1,7 @@
 package com.xnotes.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -316,8 +318,11 @@ internal fun NewNoteScreen(
                     } else {
                         TemplateThumbs.Spec(key, pageMm, look.ink, look.accent, look.paper, values.numbers, values.colors, thumbPx(w))
                     }
+                    val bmp = rememberTemplateThumb(t, spec, keep)
+                    // A picture drawn just now fades in; one drawn before shows at once.
+                    val shown by animateFloatAsState(if (bmp != null) 1f else 0f, tween(180), label = "thumb")
                     // Cropping, not fitting: a pixel of rounding between the bitmap and its box never shows as a band.
-                    rememberTemplateThumb(t, spec, keep)?.let { Image(it, contentDescription = t.name, Modifier.size(w, h), contentScale = ContentScale.Crop) }
+                    if (bmp != null) Image(bmp, contentDescription = t.name, Modifier.size(w, h), contentScale = ContentScale.Crop, alpha = shown)
                 }
             }
         }
