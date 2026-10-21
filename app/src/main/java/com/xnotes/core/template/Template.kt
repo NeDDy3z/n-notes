@@ -31,12 +31,31 @@ class Template(
     /** Whether anything draws in the host's `accent` colour, so a host shows that control. */
     val usesAccent: Boolean by lazy { uses(root) }
 
+    /** Whether anything draws in the host's `ink`, every stroke's default, so a host shows the pattern colour. */
+    val usesInk: Boolean by lazy { inks(root, TColor.Ink, null) }
+
     private fun uses(n: TNode): Boolean =
         n.style.stroke == TColor.Accent || n.style.fill == TColor.Accent || when (n) {
             is TNode.Group -> n.children.any(::uses)
             is TNode.Repeat -> n.children.any(::uses)
             else -> false
         }
+
+    private fun inks(n: TNode, stroke: TColor, fill: TColor?): Boolean {
+        val s = n.style.stroke ?: stroke
+        val f = n.style.fill ?: fill
+        // A dot and text are painted in their fill when it is set, and otherwise in their stroke.
+        val painted = f?.takeIf { it != TColor.None } ?: s
+        return when (n) {
+            is TNode.Group -> n.children.any { inks(it, s, f) }
+            is TNode.Repeat -> n.children.any { inks(it, s, f) }
+            is TNode.Image -> false
+            is TNode.Line, is TNode.Hatch -> s == TColor.Ink
+            is TNode.Text -> painted == TColor.Ink
+            is TNode.Ellipse -> if (n.kind == EllipseKind.DOT) painted == TColor.Ink else s == TColor.Ink || f == TColor.Ink
+            else -> s == TColor.Ink || f == TColor.Ink
+        }
+    }
 }
 
 /** SPEC §1 `kind`: paper for every page, or a notebook's cover. An unknown value reads as [PAGE]. */

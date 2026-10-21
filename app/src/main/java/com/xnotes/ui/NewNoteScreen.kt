@@ -519,18 +519,20 @@ internal fun NewNoteScreen(
                         Spacer(Modifier.size(12.dp))
                         Text(stringResource(R.string.pick_template_hint), color = dim, fontSize = 13.sp)
                     } else {
-                        // Circles hold the hue at full strength; the opacity slider sets the alpha.
-                        ColourRow(stringResource(R.string.caption_pattern_colour), SwatchRole.LINES, style.patternColor?.copy(a = 255), {
-                            style = style.copy(patternColor = null)
-                        }) { style = style.copy(patternColor = it.copy(a = look.ink.a)) }
-                        Spacer(Modifier.size(12.dp))
-                        val pct = look.ink.a * 100f / 255f
-                        StyleCaption(stringResource(R.string.caption_opacity_percent, pct.roundToInt()))
-                        Slider(
-                            value = pct,
-                            onValueChange = { v -> style = style.copy(patternColor = look.ink.copy(a = (v / 100f * 255f).roundToInt().coerceIn(0, 255))) },
-                            valueRange = 0f..100f,
-                        )
+                        if (pageT.usesInk) {
+                            // Circles hold the hue at full strength; the opacity slider sets the alpha.
+                            ColourRow(stringResource(R.string.caption_pattern_colour), SwatchRole.LINES, style.patternColor?.copy(a = 255), {
+                                style = style.copy(patternColor = null)
+                            }) { style = style.copy(patternColor = it.copy(a = look.ink.a)) }
+                            Spacer(Modifier.size(12.dp))
+                            val pct = look.ink.a * 100f / 255f
+                            StyleCaption(stringResource(R.string.caption_opacity_percent, pct.roundToInt()))
+                            Slider(
+                                value = pct,
+                                onValueChange = { v -> style = style.copy(patternColor = look.ink.copy(a = (v / 100f * 255f).roundToInt().coerceIn(0, 255))) },
+                                valueRange = 0f..100f,
+                            )
+                        }
                         if (pageT.usesAccent) {
                             ColourRow(stringResource(R.string.caption_accent_colour), SwatchRole.ACCENT, style.accentColor?.copy(a = 255), {
                                 style = style.copy(accentColor = null)

@@ -12,6 +12,7 @@ import com.xnotes.format.TemplateFormatException
 import com.xnotes.format.TemplatePackage
 import com.xnotes.format.TemplateReader
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -471,6 +472,20 @@ class TemplateTest {
         }
         assertEquals(listOf(0.1, 3.0) to listOf(0.1, 20.0), paint(0.0))
         assertEquals(listOf(1.0, 3.0) to listOf(0.75, 20.0), paint(1.0))
+    }
+
+    @Test
+    fun aTemplateUsesInkOnlyWhereSomethingDrawsInIt() {
+        fun inks(items: String, extra: String = "") = TemplateReader.read(tpl(items, extra)).usesInk
+        assertTrue(inks("""{ "type": "hline", "y": 10 }"""))
+        assertTrue(inks("""{ "type": "dot", "cx": 5, "cy": 5 }"""))
+        assertTrue(inks("""{ "type": "rect", "x": 0, "y": 0, "w": 10, "h": 10, "fill": "ink", "stroke": "none" }"""))
+        assertTrue(inks("""{ "type": "group", "stroke": "none", "children": [ { "type": "hline", "y": 1, "stroke": "ink" } ] }"""))
+        assertFalse(inks("""{ "type": "image", "src": "a.png" }"""))
+        assertFalse(inks("""{ "type": "hline", "y": 10 }""", """ "stroke": "accent", """))
+        assertFalse(inks("""{ "type": "rect", "x": 0, "y": 0, "w": 10, "h": 10, "fill": "#123456", "stroke": "none" }"""))
+        assertFalse(inks("""{ "type": "dot", "cx": 5, "cy": 5, "fill": "accent" }"""))
+        for (name in listOf("lines", "grid", "dots")) assertTrue(name, bundled(name).usesInk)
     }
 
     @Test

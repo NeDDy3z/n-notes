@@ -378,26 +378,28 @@ private fun TemplateCustomizer(
             )
         }
 
-        Spacer(Modifier.size(12.dp))
-        StyleCaption(stringResource(R.string.caption_pattern_colour))
-        Spacer(Modifier.size(4.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ModeChip(stringResource(R.string.default_choice), style.patternColor == null) { apply(style.copy(patternColor = null)) }
-            // Circles hold the hue at full strength; OPACITY sets the alpha, so a pick keeps it.
-            SwatchCircles(editor, SwatchRole.LINES, style.patternColor?.copy(a = 255)) {
-                apply(style.copy(patternColor = it.copy(a = look.ink.a)))
+        if (t.usesInk) {
+            Spacer(Modifier.size(12.dp))
+            StyleCaption(stringResource(R.string.caption_pattern_colour))
+            Spacer(Modifier.size(4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.default_choice), style.patternColor == null) { apply(style.copy(patternColor = null)) }
+                // Circles hold the hue at full strength; OPACITY sets the alpha, so a pick keeps it.
+                SwatchCircles(editor, SwatchRole.LINES, style.patternColor?.copy(a = 255)) {
+                    apply(style.copy(patternColor = it.copy(a = look.ink.a)))
+                }
             }
+            Spacer(Modifier.size(12.dp))
+            val opacityPct = look.ink.a * 100f / 255f
+            StyleCaption(stringResource(R.string.caption_opacity_percent, opacityPct.roundToInt()))
+            Slider(
+                value = opacityPct,
+                onValueChange = { pct ->
+                    apply(style.copy(patternColor = look.ink.copy(a = (pct / 100f * 255f).roundToInt().coerceIn(0, 255))))
+                },
+                valueRange = 0f..100f,
+            )
         }
-        Spacer(Modifier.size(12.dp))
-        val opacityPct = look.ink.a * 100f / 255f
-        StyleCaption(stringResource(R.string.caption_opacity_percent, opacityPct.roundToInt()))
-        Slider(
-            value = opacityPct,
-            onValueChange = { pct ->
-                apply(style.copy(patternColor = look.ink.copy(a = (pct / 100f * 255f).roundToInt().coerceIn(0, 255))))
-            },
-            valueRange = 0f..100f,
-        )
         if (t.usesAccent) {
             Spacer(Modifier.size(4.dp))
             StyleCaption(stringResource(R.string.caption_accent_colour))
