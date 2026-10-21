@@ -489,6 +489,17 @@ class TemplateTest {
     }
 
     @Test
+    fun theBundledAiGuideHoldsTheSpecAndExamplesThatRead() {
+        val text = File("src/main/assets/templates/AI.md").readText()
+        assertTrue(text.contains("\n# xtemplate for AI assistants\n"))
+        assertTrue(text.contains("\n## xtemplate format, version 1\n"))
+        val examples = text.substringAfter("\n## Examples\n").substringBefore("\n## Your turn\n")
+        val blocks = Regex("```json\n(.*?)\n```", RegexOption.DOT_MATCHES_ALL).findAll(examples).map { it.groupValues[1] }.toList()
+        assertEquals(7, blocks.size)
+        for (b in blocks) TemplateReader.read(b)
+    }
+
+    @Test
     fun everyBundledCoverIsACoverAndDrawsOnAnyPageShape() {
         val covers = File("src/main/assets/templates/examples").listFiles { f -> f.name.startsWith("cover-") }!!.sortedBy { it.name }
         assertEquals(10, covers.size)
