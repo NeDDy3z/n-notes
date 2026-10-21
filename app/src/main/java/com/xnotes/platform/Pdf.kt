@@ -21,6 +21,7 @@ import com.xnotes.core.model.ConnectorItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageInsets
+import com.xnotes.core.model.PageLayers
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
@@ -417,9 +418,10 @@ object PdfExporter {
         renderer.beginMark(Mark.Decoration)
         paintRuling(page, renderer) // page ruling sits behind the ink
         renderer.endMark()
-        flow.paint(page, renderer, cover, tagged = ctx.tags != null)
-        for (link in flow.links(page)) renderer.addFlowLink(link)
-        for (item in page.items) {
+        PageLayers.paint(page.items, {
+            flow.paint(page, renderer, cover, tagged = ctx.tags != null)
+            for (link in flow.links(page)) renderer.addFlowLink(link)
+        }) { item ->
             renderer.beginMark(PdfTags.markOf(item))
             if (PdfItemRaster.needsRaster(item)) {
                 PdfItemRaster.item(item, cover)?.let { raster ->
@@ -504,8 +506,7 @@ object PdfExporter {
                     MarkupPainter.paint(renderer, page.markups, doc.dpi / 72.0) // on bare paper, beneath the ruling
                 }
                 paintRuling(page, renderer) // ruling behind ink
-                flow.paint(page, renderer, cover)
-                for (item in page.items) item.paint(renderer)
+                PageLayers.paint(page.items, { flow.paint(page, renderer, cover) }) { it.paint(renderer) }
                 pdf.finishPage(pdfPage)
                 PdfItemRaster.releaseInkGeometry(page.items)
                 onProgress(index + 1, total)

@@ -519,6 +519,18 @@ class InteractionController(
             item === editingText || item === editingLabel || item in followed || frontInk?.holding(item) == true ||
                 selection.any { it.item === item }
         }
+        // A selected fill under the typed text stays under the ink, moving with the drag.
+        state.paintLiftedUnderText = { page, r ->
+            for (sel in selection) {
+                if (sel.item in followed || state.document.pages.getOrNull(sel.pageIndex) !== page) continue
+                if (!state.isUnderText(page, sel.item)) continue
+                r.withSave {
+                    r.translate(moveOffset.x, moveOffset.y)
+                    state.applyPageTransform(r, page)
+                    sel.item.paint(r)
+                }
+            }
+        }
     }
 
     val hasSelection: Boolean get() = selection.isNotEmpty()
@@ -4144,6 +4156,7 @@ class InteractionController(
             for (sel in selection) {
                 if (sel.item in followed) continue
                 val pr = state.pageRects.getOrNull(sel.pageIndex) ?: continue
+                if (state.isUnderText(state.document.pages[sel.pageIndex], sel.item)) continue // painted under the ink
                 r.withSave {
                     r.translate(pr.left + moveOffset.x, pr.top + moveOffset.y)
                     state.applyPageTransform(r, state.document.pages[sel.pageIndex])

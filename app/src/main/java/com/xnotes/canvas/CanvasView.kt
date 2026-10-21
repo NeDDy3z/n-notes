@@ -424,10 +424,7 @@ class CanvasView @JvmOverloads constructor(
             r.withSave {
                 r.clipRect(pr)
                 r.translate(pr.left, pr.top)
-                st.applyPageTransform(r, page)
-                val region = st.displayRectToPage(page, visible.translate(-pr.left, -pr.top))
-                if (st.flowLifted) st.paintFlow?.invoke(page, r, region)
-                st.paintMath?.invoke(page, r, region)
+                paintUnderInk(r, st, page, st.displayRectToPage(page, visible.translate(-pr.left, -pr.top)))
             }
             st.cacheForOrSchedule(page)?.let { blitPageSurface(r, st, page, pr, it.surface) }
         }
@@ -459,10 +456,7 @@ class CanvasView @JvmOverloads constructor(
                     r.withSave {
                         r.clipRect(pr)
                         r.translate(pr.left, pr.top)
-                        st.applyPageTransform(r, page)
-                        val region = st.displayRectToPage(page, neighbourVisible.translate(-pr.left, -pr.top))
-                        if (st.flowLifted) st.paintFlow?.invoke(page, r, region)
-                        st.paintMath?.invoke(page, r, region)
+                        paintUnderInk(r, st, page, st.displayRectToPage(page, neighbourVisible.translate(-pr.left, -pr.top)))
                     }
                     st.cacheForOrSchedule(page)?.let { blitPageSurface(r, st, page, pr, it.surface) }
                 }
@@ -487,7 +481,7 @@ class CanvasView @JvmOverloads constructor(
                 // page loop's live pass already painted them, and a second
                 // (translucent) chip on top reads as a lighter band while the slid
                 // sharp frame settles.
-                if (st.flowLifted || st.paintMath != null) {
+                if (st.flowLifted || st.paintMath != null || st.paintLiftedUnderText != null) {
                     r.withSave {
                         r.clipRect(Rect(blit.dx, blit.dy, dw, dh))
                         r.translate(origin.x, origin.y)
@@ -499,10 +493,7 @@ class CanvasView @JvmOverloads constructor(
                             r.withSave {
                                 r.clipRect(pr)
                                 r.translate(pr.left, pr.top)
-                                st.applyPageTransform(r, page)
-                                val region = st.displayRectToPage(page, visible.translate(-pr.left, -pr.top))
-                                if (st.flowLifted) st.paintFlow?.invoke(page, r, region)
-                                st.paintMath?.invoke(page, r, region)
+                                paintUnderInk(r, st, page, st.displayRectToPage(page, visible.translate(-pr.left, -pr.top)))
                             }
                         }
                     }
@@ -585,6 +576,23 @@ class CanvasView @JvmOverloads constructor(
 
         // A formula still being set shimmers in its place; keep the sweep moving until it lands.
         if (r.standIns > 0) postInvalidateDelayed(SHIMMER_FRAME_MS)
+    }
+
+    /**
+     * What goes live between a page's background and its ink cache: the fills under its typed text
+     * that the cache leaves out, a lifted flow, and the formulas. [r] stands at the page's display origin.
+     */
+    private fun paintUnderInk(r: AndroidRenderer, st: CanvasState, page: Page, region: Rect) {
+        r.withSave {
+            st.applyPageTransform(r, page)
+            st.paintUnderText(page, r, region)
+        }
+        st.paintLiftedUnderText?.invoke(page, r)
+        r.withSave {
+            st.applyPageTransform(r, page)
+            if (st.flowLifted) st.paintFlow?.invoke(page, r, region)
+            st.paintMath?.invoke(page, r, region)
+        }
     }
 
     /** Fires once the view has been still for [SHARP_SETTLE_MS], rendering the sharp viewport. */

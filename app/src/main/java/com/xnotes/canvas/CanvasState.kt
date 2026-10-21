@@ -7,6 +7,7 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageInsets
+import com.xnotes.core.model.PageLayers
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Stroke
@@ -524,7 +525,7 @@ class CanvasState(
     private class SharpPageSnap(
         val page: Page,
         val pr: Rect,
-        val items: List<CanvasItem>,
+        val items: InkItems,
         val region: Rect,
         val index: Int,
     )
@@ -1150,15 +1151,25 @@ class CanvasState(
         }
     }
 
-    /** Items baked into a page's ink cache: all but lifted items and highlighters
-     *  ([isHighlighterInk] — those composite live so they MULTIPLY against the background). */
-    private fun cacheItems(page: Page): List<CanvasItem> =
-        page.items.filter { !isLiftedItem(it) && !it.isHighlighterInk() }
+    /** A page's cached ink either side of its typed text (see [PageLayers]). */
+    private class InkItems(val under: List<CanvasItem>, val over: List<CanvasItem>)
+
+    /**
+     * Items baked into a page's ink cache: all but lifted items and highlighters ([isHighlighterInk]
+     * — those composite live so they MULTIPLY against the background). While the flow is lifted, so
+     * are the fills under it, which the view then paints live beneath it.
+     */
+    private fun cacheItems(page: Page): InkItems {
+        val n = PageLayers.underText(page.items)
+        val under = if (flowLifted) emptyList() else page.items.subList(0, n).filter { !isLiftedItem(it) }
+        val over = page.items.subList(n, page.items.size).filter { !isLiftedItem(it) && !it.isHighlighterInk() }
+        return InkItems(under, over)
+    }
 
     private fun buildCache(page: Page, res: Double): CacheEntry =
         renderInk(page, res, cacheItems(page), includeFlow = !flowLifted)
 
-    private fun renderInk(page: Page, res: Double, items: List<CanvasItem>, includeFlow: Boolean): CacheEntry {
+    private fun renderInk(page: Page, res: Double, items: InkItems, includeFlow: Boolean): CacheEntry {
         val cover = footprint(page)
         val w = ceil(cover.w * res).toInt().coerceAtLeast(1)
         val h = ceil(cover.h * res).toInt().coerceAtLeast(1)
@@ -1167,8 +1178,9 @@ class CanvasState(
         val r = surface.renderer()
         r.scale(res, res)
         r.translate(-cover.left, -cover.top) // the surface covers the margins, so page space starts inset
+        for (item in items.under) item.paint(r)
         if (includeFlow) paintFlow?.invoke(page, r, cover)
-        for (item in items) item.paint(r)
+        for (item in items.over) item.paint(r)
         noteGeometryBuilt(page)
         return CacheEntry(surface, res, cover)
     }
@@ -1396,13 +1408,52 @@ class CanvasState(
         r.translate(-cover.left, -cover.top)
         r.clipRect(dirtyRect)
         r.clear()
-        if (!flowLifted) paintFlow?.invoke(page, r, dirtyRect)
-        for (item in page.items) {
-            if (!isLiftedItem(item) && !item.isHighlighterInk() && item.paintBounds().intersects(dirtyRect)) item.paint(r)
-        }
+        paintInk(page, r, dirtyRect)
         r.restore()
         return true
     }
+
+    /** Repaint [page]'s cached ink where it meets [region]: the fills under its typed text, the text, then the rest. */
+    private fun paintInk(page: Page, r: Renderer, region: Rect) {
+        val n = PageLayers.underText(page.items)
+        if (!flowLifted) {
+            for (i in 0 until n) {
+                val item = page.items[i]
+                if (!isLiftedItem(item) && item.paintBounds().intersects(region)) item.paint(r)
+            }
+            paintFlow?.invoke(page, r, region)
+        }
+        for (i in n until page.items.size) {
+            val item = page.items[i]
+            if (!isLiftedItem(item) && !item.isHighlighterInk() && item.paintBounds().intersects(region)) item.paint(r)
+        }
+    }
+
+    /**
+     * Paint the fills under [page]'s typed text that its ink cache leaves out, beneath the cache: all
+     * of them while the flow is lifted (lifted ones go through [paintLiftedUnderText] instead).
+     */
+    fun paintUnderText(page: Page, r: Renderer, region: Rect) {
+        if (!flowLifted) return
+        val n = PageLayers.underText(page.items)
+        for (i in 0 until n) {
+            val item = page.items[i]
+            if (!isLiftedItem(item) && item.paintBounds().intersects(region)) item.paint(r)
+        }
+    }
+
+    /** True when [item] is one of the fills under [page]'s typed text. */
+    fun isUnderText(page: Page, item: CanvasItem): Boolean {
+        val n = PageLayers.underText(page.items)
+        for (i in 0 until n) if (page.items[i] === item) return true
+        return false
+    }
+
+    /**
+     * Paints [page]'s lifted (selected) fills that sit under its typed text, so a selected fill stays
+     * under the ink it is filled in. Called at the page's display origin, before its page transform.
+     */
+    var paintLiftedUnderText: ((page: Page, r: Renderer) -> Unit)? = null
 
     fun invalidatePage(page: Page) {
         caches.remove(page)
@@ -1788,10 +1839,11 @@ class CanvasState(
             ri.clipRect(d.pr)
             ri.translate(d.pr.left, d.pr.top)
             applyPageTransform(ri, d.page)
+            for (item in d.items.under) item.paint(ri)
             if (withFlow && d.region.w > 0.0 && d.region.h > 0.0) {
                 paintFlow?.invoke(d.page, ri, d.region)
             }
-            for (item in d.items) item.paint(ri)
+            for (item in d.items.over) item.paint(ri)
             ri.restore()
         }
     }
@@ -1828,10 +1880,7 @@ class CanvasState(
         applyPageTransform(r, page)
         r.clipRect(dirtyRect)
         r.clear()
-        if (!flowLifted) paintFlow?.invoke(page, r, dirtyRect)
-        for (item in page.items) {
-            if (!isLiftedItem(item) && !item.isHighlighterInk() && item.paintBounds().intersects(dirtyRect)) item.paint(r)
-        }
+        paintInk(page, r, dirtyRect)
         r.restore()
     }
 

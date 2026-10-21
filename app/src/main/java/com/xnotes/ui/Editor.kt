@@ -37,6 +37,7 @@ import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.MarkupType
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageLayers
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PagePattern
@@ -1652,9 +1653,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.INTERACTIVE) {
                         state.paintPageBackground?.invoke(page, r, res, local)
                     }
-                    state.paintFlow?.invoke(page, r, local)
                 }
-                for (item in itemsSnapshot(page)) item.paint(r)
+                val showFlow = local.w > 0.0 && local.h > 0.0
+                PageLayers.paint(itemsSnapshot(page), { if (showFlow) state.paintFlow?.invoke(page, r, local) }) { it.paint(r) }
             }
         }
         return surface.bitmap
@@ -2994,15 +2995,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
             state.paintPageBackground?.invoke(page, r, scale, cover)
         }
+        val items = itemsSnapshot(page)
+        val under = PageLayers.underText(items)
+        for (i in 0 until under) items[i].paint(r)
         state.paintFlow?.invoke(page, r, cover)
         (r as? com.xnotes.platform.AndroidRenderer)?.let { ar ->
             ar.mathPace = com.xnotes.platform.MathRendering.Pace.STILL
             state.paintMath?.invoke(page, ar, cover)
             if (ar.standIns > 0) thumbsAwaitMath = true
         }
-        for (item in itemsSnapshot(page)) {
+        for (i in under until items.size) {
             if (!active()) return null
-            item.paint(r)
+            items[i].paint(r)
         }
         // Painting built this page's ribbons, and the grid renders pages nowhere near the viewport.
         // Register it so the frame loop's sweep reclaims them like any other off-band page.
@@ -3302,12 +3306,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (page.pdfPage == null) MarkupPainter.paint(r, page.markups, doc.dpi / 72.0)
         // A closed note's flow is laid out locally (the published snapshot serves the open note only),
         // and only as far as this page, so a tile never sets the formulas further on.
-        if (!doc.flow.isEmpty) {
-            val frame = themedFlowLayout(doc.flow)
-                .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, throughPage = index, firstPage = flowStart(doc))
-            FlowPainter.paintPage(r, frame, index, Rect(0.0, 0.0, page.width, page.height))
-        }
-        for (item in itemsSnapshot(page)) item.paint(r)
+        PageLayers.paint(itemsSnapshot(page), {
+            if (!doc.flow.isEmpty) {
+                val frame = themedFlowLayout(doc.flow)
+                    .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, throughPage = index, firstPage = flowStart(doc))
+                FlowPainter.paintPage(r, frame, index, Rect(0.0, 0.0, page.width, page.height))
+            }
+        }) { it.paint(r) }
         val bmp = surface.bitmap
         if (rotation == 0) return bmp
         val m = android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }
