@@ -531,6 +531,14 @@ internal fun NewNoteScreen(
                             },
                             color = text, fontSize = 16.sp, fontWeight = FontWeight.Medium,
                         )
+                        // What the template is for, or for a cover, whose picture it is.
+                        val about = if (face == Face.PAGES) pageT?.description else coverT?.takeIf { hasCover }?.description
+                        if (!about.isNullOrBlank()) {
+                            Text(
+                                about, color = dim, fontSize = 13.sp, lineHeight = 19.sp, maxLines = 4, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
                     ModeChip(stringResource(R.string.reset), false) {
                         if (face == Face.PAGES) {
