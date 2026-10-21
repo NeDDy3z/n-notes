@@ -1185,107 +1185,112 @@ private fun EditorPane(
             }
         }
     }
-    Column(
-        modifier = modifier
-            .background(palette.bg.toComposeColor())
-            .then(takeFocus)
-            .focusRequester(focusRequester)
-            .focusable()
-            .onPreviewKeyEvent { ke ->
-                ke.type == KeyEventType.KeyDown && editor.handleKeyDown(ke.nativeKeyEvent)
-            },
-    ) {
-        val onClose = if (closable) ({ actions.onClosePane(editor) }) else null
-        // In a split, a hairline over the toolbar marks the pane the pen and the keyboard are in.
-        if (closable) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background((if (focused) palette.accent else palette.border).toComposeColor()),
-            )
-        }
-        if (editor.canvasOpen) {
-            val canvas = editor.infinite
-            val bar: @Composable () -> Unit = {
-                com.xnotes.ui.InfiniteToolbar(
-                    canvas,
-                    onOpenBackstage = actions.onOpenBackstage,
-                    onInsertImage = { actions.onInsertCanvasImage(editor, null) },
-                    onClosePane = onClose,
+    // The colour a swatch drag carries rides over the whole pane, toolbar and page alike.
+    Box(modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(palette.bg.toComposeColor())
+                .then(takeFocus)
+                .focusRequester(focusRequester)
+                .focusable()
+                .onPreviewKeyEvent { ke ->
+                    ke.type == KeyEventType.KeyDown && editor.handleKeyDown(ke.nativeKeyEvent)
+                },
+        ) {
+            val onClose = if (closable) ({ actions.onClosePane(editor) }) else null
+            // In a split, a hairline over the toolbar marks the pane the pen and the keyboard are in.
+            if (closable) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .background((if (focused) palette.accent else palette.border).toComposeColor()),
                 )
             }
-            ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
-                Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
-                    AndroidView(
-                        factory = { detached(canvas.surfaces) },
-                        modifier = Modifier.fillMaxSize(),
-                        update = { canvas.view.publish() },
+            if (editor.canvasOpen) {
+                val canvas = editor.infinite
+                val bar: @Composable () -> Unit = {
+                    com.xnotes.ui.InfiniteToolbar(
+                        canvas,
+                        onOpenBackstage = actions.onOpenBackstage,
+                        onInsertImage = { actions.onInsertCanvasImage(editor, null) },
+                        onClosePane = onClose,
                     )
-                    canvas.editingField?.let { field ->
-                        com.xnotes.ui.TextEditorOverlay(canvas, field)
-                    }
-                    floatingBar()
-                    com.xnotes.ui.SelectionMenu(canvas)
-                    com.xnotes.ui.TextStyleBar(canvas)
-                    com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
-                    com.xnotes.ui.CanvasDebugOverlay(canvas)
                 }
-            }
-        } else {
-            val bar: @Composable () -> Unit = {
-                Toolbar(
-                    editor,
-                    onToggleFullscreen = actions.onToggleFullscreen,
-                    onOpenBackstage = actions.onOpenBackstage,
-                    onInsertImage = { actions.onInsertImage(editor, null) },
-                    onAddStickers = actions.onAddStickers,
-                    onClosePane = onClose,
-                    onImportTemplate = actions.onImportTemplate,
-                )
-            }
-            ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->
-                Row(modifier = Modifier.fillMaxSize()) {
-                    if (editor.sidebarVisible) {
-                        com.xnotes.ui.SidePanel(
-                            editor,
-                            onSharePages = { pages, asPdf -> actions.onSharePages(editor, pages, asPdf) },
-                            onSavePagesAsPdf = { pages -> actions.onSavePagesAsPdf(editor, pages) },
-                            onSavePagesAsImages = { pages -> actions.onSavePagesAsImages(editor, pages) },
-                            onInsertPdf = { after -> actions.onInsertPdf(editor, after) },
-                            onImportTemplate = actions.onImportTemplate,
-                            onTemplateFromImage = actions.onTemplateFromImage,
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+                ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
+                    Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                         AndroidView(
-                            factory = { detached(editor.surfaces) },
+                            factory = { detached(canvas.surfaces) },
                             modifier = Modifier.fillMaxSize(),
-                            update = { editor.view.requestRender() }, // repaint on (re)attach so a push never flashes blank
+                            update = { canvas.view.publish() },
                         )
-                        editor.editingField?.let { field ->
-                            com.xnotes.ui.TextEditorOverlay(editor, field)
+                        canvas.editingField?.let { field ->
+                            com.xnotes.ui.TextEditorOverlay(canvas, field)
                         }
                         floatingBar()
-                        com.xnotes.ui.SelectionMenu(editor)
-                        com.xnotes.ui.ScreenshotMenu(editor)
-                        com.xnotes.ui.TextStyleBar(editor)
-                        com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
-                        com.xnotes.ui.FlowEditMenu(editor)
-                        com.xnotes.ui.PdfSelectionMenu(editor)
-                        com.xnotes.ui.MarkupNotePeek(editor)
-                        com.xnotes.ui.MarkupMenu(editor)
-                        com.xnotes.ui.MarkupNoteDialog(editor)
-                        com.xnotes.ui.SlashMenu(editor)
-                        com.xnotes.ui.FlowTableMenu(editor)
-                        com.xnotes.ui.TableChrome(editor)
-                        ZoomLockHint(editor)
+                        com.xnotes.ui.SelectionMenu(canvas)
+                        com.xnotes.ui.TextStyleBar(canvas)
+                        com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
+                        com.xnotes.ui.CanvasDebugOverlay(canvas)
                     }
                 }
+            } else {
+                val bar: @Composable () -> Unit = {
+                    Toolbar(
+                        editor,
+                        onToggleFullscreen = actions.onToggleFullscreen,
+                        onOpenBackstage = actions.onOpenBackstage,
+                        onInsertImage = { actions.onInsertImage(editor, null) },
+                        onAddStickers = actions.onAddStickers,
+                        onClosePane = onClose,
+                        onImportTemplate = actions.onImportTemplate,
+                    )
+                }
+                ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        if (editor.sidebarVisible) {
+                            com.xnotes.ui.SidePanel(
+                                editor,
+                                onSharePages = { pages, asPdf -> actions.onSharePages(editor, pages, asPdf) },
+                                onSavePagesAsPdf = { pages -> actions.onSavePagesAsPdf(editor, pages) },
+                                onSavePagesAsImages = { pages -> actions.onSavePagesAsImages(editor, pages) },
+                                onInsertPdf = { after -> actions.onInsertPdf(editor, after) },
+                                onImportTemplate = actions.onImportTemplate,
+                                onTemplateFromImage = actions.onTemplateFromImage,
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+                            AndroidView(
+                                factory = { detached(editor.surfaces) },
+                                modifier = Modifier.fillMaxSize(),
+                                update = { editor.view.requestRender() }, // repaint on (re)attach so a push never flashes blank
+                            )
+                            editor.editingField?.let { field ->
+                                com.xnotes.ui.TextEditorOverlay(editor, field)
+                            }
+                            floatingBar()
+                            com.xnotes.ui.SelectionMenu(editor)
+                            com.xnotes.ui.ScreenshotMenu(editor)
+                            com.xnotes.ui.TextStyleBar(editor)
+                            com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
+                            com.xnotes.ui.FlowEditMenu(editor)
+                            com.xnotes.ui.PdfSelectionMenu(editor)
+                            com.xnotes.ui.MarkupNotePeek(editor)
+                            com.xnotes.ui.MarkupMenu(editor)
+                            com.xnotes.ui.MarkupNoteDialog(editor)
+                            com.xnotes.ui.SlashMenu(editor)
+                            com.xnotes.ui.FlowTableMenu(editor)
+                            com.xnotes.ui.TableChrome(editor)
+                            ZoomLockHint(editor)
+                        }
+                    }
+                }
+                // Last child of the resized column: rides directly above the soft keyboard.
+                com.xnotes.ui.TextFormatBar(editor)
             }
-            // Last child of the resized column: rides directly above the soft keyboard.
-            com.xnotes.ui.TextFormatBar(editor)
         }
+        com.xnotes.ui.ColorDropOverlay(if (editor.canvasOpen) editor.infinite else editor)
     }
 }
 

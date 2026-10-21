@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.platform.ImageDecoder
@@ -264,6 +265,8 @@ private fun ToolbarItemView(
                 Swatch(
                     color = color.toComposeColor(),
                     active = i == editor.activeColorIndex,
+                    drag = editor,
+                    ink = color,
                     onClick = { if (i == editor.activeColorIndex) setSwitcherIndex(i) else editor.pickColor(i) },
                 )
                 if (switcherIndex == i) ColorSwitcherPopup(editor, i) { setSwitcherIndex(null) }
@@ -532,12 +535,21 @@ internal fun ClosePaneButton(onClose: () -> Unit) {
     ToolbarIcon(XnotesIcons.close, stringResource(R.string.close_pane), onClick = onClose)
 }
 
+/** A toolbar ink swatch; given a [drag] host and its [ink], it can also be pulled off the bar onto the page to fill. */
 @Composable
-internal fun Swatch(color: androidx.compose.ui.graphics.Color, active: Boolean, onClick: () -> Unit) {
+internal fun Swatch(
+    color: androidx.compose.ui.graphics.Color,
+    active: Boolean,
+    drag: ColorDropHost? = null,
+    ink: Rgba? = null,
+    onClick: () -> Unit,
+) {
+    val bar = LocalBar.current
     Box(
         modifier = Modifier
-            .then(if (LocalBar.current.vertical) Modifier.padding(vertical = 3.dp) else Modifier.padding(horizontal = 3.dp))
-            .size(LocalBar.current.swatch)
+            .then(if (bar.vertical) Modifier.padding(vertical = 3.dp) else Modifier.padding(horizontal = 3.dp))
+            .size(bar.swatch)
+            .then(if (drag != null && ink != null) Modifier.colorDragSource(drag, ink, bar.vertical) else Modifier)
             // The selection ring takes the swatch's own colour, not the theme accent.
             .then(if (active) Modifier.border(2.dp, color, CircleShape) else Modifier)
             .padding(4.dp)

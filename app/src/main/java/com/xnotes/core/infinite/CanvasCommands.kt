@@ -27,6 +27,21 @@ class AddCanvasItem(
     }
 }
 
+/** Put an item in at z position [at]: a dropped colour's fill, under the lines it fills. */
+class InsertCanvasItem(
+    private val doc: InfiniteDocument,
+    private val item: CanvasItem,
+    private val at: Int,
+) : Command {
+    override fun redo() {
+        if (!doc.containsRef(item)) doc.add(at.coerceIn(0, doc.itemCount), item)
+    }
+
+    override fun undo() {
+        doc.remove(item)
+    }
+}
+
 /** Append several items as one edit (paste, duplicate, an eraser split's survivors). */
 class AddCanvasItems(
     private val doc: InfiniteDocument,

@@ -5,12 +5,20 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import com.xnotes.R
 import com.xnotes.canvas.InteractionController
+import com.xnotes.core.fill.ColorDrop
+import com.xnotes.core.fill.DropAction
+import com.xnotes.core.fill.FillGrid
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.history.Command
+import com.xnotes.core.history.CompositeCommand
 import com.xnotes.core.history.EditLabel
 import com.xnotes.core.history.History
 import com.xnotes.core.history.LockItems
+import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.RestyleItems
 import com.xnotes.core.infinite.AddCanvasItem
 import com.xnotes.core.infinite.AddCanvasItems
@@ -18,6 +26,7 @@ import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.infinite.CanvasSelection
 import com.xnotes.core.infinite.CanvasViewport
 import com.xnotes.core.infinite.EraseCanvasItems
+import com.xnotes.core.infinite.InsertCanvasItem
 import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.infinite.MeshedItem
 import com.xnotes.core.infinite.Minimap
@@ -35,6 +44,7 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
+import com.xnotes.core.model.PageLayers
 import com.xnotes.core.model.deepCopyAll
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Labelled
@@ -44,6 +54,8 @@ import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextStyle
 import com.xnotes.core.pal.FontFace
+import com.xnotes.core.pal.Renderer
+import com.xnotes.core.pal.TextMeasurer
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
@@ -65,7 +77,7 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
-class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost {
+class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost {
 
     private val appContext = context.applicationContext
 
@@ -934,6 +946,110 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     override fun rememberSwatchColor(index: Int) {
         toolbarColors.getOrNull(index)?.let { onColorRemembered?.invoke(it) }
+    }
+
+    // --- colour drop ---
+
+    /** Where a colour drag looks for areas, fixed for the drag: the screen and a margin round it, and what lies there. */
+    private var dropWindow: Rect? = null
+    private var dropItems: List<CanvasItem> = emptyList()
+
+    private val colorDropper = ColorDropper(object : DropSurface {
+        override fun beginDrop() {
+            if (editingLabel != null) commitText()
+            interaction.clearSelection()
+            val seen = viewport.visibleContentRect()
+            val window = seen.outset(maxOf(seen.w, seen.h) * DROP_MARGIN)
+            dropWindow = window
+            dropItems = document.itemsIn(window)
+        }
+
+        override fun spotAt(view: Pt): DropSpot? {
+            val window = dropWindow ?: return null
+            if (view.x < 0.0 || view.y < 0.0 || view.x >= this@InfiniteEditor.view.width || view.y >= this@InfiniteEditor.view.height) return null
+            val zoom = viewport.zoom
+            val grid = FillGrid.fitting(window, zoom, DROP_CELL_BUDGET)
+            return DropSpot(
+                frame = 0,
+                key = window,
+                at = viewport.viewportToContent(view),
+                items = dropItems,
+                grid = grid,
+                reach = DROP_REACH_DP * devicePxPerDp / zoom,
+                smallHole = (DROP_SMALL_HOLE_MM / 25.4 * appContext.resources.displayMetrics.xdpi / zoom * grid.scale).toInt(),
+            )
+        }
+
+        override fun applyDrop(spot: DropSpot, action: DropAction, color: Rgba) = applyColorDrop(action, color)
+
+        override fun viewInWindow(): Offset {
+            val at = IntArray(2).also { view.getLocationInWindow(it) }
+            return Offset(at[0].toFloat(), at[1].toFloat())
+        }
+
+        override val measurer: TextMeasurer get() = textMeasurer
+    })
+
+    override val colorDrag: ColorDrag? get() = colorDropper.drag
+
+    override fun beginColorDrag(color: Rgba, window: Offset) = colorDropper.begin(color, window)
+
+    override fun moveColorDrag(window: Offset) = colorDropper.move(window)
+
+    override fun endColorDrag(window: Offset) = colorDropper.end(window)
+
+    override fun cancelColorDrag() = colorDropper.cancel()
+
+    override fun canvasInWindow(): androidx.compose.ui.geometry.Rect {
+        val at = IntArray(2).also { view.getLocationInWindow(it) }
+        return androidx.compose.ui.geometry.Rect(at[0].toFloat(), at[1].toFloat(), (at[0] + view.width).toFloat(), (at[1] + view.height).toFloat())
+    }
+
+    override fun enterDropFrame(r: Renderer, frame: Int) {
+        r.scale(viewport.zoom, viewport.zoom)
+        r.translate(-viewport.scrollX, -viewport.scrollY)
+    }
+
+    /** Fired with a short message for the user, such as why a drop did nothing. */
+    var onSay: ((String) -> Unit)? = null
+
+    /** Carry out a colour drop as one undo step, or say why nothing happened. */
+    private fun applyColorDrop(action: DropAction, color: Rgba) {
+        val command: Command = when (action) {
+            is DropAction.Recolour -> {
+                val item = action.item.takeIf { document.containsRef(it) } ?: return
+                val before = DrawStyle.of(item) ?: return
+                OnCanvas(document, RestyleItems(listOf(RestyleItems.Entry(item, before, before.copy(color = color)))), listOf(item))
+            }
+            is DropAction.FillShape -> refillCommand(action.shape, color) ?: return
+            is DropAction.Refill -> refillCommand(action.fill, color) ?: return
+            is DropAction.AddFill -> {
+                val gone = action.replaced.filter { document.containsRef(it) }
+                val after = document.items.filter { item -> gone.none { it === item } }
+                // A canvas has no typed text, but its fills keep to the bottom just as a page's do.
+                val at = action.above?.let { a -> after.indexOfFirst { it === a } + 1 }?.takeIf { it > 0 }
+                    ?: PageLayers.underText(after)
+                val insert = InsertCanvasItem(document, action.fill, at)
+                if (gone.isEmpty()) insert else CompositeCommand(listOf(EraseCanvasItems.capture(document, gone), insert))
+            }
+            DropAction.NotClosed -> {
+                onSay?.invoke(appContext.getString(R.string.colour_drop_not_closed))
+                return
+            }
+            DropAction.None -> return
+        }
+        command.redo()
+        history.push(command)
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    /** The edit that gives [shape] the dropped [color] as its fill, or null when it is no longer on the canvas. */
+    private fun refillCommand(shape: ShapeItem, color: Rgba): Command? {
+        if (!document.containsRef(shape)) return null
+        val refill = RefillShapes(listOf(ColorDrop.refill(shape, color)))
+        return OnCanvas(document, refill, listOf(shape))
     }
 
     override val hostToolbarColorCount: Int get() = toolbarColorCount

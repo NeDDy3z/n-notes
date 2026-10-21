@@ -1,6 +1,7 @@
 package com.xnotes.core.fill
 
 import com.xnotes.core.geometry.Pt
+import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.infinite.ShapeTessellator
 import com.xnotes.core.infinite.StrokeTessellator
 import com.xnotes.core.model.CanvasItem
@@ -95,6 +96,12 @@ object ColorDrop {
             Probe.Blocked -> DropAction.None
             is Probe.Enclosed -> enclosed(items, map, probe, at, color, smallHole)
         }
+    }
+
+    /** The edit that gives [shape] [color] as its fill, keeping the opacity of any fill it has. */
+    fun refill(shape: ShapeItem, color: Rgba): RefillShapes.Entry {
+        val before = shape.fillRgba
+        return RefillShapes.Entry(shape, before, before?.let { color.copy(a = it.a) } ?: color.withAlpha(255))
     }
 
     /** The line a drop at [at] lands on, the topmost within [reach]; null for none, a locked one, or one something covers there. */

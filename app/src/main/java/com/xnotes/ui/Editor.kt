@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.xnotes.R
@@ -17,6 +18,9 @@ import com.xnotes.canvas.FlowTextController
 import com.xnotes.canvas.InitialView
 import com.xnotes.canvas.InteractionController
 import com.xnotes.canvas.TextBar
+import com.xnotes.core.fill.ColorDrop
+import com.xnotes.core.fill.DropAction
+import com.xnotes.core.fill.FillGrid
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.history.AddItem
@@ -29,9 +33,14 @@ import com.xnotes.core.history.CompositeCommand
 import com.xnotes.core.history.DeletePage
 import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
+import com.xnotes.core.history.InsertItem
+import com.xnotes.core.history.RefillShapes
+import com.xnotes.core.history.RestyleItems
+import com.xnotes.core.history.RestyleText
 import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
+import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.MarkupType
@@ -45,9 +54,12 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextMarkup
+import com.xnotes.core.model.TextStyle
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.Renderer
+import com.xnotes.core.pal.TextMeasurer
 import com.xnotes.core.pdf.MarkupPainter
 import com.xnotes.core.search.SearchCorpus
 import com.xnotes.core.search.SearchHit
@@ -237,7 +249,7 @@ private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xno
 enum class Pane { PRIMARY, SECONDARY }
 
 @Stable
-class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore {
+class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore, ColorDropHost {
 
     private val appContext = context.applicationContext
 
@@ -685,6 +697,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 settings = settings.rememberColor(color)
                 it.recentColors = recentColors
             }
+            it.onSay = { text -> say(text) }
             it.view.onTwoFingerTap = { dispatchTapGesture(preferences.twoFingerTap) }
             it.view.onThreeFingerTap = { dispatchTapGesture(preferences.threeFingerTap) }
         }
@@ -5649,6 +5662,103 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Commit the swatch's current colour to the recent-colours list — called once the picker closes. */
     override fun rememberSwatchColor(index: Int) {
         toolbarColors.getOrNull(index)?.let { settings = settings.rememberColor(it) }
+    }
+
+    // --- colour drop ---
+
+    private val colorDropper = ColorDropper(object : DropSurface {
+        override fun beginDrop() {
+            controller.escape()
+        }
+
+        override fun spotAt(view: Pt): DropSpot? {
+            if (view.x < 0.0 || view.y < 0.0 || view.x >= state.viewportW || view.y >= state.viewportH) return null
+            val content = state.viewportToContent(view)
+            val pi = state.drawablePageRange().firstOrNull { state.pageRects.getOrNull(it)?.contains(content) == true } ?: return null
+            val page = state.document.pages[pi]
+            val grid = FillGrid.fitting(state.footprint(page), DROP_CELLS_PER_PX, DROP_CELL_BUDGET)
+            return DropSpot(
+                frame = pi,
+                key = page,
+                at = state.toPageSpace(pi, content),
+                items = page.items.toList(),
+                grid = grid,
+                reach = DROP_REACH_DP * state.devicePxPerDp / state.zoom,
+                smallHole = (dropSmallHolePx() / state.zoom * grid.scale).toInt(),
+            )
+        }
+
+        override fun applyDrop(spot: DropSpot, action: DropAction, color: Rgba) = applyColorDrop(spot, action, color)
+
+        override fun viewInWindow(): Offset {
+            val at = IntArray(2).also { view.getLocationInWindow(it) }
+            return Offset(at[0].toFloat(), at[1].toFloat())
+        }
+
+        override val measurer: TextMeasurer get() = textMeasurer
+    })
+
+    override val colorDrag: ColorDrag? get() = colorDropper.drag
+
+    override fun beginColorDrag(color: Rgba, window: Offset) = colorDropper.begin(color, window)
+
+    override fun moveColorDrag(window: Offset) = colorDropper.move(window)
+
+    override fun endColorDrag(window: Offset) = colorDropper.end(window)
+
+    override fun cancelColorDrag() = colorDropper.cancel()
+
+    override fun canvasInWindow(): androidx.compose.ui.geometry.Rect {
+        val at = IntArray(2).also { view.getLocationInWindow(it) }
+        return androidx.compose.ui.geometry.Rect(at[0].toFloat(), at[1].toFloat(), (at[0] + view.width).toFloat(), (at[1] + view.height).toFloat())
+    }
+
+    override fun enterDropFrame(r: Renderer, frame: Int) {
+        val page = state.document.pages.getOrNull(frame) ?: return
+        val pr = state.pageRects.getOrNull(frame) ?: return
+        val o = state.origin()
+        r.translate(o.x, o.y)
+        r.scale(state.zoom, state.zoom)
+        r.translate(pr.left, pr.top)
+        state.applyPageTransform(r, page)
+    }
+
+    /** A closed bit this wide on screen, in px, fills along with the area round it. */
+    private fun dropSmallHolePx(): Double = DROP_SMALL_HOLE_MM / 25.4 * appContext.resources.displayMetrics.xdpi
+
+    /** Carry out a colour drop on page [spot]'s frame as one undo step, or say why nothing happened. */
+    private fun applyColorDrop(spot: DropSpot, action: DropAction, color: Rgba) {
+        val page = state.document.pages.getOrNull(spot.frame)?.takeIf { it === spot.key } ?: return
+        fun onPage(item: CanvasItem) = page.items.any { it === item }
+        val command: Command = when (action) {
+            is DropAction.Recolour -> {
+                val item = action.item.takeIf(::onPage) ?: return
+                if (item is TextItem) {
+                    val before = TextStyle.of(item)
+                    RestyleText(item, before, before.copy(rgba = color))
+                } else {
+                    val before = DrawStyle.of(item) ?: return
+                    RestyleItems(listOf(RestyleItems.Entry(item, before, before.copy(color = color))))
+                }
+            }
+            is DropAction.FillShape -> RefillShapes(listOf(ColorDrop.refill(action.shape.takeIf(::onPage) ?: return, color)))
+            is DropAction.Refill -> RefillShapes(listOf(ColorDrop.refill(action.fill.takeIf(::onPage) ?: return, color)))
+            is DropAction.AddFill -> {
+                val gone = action.replaced.filter(::onPage)
+                val after = page.items.filter { item -> gone.none { it === item } }
+                val at = action.above?.let { a -> after.indexOfFirst { it === a } + 1 }?.takeIf { it > 0 } ?: PageLayers.underText(after)
+                val insert = InsertItem(page, action.fill, at)
+                if (gone.isEmpty()) insert else CompositeCommand(listOf(EraseItems(gone.map { page to it }), insert))
+            }
+            DropAction.NotClosed -> {
+                say(appContext.getString(R.string.colour_drop_not_closed))
+                return
+            }
+            DropAction.None -> return
+        }
+        command.redo()
+        history.push(command)
+        afterHistory(structural = false, regions = touchedRegions(command))
     }
 
     fun setShapeKind(kind: com.xnotes.core.shapes.ShapeKind) {

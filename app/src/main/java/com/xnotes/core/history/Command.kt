@@ -57,6 +57,19 @@ class AddItem(private val page: Page, private val item: CanvasItem) : Command {
     override fun touched(locate: (CanvasItem) -> Page?) = listOf(page to item)
 }
 
+/** Put an item in at z position [at] on a page: a dropped colour's fill, under the lines it fills. */
+class InsertItem(private val page: Page, private val item: CanvasItem, private val at: Int) : Command {
+    override fun redo() {
+        if (!page.items.containsRef(item)) page.items.add(at.coerceIn(0, page.items.size), item)
+    }
+
+    override fun undo() {
+        page.items.removeRef(item)
+    }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = listOf(page to item)
+}
+
 /** Append several items to a page as one edit (paste / duplicate). */
 class AddItems(private val page: Page, private val items: List<CanvasItem>) : Command {
     override fun redo() {

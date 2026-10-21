@@ -681,6 +681,7 @@
     <string name="mirror_upside_down">Mirror upside down</string>
     <string name="title_change_style">Change style</string>
     <string name="caption_thickness">Thickness</string>
+    <string name="colour_drop_not_closed">This area is not closed.</string>
     <string name="change_style_hint">Applies to the selected strokes and shapes.</string>
     <string name="copy_as_image">Copy as image</string>
     <string name="unlock">Unlock</string>
