@@ -55,6 +55,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -820,6 +822,14 @@ internal fun NewNoteScreen(
         val coverGrid = rememberLazyGridState()
         val revealed = remember { HashSet<Face>() }
 
+        // Messages show here while the screen is open: the main screen's snackbar would sit beneath it.
+        val snackbar = remember { SnackbarHostState() }
+        DisposableEffect(editor) {
+            editor.messageHosts++
+            onDispose { editor.messageHosts-- }
+        }
+        LaunchedEffect(editor.message) { editor.showMessage(snackbar) }
+
         // A press anywhere but a text field ends the typing: the caret goes and the keyboard closes.
         // Back closes the keyboard without telling the field, so the keyboard going away ends editing too.
         val imeVisible = WindowInsets.isImeVisible
@@ -1026,6 +1036,7 @@ internal fun NewNoteScreen(
                         }
                     }
                 }
+                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
             }
         }
     }

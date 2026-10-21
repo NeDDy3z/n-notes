@@ -587,6 +587,22 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         message = text
     }
 
+    /** Windows over the main screen that show [message] themselves, such as New note, which would hide it. */
+    var messageHosts by mutableStateOf(0)
+
+    /** Show [message] on [host], then clear it; its action, when it has one, runs if tapped. */
+    suspend fun showMessage(host: androidx.compose.material3.SnackbarHostState) {
+        val text = message ?: return
+        val action = messageAction
+        messageAction = null
+        val result = host.showSnackbar(
+            text, actionLabel = action?.first,
+            duration = if (action != null) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short,
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) action?.second?.invoke()
+        message = null
+    }
+
     /** How many items wait in Trash in the current folder tree. */
     var trashCount by mutableStateOf(0)
         private set

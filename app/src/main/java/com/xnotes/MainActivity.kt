@@ -778,22 +778,15 @@ private fun EditorScreen(
         )
     }
 
-    LaunchedEffect(editor.message) {
-        editor.message?.let {
-            val action = editor.messageAction
-            editor.messageAction = null
-            val result = snackbar.showSnackbar(
-                it, actionLabel = action?.first,
-                duration = if (action != null) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short,
-            )
-            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) action?.second?.invoke()
-            editor.message = null
-        }
+    // A window over this screen that shows messages itself takes them while it is open.
+    LaunchedEffect(editor.message, editor.messageHosts) {
+        if (editor.messageHosts == 0) editor.showMessage(snackbar)
     }
     // The second pane raises its own messages; surface them through the same snackbar.
     val secondaryMessage = editor.secondary?.message
-    LaunchedEffect(secondaryMessage) {
-        if (secondaryMessage != null) {
+    val secondaryHosts = editor.secondary?.messageHosts ?: 0
+    LaunchedEffect(secondaryMessage, secondaryHosts) {
+        if (secondaryMessage != null && secondaryHosts == 0) {
             snackbar.showSnackbar(secondaryMessage)
             editor.secondary?.message = null
         }
