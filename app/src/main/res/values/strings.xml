@@ -392,6 +392,7 @@
     <string name="add_cover">Add cover</string>
     <string name="add_cover_ellipsis">Add cover…</string>
     <string name="change_cover">Change cover…</string>
+    <string name="change_cover_title">Change cover</string>
     <string name="remove_cover">Remove cover</string>
     <string name="templates_built_in">Built-in</string>
     <string name="templates_examples">Examples</string>

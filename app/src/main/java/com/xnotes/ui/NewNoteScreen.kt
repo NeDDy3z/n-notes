@@ -853,7 +853,7 @@ internal fun NewNoteScreen(
                     ) {
                         IconButton(onClick = onClose) { Icon(XnotesIcons.close, stringResource(R.string.close_new_note), tint = text) }
                         if (coverOnly) {
-                            Text(stringResource(R.string.cover), color = text, fontSize = 22.sp, modifier = Modifier.weight(1f))
+                            Text(stringResource(if (coverEdit?.current == null) R.string.add_cover else R.string.change_cover_title), color = text, fontSize = 22.sp, modifier = Modifier.weight(1f))
                         } else Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.new_note_in, folderName), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val nameStyle = TextStyle(color = text, fontSize = 22.sp)
