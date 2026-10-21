@@ -30,6 +30,8 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,9 +55,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -711,6 +716,33 @@ internal fun NewNoteScreen(
             }
         }
 
+        /** Where the picked tile sits in [f]'s gallery as [gallery] lays it out with no tag chosen, or null. */
+        fun pickedIndex(f: Face): Int? {
+            fun at(base: Int, list: List<TemplateLibrary.Entry>, key: String?) = list.indexOfFirst { it.key == key }.takeIf { it >= 0 }?.let { base + it }
+            if (f == Face.PAGES) {
+                val builtIn = pages.filter { it.source == TemplateLibrary.Source.BUILT_IN }
+                val examples = pages.filter { it.source == TemplateLibrary.Source.BUNDLED }
+                val imported = pages.filter { it.source == TemplateLibrary.Source.IMPORTED }
+                // The tag chips, then Built-in's heading and its None tile.
+                if (pageKey == PageTemplates.NONE) return 2
+                at(3, builtIn, pageKey)?.let { return it }
+                var next = 3 + builtIn.size
+                if (examples.isNotEmpty()) {
+                    at(next + 1, examples, pageKey)?.let { return it }
+                    next += 1 + examples.size
+                }
+                return at(next + 1, imported, pageKey)
+            }
+            val bundled = covers.filter { it.source != TemplateLibrary.Source.IMPORTED }
+            val imported = covers.filter { it.source == TemplateLibrary.Source.IMPORTED }
+            val first = if (coverOnly) 1 else 2
+            if (!hasCover) return if (coverOnly) null else 1
+            return at(first, bundled, coverKey) ?: at(first + bundled.size + 1, imported, coverKey)
+        }
+        val pagesGrid = rememberLazyGridState()
+        val coverGrid = rememberLazyGridState()
+        val revealed = remember { HashSet<Face>() }
+
         // A press anywhere but the name ends its editing: the caret goes and the keyboard closes.
         val focusManager = LocalFocusManager.current
         var nameBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
@@ -802,13 +834,28 @@ internal fun NewNoteScreen(
                                     Tabs()
                                     HorizontalDivider(color = border)
                                 }
-                                LazyVerticalGrid(
-                                    columns = GridCells.Adaptive(112.dp),
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 40.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                                ) { gallery() }
+                                // Each tab keeps its own scroll, and the first time one shows, its picked tile comes into view.
+                                val grid = if (face == Face.PAGES) pagesGrid else coverGrid
+                                LaunchedEffect(face) {
+                                    if (!revealed.add(face)) return@LaunchedEffect
+                                    val index = pickedIndex(face) ?: return@LaunchedEffect
+                                    val info = snapshotFlow { grid.layoutInfo }.first { it.totalItemsCount > index }
+                                    val seen = info.visibleItemsInfo.firstOrNull { it.index == index }
+                                    if (seen == null || seen.offset.y + seen.size.height > info.viewportEndOffset) {
+                                        grid.scrollToItem(index)
+                                        grid.scrollBy(-info.viewportSize.height / 3f)
+                                    }
+                                }
+                                key(face) {
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Adaptive(112.dp),
+                                        modifier = Modifier.fillMaxSize(),
+                                        state = grid,
+                                        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 40.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                                    ) { gallery() }
+                                }
                             }
                         }
                     } else {
