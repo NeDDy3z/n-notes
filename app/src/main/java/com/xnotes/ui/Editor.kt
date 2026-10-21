@@ -1396,7 +1396,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!flowText.active) return
         val text = clipboardText() ?: return
         val caretSize = flowCaretStyle().sizePt
-        val paras = com.xnotes.core.text.MarkdownParser.parse(text, newTableDefaults.style)
+        val paras = com.xnotes.core.text.MarkdownParser.parse(text, newTableDefaults.style, toolbarInk())
         if (caretSize != null) {
             for (p in paras) {
                 if (p.headingLevel > 0) continue // its level sizes it
@@ -2325,6 +2325,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.detectShapes = p.detectShapes
         flowText.markdownInput = p.markdownInput
         flowText.slashCommands = p.slashCommands
+        flowText.highlight = { toolbarInk() }
         controller.penButtonTool = if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER)
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
@@ -5638,6 +5639,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun toggleToPreviousTool() {
         controller.previousTool?.let { selectTool(it) }
     }
+
+    /** The colour selected on the toolbar, which typed and pasted ==text== highlights in. */
+    private fun toolbarInk(): Rgba = toolbarColors[activeColorIndex.coerceIn(0, toolbarColors.lastIndex)]
 
     fun pickColor(index: Int) {
         activeColorIndex = index

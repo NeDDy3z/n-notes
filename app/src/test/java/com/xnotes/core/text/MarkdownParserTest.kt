@@ -342,4 +342,17 @@ class MarkdownParserTest {
         assertEquals(null, paras[1].listStart)
         assertEquals(null, paras.last().listStart)
     }
+
+    @Test
+    fun doubleEqualsHighlightsInTheGivenColour() {
+        val red = com.xnotes.core.model.Rgba(255, 0, 0, 255)
+        val p = MarkdownParser.parse("a ==marked **bold**== b and x == y", highlight = red)[0]
+        assertEquals("a marked bold b and x == y", p.plainText())
+        assertEquals(red, p.runs.first { it.text == "marked " }.style.highlight)
+        val bold = p.runs.first { it.text == "bold" }
+        assertTrue(bold.style.bold)
+        assertEquals(red, bold.style.highlight)
+        assertEquals(null, p.runs.last().style.highlight)
+        assertEquals(CharStyle.DEFAULT_HIGHLIGHT, parse("==x==")[0].runs.single().style.highlight)
+    }
 }

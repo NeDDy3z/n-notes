@@ -11,6 +11,7 @@ import com.xnotes.core.history.FlowEditParagraph
 import com.xnotes.core.history.History
 import com.xnotes.core.history.ParaSnapshot
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.text.CellIndex
 import com.xnotes.core.text.caretPreviewSpan
 import com.xnotes.core.text.CharStyle
@@ -76,6 +77,9 @@ class FlowTextController(
 
     /** Whether "/" opens the command menu (the text tool's Slash commands toggle). */
     var slashCommands = true
+
+    /** The colour typed ==text== highlights in: the one selected on the toolbar. */
+    var highlight: () -> Rgba = { CharStyle.DEFAULT_HIGHLIGHT }
 
     /** Claims Enter while the slash menu is open, so the host commits its top entry. */
     var onSlashEnter: () -> Boolean = { false }
@@ -496,7 +500,7 @@ class FlowTextController(
      */
     private fun applyRule(rule: InputRules.Rule, at: FlowPos): FlowPos {
         flushBurst()
-        val result = InputRules.apply(flow(), at, rule)
+        val result = InputRules.apply(flow(), at, rule, highlight())
         mirrorStale = true
         commitEdit(result.command, result.caret)
         pendingStyle = result.pending

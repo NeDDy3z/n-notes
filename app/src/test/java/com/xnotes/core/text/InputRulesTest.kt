@@ -625,4 +625,13 @@ class InputRulesTest {
         assertEquals(pasted.plainText(), typed.plainText())
         assertEquals(pasted.runs.single().style.math, typed.runs.single().style.math)
     }
+
+    @Test
+    fun doubleEqualsHighlightsAsYouType() {
+        val p = typed("a ==hot== b")
+        assertEquals("a hot b", p.plainText())
+        assertEquals(CharStyle.DEFAULT_HIGHLIGHT, p.runs.first { it.text == "hot" }.style.highlight)
+        assertEquals(null, p.runs.last().style.highlight)
+        assertTrue(typed("x == y ==").runs.all { it.style.highlight == null })
+    }
 }

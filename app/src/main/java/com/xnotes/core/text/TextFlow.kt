@@ -51,6 +51,9 @@ data class CharStyle(
 ) {
     companion object {
         val DEFAULT = CharStyle()
+
+        /** The highlight ==text== takes until one has been picked. */
+        val DEFAULT_HIGHLIGHT = Rgba(255, 235, 59, 255)
     }
 }
 

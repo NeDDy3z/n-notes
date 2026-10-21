@@ -1,6 +1,7 @@
 package com.xnotes.core.text
 
 import com.xnotes.core.history.Command
+import com.xnotes.core.model.Rgba
 
 /**
  * Markdown shortcuts applied while typing: the markers convert the paragraph and
@@ -28,11 +29,13 @@ object InputRules {
     private val FENCE = Regex("^\\s{0,3}```\\s*([A-Za-z0-9+#-]*)\\s*$")
     private val RULE = Regex("^ {0,3}([-*_])(?: *\\1){2,} *$")
 
-    private enum class Emph(val apply: (CharStyle) -> CharStyle) {
-        BOLD({ it.copy(bold = true) }),
-        ITALIC({ it.copy(italic = true) }),
-        STRIKE({ it.copy(strike = true) }),
-        CODE({ it.copy(code = true) }),
+    /** What a marker does to a style; a highlight takes the colour the caller hands over. */
+    private enum class Emph(val apply: (CharStyle, Rgba) -> CharStyle) {
+        BOLD({ s, _ -> s.copy(bold = true) }),
+        ITALIC({ s, _ -> s.copy(italic = true) }),
+        STRIKE({ s, _ -> s.copy(strike = true) }),
+        HIGHLIGHT({ s, c -> s.copy(highlight = c) }),
+        CODE({ s, _ -> s.copy(code = true) }),
     }
 
     /** Emphasis markers longest first, so ** is tried before *. */
@@ -40,6 +43,7 @@ object InputRules {
         "**" to Emph.BOLD,
         "__" to Emph.BOLD,
         "~~" to Emph.STRIKE,
+        "==" to Emph.HIGHLIGHT,
         "*" to Emph.ITALIC,
         "_" to Emph.ITALIC,
     )
@@ -234,10 +238,10 @@ object InputRules {
 
     // --- application ---
 
-    /** Apply [rule], detected at [pos], and return its command, caret and typing style. */
-    fun apply(flow: TextFlow, pos: FlowPos, rule: Rule): Result = when (rule) {
+    /** Apply [rule], detected at [pos], and return its command, caret and typing style; ==text== takes [highlight]. */
+    fun apply(flow: TextFlow, pos: FlowPos, rule: Rule, highlight: Rgba = CharStyle.DEFAULT_HIGHLIGHT): Result = when (rule) {
         is Block -> applyBlock(flow, pos, rule)
-        is Inline -> applyInline(flow, pos, rule)
+        is Inline -> applyInline(flow, pos, rule, highlight)
         is Math -> applyMath(flow, pos, rule)
         is Fence -> applyFence(flow, pos, rule)
         HRule -> applyRule(flow, pos)
@@ -272,7 +276,7 @@ object InputRules {
         return Result(ed.combined(cmds), caret, pending)
     }
 
-    private fun applyInline(flow: TextFlow, pos: FlowPos, r: Inline): Result {
+    private fun applyInline(flow: TextFlow, pos: FlowPos, r: Inline, highlight: Rgba): Result {
         val p = pos.para
         val ed = FlowEditor(flow)
         // The style outside the markers, so typing on past the run is not emphasized.
@@ -283,7 +287,7 @@ object InputRules {
         ed.deleteRange(FlowRange(FlowPos(p, close), FlowPos(p, pos.offset))).first?.let { cmds += it }
         ed.deleteRange(FlowRange(FlowPos(p, r.open), FlowPos(p, content))).first?.let { cmds += it }
         val end = r.open + (close - content)
-        ed.setCharStyle(FlowRange(FlowPos(p, r.open), FlowPos(p, end))) { r.emph.apply(it) }?.let { cmds += it }
+        ed.setCharStyle(FlowRange(FlowPos(p, r.open), FlowPos(p, end))) { r.emph.apply(it, highlight) }?.let { cmds += it }
         return Result(ed.combined(cmds), FlowPos(p, end), outside)
     }
 

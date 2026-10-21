@@ -33,6 +33,7 @@ import org.commonmark.node.LinkReferenceDefinition
 import org.commonmark.node.ListBlock
 import org.commonmark.node.ListItem
 import org.commonmark.node.Node
+import org.commonmark.node.Nodes
 import org.commonmark.node.OrderedList
 import org.commonmark.node.SoftLineBreak
 import org.commonmark.node.StrongEmphasis
@@ -52,12 +53,14 @@ import org.commonmark.parser.block.BlockContinue
 import org.commonmark.parser.block.BlockStart
 import org.commonmark.parser.block.MatchedBlockParser
 import org.commonmark.parser.block.ParserState
+import org.commonmark.parser.delimiter.DelimiterProcessor
+import org.commonmark.parser.delimiter.DelimiterRun
 import org.commonmark.node.Paragraph as MdParagraph
 
 /**
  * The "Paste as Markdown" reader: CommonMark with GitHub's tables, strikethrough
- * and task lists (commonmark-java), plus maths written as `$`, `$$`, `\(...\)`
- * and `\[...\]`. Its tree flattens into flow paragraphs: wrapped lines join, a
+ * and task lists (commonmark-java), plus `==highlight==` and maths written as
+ * `$`, `$$`, `\(...\)` and `\[...\]`. Its tree flattens into flow paragraphs: wrapped lines join, a
  * gap of blank lines leaves one empty paragraph, nested lists and quotes indent
  * a level each, code blocks become code paragraphs (one per line, language from
  * the fence info), links keep a link look, images their alt text. Raw HTML and
@@ -95,6 +98,7 @@ object MarkdownParser {
                     YamlFrontMatterExtension.create(),
                 ),
             )
+            .customDelimiterProcessor(MarkDelimiters())
             .customBlockParserFactory(MathBlockFactory())
             .customInlineContentParserFactory(DollarMathFactory())
             .customInlineContentParserFactory(BracketMathFactory())
@@ -102,11 +106,18 @@ object MarkdownParser {
             .build()
     }
 
-    /** Parse [text] into flow paragraphs; pipe tables take [tableStyle] (with its header row on). */
-    fun parse(text: String, tableStyle: TableStyle = TableStyle()): List<Paragraph> =
-        Emitter(tableStyle).apply { blocks(parser.parse(text), indent = 0, gaps = true) }.finish()
+    /**
+     * Parse [text] into flow paragraphs; pipe tables take [tableStyle] (with its header row on),
+     * and ==marked== text [highlight].
+     */
+    fun parse(
+        text: String,
+        tableStyle: TableStyle = TableStyle(),
+        highlight: Rgba = CharStyle.DEFAULT_HIGHLIGHT,
+    ): List<Paragraph> =
+        Emitter(tableStyle, highlight).apply { blocks(parser.parse(text), indent = 0, gaps = true) }.finish()
 
-    private class Emitter(private val tableStyle: TableStyle) {
+    private class Emitter(private val tableStyle: TableStyle, private val highlight: Rgba) {
         private val paras = mutableListOf<Paragraph>()
 
         /** Set by a `\pagebreak` or `\newpage` line: the next paragraph starts a page. */
@@ -343,6 +354,7 @@ object MarkdownParser {
                     is Emphasis -> inlines(node, style.copy(italic = true), lines)
                     is StrongEmphasis -> inlines(node, style.copy(bold = true), lines)
                     is Strikethrough -> inlines(node, style.copy(strike = true), lines)
+                    is Marked -> inlines(node, style.copy(highlight = highlight), lines)
                     is Link -> inlines(node, style.copy(underline = true, color = LINK_COLOR), lines)
                     is Image -> inlines(node, style, lines)
                     is SoftLineBreak -> appendRun(runs, " ", style)
@@ -383,6 +395,28 @@ object MarkdownParser {
         for (r in runs) appendRun(merged, r.text, r.style)
         runs.clear()
         runs.addAll(merged)
+    }
+
+    // --- ==highlight== ---
+
+    private class Marked : CustomNode()
+
+    /** `==text==`, Obsidian's and many editors' highlight, as a delimiter run like `~~`. */
+    private class MarkDelimiters : DelimiterProcessor {
+        override fun getOpeningCharacter(): Char = '='
+
+        override fun getClosingCharacter(): Char = '='
+
+        override fun getMinLength(): Int = 2
+
+        override fun process(opening: DelimiterRun, closing: DelimiterRun): Int {
+            if (opening.length() < 2 || closing.length() < 2) return 0
+            val mark = Marked()
+            val opener = opening.opener
+            for (node in Nodes.between(opener, closing.closer)) mark.appendChild(node)
+            opener.insertAfter(mark)
+            return 2
+        }
     }
 
     // --- maths ---
