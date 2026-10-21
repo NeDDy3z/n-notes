@@ -467,9 +467,10 @@ class ShapeItem(
      */
     fun touches(p: Pt, tolerance: Double): Boolean = hits(toLocal(p), max(strokeWidth / 2.0, tolerance)) || labelContains(p)
 
-    /** True if an eraser circle of [radius] at (cx,cy) touches the shape's geometry. */
+    /** True if an eraser circle of [radius] at (cx,cy) touches the shape's geometry; a fill's, even at its edge. */
     override fun intersectsCircle(cx: Double, cy: Double, radius: Double): Boolean {
         if (bounds().distanceTo(Pt(cx, cy)) > radius) return false // cheap AABB reject
+        if (isFill) return fillMeets(cx, cy, radius)
         // A circle turns into itself, so the test runs in the unturned frame.
         return hits(toLocal(Pt(cx, cy)), radius + strokeWidth / 2.0)
     }
@@ -502,17 +503,35 @@ class ShapeItem(
      * shape, else the stroked lines left outside the circle, cut cleanly at its edge, as ordinary ink.
      * A cut shape stops being a shape: its pieces are pen strokes in its colour and width, dashed
      * where it was dashed (a solid's hidden edges too) and neon where it glowed. A fill cannot
-     * survive a cut, so it goes, even when the eraser only crossed the fill; a filled head keeps
-     * its outline.
+     * survive a cut, so it goes; an eraser that only crosses the fill leaves the shape alone here,
+     * and takes just the fill instead (see [EraseRule]). A filled head keeps its outline. A
+     * dropped colour's fill and drawn text go whole.
      */
     fun erasedBy(cx: Double, cy: Double, radius: Double): List<CanvasItem>? {
         val c = Pt(cx, cy)
         if (bounds().distanceTo(c) > radius) return null
-        if (isFill) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
-        val fillHit = fillRgba != null && intersectsCircle(cx, cy, radius)
+        if (isFill || shape == ShapeKind.GLYPHS) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
         val (hit, ink) = Outline.cut(paths(), pen(), neon, neonStrength, c, radius)
-            ?: return if (intersectsCircle(cx, cy, radius)) emptyList() else null
-        return if (hit || fillHit) ink else null
+            ?: return if (outlineMeets(cx, cy, radius)) emptyList() else null
+        return if (hit) ink else null
+    }
+
+    /** True when an eraser circle at ([cx], [cy]) with [radius] touches the outline itself; never the fill or label. */
+    fun outlineMeets(cx: Double, cy: Double, radius: Double): Boolean {
+        if (bounds().distanceTo(Pt(cx, cy)) > radius) return false
+        return Outline.hits(localPaths(), toLocal(Pt(cx, cy)), radius + strokeWidth / 2.0, filled = false)
+    }
+
+    /** True when an eraser circle at ([cx], [cy]) with [radius] touches the shape's fill at all, even its edge; false without one. */
+    fun fillMeets(cx: Double, cy: Double, radius: Double): Boolean {
+        if (fillRgba == null) return false
+        val c = Pt(cx, cy)
+        if (bounds().distanceTo(c) > radius) return false
+        val q = toLocal(c)
+        val rings = localGeometry().paths
+            .filter { it.role == PathRole.OUTLINE || it.role == PathRole.FILL_ONLY }
+            .flatMap { path -> path.contours.map { PathFlattener.flatten(it, Outline.HIT_FLATTEN) } }
+        return Outline.inRings(rings, q) || rings.any { Outline.nearPolyline(it, q, radius, closed = true) }
     }
 
     override fun geometry(): GeoHandle = ShapeHandle(start, end)

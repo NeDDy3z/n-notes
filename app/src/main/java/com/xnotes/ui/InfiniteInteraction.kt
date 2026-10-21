@@ -22,6 +22,7 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ConnectorDraft
 import com.xnotes.core.model.ConnectorEdit
 import com.xnotes.core.model.ConnectorItem
+import com.xnotes.core.model.EraseRule
 import com.xnotes.core.model.Glue
 import com.xnotes.core.model.GlueFollow
 import com.xnotes.core.model.ImageItem
@@ -29,7 +30,6 @@ import com.xnotes.core.model.Labelled
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
-import com.xnotes.core.model.TextItem
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.Scribble
 import com.xnotes.core.stroke.ShapeRecognizer
@@ -818,10 +818,9 @@ class InfiniteInteraction(
         val path = List(stroke.sampleCount) { Pt(stroke.xAt(it), stroke.yAt(it)) }
         val passes = Scribble.passes(path, dpPerUnit) ?: return false
         val radius = stroke.config.baseWidth / 2.0 + Scribble.TOUCH_DP / dpPerUnit
-        // Images, text and anything locked are spared, as the eraser spares them.
-        val candidates = itemsIn(Rect.bounding(path).outset(radius))
-            .filter { !it.locked && it !is ImageItem && it !is TextItem }
-        val taken = Scribble.taken(passes, radius, candidates) { c, x, y, r -> c.intersectsCircle(x, y, r) }
+        // Images, text and anything locked are spared, as the eraser spares them; a scribble is ink, so it takes only lines.
+        val candidates = itemsIn(Rect.bounding(path).outset(radius)).filter { EraseRule.erasable(it) }
+        val taken = Scribble.taken(passes, radius, candidates) { c, x, y, r -> EraseRule.touchesLine(c, x, y, r) }
         if (taken.isEmpty()) return false
         onWetStroke(null)
         onScribbleErase(stroke, taken)

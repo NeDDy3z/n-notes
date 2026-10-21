@@ -20,6 +20,7 @@ import com.xnotes.core.history.LockItems
 import com.xnotes.core.history.EditLabel
 import com.xnotes.core.history.EditText
 import com.xnotes.core.history.MoveItems
+import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.ReorderItems
 import com.xnotes.core.history.RemoveMarkup
 import com.xnotes.core.history.ReplacePageItems
@@ -34,6 +35,7 @@ import com.xnotes.core.model.ConnectorEdit
 import com.xnotes.core.model.ConnectorItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.DrawStyle
+import com.xnotes.core.model.EraseRule
 import com.xnotes.core.model.deepCopyAll
 import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.model.ImageItem
@@ -353,6 +355,8 @@ class InteractionController(
     private val eraseSnapshots = linkedMapOf<Page, List<CanvasItem>>()
     /** The text markups this erase took off, one [RemoveMarkup] each in the order taken, so undo puts them back in place. */
     private val eraseMarkups = mutableListOf<RemoveMarkup>()
+    /** Filled shapes whose fill alone this erase took, with the fill each had. */
+    private val eraseUnfilled = mutableListOf<RefillShapes.Entry>()
     private var eraserCursor: Pt? = null // viewport pixels
     /** Tool armed just before the eraser was selected, for the "switch back after erasing" option. */
     private var toolBeforeEraser: Tool? = null
@@ -1389,14 +1393,13 @@ class InteractionController(
         val radius = stroke.config.baseWidth / 2.0 + Scribble.TOUCH_DP / dpPerUnit
         val reach = Rect.bounding(path).outset(radius)
         val candidates = ArrayList<Any>()
-        page.items.filterTo(candidates) {
-            !it.locked && it !is ImageItem && it !is TextItem && it.paintBounds().intersects(reach)
-        }
+        page.items.filterTo(candidates) { EraseRule.erasable(it) && it.paintBounds().intersects(reach) }
         if (eraser.eraseMarkups) candidates.addAll(page.markups)
         val ptPerPx = 72.0 / state.document.dpi
+        // A scribble is ink, so it takes only lines, never a fill.
         val taken = Scribble.taken(passes, radius, candidates) { c, x, y, r ->
             when (c) {
-                is CanvasItem -> c.intersectsCircle(x, y, r)
+                is CanvasItem -> EraseRule.touchesLine(c, x, y, r)
                 is TextMarkup -> MarkupPainter.touches(c, x * ptPerPx, y * ptPerPx, r * ptPerPx)
                 else -> false
             }
@@ -1440,6 +1443,7 @@ class InteractionController(
         eraseRemovals.clear()
         eraseSnapshots.clear()
         eraseMarkups.clear()
+        eraseUnfilled.clear()
         mode = PointerMode.ERASE
         eraseAt(vx, vy)
     }
@@ -1486,15 +1490,13 @@ class InteractionController(
         return true
     }
 
-    /** STROKE mode: remove every stroke/shape the eraser circle touches. Images and text boxes are
-     *  deliberately-placed and protected (delete those via select + delete). Returns the repaint
-     *  region, or null if nothing changed. */
+    /** STROKE mode: remove every stroke/shape the eraser circle touches, and every fill it touches at
+     *  all. Images and text boxes are deliberately-placed and protected (delete those via select +
+     *  delete). Returns the repaint region, or null if nothing changed. */
     private fun eraseStrokesFromPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
-        val toRemove = page.items.filter {
-            !it.locked && it !is ImageItem && it !is TextItem && it.intersectsCircle(cx, cy, radius)
-        }
-        if (toRemove.isEmpty()) return null
-        var dirty: Rect? = null
+        var dirty = unfillOnPage(page, cx, cy, radius)
+        val toRemove = page.items.filter { EraseRule.takes(it, cx, cy, radius) }
+        if (toRemove.isEmpty()) return dirty
         for (item in toRemove) {
             page.items.remove(item)
             eraseRemovals.add(page to item)
@@ -1508,12 +1510,15 @@ class InteractionController(
      *  circle, spliced in at the original's z-position. Text and images are left untouched. Returns
      *  the repaint region, or null if nothing changed. */
     private fun eraseAreaFromPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
-        var dirty: Rect? = null
+        var dirty = unfillOnPage(page, cx, cy, radius)
         var i = 0
         while (i < page.items.size) {
             val item = page.items[i]
-            val frags: List<CanvasItem>? = if (item.locked) {
+            val frags: List<CanvasItem>? = if (!EraseRule.erasable(item)) {
                 null
+            } else if (item is ShapeItem && item.isFill) {
+                // A fill is never cut: whatever the eraser touches of it, it takes whole.
+                if (EraseRule.takes(item, cx, cy, radius)) emptyList() else null
             } else {
                 when (item) {
                     is Stroke -> item.erasedBy(cx, cy, radius)
@@ -1539,8 +1544,24 @@ class InteractionController(
         return dirty
     }
 
+    /** Take the fill alone off the filled shapes the eraser touches inside but not on their outline; the repaint region, or null. */
+    private fun unfillOnPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
+        var dirty: Rect? = null
+        for (item in page.items) {
+            if (!EraseRule.takesFill(item, cx, cy, radius)) continue
+            val shape = item as ShapeItem
+            eraseUnfilled += RefillShapes.Entry(shape, shape.fillRgba, null)
+            shape.fillRgba = null
+            val b = shape.paintBounds()
+            dirty = dirty?.union(b) ?: b
+        }
+        return dirty
+    }
+
     private fun endErase() {
         val cmds = ArrayList<Command>()
+        // A fill came off before any cut or removal of its shape, so it goes back after them.
+        if (eraseUnfilled.isNotEmpty()) cmds += RefillShapes(eraseUnfilled.toList())
         if (areaErase()) {
             // One drag may split/trim many strokes across pages; commit each touched page's
             // net before/after as one undo step.
@@ -1560,6 +1581,7 @@ class InteractionController(
         eraseRemovals.clear()
         eraseSnapshots.clear()
         eraseMarkups.clear()
+        eraseUnfilled.clear()
         eraserCursor = null
         mode = PointerMode.IDLE
         requestRender()
