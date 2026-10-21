@@ -474,6 +474,16 @@ class ShapeItem(
         return hits(toLocal(Pt(cx, cy)), radius + strokeWidth / 2.0)
     }
 
+    /** True when page point [p] lands on the outline itself, within [tolerance] (or half its width, if wider); never its fill or label. */
+    fun onOutline(p: Pt, tolerance: Double): Boolean =
+        Outline.hits(localPaths(), toLocal(p), max(strokeWidth / 2.0, tolerance), filled = false)
+
+    /** The rings the shape's own fill covers, on the page, curves flattened to [tolerance]; none for an open kind. */
+    fun fillRings(tolerance: Double): List<List<Pt>> = paths()
+        .filter { it.role == PathRole.OUTLINE || it.role == PathRole.FILL_ONLY }
+        .flatMap { path -> path.contours.map { PathFlattener.flatten(it, tolerance) } }
+        .filter { it.size >= 3 }
+
     /** True when page point [p] lies inside the outline, filled or not: where a label would go. */
     fun encloses(p: Pt): Boolean {
         val q = toLocal(p)
