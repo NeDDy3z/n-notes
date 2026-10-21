@@ -139,7 +139,7 @@ object MarkdownParser {
                 is MathBlock -> out += displayParagraph(node.latex, indent)
                 is BulletList, is OrderedList -> list(node as ListBlock, indent)
                 is BlockQuote -> blocks(node, (indent + 1).coerceAtMost(Paragraph.MAX_INDENT), gaps = true)
-                is ThematicBreak -> out += Paragraph(indent = indent)
+                is ThematicBreak -> out += Paragraph(indent = indent, rule = true)
                 is HtmlBlock -> for (line in node.literal.trimEnd('\n').split('\n')) {
                     out += Paragraph(runsOf(line, CharStyle.DEFAULT), indent = indent)
                 }

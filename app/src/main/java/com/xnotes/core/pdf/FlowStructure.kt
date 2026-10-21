@@ -88,6 +88,8 @@ object FlowStructure {
             }
             code = null
             when {
+                // A rule is drawn, not read.
+                p.rule -> lists.clear()
                 p.headingLevel > 0 -> {
                     lists.clear()
                     blocks += StructNode("H${p.headingLevel.coerceIn(1, Paragraph.MAX_HEADING)}").also { text[i] = it }

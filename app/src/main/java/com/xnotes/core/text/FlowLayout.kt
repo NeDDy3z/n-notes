@@ -829,6 +829,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             codeRight = contentRect.right,
             mathStarts = mathStarts.toIntArray(),
             font = lineFont(shape, bl.startChar),
+            rule = para.rule,
         )
     }
 

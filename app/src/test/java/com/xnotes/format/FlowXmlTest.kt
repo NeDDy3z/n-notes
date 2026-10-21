@@ -250,4 +250,16 @@ class FlowXmlTest {
         assertFalse("xnotes:math" in FlowXml.write(flow).decodeToString())
     }
 
+    @Test
+    fun aRuleRoundTripsAndPlainParagraphsDoNotMentionIt() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("a"))))
+            paragraphs.add(Paragraph(rule = true))
+        }
+        val xml = String(FlowXml.write(flow))
+        assertEquals(1, Regex("xnotes:rule").findAll(xml).count())
+        val back = roundTrip(flow).paragraphs
+        assertFalse(back[0].rule)
+        assertTrue(back[1].rule)
+    }
 }

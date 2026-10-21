@@ -91,6 +91,8 @@ class PlacedLine(
     val mathStarts: IntArray = IntArray(0),
     /** The font of the line's first run, or the empty paragraph's: what a space with no word beside it sets in. */
     val font: FontSpec = FontSpec(TextFlow.DEFAULT_SIZE_PT),
+    /** A horizontal rule's line, drawn across [codeLeft]..[codeRight]. */
+    val rule: Boolean = false,
 ) {
     val height: Double get() = bottom - top
 
@@ -235,6 +237,7 @@ class FlowFrame(
             mix(line.top.toRawBits())
             mix(line.baseline.toRawBits())
             mix(line.bottom.toRawBits())
+            mix(if (line.rule) 1L else 0L)
             for (x in line.xs) mix(x.toRawBits())
             for (seg in line.segs) mix(if (seg.math) -seg.start.toLong() - 1 else seg.start.toLong())
             for (d in line.decos) {

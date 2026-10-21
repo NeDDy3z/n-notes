@@ -78,6 +78,8 @@ class Paragraph(
     var cellStart: Boolean = false,
     /** 1..[MAX_HEADING] marks a heading, whose text takes its size from the level; 0 is body text. */
     var headingLevel: Int = 0,
+    /** A horizontal rule: an empty line drawn as a hairline, which typing into turns back into text. */
+    var rule: Boolean = false,
 ) {
     /** Bumped on any content or style mutation; layout caches key on it. */
     var rev: Int = 0
@@ -98,12 +100,14 @@ class Paragraph(
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
         align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
-            table == null && headingLevel == 0
+            table == null && headingLevel == 0 && !rule
 
     /** A copy sharing [table]; [TextFlow.deepCopy] remaps it onto copied tables. */
     fun deepCopy(): Paragraph =
-        Paragraph(runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart, headingLevel)
-            .also { it.rev = rev }
+        Paragraph(
+            runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart, headingLevel,
+            rule = rule,
+        ).also { it.rev = rev }
 
     companion object {
         const val MAX_INDENT = 6

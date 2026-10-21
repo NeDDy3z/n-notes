@@ -217,6 +217,7 @@ object FlowXml {
         if (para.checked) append(" xnotes:checked=\"true\"")
         if (para.headingLevel > 0) append(" xnotes:heading=\"${para.headingLevel}\"")
         para.codeLang?.let { append(" xnotes:code-lang=\"${escapeAttr(it)}\"") }
+        if (para.rule) append(" xnotes:rule=\"true\"")
         append(">")
         for (run in para.runs) {
             val styleName = charStyles[writtenStyle(flow, para, run.style)]
@@ -476,6 +477,7 @@ object FlowXml {
             checked = attr(p, "checked") == "true",
             codeLang = attr(p, "code-lang"),
             headingLevel = attr(p, "heading")?.toIntOrNull()?.coerceIn(0, Paragraph.MAX_HEADING) ?: 0,
+            rule = attr(p, "rule") == "true",
         )
         collectRuns(p, CharStyle.DEFAULT, charStyles, para.runs)
         // The size written on a heading's text is for older readers; the level sizes it here.

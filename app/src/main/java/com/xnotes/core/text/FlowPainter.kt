@@ -215,6 +215,11 @@ object FlowPainter {
             r.endMark()
         }
         if (tag) r.beginMark(Mark.Decoration)
+        if (line.rule) {
+            val t = (line.height / RULE_THICKNESS_PER_LINE).coerceAtLeast(1.0)
+            val mid = (line.top + line.bottom) / 2.0
+            r.fillRect(Rect(line.codeLeft, mid - t / 2.0, line.codeRight - line.codeLeft, t), frame.defaultColor.withAlpha(RULE_ALPHA))
+        }
         val ascent = line.baseline - line.top
         val descent = line.bottom - line.baseline
         val thickness = (line.height / 14.0).coerceAtLeast(1.0)
@@ -288,6 +293,10 @@ object FlowPainter {
     val MATH_BG = Rgba(88, 140, 216, 44)
     val MATH_ERROR_BG = Rgba(214, 74, 68, 52)
     val MATH_ERROR_RULE = Rgba(214, 74, 68, 190)
+
+    /** A horizontal rule: a fraction of a line thick, in the text colour toned down. */
+    private const val RULE_THICKNESS_PER_LINE = 10.0
+    private const val RULE_ALPHA = 90
 
     const val CODE_PAD = 6.0
     const val CHIP_PAD = 3.0

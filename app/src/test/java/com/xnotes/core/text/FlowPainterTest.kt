@@ -190,4 +190,16 @@ class FlowPainterTest {
         val runs = r.inner.ops.filter { it.startsWith("drawTextRun:") }.map { it.substringAfter(':').substringBefore('@') }
         assertEquals(listOf("abcdefghijklm", " ", "nopq"), runs)
     }
+
+    @Test
+    fun aRuleDrawsOneLineAcrossTheColumn() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(rule = true, indent = 1)) }
+        val frame = frameOf(flow)
+        val line = frame.pages[0].lines.single()
+        assertTrue(line.rule)
+        assertEquals(FlowLayout.INDENT_STEP_PX, line.codeLeft, 1e-9)
+        val ops = paint(frame).ops
+        assertEquals(1, ops.count { it == "fillRect" })
+        assertTrue(ops.none { it.startsWith("drawTextRun") })
+    }
 }

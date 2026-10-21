@@ -319,4 +319,12 @@ class MarkdownParserTest {
     fun anUnclosedLatexParenIsJustAParen() {
         assertEquals("a (b", parse("a \\(b")[0].plainText())
     }
+
+    @Test
+    fun thematicBreaksAreRules() {
+        val paras = parse("a\n\n---\n\n***\nb")
+        assertEquals(2, paras.count { it.rule })
+        assertTrue(paras.filter { it.rule }.all { it.length == 0 })
+        assertEquals("b", paras.last().plainText())
+    }
 }

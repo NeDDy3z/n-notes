@@ -57,6 +57,7 @@ class FlowEditor(private val flow: TextFlow) {
             val insStyle = style ?: styleForInsert(para, start.offset)
             deleteWithin(para, start.offset, end.offset)
             insertWithin(para, start.offset, text, insStyle)
+            if (para.rule && para.length > 0) para.rule = false
             val caret = FlowPos(start.para, start.offset + text.length)
             if (before.matches(para)) return null to caret
             para.touch()
@@ -86,6 +87,8 @@ class FlowEditor(private val flow: TextFlow) {
                 cellStart = i == 0 && props.cellStart,
                 // A heading continues only into the remainder it was split into.
                 headingLevel = if (i == 0 || (i == lines.lastIndex && tail.isNotEmpty())) props.headingLevel else 0,
+                // A rule stays only where nothing was typed into it, and never continues.
+                rule = i == 0 && props.rule && runs.isEmpty(),
             ).also { normalize(it) }
         }
         val removed = flow.paragraphs.subList(start.para, end.para + 1).toList()
@@ -125,12 +128,13 @@ class FlowEditor(private val flow: TextFlow) {
             para.indent = para.indent.coerceIn(0, Paragraph.MAX_INDENT)
             para.headingLevel = para.headingLevel.coerceIn(0, Paragraph.MAX_HEADING)
             if (para.table != null) {
-                // Cells hold rich text only: no lists, code lines, headings or indents.
+                // Cells hold rich text only: no lists, code lines, headings, rules or indents.
                 para.list = ListKind.NONE
                 para.checked = false
                 para.codeLang = null
                 para.indent = 0
                 para.headingLevel = 0
+                para.rule = false
             }
             if (!before.matches(para)) {
                 para.touch()

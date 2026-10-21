@@ -533,4 +533,44 @@ class InputRulesTest {
         assertFalse(run.text.first().isWhitespace())
     }
 
+    // --- rules ---
+
+    @Test
+    fun threeDashesAndEnterMakeARuleAndGoOnBelowIt() {
+        for (marker in listOf("---", "***", "___", "-----")) {
+            val flow = TextFlow()
+            val caret = type(flow, "$marker\nnext")
+            assertTrue(marker, flow.paragraphs[0].rule)
+            assertEquals(0, flow.paragraphs[0].length)
+            assertEquals("next", flow.paragraphs[1].plainText())
+            assertFalse(flow.paragraphs[1].rule)
+            assertEquals(FlowPos(1, 4), caret)
+        }
+    }
+
+    @Test
+    fun twoDashesOrShortcutsOffLeaveTheTextAlone() {
+        val flow = TextFlow()
+        type(flow, "--\n")
+        assertFalse(flow.paragraphs[0].rule)
+        val off = TextFlow().apply { paragraphs.add(para("---")) }
+        assertNull(InputRules.forEnter(off, FlowPos(0, 3), markdown = false))
+    }
+
+    @Test
+    fun backspaceOnARuleMakesItAnEmptyLine() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(rule = true)) }
+        val strip = InputRules.forBackspace(flow, FlowPos(0, 0))
+        assertNotNull(strip)
+        InputRules.apply(flow, FlowPos(0, 0), strip!!)
+        assertFalse(flow.paragraphs[0].rule)
+    }
+
+    @Test
+    fun typingIntoARuleTurnsItBackIntoText() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(rule = true)) }
+        FlowEditor(flow).insertText(FlowPos(0, 0), "x")
+        assertFalse(flow.paragraphs[0].rule)
+        assertEquals("x", flow.paragraphs[0].plainText())
+    }
 }

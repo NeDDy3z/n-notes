@@ -1460,6 +1460,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.checked = false
             it.codeLang = null
             it.indent = 0
+            it.rule = false
         }
         val lastIndex: Int
         when {

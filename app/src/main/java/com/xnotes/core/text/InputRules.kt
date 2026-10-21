@@ -26,6 +26,7 @@ object InputRules {
     private val BULLET = Regex("^(\\s*)[-*+] $")
     private val QUOTE = Regex("^(>+) $")
     private val FENCE = Regex("^\\s{0,3}```\\s*([A-Za-z0-9+#-]*)\\s*$")
+    private val RULE = Regex("^ {0,3}([-*_])(?: *\\1){2,} *$")
 
     private enum class Emph(val apply: (CharStyle) -> CharStyle) {
         BOLD({ it.copy(bold = true) }),
@@ -58,7 +59,9 @@ object InputRules {
 
     private class Fence(val lang: String) : Rule
 
-    private enum class Strip : Rule { CODE, LIST, LIST_EXIT, HEADING, INDENT }
+    private object HRule : Rule
+
+    private enum class Strip : Rule { RULE, CODE, LIST, LIST_EXIT, HEADING, INDENT }
 
     // --- detection ---
 
@@ -89,6 +92,7 @@ object InputRules {
             FENCE.matchEntire(para.plainText())?.let {
                 return Fence(MarkdownParser.normalizeLang(it.groupValues[1].lowercase()))
             }
+            if (RULE.matches(para.plainText())) return HRule
         }
         // Enter on an empty list item steps out of it rather than making another.
         if (para.length != 0 || para.list == ListKind.NONE) return null
@@ -97,13 +101,14 @@ object InputRules {
 
     /**
      * The rule a backspace at the very start of [pos]'s paragraph triggers: strip
-     * one block property (code line, list, heading, then indent) instead of
+     * one block property (rule, code line, list, heading, then indent) instead of
      * merging into the line above. Null when the key should just delete.
      */
     fun forBackspace(flow: TextFlow, pos: FlowPos): Rule? {
         val para = flow.paragraphs.getOrNull(pos.para) ?: return null
         if (para.table != null) return null
         return when {
+            para.rule -> Strip.RULE
             para.codeLang != null -> if (para.length == 0) Strip.CODE else null
             para.list != ListKind.NONE -> Strip.LIST
             para.headingLevel > 0 -> Strip.HEADING
@@ -212,6 +217,7 @@ object InputRules {
         is Inline -> applyInline(flow, pos, rule)
         is Math -> applyMath(flow, pos, rule)
         is Fence -> applyFence(flow, pos, rule)
+        HRule -> applyRule(flow, pos)
         is Strip -> applyStrip(flow, pos, rule)
     }
 
@@ -294,11 +300,29 @@ object InputRules {
         return Result(ed.combined(cmds), caret, CharStyle.DEFAULT)
     }
 
+    /** The line becomes a rule and Enter goes on to the line after it, as it would have anyway. */
+    private fun applyRule(flow: TextFlow, pos: FlowPos): Result {
+        val ed = FlowEditor(flow)
+        val start = FlowPos(pos.para, 0)
+        val cmds = mutableListOf<Command>()
+        ed.deleteRange(FlowRange(start, FlowPos(pos.para, flow.paragraphs[pos.para].length))).first?.let { cmds += it }
+        ed.setParaStyle(FlowRange.caret(start)) {
+            it.rule = true
+            it.list = ListKind.NONE
+            it.checked = false
+            it.headingLevel = 0
+        }?.let { cmds += it }
+        val (split, caret) = ed.insertText(start, "\n")
+        split?.let { cmds += it }
+        return Result(ed.combined(cmds), caret, CharStyle.DEFAULT)
+    }
+
     private fun applyStrip(flow: TextFlow, pos: FlowPos, rule: Strip): Result {
         val ed = FlowEditor(flow)
         val caret = FlowPos(pos.para, 0)
         val len = flow.paragraphs[pos.para].length
         return when (rule) {
+            Strip.RULE -> Result(ed.setParaStyle(FlowRange.caret(caret)) { it.rule = false }, caret, CharStyle.DEFAULT)
             Strip.CODE -> Result(ed.setParaStyle(FlowRange.caret(caret)) { it.codeLang = null }, caret, CharStyle.DEFAULT)
             Strip.LIST -> Result(
                 ed.setParaStyle(FlowRange.caret(caret)) {
