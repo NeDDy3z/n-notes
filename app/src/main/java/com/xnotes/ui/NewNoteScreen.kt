@@ -45,6 +45,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -268,7 +269,8 @@ internal fun NewNoteScreen(
             else -> size.longMm to size.shortMm
         }
         val portrait = pageMm.first <= pageMm.second
-        val canCreate = !busy && (!custom || (cw != null && ch != null))
+        val sizeOk = !custom || (cw != null && ch != null)
+        val canCreate = !busy && sizeOk
 
         val look = TemplateLook.of(style, null, palette.paper)
         val pageKey = style.template ?: PageTemplates.NONE
@@ -896,10 +898,15 @@ internal fun NewNoteScreen(
                         }
                         Button(
                             onClick = { create() },
-                            enabled = if (coverOnly) hasCover else canCreate,
+                            // While the note is written the button stays gold and spins; create() ignores another tap.
+                            enabled = if (coverOnly) hasCover else sizeOk,
                             colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = palette.onAccent.toComposeColor()),
                         ) {
-                            Icon(XnotesIcons.check, null, modifier = Modifier.size(18.dp))
+                            if (busy) {
+                                CircularProgressIndicator(Modifier.size(18.dp), color = palette.onAccent.toComposeColor(), strokeWidth = 2.dp)
+                            } else {
+                                Icon(XnotesIcons.check, null, modifier = Modifier.size(18.dp))
+                            }
                             Spacer(Modifier.size(8.dp))
                             Text(stringResource(if (coverOnly) R.string.done else R.string.create), fontWeight = FontWeight.Medium)
                         }
