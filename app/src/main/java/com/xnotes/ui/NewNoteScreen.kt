@@ -638,6 +638,7 @@ internal fun NewNoteScreen(
                 BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio((pageMm.first / pageMm.second).toFloat())) {
                     val w = maxWidth
                     val h = maxHeight
+                    // The ring draws over the picture's edge, so the picture keeps one size and is never drawn again for a pick.
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -648,8 +649,8 @@ internal fun NewNoteScreen(
                                     else -> Modifier
                                 },
                             )
-                            .padding(if (selected) 2.dp else if (framed) 1.dp else 0.dp),
-                    ) { thumb(w - 4.dp, h - 4.dp) }
+                            .padding(1.dp),
+                    ) { thumb(w - 2.dp, h - 2.dp) }
                     if (selected) {
                         Box(
                             Modifier.align(Alignment.TopEnd).padding(6.dp).size(22.dp).background(accent, CircleShape),
