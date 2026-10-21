@@ -211,6 +211,7 @@ internal fun NewNoteScreen(
         // caret just after focusing, so for a moment a caret-only change keeps the whole name selected.
         var selectedOnce by remember { mutableStateOf(false) }
         var keepAllUntil by remember { mutableStateOf(0L) }
+        var nameFocused by remember { mutableStateOf(false) }
         var size by remember { mutableStateOf(prefs.defaultPageSize) }
         var orientation by remember { mutableStateOf(prefs.defaultPageOrientation) }
         var customW by remember { mutableStateOf(mmText(prefs.customPageWidthMm)) }
@@ -780,6 +781,7 @@ internal fun NewNoteScreen(
                             Text(stringResource(R.string.cover), color = text, fontSize = 22.sp, modifier = Modifier.weight(1f))
                         } else Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.new_note_in, folderName), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val nameStyle = TextStyle(color = text, fontSize = 22.sp)
                             BasicTextField(
                                 value = name,
                                 onValueChange = { v ->
@@ -789,13 +791,22 @@ internal fun NewNoteScreen(
                                     } else v
                                 },
                                 singleLine = true,
-                                textStyle = TextStyle(color = text, fontSize = 22.sp),
+                                textStyle = nameStyle,
                                 cursorBrush = SolidColor(accent),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { create() }),
+                                // Done only ends the typing, so the name can come first and the rest after.
+                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                decorationBox = { field ->
+                                    // A cleared name shows, dimmed, the one the note gets anyway.
+                                    Box {
+                                        if (name.text.isEmpty()) Text(initialName, style = nameStyle.copy(color = dim.copy(alpha = 0.5f)), maxLines = 1)
+                                        field()
+                                    }
+                                },
                                 modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(vertical = 4.dp)
                                     .onGloballyPositioned { nameBounds = it.boundsInRoot() }
                                     .onFocusChanged {
+                                    nameFocused = it.isFocused
                                     if (it.isFocused && !selectedOnce) {
                                         selectedOnce = true
                                         keepAllUntil = android.os.SystemClock.uptimeMillis() + 500
@@ -803,7 +814,10 @@ internal fun NewNoteScreen(
                                     }
                                 },
                             )
-                            Box(Modifier.widthIn(max = 480.dp).fillMaxWidth().height(2.dp).background(accent))
+                            // The line under the name stays quiet until the name is being edited.
+                            Box(Modifier.widthIn(max = 480.dp).fillMaxWidth().height(2.dp), contentAlignment = Alignment.BottomStart) {
+                                Box(Modifier.fillMaxWidth().height(if (nameFocused) 2.dp else 1.dp).background(if (nameFocused) accent else dim.copy(alpha = 0.4f)))
+                            }
                             if (error != null) Text(error, color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                         }
                         Button(
