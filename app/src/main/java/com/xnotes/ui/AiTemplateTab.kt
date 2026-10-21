@@ -156,6 +156,11 @@ internal fun AiTemplateTab(coversOnly: Boolean, wide: Boolean, onImport: () -> U
 
         Step(2, stringResource(R.string.ai_step_ask)) {
             Text(stringResource(R.string.ai_step_ask_about), color = dim, fontSize = 13.sp, lineHeight = 19.sp)
+            // A heading of their own, so the prompts read as requests to borrow, not text every request needs.
+            Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.ai_examples), color = text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.ai_examples_about), color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+            }
             if (!coversOnly) {
                 Text(stringResource(R.string.ai_page_templates), color = dim, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp))
                 Prompts(PAGE_PROMPTS)

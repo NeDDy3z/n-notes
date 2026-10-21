@@ -410,7 +410,9 @@
     <string name="ai_guide_size">%1$d KB</string>
     <string name="copied">Copied</string>
     <string name="ai_step_ask">Give the specification and your request to the AI</string>
-    <string name="ai_step_ask_about">Send your request in the same message as the specification. Tap an example to copy it, or write your own.</string>
+    <string name="ai_step_ask_about">Send your request in the same message as the specification.</string>
+    <string name="ai_examples">Example requests</string>
+    <string name="ai_examples_about">Tap one to copy it, or write your own.</string>
     <string name="ai_page_templates">Page templates</string>
     <string name="ai_cover_templates">Cover templates</string>
     <string name="ai_step_import">Import the .xtemplate file</string>
