@@ -56,7 +56,8 @@ object InputRules {
 
     private class Inline(val open: Int, val marker: String, val emph: Emph) : Rule
 
-    private class Math(val open: Int, val display: Boolean = false) : Rule
+    /** A formula opening at [open]; each of its two markers is [marker] characters long. */
+    private class Math(val open: Int, val display: Boolean = false, val marker: Int = if (display) 2 else 1) : Rule
 
     private class Fence(val lang: String) : Rule
 
@@ -163,6 +164,7 @@ object InputRules {
      * "$$x$$" is one display equation and never the inline one hiding inside it.
      */
     private fun mathRule(before: String): Rule? {
+        latexRule(before)?.let { return it }
         if (!before.endsWith("$")) return null
         if (before.endsWith("$$")) {
             val close = before.length - 2
@@ -175,6 +177,22 @@ object InputRules {
         if (open < 0 || close - open < 2) return null
         if (open > 0 && before[open - 1] == '$') return null
         return if (pads(before, open + 1, close)) Math(open) else null
+    }
+
+    /**
+     * The "\(...\)" or "\[...\]" that just closed, or null. LaTeX's own
+     * delimiters say maths outright, so unlike a dollar they need no padding rule.
+     */
+    private fun latexRule(before: String): Rule? {
+        val display = when {
+            before.endsWith("\\)") -> false
+            before.endsWith("\\]") -> true
+            else -> return null
+        }
+        val close = before.length - 2
+        val open = before.lastIndexOf(if (display) "\\[" else "\\(", close - 1)
+        if (open < 0 || before.substring(open + 2, close).isBlank()) return null
+        return Math(open, display, marker = 2)
     }
 
     /**
@@ -276,7 +294,7 @@ object InputRules {
      */
     private fun applyMath(flow: TextFlow, pos: FlowPos, r: Math): Result {
         val p = pos.para
-        val marker = if (r.display) 2 else 1
+        val marker = r.marker
         val ed = FlowEditor(flow)
         val outside = ed.charStyleAt(FlowPos(p, r.open))
         val text = flow.paragraphs[p].plainText()

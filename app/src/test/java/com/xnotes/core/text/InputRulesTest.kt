@@ -603,4 +603,26 @@ class InputRulesTest {
         assertEquals(null, flow.paragraphs[1].listStart)
         assertEquals(ListKind.ORDERED, flow.paragraphs[1].list)
     }
+
+    @Test
+    fun latexDelimitersConvertLikeDollars() {
+        val inline = typed("so \\( x^2 \\) here")
+        assertEquals("so x^2 here", inline.plainText())
+        val f = inline.runs.first { it.style.math }
+        assertEquals("x^2", f.text)
+        assertFalse(f.style.mathDisplay)
+        val display = typed("\\[\\sum_i i\\]").runs.single()
+        assertEquals("\\sum_i i", display.text)
+        assertTrue(display.style.mathDisplay)
+        assertTrue(typed("a \\(b").runs.none { it.style.math })
+        assertTrue(typed("\\( \\)").runs.none { it.style.math })
+    }
+
+    @Test
+    fun typedAndPastedLatexDelimitersAgree() {
+        val typed = typed("\\(a+b\\)")
+        val pasted = MarkdownParser.parse("\\(a+b\\)").single()
+        assertEquals(pasted.plainText(), typed.plainText())
+        assertEquals(pasted.runs.single().style.math, typed.runs.single().style.math)
+    }
 }
