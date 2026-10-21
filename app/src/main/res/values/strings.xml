@@ -408,6 +408,7 @@
     <string name="pick_template_hint">Pick a template to set its lines, colours and spacing.</string>
     <string name="pick_cover_hint">Pick a design to start the note with a cover.</string>
     <string name="page_size_mm">%1$s × %2$s mm</string>
+    <string name="custom_size_range">Each side between %1$s and %2$s mm</string>
     <string name="new_canvas">New canvas</string>
     <string name="about">About</string>
     <string name="new_note_menu">New Note</string>

@@ -212,6 +212,9 @@ internal fun NewNoteScreen(
         var selectedOnce by remember { mutableStateOf(false) }
         var keepAllUntil by remember { mutableStateOf(0L) }
         var nameFocused by remember { mutableStateOf(false) }
+        val focusManager = LocalFocusManager.current
+        // Where each text field is, in root coordinates, so a press outside them all ends the typing.
+        val fieldBounds = remember { HashMap<String, androidx.compose.ui.geometry.Rect>() }
         var size by remember { mutableStateOf(prefs.defaultPageSize) }
         var orientation by remember { mutableStateOf(prefs.defaultPageOrientation) }
         var customW by remember { mutableStateOf(mmText(prefs.customPageWidthMm)) }
@@ -343,6 +346,8 @@ internal fun NewNoteScreen(
         @Composable
         fun MmField(value: String, label: String, onChange: (String) -> Unit) {
             val ok = value.toDoubleOrNull()?.let { it in range } == true
+            var focused by remember { mutableStateOf(false) }
+            DisposableEffect(label) { onDispose { fieldBounds.remove(label) } }
             BasicTextField(
                 value = value,
                 onValueChange = onChange,
@@ -350,11 +355,22 @@ internal fun NewNoteScreen(
                 textStyle = TextStyle(color = text, fontSize = 14.sp, textAlign = TextAlign.Center),
                 cursorBrush = SolidColor(accent),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 modifier = Modifier
                     .width(64.dp)
                     .height(40.dp)
                     .semantics { contentDescription = label }
-                    .border(1.dp, if (ok) border else palette.danger.toComposeColor(), MaterialTheme.shapes.small)
+                    .onGloballyPositioned { fieldBounds[label] = it.boundsInRoot() }
+                    .onFocusChanged { focused = it.isFocused }
+                    .border(
+                        if (focused) 2.dp else 1.dp,
+                        when {
+                            !ok -> palette.danger.toComposeColor()
+                            focused -> accent
+                            else -> border
+                        },
+                        MaterialTheme.shapes.small,
+                    )
                     .background(palette.menuBg.toComposeColor(), MaterialTheme.shapes.small)
                     .padding(vertical = 10.dp),
             )
@@ -377,7 +393,7 @@ internal fun NewNoteScreen(
         }
 
         @Composable
-        fun FormatRow() {
+        fun FormatRow() = Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             FlowRow(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
@@ -441,6 +457,13 @@ internal fun NewNoteScreen(
                     Box(Modifier.width(1.dp).height(38.dp).background(border))
                     OrientationButton(Orientation.LANDSCAPE, stringResource(R.string.orientation_landscape))
                 }
+            }
+            // Create waits for a size that fits; this says why.
+            if (custom && (cw == null || ch == null)) {
+                Text(
+                    stringResource(R.string.custom_size_range, mmText(range.start), mmText(range.endInclusive)),
+                    color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
 
@@ -744,9 +767,7 @@ internal fun NewNoteScreen(
         val coverGrid = rememberLazyGridState()
         val revealed = remember { HashSet<Face>() }
 
-        // A press anywhere but the name ends its editing: the caret goes and the keyboard closes.
-        val focusManager = LocalFocusManager.current
-        var nameBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+        // A press anywhere but a text field ends the typing: the caret goes and the keyboard closes.
         // Back closes the keyboard without telling the field, so the keyboard going away ends editing too.
         val imeVisible = WindowInsets.isImeVisible
         var imeWasVisible by remember { mutableStateOf(false) }
@@ -759,12 +780,13 @@ internal fun NewNoteScreen(
             }
         }
         Surface(
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).pointerInput(Unit) {
+            // Read before the insets' padding, a press shares the fields' root coordinates.
+            Modifier.fillMaxSize().pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    if (!nameBounds.contains(down.position)) focusManager.clearFocus()
+                    if (fieldBounds.values.none { it.contains(down.position) }) focusManager.clearFocus()
                 }
-            },
+            }.windowInsetsPadding(WindowInsets.systemBars),
             color = palette.panel.toComposeColor(),
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -803,8 +825,9 @@ internal fun NewNoteScreen(
                                         field()
                                     }
                                 },
-                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(vertical = 4.dp)
-                                    .onGloballyPositioned { nameBounds = it.boundsInRoot() }
+                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth()
+                                    .onGloballyPositioned { fieldBounds["name"] = it.boundsInRoot() }
+                                    .padding(vertical = 4.dp)
                                     .onFocusChanged {
                                     nameFocused = it.isFocused
                                     if (it.isFocused && !selectedOnce) {
