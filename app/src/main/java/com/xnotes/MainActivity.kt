@@ -152,7 +152,10 @@ class MainActivity : ComponentActivity() {
         com.xnotes.platform.TemplateLibrary.init(this)
         setTheme(com.xnotes.R.style.Theme_Xnotes) // leave the dark launch/splash theme behind
         applyFullscreen(!deviceHasDisplayCutout(this)) // provisional; reconciled once the editor loads prefs
-        pendingPdfImport = pdfImportUri(intent)
+        // The intent that started the task comes back whenever Android rebuilds it, from a saved state
+        // or from Recents after the process died or the app was updated; it was handled the first time.
+        val rebuilt = savedInstanceState != null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (!rebuilt) pendingPdfImport = pdfImportUri(intent)
         setContent {
             val context = LocalContext.current
             val ed = remember { Editor(context).also { editor = it } }
@@ -225,7 +228,8 @@ class MainActivity : ComponentActivity() {
 
     // The PDF uri carried by an inbound VIEW ("Open with") or SEND ("Share") intent, else null.
     private fun pdfImportUri(intent: Intent?): Uri? = when (intent?.action) {
-        Intent.ACTION_VIEW -> intent.data
+        // Only the PDF filter takes VIEW, but a task started by another build's filters keeps its intent.
+        Intent.ACTION_VIEW -> intent.data?.takeIf { (intent.type ?: runCatching { contentResolver.getType(it) }.getOrNull()) == "application/pdf" }
         Intent.ACTION_SEND ->
             if (intent.type == "application/pdf")
                 IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
