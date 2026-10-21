@@ -241,6 +241,7 @@ private const val SIDEBAR_ANIM_MS = 150
 
 private val SIDEBAR_WIDTH = 264.dp
 private val RAIL_WIDTH = 80.dp
+private val PANE_GUTTER = 16.dp
 private val DRAWER_WIDTH = 296.dp
 
 /**
@@ -564,7 +565,7 @@ private fun BackstageMain(
                 }
             }
         }
-        Box(Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth().padding(start = PANE_GUTTER, end = PANE_GUTTER, top = 4.dp, bottom = 12.dp)) {
             when (view) {
                 BackstageView.HOME -> HomePane(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, link)
                 BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont)
@@ -913,6 +914,8 @@ private fun ExplorerSection(
     val density = LocalDensity.current
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     val compactScreen = screenWidthDp < COMPACT_WIDTH_DP
+    // The pane's width with the rail beside it (a compact screen's drawer covers it instead), so folding the sidebar never reflows the gallery.
+    val railedWidth = screenWidthDp.dp - (if (compactScreen) 0.dp else RAIL_WIDTH) - PANE_GUTTER * 2
     val prefs = remember(editor.prefsVersion) { editor.preferences }
     val rootDocId = remember(root) { editor.browseRootDocId(root) }
     val stack = remember(root) { mutableStateListOf<Pair<String, String>>() }
@@ -1549,7 +1552,7 @@ private fun ExplorerSection(
                     } })
                 }
                 layout == ExplorerLayout.GRID -> GridBody(body, gridState, gridColumns(screenWidthDp, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
-                layout == ExplorerLayout.GALLERY -> GalleryBody(body, galleryState, galleryColumns(screenWidthDp, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
+                layout == ExplorerLayout.GALLERY -> GalleryBody(body, galleryState, galleryColumns(railedWidth, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
                 layout == ExplorerLayout.LIST -> BoxWithConstraints(Modifier.fillMaxSize()) {
                     ListBody(
                         body, listState, wide = maxWidth >= 720.dp,

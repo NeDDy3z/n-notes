@@ -81,12 +81,15 @@ internal fun gridColumns(screenWidthDp: Int, size: TileSize): Int {
     return Math.round(screenWidthDp / tile).coerceIn(1, 10)
 }
 
-internal fun galleryColumns(screenWidthDp: Int, size: TileSize): Int {
-    val tile = when (size) { TileSize.S -> 240f; TileSize.M -> 320f; TileSize.L -> 440f; TileSize.XL -> 600f }
-    return Math.round(screenWidthDp / tile).coerceIn(1, 8)
+/** Columns the gallery shows at [size]: as many upright pages as stand side by side in [width], the explorer's beside the rail. */
+internal fun galleryColumns(width: Dp, size: TileSize): Int {
+    val page = (galleryShelf(size) - 14.dp) * A4_RATIO + 8.dp
+    return ((width + GALLERY_GAP) / (page + GALLERY_GAP)).toInt().coerceAtLeast(1)
 }
 
 internal fun galleryShelf(size: TileSize): Dp = when (size) { TileSize.S -> 170.dp; TileSize.M -> 220.dp; TileSize.L -> 290.dp; TileSize.XL -> 380.dp }
+
+private val GALLERY_GAP = 28.dp
 
 internal fun timelineCard(size: TileSize): Dp = when (size) { TileSize.S -> 110.dp; TileSize.M -> 140.dp; TileSize.L -> 180.dp; TileSize.XL -> 230.dp }
 
@@ -196,39 +199,43 @@ private fun ColumnHead(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun GalleryBody(b: ExplorerBody, state: LazyGridState, columns: Int, chips: @Composable (Dp) -> Unit, top: (LazyGridScope.() -> Unit)?, modifier: Modifier = Modifier) {
-    val palette = LocalPalette.current
-    val shelf = galleryShelf(b.view.tileSize)
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
-        state = state,
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
-        contentPadding = PaddingValues(top = EXPLORER_HEADER, bottom = 88.dp),
-    ) {
-        // Shorter than elsewhere since the shelves' wider row spacing already follows it.
-        item(key = "chips", span = { GridItemSpan(maxLineSpan) }, contentType = "chips") { chips(40.dp) }
-        top?.invoke(this)
-        if (b.folders.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }, contentType = "folders") {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    b.folders.forEach { GalleryFolderChip(b, it) }
-                }
-            }
-        }
-        b.groups.forEach { g ->
-            if (g.label.isNotEmpty()) {
-                item(key = "group:${g.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                    Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (g.color != null) Box(Modifier.size(10.dp).clip(CircleShape).background(codeTint(g.color, palette)))
-                        Text(g.label, color = palette.text.toComposeColor(), fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        Text("${g.items.size}", color = palette.textDim.toComposeColor(), fontSize = 13.sp)
-                        Hairline(Modifier.weight(1f).padding(start = 6.dp))
+    BoxWithConstraints(modifier) {
+        val palette = LocalPalette.current
+        val column = (maxWidth - GALLERY_GAP * (columns - 1)) / columns
+        // Upright pages fill their column, though never much taller than the size's own shelf.
+        val shelf = minOf(galleryShelf(b.view.tileSize) * 1.15f, (column - 8.dp) / A4_RATIO + 14.dp)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            state = state,
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(GALLERY_GAP),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
+            contentPadding = PaddingValues(top = EXPLORER_HEADER, bottom = 88.dp),
+        ) {
+            // Shorter than elsewhere since the shelves' wider row spacing already follows it.
+            item(key = "chips", span = { GridItemSpan(maxLineSpan) }, contentType = "chips") { chips(40.dp) }
+            top?.invoke(this)
+            if (b.folders.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }, contentType = "folders") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        b.folders.forEach { GalleryFolderChip(b, it) }
                     }
                 }
             }
-            items(g.items, key = { it.documentUri }, contentType = { if (it.isDir) "folder" else "page" }) { e ->
-                if (e.isDir) FolderCardTile(b, e) else GalleryItem(b, e, shelf)
+            b.groups.forEach { g ->
+                if (g.label.isNotEmpty()) {
+                    item(key = "group:${g.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
+                        Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (g.color != null) Box(Modifier.size(10.dp).clip(CircleShape).background(codeTint(g.color, palette)))
+                            Text(g.label, color = palette.text.toComposeColor(), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text("${g.items.size}", color = palette.textDim.toComposeColor(), fontSize = 13.sp)
+                            Hairline(Modifier.weight(1f).padding(start = 6.dp))
+                        }
+                    }
+                }
+                items(g.items, key = { it.documentUri }, contentType = { if (it.isDir) "folder" else "page" }) { e ->
+                    if (e.isDir) FolderCardTile(b, e) else GalleryItem(b, e, shelf)
+                }
             }
         }
     }
