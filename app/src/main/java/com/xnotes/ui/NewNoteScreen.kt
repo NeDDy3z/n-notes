@@ -730,7 +730,10 @@ internal fun NewNoteScreen(
                 }
                 heading(sImported, null, sImportedHelp)
                 items(imported, key = { it.key }) { e ->
-                    Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, { editor.removeTemplate(e.key) }) { w, h ->
+                    Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, {
+                        editor.removeTemplate(e.key)
+                        if (pageKey == e.key) pickPage(PageTemplates.NONE)
+                    }) { w, h ->
                         Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true)
                     }
                 }
@@ -755,7 +758,10 @@ internal fun NewNoteScreen(
                 }
                 heading(sImported, null, sImportedHelp)
                 items(imported, key = { it.key }) { e ->
-                    Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, { editor.removeTemplate(e.key) }) { w, h ->
+                    Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, {
+                        editor.removeTemplate(e.key)
+                        if (coverKey == e.key) coverOn = false
+                    }) { w, h ->
                         Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true)
                     }
                 }
