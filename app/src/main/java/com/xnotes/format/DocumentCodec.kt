@@ -416,10 +416,15 @@ class DocumentCodec(
         // A shape older readers cannot draw goes down as the polygon they can, its real geometry after.
         val standIn = s.legacyOutline()
         val drawn = standIn?.let { Rect.bounding(it) }
-        // Drawn text has no shape an older reader could stand in, so it goes under a kind they skip.
-        val glyphs = s.shape == ShapeKind.GLYPHS
+        // Drawn text and a dropped colour's area have no shape an older reader could stand in, so each goes under a kind they skip.
+        val ownKind = when (s.shape) {
+            ShapeKind.GLYPHS -> ShapeItem.GLYPHS_KIND
+            ShapeKind.FILL -> ShapeItem.FILL_KIND
+            else -> null
+        }
+        val own = ownKind != null
         j.beginObject()
-        j.name("kind").value(if (glyphs) ShapeItem.GLYPHS_KIND else ShapeItem.KIND)
+        j.name("kind").value(ownKind ?: ShapeItem.KIND)
         id?.let { j.name("id").value(it) }
         j.name("shape").value(s.legacyId())
         j.name("start").beginArray().value(drawn?.left ?: s.start.x).value(drawn?.top ?: s.start.y).endArray()
@@ -430,19 +435,19 @@ class DocumentCodec(
         j.name("fill_rgba")
         s.fillRgba?.let { writeRgba(j, it) } ?: j.nullValue()
         // Polygon/polyline carry their vertices (absolute content px); other kinds omit them.
-        (standIn ?: s.vertices()?.takeUnless { glyphs })?.let { verts ->
+        (standIn ?: s.vertices()?.takeUnless { own })?.let { verts ->
             j.name("points").beginArray()
             for (p in verts) j.beginArray().value(p.x).value(p.y).endArray()
             j.endArray()
         }
-        if (standIn != null || glyphs) {
+        if (standIn != null || own) {
             // A mirrored shape names its kind under a key readers before flips skip, so they keep the stand-in.
             if (!s.isFree) j.name(if (s.flip == Flip.NONE) "geom" else "flip_geom").value(s.shape.id)
             if (s.flip != Flip.NONE) j.name("flip").value(s.flip.id)
             val f = s.box
             j.name("rect").beginArray().value(f.x).value(f.y).value(f.w).value(f.h).endArray()
             if (s.rotation != 0.0) j.name("angle").value(s.rotation)
-            s.path?.takeIf { s.isFree && (glyphs || !FreePath.isVertexList(it)) }?.let { j.name("path").value(FreePath.toSvg(it)) }
+            s.path?.takeIf { s.isFree && (own || !FreePath.isVertexList(it)) }?.let { j.name("path").value(FreePath.toSvg(it)) }
         }
         if (s.n != s.shape.defaultN) j.name("n").value(s.n)
         if (s.headStart != s.shape.defaultHeadStart) j.name("head_start").value(s.headStart.id)
@@ -1094,7 +1099,7 @@ class DocumentCodec(
                     measurer = textMeasurer,
                 ),
             )
-            ShapeItem.KIND, ShapeItem.GLYPHS_KIND -> {
+            ShapeItem.KIND, ShapeItem.GLYPHS_KIND, ShapeItem.FILL_KIND -> {
                 val c = s.connector
                 items.add(if (c != null && s.kind == ShapeItem.KIND) buildConnector(s, c, glue) else buildShape(s))
             }

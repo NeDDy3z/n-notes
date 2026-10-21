@@ -234,6 +234,25 @@ class CanvasCodecTest {
         for ((w, g) in want.zip(got)) assertEquals(0.0, w.distanceTo(g), 1e-3)
     }
 
+    @Test fun aFillRoundTripsUnderAKindOlderReadersSkip() {
+        val doc = InfiniteDocument()
+        val outer = listOf(Pt(-5000.0, 10.0), Pt(-4800.0, 10.0), Pt(-4800.0, 110.0), Pt(-5000.0, 110.0))
+        val hole = listOf(Pt(-4950.0, 40.0), Pt(-4900.0, 40.0), Pt(-4900.0, 80.0), Pt(-4950.0, 80.0))
+        val fill = ShapeItem.fill(listOf(outer, hole), Rgba(30, 140, 220, 255))
+        doc.add(fill)
+        val manifest = manifestText(doc)
+        assertTrue(manifest.contains("\"kind\":\"fill\""))
+        assertFalse("no point list for an older reader", manifest.contains("\"points\""))
+        val back = roundTrip(doc).items.single() as ShapeItem
+        assertEquals(ShapeKind.FILL, back.shape)
+        assertEquals(Rgba(30, 140, 220, 255), back.fillRgba)
+        val want = fill.paths().flatMap { it.contours }.flatMap { FreePath.vertices(it) }
+        val got = back.paths().flatMap { it.contours }.flatMap { FreePath.vertices(it) }
+        assertEquals(want.size, got.size)
+        for ((w, g) in want.zip(got)) assertEquals(0.0, w.distanceTo(g), 1e-3)
+        assertFalse("the hole stays open", back.contains(Pt(-4925.0, 60.0)))
+    }
+
     @Test fun loadedItemsAreIndexedAndOrdered() {
         val doc = InfiniteDocument()
         val far = ShapeItem(ShapeKind.RECTANGLE, Pt(9000.0, 9000.0), Pt(9100.0, 9100.0), Rgba(1, 1, 1, 255))
@@ -798,8 +817,8 @@ class CanvasCodecTest {
     }
 
     @Test fun everyBasicKindRoundTripsBehindAStandIn() {
-        // Drawn text goes under a kind of its own, which older readers skip (its own test).
-        val kinds = ShapeKind.all.filter { !it.isLegacy && it != ShapeKind.GLYPHS }
+        // Drawn text and fills go under kinds of their own, which older readers skip (their own tests).
+        val kinds = ShapeKind.all.filter { !it.isLegacy && it != ShapeKind.GLYPHS && it != ShapeKind.FILL }
         val doc = InfiniteDocument()
         for (k in kinds) {
             val s = ShapeItem(k, Pt(0.0, 0.0), Pt(120.0, 80.0), ink, 2.0, n = if (k.nRange != null) 7 else k.defaultN)

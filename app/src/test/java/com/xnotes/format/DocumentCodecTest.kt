@@ -974,6 +974,25 @@ class DocumentCodecTest {
         assertEquals(Rgba(4, 5, 6, 255), back.fillRgba)
     }
 
+    @Test fun aFillRoundTripsInANoteUnderAKindOlderReadersSkip() {
+        val doc = Document(dpi = 150)
+        val page = Page(1240.0, 1754.0)
+        val outer = listOf(Pt(10.0, 10.0), Pt(210.0, 10.0), Pt(210.0, 110.0), Pt(10.0, 110.0))
+        val hole = listOf(Pt(60.0, 40.0), Pt(100.0, 40.0), Pt(100.0, 80.0), Pt(60.0, 80.0))
+        page.items.add(ShapeItem.fill(listOf(outer, hole), Rgba(30, 140, 220, 255)))
+        doc.pages.add(page)
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        val manifest = manifestOf(out.toByteArray())
+        assertTrue(manifest.contains("\"kind\":\"fill\""))
+        assertFalse("no point list for an older reader", manifest.contains("\"points\""))
+        val back = roundTrip(doc).pages[0].items.single() as ShapeItem
+        assertEquals(ShapeKind.FILL, back.shape)
+        assertEquals(Rgba(30, 140, 220, 255), back.fillRgba)
+        assertTrue(back.contains(Pt(20.0, 20.0)))
+        assertFalse("the hole stays open", back.contains(Pt(80.0, 60.0)))
+    }
+
     @Test fun turnedShapesRoundTripInANote() {
         val doc = Document(dpi = 150)
         val page = Page(1240.0, 1754.0)

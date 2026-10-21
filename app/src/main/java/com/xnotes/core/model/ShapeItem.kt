@@ -97,6 +97,9 @@ class ShapeItem(
     /** True for the kinds that hold their outline in [path] rather than drawing it from the box. */
     val isFree: Boolean get() = shape.isFree
 
+    /** True for a dropped colour's area: only fill, which an eraser takes whole and nothing glues to. */
+    val isFill: Boolean get() = shape == ShapeKind.FILL
+
     /** [p] from the shape's unturned frame onto the page: turned by [rotation] about the box centre. */
     fun toPage(p: Pt): Pt {
         if (rotation == 0.0) return p
@@ -495,6 +498,7 @@ class ShapeItem(
     fun erasedBy(cx: Double, cy: Double, radius: Double): List<CanvasItem>? {
         val c = Pt(cx, cy)
         if (bounds().distanceTo(c) > radius) return null
+        if (isFill) return if (intersectsCircle(cx, cy, radius)) emptyList() else null
         val fillHit = fillRgba != null && intersectsCircle(cx, cy, radius)
         val (hit, ink) = Outline.cut(paths(), pen(), neon, neonStrength, c, radius)
             ?: return if (intersectsCircle(cx, cy, radius)) emptyList() else null
@@ -761,6 +765,9 @@ class ShapeItem(
         /** The kind a file gives drawn text, which readers that predate it skip rather than misdraw. */
         const val GLYPHS_KIND = "glyphs"
 
+        /** The kind a file gives a dropped colour's area, which readers that predate it skip. */
+        const val FILL_KIND = "fill"
+
         private const val LEGACY_FLATTEN = 0.25
 
         /** [a] folded into (-PI, PI]. */
@@ -789,6 +796,16 @@ class ShapeItem(
             return ShapeItem(
                 shape, box.topLeft, Pt(box.right, box.bottom), strokeRgba, strokeWidth,
                 fillRgba, neon, neonStrength, outline, dashed, dashLength, dashGap,
+            )
+        }
+
+        /** A dropped colour's area: the page-space [rings], holes by parity, filled solid in [color] and never stroked. */
+        fun fill(rings: List<List<Pt>>, color: Rgba): ShapeItem {
+            val contours = rings.filter { it.size >= 3 }.map { FreePath.lines(it, closed = true) }
+            val box = FreePath.bounds(contours) ?: Rect(0.0, 0.0, 0.0, 0.0)
+            return ShapeItem(
+                ShapeKind.FILL, box.topLeft, Pt(box.right, box.bottom), color, 0.0, color,
+                path = FreePath.normalize(contours, box),
             )
         }
 
