@@ -192,7 +192,8 @@ internal class CoverEdit(val pageMm: Pair<Double, Double>, val current: PageStyl
 /**
  * The full-screen New note. The note sits on the left: its cover and its pages side by side (a tap
  * picks which one to style), their size and orientation, then the picked one's colours and
- * settings. The gallery sits on the right with Pages and Cover tabs. Narrow screens stack the same
+ * settings. The gallery sits on the right with Pages and Cover tabs, and a Generate using AI tab
+ * that has a chat assistant write a template ([AiTemplateTab]). Narrow screens stack the same
  * parts and move the settings into a bottom sheet. Nothing is written until Create. Given a
  * [coverEdit], it is that note's cover picker instead: the cover alone, and Done.
  */
@@ -241,6 +242,8 @@ internal fun NewNoteScreen(
         var coverOn by remember { mutableStateOf(coverOnly) }
         var coverStyle by remember { mutableStateOf(coverEdit?.current ?: PageStyle(template = covers.firstOrNull()?.key)) }
         var face by remember { mutableStateOf(if (coverOnly) Face.COVER else Face.PAGES) }
+        // The Generate using AI tab takes the gallery's place; the note keeps showing the face it styles.
+        var aiOpen by remember { mutableStateOf(false) }
         var tag by remember { mutableStateOf<String?>(null) }
 
         // A template the library gains while this is open was imported from here: select it.
@@ -258,6 +261,7 @@ internal fun NewNoteScreen(
                 style = style.withTemplate(e.key, PageTemplates.NONE)
                 face = Face.PAGES
             }
+            aiOpen = false
         }
 
         val custom = size == PageSize.CUSTOM
@@ -512,6 +516,7 @@ internal fun NewNoteScreen(
                 val paper = Modifier.shadow(3.dp, RectangleShape).border(1.dp, edge)
                 Sheet(stringResource(if (hasCover) R.string.cover else R.string.no_cover), face == Face.COVER, {
                     face = Face.COVER
+                    aiOpen = false
                     if (!coverOn && coverT != null) coverOn = true
                 }) {
                     if (hasCover) {
@@ -524,7 +529,7 @@ internal fun NewNoteScreen(
                     }
                 }
                 if (!coverOnly) {
-                    Sheet(stringResource(R.string.pages), face == Face.PAGES, { face = Face.PAGES }) {
+                    Sheet(stringResource(R.string.pages), face == Face.PAGES, { face = Face.PAGES; aiOpen = false }) {
                         // Every page after the cover, so a second sheet shows behind the first.
                         val lift = 4.dp
                         val pw = w - lift
@@ -622,31 +627,31 @@ internal fun NewNoteScreen(
         }
 
         @Composable
+        fun Tab(label: String, on: Boolean, onClick: () -> Unit) {
+            // The underline is drawn, not laid out: a full-width child would widen this tab over the others.
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .semantics { selected = on }
+                    .drawBehind {
+                        if (on) {
+                            val h = 3.dp.toPx()
+                            drawRoundRect(accent, topLeft = Offset(0f, this.size.height - h), size = Size(this.size.width, h), cornerRadius = CornerRadius(h))
+                        }
+                    }
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text(label, color = if (on) accent else dim, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1) }
+        }
+
+        @Composable
         fun Tabs() {
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp)) {
-                for (f in Face.entries) {
-                    val on = face == f
-                    // The underline is drawn, not laid out: a full-width child would widen this tab over the other.
-                    Box(
-                        Modifier
-                            .fillMaxHeight()
-                            .semantics { selected = on }
-                            .drawBehind {
-                                if (on) {
-                                    val h = 3.dp.toPx()
-                                    drawRoundRect(accent, topLeft = Offset(0f, this.size.height - h), size = Size(this.size.width, h), cornerRadius = CornerRadius(h))
-                                }
-                            }
-                            .clickable { face = f }
-                            .padding(horizontal = 16.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            stringResource(if (f == Face.PAGES) R.string.pages else R.string.cover),
-                            color = if (on) accent else dim, fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                        )
-                    }
-                }
+                // The cover picker of an open note styles its cover alone, so it has no Pages tab.
+                if (!coverOnly) Tab(stringResource(R.string.pages), !aiOpen && face == Face.PAGES) { face = Face.PAGES; aiOpen = false }
+                Tab(stringResource(R.string.cover), !aiOpen && face == Face.COVER) { face = Face.COVER; aiOpen = false }
+                Tab(stringResource(R.string.tab_generate_ai), aiOpen) { aiOpen = true }
             }
         }
 
@@ -820,6 +825,7 @@ internal fun NewNoteScreen(
         }
         val pagesGrid = rememberLazyGridState()
         val coverGrid = rememberLazyGridState()
+        val aiScroll = rememberScrollState()
         val revealed = remember { HashSet<Face>() }
 
         // Messages show here while the screen is open: the main screen's snackbar would sit beneath it.
@@ -956,31 +962,36 @@ internal fun NewNoteScreen(
                                 ) { Tune() }
                             }
                             Column(Modifier.weight(1f).fillMaxHeight()) {
-                                if (!coverOnly) {
-                                    Tabs()
-                                    HorizontalDivider(color = border)
-                                }
-                                // Each tab keeps its own scroll, and the first time one shows, its picked tile comes into view.
-                                val grid = if (face == Face.PAGES) pagesGrid else coverGrid
-                                LaunchedEffect(face) {
-                                    if (!revealed.add(face)) return@LaunchedEffect
-                                    val index = pickedIndex(face) ?: return@LaunchedEffect
-                                    val info = snapshotFlow { grid.layoutInfo }.first { it.totalItemsCount > index }
-                                    val seen = info.visibleItemsInfo.firstOrNull { it.index == index }
-                                    if (seen == null || seen.offset.y + seen.size.height > info.viewportEndOffset) {
-                                        grid.scrollToItem(index)
-                                        grid.scrollBy(-info.viewportSize.height / 3f)
+                                Tabs()
+                                HorizontalDivider(color = border)
+                                if (aiOpen) {
+                                    AiTemplateTab(
+                                        coverOnly, wide = true, onImport = onImportTemplate,
+                                        modifier = Modifier.fillMaxSize().verticalScroll(aiScroll).padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 40.dp),
+                                    )
+                                } else {
+                                    // Each tab keeps its own scroll, and the first time one shows, its picked tile comes into view.
+                                    val grid = if (face == Face.PAGES) pagesGrid else coverGrid
+                                    LaunchedEffect(face) {
+                                        if (!revealed.add(face)) return@LaunchedEffect
+                                        val index = pickedIndex(face) ?: return@LaunchedEffect
+                                        val info = snapshotFlow { grid.layoutInfo }.first { it.totalItemsCount > index }
+                                        val seen = info.visibleItemsInfo.firstOrNull { it.index == index }
+                                        if (seen == null || seen.offset.y + seen.size.height > info.viewportEndOffset) {
+                                            grid.scrollToItem(index)
+                                            grid.scrollBy(-info.viewportSize.height / 3f)
+                                        }
                                     }
-                                }
-                                key(face) {
-                                    LazyVerticalGrid(
-                                        columns = GridCells.Adaptive(112.dp),
-                                        modifier = Modifier.fillMaxSize(),
-                                        state = grid,
-                                        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 40.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                                    ) { gallery() }
+                                    key(face) {
+                                        LazyVerticalGrid(
+                                            columns = GridCells.Adaptive(112.dp),
+                                            modifier = Modifier.fillMaxSize(),
+                                            state = grid,
+                                            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 40.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                                        ) { gallery() }
+                                    }
                                 }
                             }
                         }
@@ -1003,8 +1014,12 @@ internal fun NewNoteScreen(
                                         if (!coverOnly) FormatRow()
                                     }
                                 }
-                                if (!coverOnly) item(span = { GridItemSpan(maxLineSpan) }) { Tabs() }
-                                gallery()
+                                item(span = { GridItemSpan(maxLineSpan) }) { Tabs() }
+                                if (aiOpen) {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        AiTemplateTab(coverOnly, wide = false, onImport = onImportTemplate, modifier = Modifier.padding(top = 12.dp))
+                                    }
+                                } else gallery()
                             }
                             Row(
                                 Modifier
