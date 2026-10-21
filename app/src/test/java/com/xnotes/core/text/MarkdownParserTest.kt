@@ -420,4 +420,10 @@ class MarkdownParserTest {
         assertEquals(CalloutKind.TIP, b.quote?.kind)
         assertTrue(a.quote !== b.quote)
     }
+
+    @Test
+    fun pastedShortcodesBecomeEmojiOutsideCode() {
+        val p = parse("ship it :rocket: but not `:rocket:`")[0]
+        assertEquals("ship it 🚀 but not :rocket:", p.plainText())
+    }
 }

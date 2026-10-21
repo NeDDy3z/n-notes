@@ -733,4 +733,11 @@ class InputRulesTest {
         FlowEditor(flow).setParaStyle(FlowRange.caret(FlowPos(0, 0))) { it.codeLang = "" }
         assertEquals(null, flow.paragraphs[0].quote)
     }
+
+    @Test
+    fun aClosedShortcodeTurnsIntoItsEmoji() {
+        assertEquals("party 🎉 now", typed("party :tada: now").plainText())
+        assertEquals("10:30:00", typed("10:30:00").plainText())
+        assertEquals(":nope:", typed(":nope:").plainText())
+    }
 }

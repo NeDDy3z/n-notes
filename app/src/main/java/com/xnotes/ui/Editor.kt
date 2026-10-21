@@ -951,8 +951,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 val at = ctrl.selection.normalized().start
                 at.para == d.para && at.offset > d.offset
             }
+            emojiDismissed = emojiDismissed?.takeIf { d ->
+                val at = ctrl.selection.normalized().start
+                at.para == d.para && at.offset > d.offset
+            }
             // Typing re-filters the menu, so any arrowed-to row stops meaning anything.
             slashSelected = -1
+            emojiSelected = -1
             // Walking out of a formula is what releases the edge it was held at.
             if (mathHeld >= 0L && !heldMathHoldsCaret()) mathHeld = -1L
             // Opening or closing a formula changes how the paragraph is shaped,
@@ -967,6 +972,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
         }
         ctrl.onSlashEnter = { commitSlashMenu() }
+        ctrl.onEmojiEnter = { commitEmojiMenu() }
         ctrl.styleAt = { pos -> mathStyleAt(pos) }
         ctrl.onContextMenu = { viewport -> flowContextMenu = flowMenuAnchor(viewport) }
         ctrl.gated = { tableEditLive() }
@@ -6393,7 +6399,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         when {
             // Escape backs out of the slash menu first; a second one ends the session.
             e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE ->
-                if (slashQuery() != null) dismissSlashMenu() else flowText.endSession()
+                when {
+                    slashQuery() != null -> dismissSlashMenu()
+                    emojiQuery() != null -> dismissEmojiMenu()
+                    else -> flowText.endSession()
+                }
             ctrl && shift && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> redo()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_Z -> undo()
             ctrl && shift && e.keyCode == android.view.KeyEvent.KEYCODE_X ->
@@ -6428,9 +6438,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> flowMoveHorizontal(1, shift)
             // With the menu open the arrows walk it; Shift still means select text.
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ->
-                if (shift || !moveSlashSelection(-1)) flowMoveVertical(-1, shift)
+                if (shift || (!moveSlashSelection(-1) && !moveEmojiSelection(-1))) flowMoveVertical(-1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ->
-                if (shift || !moveSlashSelection(1)) flowMoveVertical(1, shift)
+                if (shift || (!moveSlashSelection(1) && !moveEmojiSelection(1))) flowMoveVertical(1, shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_MOVE_HOME -> flowLineEdge(start = true, extend = shift)
             e.keyCode == android.view.KeyEvent.KEYCODE_MOVE_END -> flowLineEdge(start = false, extend = shift)
             else -> {
@@ -6562,6 +6572,66 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         flowText.commitEdit(ed.combined(cmds), null)
         if (sel.collapsed) flowText.pendingStyle = if (level > 0) Paragraph.HEADING_STYLE else CharStyle.DEFAULT
+        flowSelTick++
+    }
+
+    // --- the emoji completion ---
+
+    /** The shortcode whose completion the user dismissed, so it stays shut until they move off it. */
+    internal var emojiDismissed: FlowPos? = null
+
+    /** Row the arrow keys have picked, or -1 while the top one is implied. */
+    var emojiSelected by mutableStateOf(-1)
+        private set
+
+    /** The shortcode being completed, or null; read straight off the flow, like [slashQuery]. */
+    fun emojiQuery(): com.xnotes.core.text.EmojiShortcodes.Query? {
+        if (!markdownInput || !flowText.active) return null
+        val sel = flowText.selection
+        if (!sel.collapsed || slashQuery() != null) return null
+        val q = com.xnotes.core.text.EmojiShortcodes.queryAt(state.document.flow, sel.start) ?: return null
+        val d = emojiDismissed
+        if (d != null && d.para == q.para && d.offset == q.colon) return null
+        return q
+    }
+
+    /** Shut the completion for the shortcode it is on, leaving the typed text alone. */
+    fun dismissEmojiMenu() {
+        val q = emojiQuery() ?: return
+        emojiDismissed = FlowPos(q.para, q.colon)
+        emojiSelected = -1
+        flowSelTick++
+    }
+
+    /** Arrow the completion's highlight by [delta], wrapping; false when none is open. */
+    private fun moveEmojiSelection(delta: Int): Boolean {
+        val q = emojiQuery() ?: return false
+        val count = com.xnotes.core.text.EmojiShortcodes.complete(q.text).size
+        if (count == 0) return false
+        val from = if (emojiSelected in 0 until count) emojiSelected else if (delta > 0) -1 else 0
+        emojiSelected = ((from + delta) % count + count) % count
+        flowSelTick++
+        return true
+    }
+
+    /** Enter while the completion is open puts in its highlighted emoji, the top one until arrowed. */
+    private fun commitEmojiMenu(): Boolean {
+        val q = emojiQuery() ?: return false
+        val list = com.xnotes.core.text.EmojiShortcodes.complete(q.text)
+        val pick = list.getOrNull(emojiSelected) ?: list.firstOrNull() ?: return false
+        pickEmoji(q, pick.second)
+        return true
+    }
+
+    /** Put [emoji] in place of the shortcode [q] is typing, as its own undo step. */
+    fun pickEmoji(q: com.xnotes.core.text.EmojiShortcodes.Query, emoji: String) {
+        if (!flowText.active) return
+        flowText.flushBurst()
+        // The IME still holds the shortcode the edit is about to replace.
+        flowText.mirrorStale = true
+        val (cmd, caret) = com.xnotes.core.text.EmojiShortcodes.replace(state.document.flow, q, emoji)
+        flowText.commitEdit(cmd, caret)
+        emojiSelected = -1
         flowSelTick++
     }
 

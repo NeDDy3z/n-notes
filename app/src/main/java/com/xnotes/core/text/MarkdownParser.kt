@@ -67,7 +67,7 @@ import org.commonmark.node.Paragraph as MdParagraph
  * gap of blank lines leaves one empty paragraph, nested lists indent a level
  * each, quotes and GitHub's alerts become quotes and callouts, code blocks become code paragraphs (one per line, language from
  * the fence info), links and written-out addresses open what they name, images
- * keep their alt text. Raw HTML and
+ * keep their alt text and `:shortcodes:` become their emoji. Raw HTML and
  * footnotes stay as the text they were written as; front matter is dropped.
  */
 object MarkdownParser {
@@ -247,7 +247,7 @@ object MarkdownParser {
         private fun lines(node: Node, base: CharStyle, make: (MutableList<Run>, Int) -> Paragraph) {
             val lines = mutableListOf(mutableListOf<Run>())
             inlines(node, base, lines)
-            for ((i, runs) in lines.withIndex()) emit(make(linkBareUrls(runs), i))
+            for ((i, runs) in lines.withIndex()) emit(make(asTyped(runs), i))
         }
 
         private fun code(literal: String, lang: String, indent: Int) {
@@ -372,7 +372,7 @@ object MarkdownParser {
                         if (i > 0) appendRun(flat, " ", CharStyle.DEFAULT)
                         line.forEach { appendRun(flat, it.text, it.style) }
                     }
-                    emit(Paragraph(linkBareUrls(flat), align = aligns[c], table = table, cellStart = true))
+                    emit(Paragraph(asTyped(flat), align = aligns[c], table = table, cellStart = true))
                 }
             }
         }
@@ -423,6 +423,12 @@ object MarkdownParser {
         if (text.isEmpty()) return
         val last = out.lastOrNull()
         if (last != null && last.style == style) last.text += text else out.add(Run(text, style))
+    }
+
+    /** [runs] as typing would have left them: shortcodes turned into emoji, written-out addresses linked. */
+    private fun asTyped(runs: MutableList<Run>): MutableList<Run> {
+        for (run in runs) if (!run.style.code && !run.style.math) run.text = EmojiShortcodes.replaceAll(run.text)
+        return linkBareUrls(runs)
     }
 
     /** [runs] with the addresses written out in their prose made links, as typing would. */

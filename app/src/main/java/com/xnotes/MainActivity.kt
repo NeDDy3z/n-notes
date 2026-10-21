@@ -1280,6 +1280,7 @@ private fun EditorPane(
                             com.xnotes.ui.MarkupMenu(editor)
                             com.xnotes.ui.MarkupNoteDialog(editor)
                             com.xnotes.ui.SlashMenu(editor)
+                            com.xnotes.ui.EmojiMenu(editor)
                             com.xnotes.ui.FlowTableMenu(editor)
                             com.xnotes.ui.TableChrome(editor)
                             ZoomLockHint(editor)

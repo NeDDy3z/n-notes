@@ -74,6 +74,9 @@ object InputRules {
     /** An address typed out over [start, end) gets the link it names. */
     private class AutoLink(val start: Int, val end: Int, val uri: String) : Rule
 
+    /** The shortcode from [start] to the caret just closed: it becomes [emoji]. */
+    private class Emoji(val start: Int, val emoji: String) : Rule
+
     private object HRule : Rule
 
     /** `[!kind] ` typed at the start of a plain quote: the whole quote becomes that callout. */
@@ -95,7 +98,7 @@ object InputRules {
         val text = para.plainText()
         if (pos.offset > text.length) return null
         val before = text.take(pos.offset)
-        if (!typed.endsWith(" ")) return inlineRule(before)
+        if (!typed.endsWith(" ")) return emojiRule(para, before) ?: inlineRule(before)
         return (if (para.table != null) null else blockRule(para, before)) ?: autoLinkRule(para, before)
     }
 
@@ -183,6 +186,19 @@ object InputRules {
             return Inline(open, marker, emph)
         }
         return null
+    }
+
+    /** The `:name:` that just closed, outside code and maths, when it names an emoji. */
+    private fun emojiRule(para: Paragraph, before: String): Rule? {
+        if (!before.endsWith(":")) return null
+        val (start, emoji) = EmojiShortcodes.closedAt(before) ?: return null
+        var at = 0
+        for (run in para.runs) {
+            val end = at + run.text.length
+            if (end > start && at < before.length && (run.style.code || run.style.math)) return null
+            at = end
+        }
+        return Emoji(start, emoji)
     }
 
     /** The `[text](url)` that just closed, when the url is an address a link can open. */
@@ -292,6 +308,8 @@ object InputRules {
         is Math -> applyMath(flow, pos, rule)
         is Fence -> applyFence(flow, pos, rule)
         is LinkUp -> applyLink(flow, pos, rule)
+        is Emoji -> FlowEditor(flow).replaceRange(FlowRange(FlowPos(pos.para, rule.start), pos), rule.emoji)
+            .let { (cmd, caret) -> Result(cmd, caret) }
         is Callout -> applyCallout(flow, pos, rule)
         is AutoLink -> Result(
             FlowEditor(flow).setCharStyle(FlowRange(FlowPos(pos.para, rule.start), FlowPos(pos.para, rule.end))) {
