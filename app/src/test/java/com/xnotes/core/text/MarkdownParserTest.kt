@@ -193,4 +193,130 @@ class MarkdownParserTest {
         assertTrue(parse("\$   \$")[0].runs.none { it.style.math })
     }
 
+    // --- CommonMark ---
+
+    @Test
+    fun wrappedLinesJoinAndBlankLinesLeaveOneGap() {
+        val paras = parse("one\ntwo\n\n\n\nthree")
+        assertEquals(listOf("one two", "", "three"), paras.map { it.plainText() })
+    }
+
+    @Test
+    fun aHardBreakSplitsTheParagraph() {
+        assertEquals(listOf("a", "b"), parse("a  \nb").map { it.plainText() })
+        assertEquals(listOf("a", "b"), parse("a\\\nb").map { it.plainText() })
+    }
+
+    @Test
+    fun escapesStayLiteral() {
+        val p = parse("\\*not italic\\* and \\`tick\\`")[0]
+        assertEquals("*not italic* and `tick`", p.plainText())
+        assertTrue(p.runs.all { it.style == CharStyle.DEFAULT })
+    }
+
+    @Test
+    fun tripleStarsAreBoldAndItalic() {
+        val run = parse("***both***")[0].runs.single()
+        assertEquals("both", run.text)
+        assertTrue(run.style.bold)
+        assertTrue(run.style.italic)
+    }
+
+    @Test
+    fun doubleBackticksHoldABacktick() {
+        val run = parse("`` a ` b ``")[0].runs.single()
+        assertEquals("a ` b", run.text)
+        assertTrue(run.style.code)
+    }
+
+    @Test
+    fun aLoneTildeIsNotStrikethrough() {
+        val p = parse("~5 min~ and ~~gone~~")[0]
+        assertEquals("~5 min~ and ", p.runs[0].text)
+        assertTrue(p.runs.last().style.strike)
+    }
+
+    @Test
+    fun everyFenceKindIsCode() {
+        val tilde = parse("~~~py\nx = 1\n~~~").single()
+        assertEquals("python", tilde.codeLang)
+        val nested = parse("````md\n```\n````").single()
+        assertEquals("```", nested.plainText())
+        assertEquals("md", nested.codeLang)
+        assertEquals("python", parse("```python title=\"a.py\"\nx\n```").single().codeLang)
+        val indented = parse("text\n\n    code here")
+        assertEquals("", indented.last().codeLang)
+        assertEquals("code here", indented.last().plainText())
+    }
+
+    @Test
+    fun aFenceInsideAListItemIsCode() {
+        val paras = parse("- item\n\n  ```kotlin\n  val x = 1\n  ```")
+        assertEquals(ListKind.BULLET, paras[0].list)
+        val code = paras.last()
+        assertEquals("kotlin", code.codeLang)
+        assertEquals("val x = 1", code.plainText())
+        assertEquals(1, code.indent)
+    }
+
+    @Test
+    fun underlinedHeadingsAreHeadings() {
+        val paras = parse("Title\n=====\n\nSub\n---")
+        assertEquals(1, paras[0].headingLevel)
+        assertEquals("Sub", paras.last().plainText())
+        assertEquals(2, paras.last().headingLevel)
+    }
+
+    @Test
+    fun listItemsContinueAcrossLines() {
+        val paras = parse("- first\n  more\n- second\nlazy")
+        assertEquals(listOf("first more", "second lazy"), paras.map { it.plainText() })
+        assertTrue(paras.all { it.list == ListKind.BULLET })
+    }
+
+    @Test
+    fun aListInsideAQuoteKeepsItsMarker() {
+        val p = parse("> - item").single()
+        assertEquals(ListKind.BULLET, p.list)
+        assertEquals(1, p.indent)
+        assertEquals(2, parse("> > deep").single().indent)
+    }
+
+    @Test
+    fun frontMatterIsDropped() {
+        assertEquals(listOf("body"), parse("---\ntitle: x\ntags: [a]\n---\nbody").map { it.plainText() })
+    }
+
+    @Test
+    fun footnotesStayAsWritten() {
+        val paras = parse("see[^1] there\n\n[^1]: the note")
+        assertEquals("see[^1] there", paras[0].plainText())
+        assertEquals("[^1]: the note", paras.last().plainText())
+    }
+
+    @Test
+    fun htmlStaysLiteral() {
+        assertEquals("a <b>c</b> d", parse("a <b>c</b> d")[0].plainText())
+        assertEquals("<details>", parse("<details>\n<summary>x</summary>")[0].plainText())
+    }
+
+    @Test
+    fun latexDelimitersAreMaths() {
+        val p = parse("so \\(x^2\\) holds")[0]
+        assertEquals("so x^2 holds", p.plainText())
+        val inline = p.runs.first { it.style.math }
+        assertFalse(inline.style.mathDisplay)
+        val display = parse("\\[ \\int_0^1 x \\]").single().runs.single()
+        assertEquals("\\int_0^1 x", display.text)
+        assertTrue(display.style.mathDisplay)
+        val block = parse("before\n\\[\n\\frac{a}{b}\n\\]\nafter")
+        assertEquals(3, block.size)
+        assertEquals("\\frac{a}{b}", block[1].runs.single().text)
+        assertTrue(block[1].runs.single().style.mathDisplay)
+    }
+
+    @Test
+    fun anUnclosedLatexParenIsJustAParen() {
+        assertEquals("a (b", parse("a \\(b")[0].plainText())
+    }
 }
