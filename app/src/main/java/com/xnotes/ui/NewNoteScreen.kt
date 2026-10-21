@@ -584,10 +584,10 @@ internal fun NewNoteScreen(
                                 style = style.copy(accentColor = null)
                             }) { style = style.copy(accentColor = it.copy(a = look.accent.a)) }
                         }
-                        TemplateParamControls(pageT, style, null, DPI, editor) { style = it }
+                        TemplateParamControls(pageT, style, null, DPI, editor, captionGap = 6.dp) { style = it }
                     }
                 } else if (hasCover) {
-                    TemplateParamControls(coverT!!, coverStyle, null, DPI, editor) { coverStyle = it }
+                    TemplateParamControls(coverT!!, coverStyle, null, DPI, editor, captionGap = 6.dp) { coverStyle = it }
                 } else {
                     Spacer(Modifier.size(12.dp))
                     Text(stringResource(R.string.pick_cover_hint), color = dim, fontSize = 13.sp)

@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
@@ -412,7 +413,7 @@ private fun TemplateCustomizer(
             }
         }
 
-        TemplateParamControls(t, style, lower, dpi, editor, apply)
+        TemplateParamControls(t, style, lower, dpi, editor, apply = apply)
 
         Spacer(Modifier.size(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -494,6 +495,7 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
  * Controls for [t]'s parameters on a page-style level: the spacing parameter on the classic
  * spacing slider (content px), the others as sliders or colour pickers, each with a Default chip
  * that falls back to [lower] (the level below, when its values apply) and then the template.
+ * [captionGap] spaces a colour row's caption from its circles, as the host's own rows do.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -503,6 +505,7 @@ internal fun TemplateParamControls(
     lower: PageStyle?,
     dpi: Int,
     store: SwatchStore,
+    captionGap: Dp = 0.dp,
     apply: (PageStyle) -> Unit,
 ) {
     val k = dpi / 25.4
@@ -531,7 +534,8 @@ internal fun TemplateParamControls(
         if (p.type == com.xnotes.core.template.ParamType.COLOR) {
             val own = style.colors?.get(p.name)
             StyleCaption(label)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(Modifier.size(captionGap))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ModeChip(stringResource(R.string.default_choice), own == null) {
                     apply(style.copy(colors = style.colors?.minus(p.name)?.takeIf { it.isNotEmpty() }))
                 }
