@@ -272,20 +272,10 @@ private fun PageThumb(
                 }
             }
         }
+        val captionColor = (if (current || selected) palette.accent else palette.textDim).toComposeColor()
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                "%02d".format(index + 1),
-                color = (if (current || selected) palette.accent else palette.textDim).toComposeColor(),
-                fontSize = 10.sp,
-            )
-            if (page.cover) {
-                Text(
-                    stringResource(R.string.cover),
-                    color = palette.selectionForeground.toComposeColor(),
-                    fontSize = 10.sp,
-                    modifier = Modifier.background(palette.selectionBackground.toComposeColor(), CircleShape).padding(horizontal = 6.dp, vertical = 1.dp),
-                )
-            }
+            Text("%02d".format(index + 1), color = captionColor, fontSize = 10.sp)
+            if (page.cover) Text(stringResource(R.string.cover), color = captionColor, fontSize = 10.sp)
         }
     }
 }
