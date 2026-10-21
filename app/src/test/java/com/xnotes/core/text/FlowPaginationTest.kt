@@ -312,4 +312,39 @@ class FlowPaginationTest {
         flow.paragraphs[1].breakBefore = true
         assertEquals(1, layout.layout(flow, pages(1), 150).extraPagesNeeded)
     }
+
+    // --- list numbering ---
+
+    private fun item(text: String, indent: Int = 0, kind: ListKind = ListKind.ORDERED, start: Int? = null) =
+        Paragraph(mutableListOf(Run(text)), indent = indent, list = kind, listStart = start)
+
+    private fun ordinals(vararg paras: Paragraph): List<Int?> {
+        val flow = TextFlow().apply {
+            margins = FlowMargins(0.0, 0.0, 0.0, 0.0)
+            paragraphs.addAll(paras)
+        }
+        val frame = layout.layout(flow, listOf(PageBox(400.0, 400.0)), 150)
+        return frame.pages[0].lines.map { it.marker?.ordinal }
+    }
+
+    @Test
+    fun anOrderedListCountsFromItsStart() {
+        assertEquals(listOf(3, 4, 5), ordinals(item("a", start = 3), item("b"), item("c")))
+    }
+
+    @Test
+    fun aNestedListCountsApartFromTheOneAroundIt() {
+        val got = ordinals(
+            item("a"), item("x", 1), item("y", 1), item("b"),
+            item("dot", 1, ListKind.BULLET), item("c"),
+        )
+        assertEquals(listOf(1, 1, 2, 2, 0, 3), got)
+    }
+
+    @Test
+    fun aParagraphContinuingAnItemKeepsTheCountButBodyTextEndsIt() {
+        val more = Paragraph(mutableListOf(Run("more")), indent = 1)
+        val body = Paragraph(mutableListOf(Run("body")))
+        assertEquals(listOf(1, null, 2, null, 1), ordinals(item("a"), more, item("b"), body, item("c")))
+    }
 }

@@ -22,7 +22,7 @@ object InputRules {
     // prefix the user just completed with the trigger space.
     private val HEADING = Regex("^(#{1,4}) $")
     private val TASK = Regex("^(\\s*)\\[([ xX]?)] $")
-    private val ORDERED = Regex("^(\\s*)\\d{1,9}[.)] $")
+    private val ORDERED = Regex("^(\\s*)(\\d{1,9})[.)] $")
     private val BULLET = Regex("^(\\s*)[-*+] $")
     private val QUOTE = Regex("^(>+) $")
     private val FENCE = Regex("^\\s{0,3}```\\s*([A-Za-z0-9+#-]*)\\s*$")
@@ -51,6 +51,7 @@ object InputRules {
         val checked: Boolean = false,
         val indent: Int? = null,
         val indentDelta: Int = 0,
+        val start: Int? = null,
     ) : Rule
 
     private class Inline(val open: Int, val marker: String, val emph: Emph) : Rule
@@ -129,7 +130,10 @@ object InputRules {
                 indent = indentOf(it.groupValues[1]),
             )
         }
-        ORDERED.matchEntire(before)?.let { return Block(n, list = ListKind.ORDERED, indent = indentOf(it.groupValues[1])) }
+        ORDERED.matchEntire(before)?.let {
+            val start = it.groupValues[2].toInt().takeIf { s -> s != 1 }
+            return Block(n, list = ListKind.ORDERED, indent = indentOf(it.groupValues[1]), start = start)
+        }
         BULLET.matchEntire(before)?.let { return Block(n, list = ListKind.BULLET, indent = indentOf(it.groupValues[1])) }
         QUOTE.matchEntire(before)?.let { return Block(n, indentDelta = it.groupValues[1].length) }
         return null
@@ -232,6 +236,7 @@ object InputRules {
             if (b.list != null) {
                 p.list = b.list
                 p.checked = b.checked
+                p.listStart = b.start
             }
             if (b.indent != null) p.indent = b.indent
             p.indent += b.indentDelta

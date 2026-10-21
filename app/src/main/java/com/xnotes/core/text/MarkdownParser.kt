@@ -218,14 +218,18 @@ object MarkdownParser {
          */
         private fun list(node: ListBlock, indent: Int) {
             val kind = if (node is OrderedList) ListKind.ORDERED else ListKind.BULLET
+            var start = (node as? OrderedList)?.markerStartNumber?.takeIf { it != 1 }
             var item = node.firstChild
             while (item != null) {
-                if (item is ListItem) listItem(item, kind, indent)
+                if (item is ListItem) {
+                    listItem(item, kind, indent, start)
+                    start = null
+                }
                 item = item.next
             }
         }
 
-        private fun listItem(item: ListItem, kind: ListKind, indent: Int) {
+        private fun listItem(item: ListItem, kind: ListKind, indent: Int, start: Int?) {
             val task = taskMarker(item)
             val inner = (indent + 1).coerceAtMost(Paragraph.MAX_INDENT)
             var first = true
@@ -244,6 +248,7 @@ object MarkdownParser {
                                     list = if (task != null) ListKind.CHECK else kind,
                                     checked = task?.isChecked == true,
                                     headingLevel = level,
+                                    listStart = start.takeIf { task == null },
                                 )
                             } else {
                                 Paragraph(runs, indent = inner, headingLevel = level)
@@ -251,25 +256,26 @@ object MarkdownParser {
                         }
                     }
                     child is ListBlock -> {
-                        if (first) emit(markerOnly(kind, task, indent))
+                        if (first) emit(markerOnly(kind, task, indent, start))
                         first = false
                         list(child, inner)
                     }
                     else -> {
-                        if (first) emit(markerOnly(kind, task, indent))
+                        if (first) emit(markerOnly(kind, task, indent, start))
                         first = false
                         block(child, inner)
                     }
                 }
                 child = child.next
             }
-            if (first) emit(markerOnly(kind, task, indent))
+            if (first) emit(markerOnly(kind, task, indent, start))
         }
 
-        private fun markerOnly(kind: ListKind, task: TaskListItemMarker?, indent: Int) = Paragraph(
+        private fun markerOnly(kind: ListKind, task: TaskListItemMarker?, indent: Int, start: Int?) = Paragraph(
             indent = indent,
             list = if (task != null) ListKind.CHECK else kind,
             checked = task?.isChecked == true,
+            listStart = start.takeIf { task == null },
         )
 
         private fun taskMarker(item: ListItem): TaskListItemMarker? =

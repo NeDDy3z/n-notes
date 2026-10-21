@@ -498,6 +498,10 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         var page = firstPage.coerceIn(0, pageBoxes.lastIndex)
         var y = contentRects[page].top
         var ordinal = 0
+        // Numbering counts per indent level, so a nested list or a paragraph continuing an
+        // item does not restart the list it sits in; anything at a level ends the lists at
+        // and below it there.
+        val counters = IntArray(Paragraph.MAX_INDENT + 1)
         var skipTo = 0
         for ((paraIndex, para) in flow.paragraphs.withIndex()) {
             if (page > throughPage) break
@@ -509,6 +513,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 page = cur.page
                 y = cur.y
                 ordinal = 0
+                counters.fill(0)
                 skipTo = block.last + 1
                 continue
             }
@@ -525,7 +530,15 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 }
                 if (page > throughPage) break
             }
-            ordinal = if (para.list == ListKind.ORDERED) ordinal + 1 else 0
+            val level = para.indent.coerceIn(0, Paragraph.MAX_INDENT)
+            if (para.list == ListKind.ORDERED) {
+                counters[level] = para.listStart ?: (counters[level] + 1)
+                counters.fill(0, level + 1, counters.size)
+                ordinal = counters[level]
+            } else {
+                counters.fill(0, level, counters.size)
+                ordinal = 0
+            }
             val indentPx = para.indent * INDENT_STEP_PX +
                 if (para.list != ListKind.NONE) MARKER_GUTTER_PX else 0.0
             var rect = contentRects.getOrElse(page) { spare }

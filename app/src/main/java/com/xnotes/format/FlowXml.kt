@@ -101,7 +101,8 @@ object FlowXml {
             } else {
                 append("   <text:list xnotes:list=\"${kind.id}\">\n")
                 while (i < paras.size && paras[i].list == kind) {
-                    append("    <text:list-item>\n")
+                    val start = paras[i].listStart
+                    append(if (start == null) "    <text:list-item>\n" else "    <text:list-item text:start-value=\"$start\">\n")
                     appendParagraph(flow, paras[i], paraStyles, charStyles, "     ")
                     append("    </text:list-item>\n")
                     i++
@@ -488,7 +489,11 @@ object FlowXml {
             headingLevel = attr(p, "heading")?.toIntOrNull()?.coerceIn(0, Paragraph.MAX_HEADING) ?: 0,
             rule = attr(p, "rule") == "true",
             breakBefore = props.breakBefore,
+            listStart = (p.parentNode as? Element)
+                ?.takeIf { (it.localName ?: it.nodeName) == "list-item" }
+                ?.let { attr(it, "start-value")?.toIntOrNull() },
         )
+        if (para.list != ListKind.ORDERED) para.listStart = null
         collectRuns(p, CharStyle.DEFAULT, charStyles, para.runs)
         // The size written on a heading's text is for older readers; the level sizes it here.
         if (para.headingLevel > 0) for (run in para.runs) run.style = run.style.copy(sizePt = null)

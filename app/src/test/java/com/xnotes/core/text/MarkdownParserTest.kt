@@ -334,4 +334,12 @@ class MarkdownParserTest {
         assertEquals(listOf("a", "b", ""), paras.map { it.plainText() })
         assertEquals(listOf(false, true, true), paras.map { it.breakBefore })
     }
+
+    @Test
+    fun anOrderedListKeepsItsStartNumber() {
+        val paras = parse("3. a\n4. b\n\n1. fresh")
+        assertEquals(3, paras[0].listStart)
+        assertEquals(null, paras[1].listStart)
+        assertEquals(null, paras.last().listStart)
+    }
 }

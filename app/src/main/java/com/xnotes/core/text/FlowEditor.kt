@@ -90,6 +90,7 @@ class FlowEditor(private val flow: TextFlow) {
                 // A rule stays only where nothing was typed into it, and never continues.
                 rule = i == 0 && props.rule && runs.isEmpty(),
                 breakBefore = i == 0 && props.breakBefore,
+                listStart = if (i == 0) props.listStart else null,
             ).also { normalize(it) }
         }
         val removed = flow.paragraphs.subList(start.para, end.para + 1).toList()
@@ -128,6 +129,7 @@ class FlowEditor(private val flow: TextFlow) {
             mutate(para)
             para.indent = para.indent.coerceIn(0, Paragraph.MAX_INDENT)
             para.headingLevel = para.headingLevel.coerceIn(0, Paragraph.MAX_HEADING)
+            if (para.list != ListKind.ORDERED) para.listStart = null
             if (para.table != null) {
                 // Cells hold rich text only: no lists, code lines, headings, rules, breaks or indents.
                 para.list = ListKind.NONE

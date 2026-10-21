@@ -276,4 +276,16 @@ class FlowXmlTest {
         assertTrue(back[1].breakBefore)
         assertEquals(1, back[1].indent)
     }
+
+    @Test
+    fun aListStartRoundTripsAsOdfStartValue() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("a")), list = ListKind.ORDERED, listStart = 4))
+            paragraphs.add(Paragraph(mutableListOf(Run("b")), list = ListKind.ORDERED))
+        }
+        assertTrue(String(FlowXml.write(flow)).contains("text:start-value=\"4\""))
+        val back = roundTrip(flow).paragraphs
+        assertEquals(4, back[0].listStart)
+        assertEquals(null, back[1].listStart)
+    }
 }

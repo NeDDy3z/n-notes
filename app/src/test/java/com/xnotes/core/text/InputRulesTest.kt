@@ -592,4 +592,15 @@ class InputRulesTest {
         assertTrue(flow.paragraphs[0].breakBefore)
         assertFalse(flow.paragraphs[1].breakBefore)
     }
+
+    @Test
+    fun aTypedNumberStartsTheListThere() {
+        assertEquals(3, typed("3. a").listStart)
+        assertEquals(null, typed("1. a").listStart)
+        val flow = TextFlow()
+        type(flow, "7) a\nb")
+        assertEquals(7, flow.paragraphs[0].listStart)
+        assertEquals(null, flow.paragraphs[1].listStart)
+        assertEquals(ListKind.ORDERED, flow.paragraphs[1].list)
+    }
 }

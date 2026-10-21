@@ -82,6 +82,8 @@ class Paragraph(
     var rule: Boolean = false,
     /** A page break before this paragraph: it starts the next page. */
     var breakBefore: Boolean = false,
+    /** The number an ordered item restarts its list at; null counts on from the item before. */
+    var listStart: Int? = null,
 ) {
     /** Bumped on any content or style mutation; layout caches key on it. */
     var rev: Int = 0
@@ -102,13 +104,13 @@ class Paragraph(
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
         align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
-            table == null && headingLevel == 0 && !rule && !breakBefore
+            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null
 
     /** A copy sharing [table]; [TextFlow.deepCopy] remaps it onto copied tables. */
     fun deepCopy(): Paragraph =
         Paragraph(
             runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart, headingLevel,
-            rule = rule, breakBefore = breakBefore,
+            rule = rule, breakBefore = breakBefore, listStart = listStart,
         ).also { it.rev = rev }
 
     companion object {

@@ -1462,6 +1462,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.indent = 0
             it.rule = false
             it.breakBefore = false
+            it.listStart = null
         }
         val lastIndex: Int
         when {
