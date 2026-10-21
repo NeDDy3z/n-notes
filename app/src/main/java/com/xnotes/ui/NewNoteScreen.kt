@@ -292,8 +292,13 @@ internal fun NewNoteScreen(
             face = Face.PAGES
         }
 
+        // Each design keeps what was set on it while the screen is open, so trying another loses nothing.
+        val coverTweaks = remember { HashMap<String, PageStyle>() }
         fun pickCover(key: String) {
-            if (coverKey != key) coverStyle = PageStyle(template = key)
+            if (coverKey != key) {
+                coverKey?.let { coverTweaks[it] = coverStyle }
+                coverStyle = coverTweaks[key] ?: PageStyle(template = key)
+            }
             coverOn = true
             face = Face.COVER
         }
