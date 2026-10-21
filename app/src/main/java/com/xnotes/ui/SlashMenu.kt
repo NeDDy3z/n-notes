@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
+import com.xnotes.core.text.CalloutKind
 import com.xnotes.core.text.SlashCommands
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -167,6 +168,8 @@ private fun slashLabel(entry: SlashCommands.Entry): String = when (entry.kind) {
     SlashCommands.Kind.BULLET -> stringResource(R.string.bullet_list)
     SlashCommands.Kind.ORDERED -> stringResource(R.string.ordered_list)
     SlashCommands.Kind.TODO -> stringResource(R.string.checkbox_item)
+    SlashCommands.Kind.QUOTE -> stringResource(R.string.quote)
+    SlashCommands.Kind.CALLOUT -> calloutLabel(CalloutKind.entries[entry.level])
     SlashCommands.Kind.CODE -> stringResource(R.string.code_block)
     SlashCommands.Kind.TABLE -> stringResource(R.string.insert_table)
     SlashCommands.Kind.PAGE_BREAK -> stringResource(R.string.page_break)
@@ -175,4 +178,16 @@ private fun slashLabel(entry: SlashCommands.Entry): String = when (entry.kind) {
     SlashCommands.Kind.MATH -> stringResource(R.string.equation)
     SlashCommands.Kind.DATE -> stringResource(R.string.insert_date)
     SlashCommands.Kind.TIME -> stringResource(R.string.insert_time)
+}
+
+/** A callout's title, as its title row and the slash menu show it. */
+@Composable
+fun calloutLabel(kind: CalloutKind): String = stringResource(calloutLabelRes(kind))
+
+fun calloutLabelRes(kind: CalloutKind): Int = when (kind) {
+    CalloutKind.NOTE -> R.string.callout_note
+    CalloutKind.TIP -> R.string.callout_tip
+    CalloutKind.IMPORTANT -> R.string.callout_important
+    CalloutKind.WARNING -> R.string.callout_warning
+    CalloutKind.CAUTION -> R.string.callout_caution
 }

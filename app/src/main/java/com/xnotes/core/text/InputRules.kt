@@ -26,7 +26,8 @@ object InputRules {
     private val TASK = Regex("^(\\s*)\\[([ xX]?)] $")
     private val ORDERED = Regex("^(\\s*)(\\d{1,9})[.)] $")
     private val BULLET = Regex("^(\\s*)[-*+] $")
-    private val QUOTE = Regex("^(>+) $")
+    private val QUOTE = Regex("^>+ $")
+    private val CALLOUT = Regex("^\\[!([A-Za-z]+)] $")
     private val FENCE = Regex("^\\s{0,3}```\\s*([A-Za-z0-9+#-]*)\\s*$")
     private val RULE = Regex("^ {0,3}([-*_])(?: *\\1){2,} *$")
     private val LINK = Regex("\\[([^\\[\\]]+)]\\(([^()\\s]+)\\)$")
@@ -56,8 +57,8 @@ object InputRules {
         val list: ListKind? = null,
         val checked: Boolean = false,
         val indent: Int? = null,
-        val indentDelta: Int = 0,
         val start: Int? = null,
+        val quote: Boolean = false,
     ) : Rule
 
     private class Inline(val open: Int, val marker: String, val emph: Emph) : Rule
@@ -75,7 +76,10 @@ object InputRules {
 
     private object HRule : Rule
 
-    private enum class Strip : Rule { BREAK, RULE, CODE, LIST, LIST_EXIT, HEADING, INDENT }
+    /** `[!kind] ` typed at the start of a plain quote: the whole quote becomes that callout. */
+    private class Callout(val prefix: Int, val kind: CalloutKind) : Rule
+
+    private enum class Strip : Rule { BREAK, RULE, CODE, LIST, LIST_EXIT, QUOTE_EXIT, HEADING, QUOTE, INDENT }
 
     // --- detection ---
 
@@ -92,7 +96,7 @@ object InputRules {
         if (pos.offset > text.length) return null
         val before = text.take(pos.offset)
         if (!typed.endsWith(" ")) return inlineRule(before)
-        return (if (para.table != null) null else blockRule(before)) ?: autoLinkRule(para, before)
+        return (if (para.table != null) null else blockRule(para, before)) ?: autoLinkRule(para, before)
     }
 
     /**
@@ -108,14 +112,19 @@ object InputRules {
             }
             if (RULE.matches(para.plainText())) return HRule
         }
-        // Enter on an empty list item steps out of it rather than making another.
-        if (para.length != 0 || para.list == ListKind.NONE) return null
-        return Strip.LIST_EXIT
+        // Enter on an empty list item steps out of it rather than making another, and
+        // on an empty line of a quote steps out of the quote.
+        if (para.length != 0) return null
+        return when {
+            para.list != ListKind.NONE -> Strip.LIST_EXIT
+            para.quote != null -> Strip.QUOTE_EXIT
+            else -> null
+        }
     }
 
     /**
      * The rule a backspace at the very start of [pos]'s paragraph triggers: strip
-     * one block property (page break, rule, code line, list, heading, then indent) instead of
+     * one block property (page break, rule, code line, list, heading, quote, then indent) instead of
      * merging into the line above. Null when the key should just delete.
      */
     fun forBackspace(flow: TextFlow, pos: FlowPos): Rule? {
@@ -127,13 +136,17 @@ object InputRules {
             para.codeLang != null -> if (para.length == 0) Strip.CODE else null
             para.list != ListKind.NONE -> Strip.LIST
             para.headingLevel > 0 -> Strip.HEADING
+            para.quote != null -> Strip.QUOTE
             para.indent > 0 -> Strip.INDENT
             else -> null
         }
     }
 
-    private fun blockRule(before: String): Rule? {
+    private fun blockRule(para: Paragraph, before: String): Rule? {
         val n = before.length
+        if (para.quote?.kind == null && para.quote != null) {
+            CALLOUT.matchEntire(before)?.let { m -> CalloutKind.fromId(m.groupValues[1])?.let { return Callout(n, it) } }
+        }
         HEADING.matchEntire(before)?.let { return Block(n, heading = it.groupValues[1].length) }
         TASK.matchEntire(before)?.let {
             return Block(
@@ -148,7 +161,7 @@ object InputRules {
             return Block(n, list = ListKind.ORDERED, indent = indentOf(it.groupValues[1]), start = start)
         }
         BULLET.matchEntire(before)?.let { return Block(n, list = ListKind.BULLET, indent = indentOf(it.groupValues[1])) }
-        QUOTE.matchEntire(before)?.let { return Block(n, indentDelta = it.groupValues[1].length) }
+        if (QUOTE.matches(before)) return Block(n, quote = true)
         return null
     }
 
@@ -279,6 +292,7 @@ object InputRules {
         is Math -> applyMath(flow, pos, rule)
         is Fence -> applyFence(flow, pos, rule)
         is LinkUp -> applyLink(flow, pos, rule)
+        is Callout -> applyCallout(flow, pos, rule)
         is AutoLink -> Result(
             FlowEditor(flow).setCharStyle(FlowRange(FlowPos(pos.para, rule.start), FlowPos(pos.para, rule.end))) {
                 it.copy(link = rule.uri)
@@ -302,7 +316,12 @@ object InputRules {
                 p.listStart = b.start
             }
             if (b.indent != null) p.indent = b.indent
-            p.indent += b.indentDelta
+            // A quote typed next to one joins it, the way consecutive ">" lines are one quote.
+            if (b.quote && p.quote == null) {
+                p.quote = flow.paragraphs.getOrNull(pos.para - 1)?.quote
+                    ?: flow.paragraphs.getOrNull(pos.para + 1)?.quote
+                    ?: FlowQuote()
+            }
         }?.let { cmds += it }
         var pending: CharStyle? = null
         if (b.heading > 0) {
@@ -367,6 +386,22 @@ object InputRules {
         ed.deleteRange(FlowRange(caret, FlowPos(pos.para, flow.paragraphs[pos.para].length))).first?.let { cmds += it }
         ed.setParaStyle(FlowRange.caret(caret)) { it.codeLang = r.lang }?.let { cmds += it }
         return Result(ed.combined(cmds), caret, CharStyle.DEFAULT)
+    }
+
+    /** The marker goes and every paragraph of the quote takes one new callout of [r]'s kind. */
+    private fun applyCallout(flow: TextFlow, pos: FlowPos, r: Callout): Result {
+        val ed = FlowEditor(flow)
+        val caret = FlowPos(pos.para, 0)
+        val cmds = mutableListOf<Command>()
+        ed.deleteRange(FlowRange(caret, FlowPos(pos.para, r.prefix))).first?.let { cmds += it }
+        val old = flow.paragraphs[pos.para].quote
+        var first = pos.para
+        var last = pos.para
+        while (first > 0 && flow.paragraphs[first - 1].quote === old) first--
+        while (last + 1 < flow.paragraphs.size && flow.paragraphs[last + 1].quote === old) last++
+        val callout = FlowQuote(r.kind)
+        ed.setParaStyle(FlowRange(FlowPos(first, 0), FlowPos(last, 0))) { it.quote = callout }?.let { cmds += it }
+        return Result(ed.combined(cmds), caret)
     }
 
     /** The brackets and address go, and the text left between them links to it. */
@@ -436,6 +471,7 @@ object InputRules {
                 }
                 Result(ed.combined(cmds), caret, CharStyle.DEFAULT)
             }
+            Strip.QUOTE, Strip.QUOTE_EXIT -> Result(ed.setParaStyle(FlowRange.caret(caret)) { it.quote = null }, caret)
             Strip.INDENT -> Result(ed.setParaStyle(FlowRange.caret(caret)) { it.indent-- }, caret)
         }
     }

@@ -17,6 +17,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import com.xnotes.core.text.CalloutKind
+import com.xnotes.core.text.FlowQuote
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -316,5 +319,28 @@ class FlowXmlTest {
     fun aFlowWithoutLinksDeclaresNoXlink() {
         val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("a")))) }
         assertFalse(String(FlowXml.write(flow)).contains("xlink"))
+    }
+
+    @Test
+    fun quotesAndCalloutsRoundTripAsContainers() {
+        val note = FlowQuote(CalloutKind.NOTE)
+        val other = FlowQuote(CalloutKind.NOTE)
+        val plain = FlowQuote()
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("a")), quote = note))
+            paragraphs.add(Paragraph(mutableListOf(Run("b")), list = ListKind.BULLET, quote = note))
+            paragraphs.add(Paragraph(mutableListOf(Run("c")), quote = other))
+            paragraphs.add(Paragraph(mutableListOf(Run("d"))))
+            paragraphs.add(Paragraph(mutableListOf(Run("e")), quote = plain))
+        }
+        val xml = String(FlowXml.write(flow))
+        assertTrue(xml.contains("xnotes:callout=\"note\""))
+        val back = roundTrip(flow).paragraphs
+        assertTrue(back[0].quote != null && back[0].quote === back[1].quote)
+        assertTrue(back[2].quote != null && back[2].quote !== back[1].quote)
+        assertEquals(CalloutKind.NOTE, back[2].quote?.kind)
+        assertEquals(null, back[3].quote)
+        assertEquals(null, back[4].quote?.kind)
+        assertNotNull(back[4].quote)
     }
 }

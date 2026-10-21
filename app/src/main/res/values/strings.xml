@@ -732,6 +732,12 @@
     <string name="insert_date">Date</string>
     <string name="insert_time">Time</string>
     <string name="page_break">Page break</string>
+    <string name="quote">Quote</string>
+    <string name="callout_note">Note</string>
+    <string name="callout_tip">Tip</string>
+    <string name="callout_important">Important</string>
+    <string name="callout_warning">Warning</string>
+    <string name="callout_caution">Caution</string>
     <string name="done">Done</string>
     <string name="text_colour">Text colour</string>
     <string name="remove_highlight">Remove highlight</string>

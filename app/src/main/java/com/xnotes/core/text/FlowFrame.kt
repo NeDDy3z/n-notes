@@ -93,6 +93,12 @@ class PlacedLine(
     val font: FontSpec = FontSpec(TextFlow.DEFAULT_SIZE_PT),
     /** A horizontal rule's line, drawn across [codeLeft]..[codeRight]. */
     val rule: Boolean = false,
+    /** Which quote or callout of the flow this line sits in, counted in order, or -1. */
+    val quoteId: Int = -1,
+    /** Where that container's bar stands. */
+    val quoteBar: Double = 0.0,
+    /** The callout's kind, null for a plain quote. */
+    val callout: CalloutKind? = null,
 ) {
     val height: Double get() = bottom - top
 
@@ -172,12 +178,32 @@ class BreakMark(
     val font: FontSpec,
 )
 
-/** The flow laid onto one page: its content rect, the lines placed there, its table slices and page breaks. */
+/**
+ * A callout's title row above its first line: [kind]'s icon in a [iconSize] square at [x],
+ * then [label] in [font] on [baseline]. [quoteId] ties it to its lines, [para] is the
+ * paragraph it heads. The row runs from [top] to [bottom].
+ */
+class CalloutTitle(
+    val quoteId: Int,
+    val kind: CalloutKind,
+    val para: Int,
+    val top: Double,
+    val bottom: Double,
+    val x: Double,
+    val baseline: Double,
+    val iconSize: Double,
+    val label: String,
+    val labelX: Double,
+    val font: FontSpec,
+)
+
+/** The flow laid onto one page: its content rect, lines, table slices, page breaks and callout titles. */
 class PageFlow(
     val contentRect: Rect,
     val lines: List<PlacedLine>,
     val tables: List<TableFrag> = emptyList(),
     val breaks: List<BreakMark> = emptyList(),
+    val callouts: List<CalloutTitle> = emptyList(),
 )
 
 /** What a text-tool tap landed on. */
@@ -258,6 +284,8 @@ class FlowFrame(
             mix(line.baseline.toRawBits())
             mix(line.bottom.toRawBits())
             mix(if (line.rule) 1L else 0L)
+            mix(line.quoteId.toLong())
+            mix((line.callout?.ordinal ?: -1).toLong())
             for (x in line.xs) mix(x.toRawBits())
             for (seg in line.segs) mix(if (seg.math) -seg.start.toLong() - 1 else seg.start.toLong())
             for (d in line.decos) {
@@ -267,6 +295,10 @@ class FlowFrame(
             }
         }
         for (b in page.breaks) mix(b.y.toRawBits())
+        for (t in page.callouts) {
+            mix(t.top.toRawBits())
+            mix(t.kind.ordinal.toLong())
+        }
         for (t in page.tables) {
             for (row in t.rows) {
                 mix(row.top.toRawBits())
@@ -283,7 +315,7 @@ class FlowFrame(
     fun pageFlowBounds(pageIndex: Int): Rect? {
         val page = pages.getOrNull(pageIndex) ?: return null
         if (page.lines.isEmpty()) return null
-        var top = page.lines.minOf { it.top }
+        var top = minOf(page.lines.minOf { it.top }, page.callouts.minOfOrNull { it.top } ?: Double.MAX_VALUE)
         var bottom = page.lines.maxOf { it.bottom }
         var pad = FlowPainter.CODE_PAD
         for (t in page.tables) {

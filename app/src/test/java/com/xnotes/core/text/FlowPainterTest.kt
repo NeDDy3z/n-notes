@@ -215,4 +215,15 @@ class FlowPainterTest {
         assertEquals(null, frame.linkAt(0, com.xnotes.core.geometry.Pt(line.caretX(1), line.baseline), 2.0))
         assertEquals(1, paint(frame).ops.count { it == "fillRect" })
     }
+
+    @Test
+    fun aCalloutPaintsItsBarIconAndTitle() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("x")), quote = FlowQuote(CalloutKind.WARNING)))
+        }
+        val ops = paint(frameOf(flow)).ops
+        assertTrue(ops.any { it.startsWith("drawTextRun:Warning@") })
+        assertTrue(ops.any { it.startsWith("strokePolygon") })
+        assertTrue(ops.indexOfFirst { it == "fillRect" } < ops.indexOfFirst { it.startsWith("drawTextRun:x@") })
+    }
 }

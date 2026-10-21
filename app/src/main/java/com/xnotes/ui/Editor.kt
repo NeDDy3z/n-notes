@@ -1463,6 +1463,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.rule = false
             it.breakBefore = false
             it.listStart = null
+            it.quote = null
         }
         val lastIndex: Int
         when {
@@ -1899,6 +1900,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowLayout.ruleColor = { tableRuleColor() }
         flowLayout.revealedMath = { revealedMathIn(it) }
         flowLayout.pageBreakLabel = appContext.getString(R.string.page_break)
+        val callouts = com.xnotes.core.text.CalloutKind.entries.associateWith { appContext.getString(calloutLabelRes(it)) }
+        flowLayout.calloutLabel = { callouts.getValue(it) }
     }
 
     /**
@@ -6687,6 +6690,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             SlashCommands.Kind.BULLET -> flowSetList(ListKind.BULLET)
             SlashCommands.Kind.ORDERED -> flowSetList(ListKind.ORDERED)
             SlashCommands.Kind.TODO -> flowSetList(ListKind.CHECK)
+            SlashCommands.Kind.QUOTE -> flowStartQuote(null)
+            SlashCommands.Kind.CALLOUT -> flowStartQuote(com.xnotes.core.text.CalloutKind.entries[entry.level])
             SlashCommands.Kind.CODE -> flowSetCodeLanguage(slashCodeLanguage(arg))
             SlashCommands.Kind.TABLE -> slashInsertTable(arg)
             SlashCommands.Kind.PAGE_BREAK -> flowInsertPageBreak()
@@ -6718,6 +6723,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The language "/code xyz" means: a known token, else whatever the bar last used. */
     private fun slashCodeLanguage(arg: String): String =
         codeLanguageChoices().firstOrNull { it.equals(arg, ignoreCase = true) } ?: lastCodeLanguage()
+
+    /**
+     * Put the selected paragraph(s) in one new quote, or callout of [kind]. A paragraph already
+     * in one is left as it is: a callout's kind is set when it is made and never changed.
+     */
+    fun flowStartQuote(kind: com.xnotes.core.text.CalloutKind?) {
+        val flow = state.document.flow
+        val sel = flowText.selection.normalized()
+        val paras = (sel.start.para..sel.end.para).mapNotNull { flow.paragraphs.getOrNull(it) }
+        if (paras.any { it.quote != null }) return
+        val quote = com.xnotes.core.text.FlowQuote(kind)
+        flowParaOp { if (it.table == null && it.codeLang == null && !it.rule) it.quote = quote }
+    }
 
     /** Break the page at the caret: what follows it starts the next page. Tables cannot hold one. */
     fun flowInsertPageBreak() {

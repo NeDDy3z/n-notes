@@ -2,6 +2,7 @@ package com.xnotes.core.text
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,7 +44,9 @@ class MarkdownParserTest {
         assertTrue(paras[3].checked)
         assertFalse(paras[4].checked)
         assertEquals("quoted", paras[5].plainText())
-        assertEquals(1, paras[5].indent)
+        assertEquals(0, paras[5].indent)
+        assertNotNull(paras[5].quote)
+        assertTrue(paras.take(5).all { it.quote == null })
     }
 
     @Test
@@ -296,8 +299,10 @@ class MarkdownParserTest {
     fun aListInsideAQuoteKeepsItsMarker() {
         val p = parse("> - item").single()
         assertEquals(ListKind.BULLET, p.list)
-        assertEquals(1, p.indent)
-        assertEquals(2, parse("> > deep").single().indent)
+        assertEquals(0, p.indent)
+        assertNotNull(p.quote)
+        val deep = parse("> a\n> > deep")
+        assertTrue(deep[0].quote != null && deep[0].quote === deep.last().quote)
     }
 
     @Test
@@ -372,5 +377,47 @@ class MarkdownParserTest {
         assertEquals(red, bold.style.highlight)
         assertEquals(null, p.runs.last().style.highlight)
         assertEquals(CharStyle.DEFAULT_HIGHLIGHT, parse("==x==")[0].runs.single().style.highlight)
+    }
+
+    // --- quotes and callouts ---
+
+    @Test
+    fun aQuoteIsOneContainerGapsAndAll() {
+        val paras = parse("> one\n>\n> two\n\nafter")
+        val q = paras[0].quote
+        assertNotNull(q)
+        assertEquals(listOf("one", "", "two"), paras.take(3).map { it.plainText() })
+        assertTrue(paras.take(3).all { it.quote === q })
+        assertEquals(null, paras.last().quote)
+    }
+
+    @Test
+    fun twoQuotesApartStayTwo() {
+        val paras = parse("> a\n\n> b")
+        assertTrue(paras.first().quote != null && paras.last().quote != null)
+        assertTrue(paras.first().quote !== paras.last().quote)
+    }
+
+    @Test
+    fun gitHubAlertsBecomeCallouts() {
+        for (kind in CalloutKind.entries) {
+            val paras = parse("> [!${kind.name}]\n> Body text\n> - item")
+            assertEquals(listOf("Body text", "item"), paras.map { it.plainText() })
+            assertTrue(paras.all { it.quote?.kind == kind })
+            assertTrue(paras[0].quote === paras[1].quote)
+        }
+        assertEquals(null, parse("> [!BOGUS]\n> x").last().quote?.kind)
+    }
+
+    @Test
+    fun codeCutsACalloutInTwo() {
+        val paras = parse("> [!TIP]\n> a\n> ```\n> code\n> ```\n> b")
+        val a = paras.first { it.plainText() == "a" }
+        val code = paras.first { it.codeLang != null }
+        val b = paras.first { it.plainText() == "b" }
+        assertEquals(null, code.quote)
+        assertEquals(CalloutKind.TIP, a.quote?.kind)
+        assertEquals(CalloutKind.TIP, b.quote?.kind)
+        assertTrue(a.quote !== b.quote)
     }
 }

@@ -77,6 +77,9 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
     /** What a page break's on-screen mark says, installed by the host so it can be translated. */
     var pageBreakLabel: String = "Page break"
 
+    /** A callout's title, installed by the host so it can be translated. */
+    var calloutLabel: (CalloutKind) -> String = { it.title }
+
     // --- per-paragraph measurement (cached) ---
 
     /** Advances and per-run fonts/metrics for one paragraph at given flow defaults. */
@@ -495,6 +498,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         val pageLines = List(pageBoxes.size) { mutableListOf<PlacedLine>() }
         val pageTables = List(pageBoxes.size) { mutableListOf<TableFrag>() }
         val pageBreaks = List(pageBoxes.size) { mutableListOf<BreakMark>() }
+        val pageCallouts = List(pageBoxes.size) { mutableListOf<CalloutTitle>() }
+        var quoteId = -1
         var page = firstPage.coerceIn(0, pageBoxes.lastIndex)
         var y = contentRects[page].top
         var ordinal = 0
@@ -530,6 +535,35 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 }
                 if (page > throughPage) break
             }
+            val quote = para.quote
+            if (quote != null && flow.paragraphs.getOrNull(paraIndex - 1)?.quote !== quote) {
+                quoteId++
+                val kind = quote.kind
+                if (kind != null) {
+                    // The title keeps with the first line under it, as a heading would.
+                    val font = FontSpec(flow.defaultSizePt, flow.defaultFace, bold = true)
+                    val m = measurer.metrics(font)
+                    val titleH = m.height + TITLE_GAP
+                    var here = contentRects.getOrElse(page) { spare }
+                    val first = breakLines(flow, para, (here.w - indentOf(para)).coerceAtLeast(MIN_LINE_WIDTH)).first()
+                    if (y + titleH + first.height > here.bottom + EPS && y > here.top + EPS) {
+                        page++
+                        here = contentRects.getOrElse(page) { spare }
+                        y = here.top
+                    }
+                    if (page > throughPage) break
+                    val x = here.left + QUOTE_INSET_PX
+                    val icon = m.ascent * ICON_PER_ASCENT
+                    val label = calloutLabel(kind)
+                    pageCallouts.getOrNull(page)?.add(
+                        CalloutTitle(
+                            quoteId, kind, paraIndex, y, y + titleH, x, y + m.ascent, icon,
+                            label, x + icon + ICON_GAP, font,
+                        ),
+                    )
+                    y += titleH
+                }
+            }
             val level = para.indent.coerceIn(0, Paragraph.MAX_INDENT)
             if (para.list == ListKind.ORDERED) {
                 counters[level] = para.listStart ?: (counters[level] + 1)
@@ -539,8 +573,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 counters.fill(0, level, counters.size)
                 ordinal = 0
             }
-            val indentPx = para.indent * INDENT_STEP_PX +
-                if (para.list != ListKind.NONE) MARKER_GUTTER_PX else 0.0
+            val indentPx = indentOf(para)
             var rect = contentRects.getOrElse(page) { spare }
             var avail = (rect.w - indentPx).coerceAtLeast(MIN_LINE_WIDTH)
             var lines = breakLines(flow, para, avail)
@@ -565,6 +598,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                     lastLineOfPara = li == lines.lastIndex,
                     firstLineOfPara = firstLine && bl.startChar == 0,
                     ordinal = ordinal,
+                    quoteId = if (quote != null) quoteId else -1,
                 )
                 pageLines.getOrNull(page)?.add(placed)
                 y += bl.height
@@ -573,9 +607,16 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             }
         }
         val extra = (page - (pageBoxes.size - 1)).coerceAtLeast(0)
-        val pages = pageBoxes.indices.map { PageFlow(contentRects[it], pageLines[it], pageTables[it], pageBreaks[it]) }
+        val pages = pageBoxes.indices.map {
+            PageFlow(contentRects[it], pageLines[it], pageTables[it], pageBreaks[it], pageCallouts[it])
+        }
         return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells, firstPage.coerceIn(0, pageBoxes.lastIndex))
     }
+
+    /** How far [para]'s text stands in from the column: its quote's bar, its indent and its marker. */
+    private fun indentOf(para: Paragraph): Double =
+        (if (para.quote != null) QUOTE_INSET_PX else 0.0) + para.indent * INDENT_STEP_PX +
+            if (para.list != ListKind.NONE) MARKER_GUTTER_PX else 0.0
 
     /** The mark for a break whose page's text ends at [y]: just [below] it, or else just above it. */
     private fun breakMark(flow: TextFlow, rect: Rect, y: Double, below: Boolean): BreakMark {
@@ -766,6 +807,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         lastLineOfPara: Boolean,
         firstLineOfPara: Boolean,
         ordinal: Int,
+        quoteId: Int = -1,
     ): PlacedLine {
         val n = bl.endChar - bl.startChar
         // A display equation with nothing beside it sits centred, which is where
@@ -847,7 +889,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             runStart = runEnd
         }
         val marker = if (firstLineOfPara && para.list != ListKind.NONE) {
-            val gutterLeft = contentRect.left + para.indent * INDENT_STEP_PX
+            val gutterLeft = contentRect.left + (if (para.quote != null) QUOTE_INSET_PX else 0.0) + para.indent * INDENT_STEP_PX
             val gutter = Rect(gutterLeft, y, MARKER_GUTTER_PX, bl.height)
             val font = FontSpec(flow.defaultSizePt, flow.defaultFace)
             if (para.list == ListKind.ORDERED) {
@@ -870,6 +912,9 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             mathStarts = mathStarts.toIntArray(),
             font = lineFont(shape, bl.startChar),
             rule = para.rule,
+            quoteId = quoteId,
+            quoteBar = contentRect.left,
+            callout = para.quote?.kind,
         )
     }
 
@@ -966,6 +1011,16 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
 
         /** A content rect is never shorter than this, however extreme the margins. */
         const val MIN_CONTENT_HEIGHT = 16.0
+
+        /** A quote's text stands this far in from its bar's left edge. */
+        const val QUOTE_INSET_PX = 24.0
+
+        /** A callout's icon is this much of its title's ascent, and stands this far from the title. */
+        private const val ICON_PER_ASCENT = 1.0
+        private const val ICON_GAP = 8.0
+
+        /** Room below a callout's title row before its first line. */
+        private const val TITLE_GAP = 4.0
 
         /** A page break's label sets this much smaller than the text. */
         private const val BREAK_LABEL_SCALE = 0.75

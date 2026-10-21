@@ -43,7 +43,12 @@ object FlowPainter {
             paintTableRules(r, table)
         }
         paintCodeChips(r, frame, page.lines, region)
+        paintQuoteBars(r, frame, page)
         if (r.writesText) r.endMark()
+        for (t in page.callouts) {
+            if (t.bottom < region.top || t.top > region.bottom) continue
+            paintCalloutTitle(r, frame, t)
+        }
         for (line in page.lines) {
             if (line.bottom < region.top || line.top > region.bottom) continue
             paintLine(r, frame, line, breaks[line.paraIndex], math)
@@ -58,6 +63,57 @@ object FlowPainter {
             for (seg in line.segs) {
                 if (seg.math) drawFormula(r, line, seg, inkOf(seg.style, frame))
             }
+        }
+    }
+
+    /** One bar down each run of lines a quote or callout holds on this page, its title row included. */
+    private fun paintQuoteBars(r: Renderer, frame: FlowFrame, page: PageFlow) {
+        val lines = page.lines
+        var i = 0
+        while (i < lines.size) {
+            val id = lines[i].quoteId
+            if (id < 0) {
+                i++
+                continue
+            }
+            var j = i
+            while (j + 1 < lines.size && lines[j + 1].quoteId == id) j++
+            val title = page.callouts.firstOrNull { it.quoteId == id }
+            val top = minOf(lines[i].top, title?.top ?: lines[i].top)
+            val kind = lines[i].callout
+            val color = if (kind == null) frame.defaultColor.withAlpha(QUOTE_ALPHA) else calloutColor(kind, frame)
+            r.fillRect(Rect(lines[i].quoteBar, top, QUOTE_BAR, lines[j].bottom - top), color)
+            i = j + 1
+        }
+    }
+
+    /** A callout's icon and title, in its colour. */
+    private fun paintCalloutTitle(r: Renderer, frame: FlowFrame, t: CalloutTitle) {
+        val color = calloutColor(t.kind, frame)
+        if (r.writesText) r.beginMark(Mark.Decoration)
+        val s = t.iconSize
+        CalloutIcons.paint(r, t.kind, t.x, t.baseline - s * ICON_RISE, s, color)
+        if (r.writesText) {
+            r.endMark()
+            r.beginMark(Mark.FlowTitle(t.para))
+        }
+        r.drawTextRun(t.label, t.labelX, t.baseline, t.font, color)
+        if (r.writesText) r.endMark()
+    }
+
+    /**
+     * GitHub's alert colours, the darker set on light paper and the lighter on dark, told
+     * apart by the text colour the frame resolved: light text means dark paper.
+     */
+    fun calloutColor(kind: CalloutKind, frame: FlowFrame): Rgba {
+        val c = frame.defaultColor
+        val darkPaper = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b > 128
+        return when (kind) {
+            CalloutKind.NOTE -> if (darkPaper) Rgba(68, 147, 248, 255) else Rgba(9, 105, 218, 255)
+            CalloutKind.TIP -> if (darkPaper) Rgba(63, 185, 80, 255) else Rgba(26, 127, 55, 255)
+            CalloutKind.IMPORTANT -> if (darkPaper) Rgba(171, 125, 248, 255) else Rgba(130, 80, 223, 255)
+            CalloutKind.WARNING -> if (darkPaper) Rgba(210, 153, 34, 255) else Rgba(154, 103, 0, 255)
+            CalloutKind.CAUTION -> if (darkPaper) Rgba(248, 81, 73, 255) else Rgba(209, 36, 47, 255)
         }
     }
 
@@ -320,6 +376,13 @@ object FlowPainter {
     val MATH_BG = Rgba(88, 140, 216, 44)
     val MATH_ERROR_BG = Rgba(214, 74, 68, 52)
     val MATH_ERROR_RULE = Rgba(214, 74, 68, 190)
+
+    /** A quote's bar: this wide, and for a plain quote the text colour toned down this far. */
+    private const val QUOTE_BAR = 4.0
+    private const val QUOTE_ALPHA = 90
+
+    /** How much of a callout icon stands above its title's baseline. */
+    private const val ICON_RISE = 0.9
 
     private const val BREAK_ALPHA = 110
     private const val BREAK_LINE = 1.5

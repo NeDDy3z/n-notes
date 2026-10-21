@@ -347,4 +347,44 @@ class FlowPaginationTest {
         val body = Paragraph(mutableListOf(Run("body")))
         assertEquals(listOf(1, null, 2, null, 1), ordinals(item("a"), more, item("b"), body, item("c")))
     }
+
+    // --- quotes and callouts ---
+
+    @Test
+    fun aQuoteStandsInAndACalloutTitleSitsAboveItsFirstLine() {
+        val note = FlowQuote(CalloutKind.NOTE)
+        val flow = flowOf("a", "b", "c")
+        flow.paragraphs[1].quote = note
+        flow.paragraphs[2].quote = note
+        val frame = layout.layout(flow, listOf(PageBox(200.0, 400.0)), 150)
+        val lines = frame.pages[0].lines
+        assertEquals(-1, lines[0].quoteId)
+        assertEquals(0, lines[1].quoteId)
+        assertEquals(0, lines[2].quoteId)
+        assertEquals(FlowLayout.QUOTE_INSET_PX, lines[1].xs[0], 1e-9)
+        val title = frame.pages[0].callouts.single()
+        assertEquals(CalloutKind.NOTE, title.kind)
+        assertEquals(1, title.para)
+        assertEquals(lines[0].bottom, title.top, 1e-9)
+        assertEquals(title.bottom, lines[1].top, 1e-9)
+    }
+
+    @Test
+    fun aCalloutTitleKeepsWithItsFirstLine() {
+        val flow = flowOf("a", "b", "c")
+        flow.paragraphs[2].quote = FlowQuote(CalloutKind.TIP)
+        val frame = layout.layout(flow, pages(2), 150)
+        assertEquals(listOf(2, 1), frame.pages.map { it.lines.size })
+        assertTrue(frame.pages[0].callouts.isEmpty())
+        assertEquals(0.0, frame.pages[1].callouts.single().top, 1e-9)
+    }
+
+    @Test
+    fun twoNeighbouringQuotesAreTwo() {
+        val flow = flowOf("a", "b")
+        flow.paragraphs[0].quote = FlowQuote()
+        flow.paragraphs[1].quote = FlowQuote()
+        val lines = layout.layout(flow, pages(1), 150).pages[0].lines
+        assertEquals(listOf(0, 1), lines.map { it.quoteId })
+    }
 }

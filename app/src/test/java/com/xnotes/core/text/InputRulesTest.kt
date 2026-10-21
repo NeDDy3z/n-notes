@@ -93,9 +93,13 @@ class InputRulesTest {
     }
 
     @Test
-    fun angleBracketsIndentAndStack() {
-        assertEquals(1, typed("> a").indent)
-        assertEquals(2, typed(">> a").indent)
+    fun anAngleBracketMakesAQuote() {
+        val p = typed("> a")
+        assertEquals("a", p.plainText())
+        assertEquals(0, p.indent)
+        assertNotNull(p.quote)
+        assertEquals(null, p.quote!!.kind)
+        assertNotNull(typed(">> a").quote)
     }
 
     @Test
@@ -330,6 +334,8 @@ class InputRulesTest {
             assertEquals(md, pasted.indent, mine.indent)
             assertEquals(md, pasted.checked, mine.checked)
             assertEquals(md, pasted.headingLevel, mine.headingLevel)
+            assertEquals(md, pasted.quote?.kind, mine.quote?.kind)
+            assertEquals(md, pasted.quote != null, mine.quote != null)
             assertEquals(md, pasted.runs.size, mine.runs.size)
             for (i in pasted.runs.indices) {
                 assertEquals(md, pasted.runs[i].text, mine.runs[i].text)
@@ -664,5 +670,67 @@ class InputRulesTest {
         FlowEditor(flow).insertText(FlowPos(0, 1), "z")
         FlowEditor(flow).insertText(FlowPos(0, 0), "y")
         assertEquals(listOf("y" to null, "azb" to "https://x.org", "c" to null), flow.paragraphs[0].runs.map { it.text to it.style.link })
+    }
+
+    // --- quotes and callouts ---
+
+    @Test
+    fun enterCarriesTheQuoteOnAndAnEmptyLineStepsOut() {
+        val flow = TextFlow()
+        type(flow, "> a\nb\n\nc")
+        val q = flow.paragraphs[0].quote
+        assertNotNull(q)
+        assertTrue(flow.paragraphs[1].quote === q)
+        // Like leaving a list, the empty line itself steps out and takes what is typed next.
+        assertEquals(3, flow.paragraphs.size)
+        assertEquals("c", flow.paragraphs[2].plainText())
+        assertEquals(null, flow.paragraphs[2].quote)
+    }
+
+    @Test
+    fun aTypedAlertMarkerTurnsTheWholeQuoteIntoACallout() {
+        val flow = TextFlow()
+        type(flow, "> first\nsecond")
+        type(flow, "[!warning] ", FlowPos(0, 0))
+        assertEquals("first", flow.paragraphs[0].plainText())
+        val q = flow.paragraphs[0].quote
+        assertEquals(CalloutKind.WARNING, q?.kind)
+        assertTrue(flow.paragraphs[1].quote === q)
+    }
+
+    @Test
+    fun aCalloutIsNeverRetyped() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(quote = FlowQuote(CalloutKind.NOTE)))
+        }
+        type(flow, "[!tip] ")
+        assertEquals("[!tip] ", flow.paragraphs[0].plainText())
+        assertEquals(CalloutKind.NOTE, flow.paragraphs[0].quote?.kind)
+    }
+
+    @Test
+    fun aQuoteTypedUnderOneJoinsIt() {
+        val q = FlowQuote(CalloutKind.TIP)
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("a")), quote = q))
+            paragraphs.add(Paragraph())
+        }
+        type(flow, "> b", FlowPos(1, 0))
+        assertTrue(flow.paragraphs[1].quote === q)
+    }
+
+    @Test
+    fun backspaceTakesTheQuoteAfterTheListAndCodeLeavesIt() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("a")), list = ListKind.BULLET, quote = FlowQuote()))
+        }
+        InputRules.apply(flow, FlowPos(0, 0), InputRules.forBackspace(flow, FlowPos(0, 0))!!)
+        assertEquals(ListKind.NONE, flow.paragraphs[0].list)
+        assertNotNull(flow.paragraphs[0].quote)
+        InputRules.apply(flow, FlowPos(0, 0), InputRules.forBackspace(flow, FlowPos(0, 0))!!)
+        assertEquals(null, flow.paragraphs[0].quote)
+        flow.paragraphs[0].quote = FlowQuote()
+        FlowEditor(flow).setParaStyle(FlowRange.caret(FlowPos(0, 0))) { it.codeLang = "" }
+        assertEquals(null, flow.paragraphs[0].quote)
     }
 }

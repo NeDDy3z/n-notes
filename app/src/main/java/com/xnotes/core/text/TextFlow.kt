@@ -28,6 +28,27 @@ enum class ListKind(val id: String) {
     }
 }
 
+/** A callout's kind: GitHub's five alerts. [id] is the stable serialized token. */
+enum class CalloutKind(val id: String, val title: String) {
+    NOTE("note", "Note"),
+    TIP("tip", "Tip"),
+    IMPORTANT("important", "Important"),
+    WARNING("warning", "Warning"),
+    CAUTION("caution", "Caution");
+
+    companion object {
+        fun fromId(id: String?): CalloutKind? = entries.firstOrNull { it.id.equals(id, ignoreCase = true) }
+    }
+}
+
+/**
+ * A quote, or with a [kind] a callout, that consecutive paragraphs share. Like a
+ * [FlowTable] it is compared by identity: a container is the longest run of
+ * neighbouring paragraphs holding the same one, so two callouts of one kind side
+ * by side stay two. Immutable, so a kind never changes under a paragraph.
+ */
+class FlowQuote(val kind: CalloutKind? = null)
+
 /**
  * Immutable character style for a run. Nullable fields inherit the flow defaults
  * ([TextFlow.defaultColor]/[TextFlow.defaultFace]), and a null size the paragraph's
@@ -89,6 +110,8 @@ class Paragraph(
     var breakBefore: Boolean = false,
     /** The number an ordered item restarts its list at; null counts on from the item before. */
     var listStart: Int? = null,
+    /** The quote or callout this paragraph sits in; code lines, rules and cells never do. */
+    var quote: FlowQuote? = null,
 ) {
     /** Bumped on any content or style mutation; layout caches key on it. */
     var rev: Int = 0
@@ -109,13 +132,13 @@ class Paragraph(
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
         align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
-            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null
+            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null && quote == null
 
-    /** A copy sharing [table]; [TextFlow.deepCopy] remaps it onto copied tables. */
+    /** A copy sharing [table] and [quote]; [TextFlow.deepCopy] remaps tables onto copies. */
     fun deepCopy(): Paragraph =
         Paragraph(
             runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart, headingLevel,
-            rule = rule, breakBefore = breakBefore, listStart = listStart,
+            rule = rule, breakBefore = breakBefore, listStart = listStart, quote = quote,
         ).also { it.rev = rev }
 
     companion object {

@@ -7,6 +7,8 @@ import org.commonmark.ext.footnotes.FootnoteReference
 import org.commonmark.ext.footnotes.FootnotesExtension
 import org.commonmark.ext.front.matter.YamlFrontMatterBlock
 import org.commonmark.ext.front.matter.YamlFrontMatterExtension
+import org.commonmark.ext.gfm.alerts.Alert
+import org.commonmark.ext.gfm.alerts.AlertsExtension
 import org.commonmark.ext.gfm.strikethrough.Strikethrough
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
 import org.commonmark.ext.gfm.tables.TableBlock
@@ -62,8 +64,8 @@ import org.commonmark.node.Paragraph as MdParagraph
  * The "Paste as Markdown" reader: CommonMark with GitHub's tables, strikethrough
  * and task lists (commonmark-java), plus `==highlight==` and maths written as
  * `$`, `$$`, `\(...\)` and `\[...\]`. Its tree flattens into flow paragraphs: wrapped lines join, a
- * gap of blank lines leaves one empty paragraph, nested lists and quotes indent
- * a level each, code blocks become code paragraphs (one per line, language from
+ * gap of blank lines leaves one empty paragraph, nested lists indent a level
+ * each, quotes and GitHub's alerts become quotes and callouts, code blocks become code paragraphs (one per line, language from
  * the fence info), links and written-out addresses open what they name, images
  * keep their alt text. Raw HTML and
  * footnotes stay as the text they were written as; front matter is dropped.
@@ -110,6 +112,7 @@ object MarkdownParser {
                     TaskListItemsExtension.create(),
                     FootnotesExtension.create(),
                     YamlFrontMatterExtension.create(),
+                    AlertsExtension.create(),
                 ),
             )
             .customDelimiterProcessor(MarkDelimiters())
@@ -137,6 +140,9 @@ object MarkdownParser {
         /** Set by a `\pagebreak` or `\newpage` line: the next paragraph starts a page. */
         private var pendingBreak = false
 
+        /** The quote or callout being read, which what is emitted goes into where it may. */
+        private var quote: FlowQuote? = null
+
         /** Everything emitted; a break with nothing after it still breaks, on an empty line. */
         fun finish(): List<Paragraph> {
             if (pendingBreak) emit(Paragraph())
@@ -148,7 +154,21 @@ object MarkdownParser {
                 p.breakBefore = true
                 pendingBreak = false
             }
+            // Code, rules, tables and display equations cannot sit in a quote: one cuts it in
+            // two, and what follows goes into a fresh quote of the same kind.
+            quote?.let { q ->
+                val alone = p.codeLang != null || p.rule || p.table != null || (p.runs.size == 1 && p.runs[0].style.mathDisplay)
+                if (alone) quote = FlowQuote(q.kind) else p.quote = q
+            }
             paras += p
+        }
+
+        /** [node]'s blocks inside one new quote, or callout of [kind]; one inside another joins it. */
+        private fun quoted(node: Node, kind: CalloutKind?, indent: Int) {
+            val outer = quote
+            if (outer == null || kind != null) quote = FlowQuote(kind ?: outer?.kind)
+            blocks(node, indent, gaps = true)
+            quote = outer?.let { if (kind != null) FlowQuote(it.kind) else quote }
         }
 
         /** Every block child of [parent]; with [gaps], blank source lines between two leave an empty paragraph. */
@@ -195,7 +215,8 @@ object MarkdownParser {
                 is IndentedCodeBlock -> code(node.literal, "", indent)
                 is MathBlock -> emit(displayParagraph(node.latex, indent))
                 is BulletList, is OrderedList -> list(node as ListBlock, indent)
-                is BlockQuote -> blocks(node, (indent + 1).coerceAtMost(Paragraph.MAX_INDENT), gaps = true)
+                is BlockQuote -> quoted(node, null, indent)
+                is Alert -> quoted(node, CalloutKind.fromId(node.type), indent)
                 is ThematicBreak -> emit(Paragraph(indent = indent, rule = true))
                 is HtmlBlock -> for (line in node.literal.trimEnd('\n').split('\n')) {
                     emit(Paragraph(runsOf(line, CharStyle.DEFAULT), indent = indent))

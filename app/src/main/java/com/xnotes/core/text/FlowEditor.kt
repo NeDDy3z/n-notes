@@ -91,6 +91,7 @@ class FlowEditor(private val flow: TextFlow) {
                 rule = i == 0 && props.rule && runs.isEmpty(),
                 breakBefore = i == 0 && props.breakBefore,
                 listStart = if (i == 0) props.listStart else null,
+                quote = props.quote,
             ).also { normalize(it) }
         }
         val removed = flow.paragraphs.subList(start.para, end.para + 1).toList()
@@ -130,8 +131,10 @@ class FlowEditor(private val flow: TextFlow) {
             para.indent = para.indent.coerceIn(0, Paragraph.MAX_INDENT)
             para.headingLevel = para.headingLevel.coerceIn(0, Paragraph.MAX_HEADING)
             if (para.list != ListKind.ORDERED) para.listStart = null
+            // A quote holds prose, headings and lists; code and rules step out of it.
+            if (para.codeLang != null || para.rule) para.quote = null
             if (para.table != null) {
-                // Cells hold rich text only: no lists, code lines, headings, rules, breaks or indents.
+                // Cells hold rich text only: no lists, code lines, headings, rules, breaks, quotes or indents.
                 para.list = ListKind.NONE
                 para.checked = false
                 para.codeLang = null
@@ -139,6 +142,7 @@ class FlowEditor(private val flow: TextFlow) {
                 para.headingLevel = 0
                 para.rule = false
                 para.breakBefore = false
+                para.quote = null
             }
             if (!before.matches(para)) {
                 para.touch()
