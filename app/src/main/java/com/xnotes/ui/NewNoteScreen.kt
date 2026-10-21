@@ -253,15 +253,20 @@ internal fun NewNoteScreen(
             if (adopted == null || adopted == handled) return@LaunchedEffect
             val e = all.firstOrNull { it.key == adopted } ?: return@LaunchedEffect
             handled = adopted
-            if (e.template.kind == TemplateKind.COVER) {
-                coverStyle = PageStyle(template = e.key)
-                coverOn = true
-                face = Face.COVER
-            } else {
-                style = style.withTemplate(e.key, PageTemplates.NONE)
-                face = Face.PAGES
+            when {
+                e.template.kind == TemplateKind.COVER -> {
+                    coverStyle = PageStyle(template = e.key)
+                    coverOn = true
+                    face = Face.COVER
+                    aiOpen = false
+                }
+                // The cover picker of an open note has no pages to put it on; it just joins the library.
+                !coverOnly -> {
+                    style = style.withTemplate(e.key, PageTemplates.NONE)
+                    face = Face.PAGES
+                    aiOpen = false
+                }
             }
-            aiOpen = false
         }
 
         val custom = size == PageSize.CUSTOM
