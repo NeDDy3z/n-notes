@@ -71,7 +71,7 @@ data class PageStyle(
         const val DEFAULT_SPACING = 64.0 // content px (~10.8 mm at 150 dpi)
         const val MIN_SPACING = 16.0
         const val MAX_SPACING = 200.0
-        val DEFAULT_PATTERN_COLOR = Rgba(150, 150, 150, 64) // grey at ~25% opacity by default
+        val DEFAULT_PATTERN_COLOR = Rgba(150, 150, 150, 128) // grey at 50% opacity by default
         val DEFAULT_ACCENT_COLOR = Rgba(214, 72, 72, 150)
 
         /** Fixed (non-configurable) ruling thickness / dot radius, in content pixels. */
