@@ -1,10 +1,13 @@
 package com.xnotes.core.template
 
 import com.xnotes.core.FakeRenderer
+import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.paintPagePattern
+import com.xnotes.core.pal.Pen
+import com.xnotes.core.pal.Renderer
 import com.xnotes.format.TemplateFormatException
 import com.xnotes.format.TemplatePackage
 import com.xnotes.format.TemplateReader
@@ -448,6 +451,28 @@ class TemplateTest {
         TemplatePainter.paint(without, out, 2.0, Rect(0.0, 0.0, 200.0, 100.0))
         assertTrue(without.ops.isEmpty())
     }
+    @Test
+    fun aThumbnailsLinesAndDotsKeepAtLeastTheirMinimum() {
+        val out = eval(
+            tpl(
+                """{ "type": "hline", "y": 10, "strokeWidth": 0.1 }, { "type": "hline", "y": 20, "strokeWidth": 3 },
+                   { "type": "dot", "cx": 5, "cy": 5, "r": 0.1 }, { "type": "circle", "cx": 50, "cy": 50, "r": 20, "fill": "ink" }""",
+            ),
+        )
+        fun paint(minLine: Double): Pair<List<Double>, List<Double>> {
+            val widths = ArrayList<Double>()
+            val radii = ArrayList<Double>()
+            val r = object : Renderer by FakeRenderer() {
+                override fun strokePolyline(points: List<Pt>, pen: Pen) { widths += pen.width }
+                override fun fillCircle(center: Pt, radius: Double, color: Rgba) { radii += radius }
+            }
+            TemplatePainter.paint(r, out, 1.0, Rect(0.0, 0.0, 100.0, 100.0), minLine = minLine)
+            return widths to radii
+        }
+        assertEquals(listOf(0.1, 3.0) to listOf(0.1, 20.0), paint(0.0))
+        assertEquals(listOf(1.0, 3.0) to listOf(0.75, 20.0), paint(1.0))
+    }
+
     @Test
     fun everyBundledCoverIsACoverAndDrawsOnAnyPageShape() {
         val covers = File("src/main/assets/templates/examples").listFiles { f -> f.name.startsWith("cover-") }!!.sortedBy { it.name }

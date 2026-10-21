@@ -499,7 +499,7 @@ object TemplateLibrary {
                 Rect(paper.x / mm, paper.y / mm, paper.w / mm, paper.h / mm),
                 ink, accent, values,
             )
-            TemplatePainter.paint(r, layouts.layout(t, tp), mm, region, pictures(doc, key))
+            TemplatePainter.paint(r, layouts.layout(t, tp), mm, region, picture = pictures(doc, key))
         }
     }
 }
