@@ -948,6 +948,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
     }
 
     /** Emit one word's segments, split at highlight-span boundaries with their colours. */
+    /** Nested captures colour innermost first (an escape inside its string), as tree-sitter nests highlights. */
     private fun emitHighlighted(
         shape: ParaShape,
         spans: List<CodeSpan>,
@@ -961,11 +962,16 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
     ) {
         var i = from
         while (i < to) {
-            val covering = spans.firstOrNull { it.start <= i && i < it.end }
-            val boundary = if (covering != null) {
-                minOf(to, covering.end)
-            } else {
-                minOf(to, spans.firstOrNull { it.start > i }?.start ?: to)
+            var covering: CodeSpan? = null
+            var boundary = to
+            for (s in spans) {
+                if (s.start > i) {
+                    boundary = minOf(boundary, s.start)
+                } else if (i < s.end) {
+                    boundary = minOf(boundary, s.end)
+                    val c = covering
+                    if (c == null || s.start > c.start || (s.start == c.start && s.end < c.end)) covering = s
+                }
             }
             val st = if (covering != null) style.copy(color = covering.color) else style
             segs.add(Seg(shape.text.substring(i, boundary), xs[i - blStart], font, st, start = i))
