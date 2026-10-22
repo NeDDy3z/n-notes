@@ -693,9 +693,8 @@ class InteractionController(
     }
 
     /** Feeder C: Bluetooth/USI pens often deliver the side button only as a KeyEvent, never in any
-     *  MotionEvent buttonState. Latch those into the same held flag ([down] true on key-down); a
-     *  key-up also ends a live hover gesture. Returns true if the key was a stylus side button, so
-     *  the host consumes it. */
+     *  MotionEvent buttonState. Latch those ([down] true on key-down); a key-up also ends a live
+     *  hover gesture. Returns true if the key was a stylus side button, so the host consumes it. */
     fun onStylusButtonKey(keyCode: Int, down: Boolean): Boolean {
         if (!stylusButtons.onKey(keyCode, down)) return false
         if (!stylusButtons.held && hoverActionTool != null) endHoverAction()

@@ -87,6 +87,7 @@ import androidx.core.content.IntentCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.xnotes.R
+import com.xnotes.canvas.StylusButtonLatch
 import com.xnotes.ui.Editor
 import com.xnotes.ui.Toolbar
 import com.xnotes.ui.ToolbarAround
@@ -198,7 +199,7 @@ class MainActivity : ComponentActivity() {
     // before Compose focus routing, so the controller sees both press and release regardless of
     // which view holds focus. Other keys fall through to the normal dispatch.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // The pen writes in whichever pane has the focus, so its button belongs to that pane too.
+        // The pen writes in whichever pane has the focus, so its button keys go to that pane too.
         if (editor?.active?.onStylusButtonKey(event) == true) return true
         return super.dispatchKeyEvent(event)
     }
@@ -248,6 +249,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) StylusButtonLatch.releaseKey() // a held pen key's key-up may not come back to this window
         if (hasFocus && editor?.fullscreen == true) applyFullscreen(true) // re-hide transient bars after they swipe in
     }
 
