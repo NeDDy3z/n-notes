@@ -257,7 +257,7 @@ private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xno
 enum class Pane { PRIMARY, SECONDARY }
 
 @Stable
-class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore, ColorDropHost, AudioOwner {
+class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore, ColorDropHost, AudioHost {
 
     private val appContext = context.applicationContext
 
@@ -682,7 +682,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.applyPalette(palette)
             // Both editors write inserted images into the same purged-on-launch temp dir.
             it.imageDir = imageDir
-            it.onMessage = { m -> message = m }
+            it.onMessage = { m, action -> say(m, action) }
             for (t in ToolDefaults.persistedTools) it.setToolConfig(t, settings.configFor(t))
             it.armShapeConfig(settings.shapeConfig)
             it.toolbarColors = toolbarColors
@@ -1656,6 +1656,32 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         message = appContext.getString(R.string.err_audio_unplayable)
     }
 
+    override fun audioBusy() {
+        message = appContext.getString(R.string.audio_off_while_recording)
+    }
+
+    /** Start recording in this pane, on the canvas when one is open; the microphone is already granted. */
+    fun startRecording() {
+        if (canvasOpen) AudioRecording.start(infinite) else AudioRecording.start(this)
+    }
+
+    override fun freshRecordingId(): Int = com.xnotes.core.audio.RecordingIds.next(state.document.pages.flatMap { it.items })
+
+    override fun placeRecording(audio: com.xnotes.core.model.AudioData, name: String, rid: Int) = placeAudio(audio, name, rid)
+
+    override fun recordingMoved(item: com.xnotes.core.model.AudioItem, audio: com.xnotes.core.model.AudioData) {
+        if (pageOfAudio(item) == null) return
+        item.audio = audio
+        state.document.dirty = true
+        refreshContent()
+    }
+
+    override fun recordingMessage(text: String, action: Pair<String, () -> Unit>?) = say(text, action)
+
+    override val recordingDir: java.io.File get() = imageDir
+
+    override val recordingTitle: String get() = title
+
     /** A finger tap on a pill plays it (see [AudioPlayback.tap]); a tap anywhere else is left to links and markups. */
     private fun tapAudio(pageIndex: Int, local: com.xnotes.core.geometry.Pt): Boolean {
         val page = state.document.pages.getOrNull(pageIndex) ?: return false
@@ -2184,7 +2210,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /** Place [audio] as a pill on the page in view, centred where the view is, selected so it can be dragged at once. */
-    fun placeAudio(audio: com.xnotes.core.model.AudioData, name: String): com.xnotes.core.model.AudioItem {
+    fun placeAudio(audio: com.xnotes.core.model.AudioData, name: String, rid: Int? = null): com.xnotes.core.model.AudioItem {
         val doc = state.document
         val centre = state.viewportToContent(com.xnotes.core.geometry.Pt(state.viewportW / 2.0, state.viewportH / 2.0))
         val index = (state.pageIndexAtContent(centre) ?: state.currentPageIndex()).coerceIn(0, doc.pages.lastIndex)
@@ -2198,8 +2224,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             box.y.coerceIn(cover.top, (cover.bottom - box.h).coerceAtLeast(cover.top)),
             box.w, box.h,
         )
-        val rid = com.xnotes.core.audio.RecordingIds.next(doc.pages.flatMap { it.items })
-        val item = com.xnotes.core.model.AudioItem(audio, rect, name, rid, textMeasurer)
+        val item = com.xnotes.core.model.AudioItem(audio, rect, name, rid ?: freshRecordingId(), textMeasurer)
         page.items.add(item)
         state.appendToCache(page, item)
         history.push(AddItem(page, item))
@@ -4732,7 +4757,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     private fun writeNoteInPlace(uri: String, doc: Document): Boolean = runCatching {
         val assets = codec.imageAssets(doc)
-        val expected = codec.storedEntries(doc, assets).map { (name, file) -> name to file.length() }
+        val audio = codec.audioAssets(doc)
+        val expected = codec.storedEntries(doc, assets, audio).map { (name, file) -> name to file.length() }
         if (expected.isEmpty()) return@runCatching false
 
         val target = android.net.Uri.parse(uri)
@@ -4764,7 +4790,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             java.io.FileOutputStream(tmp).use { out ->
                 java.util.zip.ZipOutputStream(out).use { zos ->
                     zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
-                    codec.writeTail(zos, doc, assets, timing)
+                    codec.writeTail(zos, doc, assets, timing, audio)
                 }
             }
             val spliceStart = System.nanoTime()
@@ -5774,6 +5800,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun replaceDocument(doc: Document) {
+        AudioRecording.stopFor(this) // closing the note places its recording
         AudioPlayback.closeFor(this)
         saveViewState() // remember the outgoing folder note's view before switching away
         flowText.endSession() // flushes the typing burst so the autosave below carries it
@@ -7943,6 +7970,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     fun newNote() {
+        AudioRecording.stopFor(this) // closing the note places its recording
         AudioPlayback.closeFor(this)
         saveViewState()
         flushAutosave()
@@ -8055,6 +8083,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  [noteOpen] so the editor is removed from the stack. The document stays as an inert buffer. */
     fun goHome() {
         if (!noteOpen) return
+        // Closing the note places a recording still going, before the note is saved.
+        AudioRecording.stopFor(this)
+        infiniteOrNull?.let { AudioRecording.stopFor(it) }
         AudioPlayback.closeFor(this)
         infiniteOrNull?.let { AudioPlayback.closeFor(it) }
         // A canvas has none of the paged note's text sessions, autosave binding or thumbnails yet,

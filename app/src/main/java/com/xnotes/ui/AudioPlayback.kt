@@ -32,6 +32,9 @@ interface AudioOwner {
 
     /** The recording could not be played. */
     fun audioFailed()
+
+    /** Nothing plays while something records, since it would be recorded too. */
+    fun audioBusy()
 }
 
 /**
@@ -94,6 +97,10 @@ object AudioPlayback {
 
     /** Open the player on [item] for [owner], closing any other, at [from] or where it was left; [play] starts it. */
     fun open(owner: AudioOwner, item: AudioItem, from: Int? = null, play: Boolean = true) {
+        if (AudioRecording.session != null) {
+            owner.audioBusy()
+            return
+        }
         val current = session
         if (current != null && current.item === item && current.owner === owner) {
             if (from != null) seek(from)

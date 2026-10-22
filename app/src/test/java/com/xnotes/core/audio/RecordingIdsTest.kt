@@ -58,6 +58,23 @@ class RecordingIdsTest {
         assertNull(page[3].sync)
     }
 
+    @Test fun aCutPillPutBackKeepsItsNumberSoItsInkStaysTied() {
+        val leftInk = ink(6)
+        val moved = pill(6)
+        RecordingIds.adopt(listOf(moved), listOf(leftInk), moves = true)
+        assertEquals(6, moved.rid)
+    }
+
+    @Test fun aCopiedPillNeverTakesOverInkTiedToItsNumber() {
+        val copied = pill(6)
+        RecordingIds.adopt(listOf(copied), listOf(ink(6)), moves = false)
+        assertEquals(7, copied.rid)
+    }
+
+    @Test fun anIdInUseOnlyByInkIsNotHandedOutAgain() {
+        assertEquals(10, RecordingIds.next(listOf(pill(2), ink(9))))
+    }
+
     @Test fun twoPillsPastedTogetherNeverShareAnId() {
         val a = pill(1)
         val b = pill(1)

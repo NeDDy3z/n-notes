@@ -158,6 +158,8 @@ class DocumentCodec(
         val started = System.nanoTime()
         // Named up front by the same walk the manifest makes, so the entries can go in before it.
         val assets = imageAssets(doc)
+        // Walked once for the whole save: a recording's file can be swapped for its .m4a meanwhile.
+        val audio = audioAssets(doc)
         ZipOutputStream(out).use { zos ->
             // ALWAYS LEVEL 1. Do not put this back to the default 6, ever, however tempting the
             // file size looks. A manifest is nearly all sample digits and they compress about as
@@ -172,9 +174,9 @@ class DocumentCodec(
             // Each image, packaged template and the source PDF streams straight from its file, never
             // as a byte[], so a note full of large assets doesn't materialize them in the heap on
             // every save. [isCancelled] lets a long copy abort (e.g. import cancel).
-            for ((name, file) in storedEntries(doc, assets)) zos.putStored(name, file, isCancelled)
+            for ((name, file) in storedEntries(doc, assets, audio)) zos.putStored(name, file, isCancelled)
             val assetsDone = System.nanoTime()
-            writeTail(zos, doc, assets, timing)
+            writeTail(zos, doc, assets, timing, audio)
             timing?.assetsMs = (assetsDone - started) / 1_000_000L
             timing?.manifestMs = (System.nanoTime() - assetsDone) / 1_000_000L
         }
@@ -190,6 +192,7 @@ class DocumentCodec(
         doc: Document,
         assets: List<Pair<String, File>>,
         timing: WriteTiming? = null,
+        audio: List<Pair<String, File>> = audioAssets(doc),
     ) {
         // The flow lives in its own ODF entry, written only when non-empty (or carrying
         // custom defaults) so untouched notes stay byte-identical to old readers.
@@ -209,7 +212,7 @@ class DocumentCodec(
         zos.putNextEntry(ZipEntry("manifest.json").apply { method = ZipEntry.DEFLATED })
         val probe = DeflateProbe(zos)
         val w = java.io.BufferedWriter(java.io.OutputStreamWriter(probe, Charsets.UTF_8), 32 * 1024)
-        writeManifest(JsonWrite(w), doc, assets)
+        writeManifest(JsonWrite(w), doc, assets, audio)
         w.flush()
         zos.closeEntry()
         timing?.deflateMs = probe.nanos / 1_000_000L
@@ -236,9 +239,13 @@ class DocumentCodec(
      * the packaged templates the styles name, then the source PDF. An in-place save checks a bundle
      * against this.
      */
-    internal fun storedEntries(doc: Document, images: List<Pair<String, File>>): List<Pair<String, File>> {
+    internal fun storedEntries(
+        doc: Document,
+        images: List<Pair<String, File>>,
+        audio: List<Pair<String, File>> = audioAssets(doc),
+    ): List<Pair<String, File>> {
         val out = ArrayList(images)
-        out.addAll(audioAssets(doc))
+        out.addAll(audio)
         for (key in usedTemplateKeys(doc)) doc.templatePackages[key]?.let { out.add("$TEMPLATE_ASSET$key$TEMPLATE_EXT" to it) }
         doc.pdfFile?.let { out.add("assets/source.pdf" to it) }
         return out
@@ -280,7 +287,7 @@ class DocumentCodec(
 
     // --- model -> streaming json ---
 
-    private fun writeManifest(j: JsonWrite, doc: Document, assets: List<Pair<String, File>>) {
+    private fun writeManifest(j: JsonWrite, doc: Document, assets: List<Pair<String, File>>, audio: List<Pair<String, File>>) {
         j.beginObject()
         j.name("format").value(FORMAT)
         j.name("version").value(VERSION)
@@ -298,7 +305,6 @@ class DocumentCodec(
         j.endArray()
         j.name("pages").beginArray()
         val nextAsset = intArrayOf(0)
-        val audio = audioAssets(doc)
         val nextAudio = intArrayOf(0)
         for (page in doc.pages) writePage(j, page, assets, nextAsset, audio, nextAudio)
         j.endArray()

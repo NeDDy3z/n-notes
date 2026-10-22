@@ -77,7 +77,7 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
-class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost, AudioOwner {
+class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost, AudioHost {
 
     private val appContext = context.applicationContext
 
@@ -1555,9 +1555,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     /** Place [audio] as a pill in the middle of the view, sized for this zoom, selected so it can be dragged at once. */
-    fun placeAudio(audio: com.xnotes.core.model.AudioData, name: String): com.xnotes.core.model.AudioItem {
+    fun placeAudio(audio: com.xnotes.core.model.AudioData, name: String, rid: Int? = null): com.xnotes.core.model.AudioItem {
         val box = com.xnotes.core.model.AudioItem.boxAt(viewport.centerContent, document.dpi, viewport.zoom)
-        val item = com.xnotes.core.model.AudioItem(audio, box, name, com.xnotes.core.audio.RecordingIds.next(document.items), textMeasurer)
+        val item = com.xnotes.core.model.AudioItem(audio, box, name, rid ?: freshRecordingId(), textMeasurer)
         document.add(item)
         history.push(AddCanvasItem(document, item))
         selection.select(listOf(item))
@@ -1567,8 +1567,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         return item
     }
 
-    /** Shows a message to the user; the paged editor that owns this canvas sets it. */
-    var onMessage: ((String) -> Unit)? = null
+    /** Shows a message to the user, with an optional button; the paged editor that owns this canvas sets it. */
+    var onMessage: ((String, Pair<String, () -> Unit>?) -> Unit)? = null
 
     override fun audioRepaint(item: com.xnotes.core.model.AudioItem) = audioChanged(item, save = false)
 
@@ -1577,8 +1577,30 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun audioPositionKey(rid: Int): String? = document.path?.let { "$it#$rid" }
 
     override fun audioFailed() {
-        onMessage?.invoke(appContext.getString(com.xnotes.R.string.err_audio_unplayable))
+        onMessage?.invoke(appContext.getString(com.xnotes.R.string.err_audio_unplayable), null)
     }
+
+    override fun audioBusy() {
+        onMessage?.invoke(appContext.getString(com.xnotes.R.string.audio_off_while_recording), null)
+    }
+
+    override fun freshRecordingId(): Int = com.xnotes.core.audio.RecordingIds.next(document.items)
+
+    override fun placeRecording(audio: com.xnotes.core.model.AudioData, name: String, rid: Int) = placeAudio(audio, name, rid)
+
+    override fun recordingMoved(item: com.xnotes.core.model.AudioItem, audio: com.xnotes.core.model.AudioData) {
+        if (!document.containsRef(item)) return
+        item.audio = audio
+        markDirty()
+    }
+
+    override fun recordingMessage(text: String, action: Pair<String, () -> Unit>?) {
+        onMessage?.invoke(text, action)
+    }
+
+    override val recordingDir: java.io.File get() = imageDir ?: appContext.filesDir
+
+    override val recordingTitle: String get() = title
 
     /** A finger tap at [at] on a pill plays it (see [AudioPlayback.tap]); false when there is none. */
     fun tapAudio(at: Pt): Boolean {
@@ -1933,6 +1955,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     fun replaceDocument(next: InfiniteDocument) {
+        AudioRecording.stopFor(this) // closing the canvas places its recording
         AudioPlayback.closeFor(this)
         clearFading() // whatever was melting belongs to the outgoing canvas
         // An open label belongs to the outgoing canvas too; its history goes with it.

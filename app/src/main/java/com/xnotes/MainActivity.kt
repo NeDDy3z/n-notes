@@ -151,6 +151,7 @@ class MainActivity : ComponentActivity() {
         com.xnotes.platform.FontCatalog.init(this)
         com.xnotes.platform.TemplateLibrary.init(this)
         com.xnotes.ui.AudioPlayback.init(this)
+        com.xnotes.ui.AudioRecording.init(this)
         setTheme(com.xnotes.R.style.Theme_Xnotes) // leave the dark launch/splash theme behind
         applyFullscreen(!deviceHasDisplayCutout(this)) // provisional; reconciled once the editor loads prefs
         // The intent that started the task comes back whenever Android rebuilds it, from a saved state
@@ -464,6 +465,34 @@ private fun EditorScreen(
             runCatching {
                 resolver.openInputStream(uri)?.use { s -> pending.editor.insertImageAt(s.readBytes(), pending.at) }
             }.onFailure { editor.message = context.getString(R.string.err_read_image) }
+        }
+    }
+
+    // Recording asks for the microphone the first time, and on Android 13 and later for notifications
+    // too, since the recording shows one while xnotes is off screen. Refusing notifications still records.
+    var pendingRecordPane by remember { mutableStateOf<Editor?>(null) }
+    // Notifications are asked for once a run when only they are missing; the system stops asking after two refusals anyway.
+    var askedNotifications by remember { mutableStateOf(false) }
+    val activity = context as? android.app.Activity
+    val recordPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val pane = pendingRecordPane
+        pendingRecordPane = null
+        if (pane == null) return@rememberLauncherForActivityResult
+        if (grants[android.Manifest.permission.RECORD_AUDIO] == true) {
+            pane.startRecording()
+        } else {
+            // Once Android stops asking, only Settings can grant it, so the message offers the way there.
+            val asks = activity?.let { androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(it, android.Manifest.permission.RECORD_AUDIO) } == true
+            val settings = context.getString(R.string.mic_settings) to {
+                runCatching {
+                    context.startActivity(
+                        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+                Unit
+            }
+            pane.say(context.getString(R.string.err_mic_needed), if (asks) null else settings)
         }
     }
 
@@ -913,6 +942,29 @@ private fun EditorScreen(
                     pendingAudioPane = pane
                     attachAudioLauncher.launch(arrayOf("audio/*", "application/ogg"))
                 },
+                onRecordAudio = { pane ->
+                    val mic = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val wanted = buildList {
+                        if (!mic) add(android.Manifest.permission.RECORD_AUDIO)
+                        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) add(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    if (mic && wanted.isEmpty()) {
+                        pane.startRecording()
+                    } else if (mic && !askedNotifications) {
+                        askedNotifications = true
+                        pendingRecordPane = pane
+                        recordPermissions.launch(arrayOf(android.Manifest.permission.RECORD_AUDIO) + wanted)
+                    } else if (mic) {
+                        pane.startRecording()
+                    } else {
+                        pendingRecordPane = pane
+                        recordPermissions.launch(wanted.toTypedArray())
+                    }
+                },
                 onImportTemplate = { importTemplateLauncher.launch(arrayOf("*/*")) },
                 onTemplateFromImage = { kind ->
                     pendingTemplateKind = kind
@@ -1075,6 +1127,7 @@ private class PaneActions(
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onAddStickers: () -> Unit,
     val onInsertAudio: (Editor) -> Unit,
+    val onRecordAudio: (Editor) -> Unit,
     val onImportTemplate: () -> Unit,
     val onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
@@ -1244,6 +1297,7 @@ private fun EditorPane(
                         onInsertImage = { actions.onInsertCanvasImage(editor, null) },
                         onClosePane = onClose,
                         onInsertAudio = { actions.onInsertAudio(editor) },
+                        onRecordAudio = { actions.onRecordAudio(editor) },
                     )
                 }
                 ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
@@ -1274,6 +1328,7 @@ private fun EditorPane(
                         onClosePane = onClose,
                         onImportTemplate = actions.onImportTemplate,
                         onInsertAudio = { actions.onInsertAudio(editor) },
+                        onRecordAudio = { actions.onRecordAudio(editor) },
                     )
                 }
                 ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->

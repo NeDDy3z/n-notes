@@ -7,8 +7,10 @@ import com.xnotes.core.model.SyncMark
 /** Keeps every recording's id unique within its document as items are pasted into it. */
 object RecordingIds {
 
-    /** The lowest id above every recording in [items]. */
-    fun next(items: Iterable<CanvasItem>): Int = (items.maxOfOrNull { (it as? AudioItem)?.rid ?: 0 } ?: 0) + 1
+    /** The lowest id above every recording [items] hold or are tied to, a recording in progress included. */
+    fun next(items: Iterable<CanvasItem>): Int = (items.maxOfOrNull { idOf(it) } ?: 0) + 1
+
+    private fun idOf(item: CanvasItem): Int = maxOf((item as? AudioItem)?.rid ?: 0, item.sync?.rid ?: 0)
 
     /**
      * Ready pasted [items] to join a document already holding [existing]. A pill whose id is taken
@@ -17,8 +19,12 @@ object RecordingIds {
      * to them tied to the copy.
      */
     fun adopt(items: List<CanvasItem>, existing: Iterable<CanvasItem>, moves: Boolean) {
+        // A copied pill must not take over ink already tied to its number; a moved one comes back to its own.
         val taken = HashSet<Int>()
-        for (item in existing) if (item is AudioItem) taken.add(item.rid)
+        for (item in existing) {
+            if (item is AudioItem) taken.add(item.rid)
+            if (!moves) item.sync?.let { taken.add(it.rid) }
+        }
         var fresh = maxOf(taken.maxOrNull() ?: 0, items.maxOfOrNull { (it as? AudioItem)?.rid ?: 0 } ?: 0) + 1
         val remap = HashMap<Int, Int>()
         for (item in items) {

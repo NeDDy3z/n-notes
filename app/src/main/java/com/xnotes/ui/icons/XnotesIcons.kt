@@ -133,6 +133,8 @@ object XnotesIcons {
     )
     val mic = icon("M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z", "M19 10v2a7 7 0 0 1-14 0v-2", "M12 19v3")
     val music = icon("M9 18V5l12-2v13", circle(6.0, 18.0, 3.0), circle(18.0, 16.0, 3.0))
+    // The recording menu's stop: a plain square.
+    val stop = icon(rect(6.0, 6.0, 12.0, 12.0))
     // A selected pill's play and pause (Lucide "play" and "pause").
     val play = icon("M6 3l14 9-14 9Z")
     val pause = icon(rect(6.0, 4.0, 4.0, 16.0), rect(14.0, 4.0, 4.0, 16.0))

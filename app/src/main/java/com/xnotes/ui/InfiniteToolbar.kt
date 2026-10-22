@@ -50,6 +50,7 @@ fun InfiniteToolbar(
     onInsertImage: () -> Unit = {},
     onClosePane: (() -> Unit)? = null,
     onInsertAudio: () -> Unit = {},
+    onRecordAudio: () -> Unit = {},
 ) {
     // The stroke tools use the same designed drawables the paged toolbar does, so a pen looks like
     // a pen on either canvas rather than like a generic glyph.
@@ -130,6 +131,7 @@ fun InfiniteToolbar(
                         owner = editor,
                         imageRows = listOf(InsertRow(XnotesIcons.image, stringResource(R.string.insert_image_ellipsis)) { onInsertImage() }),
                         onAudioFromFile = onInsertAudio,
+                        onRecord = onRecordAudio,
                     )
 
                     ToolbarItem.COLORS ->

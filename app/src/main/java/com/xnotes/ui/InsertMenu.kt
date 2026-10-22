@@ -33,12 +33,14 @@ class InsertRow(val icon: ImageVector, val label: String, val more: Boolean = fa
  */
 @Composable
 internal fun InsertButton(
-    owner: AudioOwner,
+    owner: AudioHost,
     imageRows: List<InsertRow>,
     onAudioFromFile: () -> Unit,
+    onRecord: () -> Unit,
     popups: @Composable () -> Unit = {},
 ) {
-    // While a recording's player is open in this pane, the slot is its chip.
+    // While this pane records, or a recording's player is open in it, the slot is that chip.
+    AudioRecording.session?.takeIf { it.owner === owner }?.let { RecordingChip(it); return }
     AudioPlayback.session?.takeIf { it.owner === owner }?.let { PlaybackChip(it); return }
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -48,6 +50,14 @@ internal fun InsertButton(
             for (row in imageRows) InsertMenuRow(row.icon, row.label, row.more) { expanded = false; row.onPick() }
             HorizontalDivider(Modifier.padding(vertical = 6.dp), color = LocalPalette.current.border.toComposeColor())
             InsertGroup(stringResource(R.string.insert_group_audio))
+            // One recording at a time, so while the other pane records this one says so.
+            val elsewhere = AudioRecording.session != null
+            InsertMenuRow(
+                XnotesIcons.mic,
+                stringResource(R.string.record_audio),
+                enabled = !elsewhere,
+                supporting = if (elsewhere) stringResource(R.string.recording_other_pane) else null,
+            ) { expanded = false; onRecord() }
             InsertMenuRow(XnotesIcons.music, stringResource(R.string.audio_from_file)) { expanded = false; onAudioFromFile() }
         }
         popups()
@@ -65,10 +75,27 @@ private fun InsertGroup(label: String) {
 }
 
 @Composable
-internal fun InsertMenuRow(icon: ImageVector, label: String, more: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun InsertMenuRow(
+    icon: ImageVector,
+    label: String,
+    more: Boolean = false,
+    enabled: Boolean = true,
+    color: androidx.compose.ui.graphics.Color? = null,
+    supporting: String? = null,
+    onClick: () -> Unit,
+) {
     DropdownMenuItem(
-        text = { Text(label) },
-        leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        text = {
+            if (supporting == null) {
+                Text(label, color = color ?: androidx.compose.ui.graphics.Color.Unspecified)
+            } else {
+                androidx.compose.foundation.layout.Column {
+                    Text(label)
+                    Text(supporting, fontSize = 12.sp, color = LocalPalette.current.textDim.toComposeColor())
+                }
+            }
+        },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = color ?: androidx.compose.material3.LocalContentColor.current, modifier = Modifier.size(20.dp)) },
         trailingIcon = if (more) ({ Icon(XnotesIcons.next, contentDescription = null, modifier = Modifier.size(16.dp)) }) else null,
         enabled = enabled,
         onClick = onClick,

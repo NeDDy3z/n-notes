@@ -1,5 +1,6 @@
 package com.xnotes.ui
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -113,6 +114,125 @@ internal fun PlaybackChip(session: AudioPlayback.Session) {
             }
         }
         if (open) PlayerPanel(session) { open = false }
+    }
+}
+
+/**
+ * The Insert slot while this pane records: a red chip with the recorded time and a beating dot,
+ * calmer when paused. A tap opens Pause or Resume, Stop and place, and Discard. Down a side rail
+ * the time stacks, as the player's does.
+ */
+@Composable
+internal fun RecordingChip(session: AudioRecording.Session) {
+    val palette = LocalPalette.current
+    val m = palette.materialColors
+    val bar = LocalBar.current
+    var open by remember { mutableStateOf(false) }
+    val time = AudioTime.format(session.seconds * 1000)
+    val label = stringResource(R.string.recording_chip, time)
+    val fg = (if (session.paused) m.error else m.onErrorContainer).toComposeColor()
+    val shape = RoundedCornerShape(bar.circle / 2)
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "rec")
+    val dotAlpha by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.3f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween<Float>(600),
+            androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "dot",
+    )
+    Box(Modifier.padding(horizontal = 4.dp)) {
+        val base = Modifier
+            .clip(shape)
+            .then(
+                if (session.paused) Modifier.border(1.dp, m.error.toComposeColor(), shape)
+                else Modifier.background(m.errorContainer.toComposeColor()),
+            )
+            .clickable { open = !open }
+            .semantics { contentDescription = label }
+        val marker: @Composable () -> Unit = {
+            if (session.paused) {
+                PlayGlyph(true, fg, 11.dp)
+            } else {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(REC_RED.copy(alpha = dotAlpha)))
+            }
+        }
+        if (bar.vertical) {
+            Column(
+                base.width(bar.circle).padding(vertical = 9.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                marker()
+                for (part in time.split(':')) Text(part, color = fg, fontSize = bar.label, fontWeight = FontWeight.Medium)
+            }
+        } else {
+            Row(
+                base.height(bar.circle).padding(start = 11.dp, end = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                marker()
+                Text(time, color = fg, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+        if (open) {
+            DropdownMenu(expanded = true, onDismissRequest = { open = false }) {
+                Row(
+                    Modifier.padding(start = 16.dp, end = 18.dp, top = 6.dp, bottom = 6.dp).widthIn(min = 200.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(if (session.paused) R.string.recording_paused else R.string.recording),
+                        color = palette.textDim.toComposeColor(),
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    LevelMeter(session, m.error.toComposeColor(), palette.border.toComposeColor())
+                }
+                if (session.paused) {
+                    InsertMenuRow(XnotesIcons.mic, stringResource(R.string.recording_resume)) { open = false; AudioRecording.resume() }
+                } else {
+                    InsertMenuRow(XnotesIcons.pause, stringResource(R.string.recording_pause)) { open = false; AudioRecording.pause() }
+                }
+                InsertMenuRow(XnotesIcons.stop, stringResource(R.string.recording_stop_place)) { open = false; AudioRecording.stop() }
+                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = palette.border.toComposeColor())
+                InsertMenuRow(XnotesIcons.trash, stringResource(R.string.recording_discard), color = palette.danger.toComposeColor()) {
+                    open = false
+                    AudioRecording.discard()
+                }
+            }
+        }
+    }
+}
+
+/** The recording dot's red, the colour every recorder uses for it, whatever the theme. */
+private val REC_RED = Color(0xFFFF5449)
+
+/** The microphone's level just now, as a row of bars that runs while the menu is open; flat while paused. */
+@Composable
+private fun LevelMeter(session: AudioRecording.Session, on: Color, off: Color) {
+    val history = remember { androidx.compose.runtime.mutableStateListOf<Float>().apply { repeat(12) { add(0f) } } }
+    androidx.compose.runtime.LaunchedEffect(session) {
+        while (true) {
+            history.removeAt(0)
+            history.add(if (session.paused) 0f else session.level)
+            kotlinx.coroutines.delay(90)
+        }
+    }
+    Canvas(Modifier.width(58.dp).height(16.dp)) {
+        val barW = 3.dp.toPx()
+        val step = size.width / history.size
+        for ((i, l) in history.withIndex()) {
+            val h = maxOf(barW, kotlin.math.sqrt(l) * size.height)
+            drawRoundRect(
+                color = if (session.paused) off else on,
+                topLeft = Offset(i * step, (size.height - h) / 2f),
+                size = Size(barW, h),
+                cornerRadius = CornerRadius(barW / 2f),
+            )
+        }
     }
 }
 

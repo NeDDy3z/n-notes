@@ -96,6 +96,7 @@ fun Toolbar(
     onClosePane: (() -> Unit)? = null,
     onImportTemplate: () -> Unit = {},
     onInsertAudio: () -> Unit = {},
+    onRecordAudio: () -> Unit = {},
 ) {
     // The five stroke tools use the designed vector drawables (res/drawable/ic_stroke_*),
     // tinted at the call site like every other icon; the rest use the built-in line set.
@@ -141,6 +142,7 @@ fun Toolbar(
                     onToggleFullscreen = onToggleFullscreen,
                     onImportTemplate = onImportTemplate,
                     onInsertAudio = onInsertAudio,
+                    onRecordAudio = onRecordAudio,
                 )
             }
         }
@@ -176,6 +178,7 @@ private fun ToolbarItemView(
     onToggleFullscreen: () -> Unit,
     onImportTemplate: () -> Unit,
     onInsertAudio: () -> Unit,
+    onRecordAudio: () -> Unit,
 ) {
     when (item) {
         // Canvas-only items; a stored paged layout can never hold one, so nothing is drawn.
@@ -212,7 +215,7 @@ private fun ToolbarItemView(
         ToolbarItem.RULER ->
             ToolbarIcon(XnotesIcons.ruler, stringResource(R.string.tool_ruler), active = editor.rulerVisible) { editor.toggleRuler() }
 
-        ToolbarItem.IMAGE -> NoteInsertMenu(editor, onInsertImage, onAddStickers, onInsertAudio)
+        ToolbarItem.IMAGE -> NoteInsertMenu(editor, onInsertImage, onAddStickers, onInsertAudio, onRecordAudio)
 
         ToolbarItem.UNDO -> ToolbarIcon(XnotesIcons.undo, stringResource(R.string.undo), enabled = editor.canUndo, shortcut = Keys.UNDO) { editor.undo() }
         ToolbarItem.REDO -> ToolbarIcon(XnotesIcons.redo, stringResource(R.string.redo), enabled = editor.canRedo, shortcut = Keys.REDO) { editor.redo() }
@@ -605,7 +608,7 @@ private fun PageCounter(current: Int, count: Int, modifier: Modifier) {
 }
 
 @Composable
-private fun NoteInsertMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: () -> Unit, onInsertAudio: () -> Unit) {
+private fun NoteInsertMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: () -> Unit, onInsertAudio: () -> Unit, onRecordAudio: () -> Unit) {
     var stickersOpen by remember { mutableStateOf(false) }
     InsertButton(
         owner = editor,
@@ -615,6 +618,7 @@ private fun NoteInsertMenu(editor: Editor, onInsertImage: () -> Unit, onAddStick
             InsertRow(XnotesIcons.sticker, stringResource(R.string.stickers), more = true) { stickersOpen = true },
         ),
         onAudioFromFile = onInsertAudio,
+        onRecord = onRecordAudio,
     ) {
         if (stickersOpen) StickersMenu(editor, onAddStickers) { stickersOpen = false }
     }
