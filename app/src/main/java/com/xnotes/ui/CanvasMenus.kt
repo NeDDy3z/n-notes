@@ -75,6 +75,12 @@ interface SelectionMenuHost : SwatchHost {
     fun copySelection()
     fun bringToFront()
     fun duplicateSelection()
+
+    /** The audio pill selected on its own, which the bar offers to play. */
+    fun selectedAudio(): com.xnotes.core.model.AudioItem?
+
+    /** Play or pause [selectedAudio]: the way to play it when a finger draws rather than pans. */
+    fun playSelectedAudio()
     fun dismissSelectionMenu()
 
     /** Pin the selection where it is and put it away; a held finger over it offers to release it. */
@@ -139,8 +145,9 @@ fun SelectionMenu(host: SelectionMenuHost) {
     var overflowOpen by remember { mutableStateOf(false) }
     var styleOpen by remember { mutableStateOf(false) }
 
+    val audio = host.selectedAudio()
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { (6 * 46).dp.toPx() }
+    val barWidthPx = with(density) { ((if (audio != null) 7 else 6) * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
@@ -161,6 +168,10 @@ fun SelectionMenu(host: SelectionMenuHost) {
                 .background(palette.menuBg.toComposeColor())
                 .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
         ) {
+            if (audio != null) {
+                val playing = AudioPlayback.session?.let { it.item === audio && it.playing } == true
+                ActionIcon(if (playing) XnotesIcons.pause else XnotesIcons.play, stringResource(if (playing) R.string.audio_pause else R.string.audio_play)) { host.playSelectedAudio() }
+            }
             ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), shortcut = Keys.DELETE) { host.deleteSelection() }
             ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
             ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { host.copySelection(); host.dismissSelectionMenu() }

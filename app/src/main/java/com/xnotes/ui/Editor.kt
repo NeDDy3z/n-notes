@@ -257,7 +257,7 @@ private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xno
 enum class Pane { PRIMARY, SECONDARY }
 
 @Stable
-class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore, ColorDropHost {
+class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore, ColorDropHost, AudioOwner {
 
     private val appContext = context.applicationContext
 
@@ -682,6 +682,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             it.applyPalette(palette)
             // Both editors write inserted images into the same purged-on-launch temp dir.
             it.imageDir = imageDir
+            it.onMessage = { m -> message = m }
             for (t in ToolDefaults.persistedTools) it.setToolConfig(t, settings.configFor(t))
             it.armShapeConfig(settings.shapeConfig)
             it.toolbarColors = toolbarColors
@@ -1594,6 +1595,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.clipboardHasImage = { clipboardImageUri() != null }
         controller.onMarkupTap = { at, withLink -> tapMarkup(at, withLink) }
         controller.onTap = { at -> tapClosesNotePeek(at) }
+        controller.onAudioTap = { pageIndex, local -> tapAudio(pageIndex, local) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
             flowLinkAt(pageIndex, pageLocal)?.let {
                 openUrl(it)
@@ -1628,6 +1630,46 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         maybeAutoEnableFingerDraw()
         applySettings()
         rebuildPdfSource()
+    }
+
+    // --- audio ---
+
+    /** The page that last held a pill the player asked about: the player asks about one pill, ten times a second. */
+    private var audioPage: Page? = null
+
+    private fun pageOfAudio(item: com.xnotes.core.model.AudioItem): Page? {
+        audioPage?.takeIf { p -> p.items.any { it === item } }?.let { return it }
+        return state.document.pages.firstOrNull { p -> p.items.any { it === item } }.also { audioPage = it }
+    }
+
+    override fun audioRepaint(item: com.xnotes.core.model.AudioItem) {
+        val page = pageOfAudio(item) ?: return
+        if (!state.repairRegion(page, item.paintBounds())) state.invalidatePage(page)
+        view.requestRender()
+    }
+
+    override fun holdsAudio(item: com.xnotes.core.model.AudioItem): Boolean = pageOfAudio(item) != null
+
+    override fun audioPositionKey(rid: Int): String? = state.document.path?.let { "${documentKey(it)}#$rid" }
+
+    override fun audioFailed() {
+        message = appContext.getString(R.string.err_audio_unplayable)
+    }
+
+    /** A finger tap on a pill plays it (see [AudioPlayback.tap]); a tap anywhere else is left to links and markups. */
+    private fun tapAudio(pageIndex: Int, local: com.xnotes.core.geometry.Pt): Boolean {
+        val page = state.document.pages.getOrNull(pageIndex) ?: return false
+        val item = page.items.lastOrNull { it is com.xnotes.core.model.AudioItem && it.contains(local) } as? com.xnotes.core.model.AudioItem ?: return false
+        AudioPlayback.tap(this, item, local)
+        return true
+    }
+
+    override fun selectedAudio(): com.xnotes.core.model.AudioItem? = controller.selectedItems().singleOrNull() as? com.xnotes.core.model.AudioItem
+
+    override fun playSelectedAudio() {
+        val item = selectedAudio() ?: return
+        val s = AudioPlayback.session
+        if (s != null && s.item === item) AudioPlayback.toggle() else AudioPlayback.open(this, item)
     }
 
     // --- selection menu / clipboard ---
@@ -5732,6 +5774,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun replaceDocument(doc: Document) {
+        AudioPlayback.closeFor(this)
         saveViewState() // remember the outgoing folder note's view before switching away
         flowText.endSession() // flushes the typing burst so the autosave below carries it
         flushAutosave() // save the outgoing note if it was autosaving to the folder
@@ -7900,6 +7943,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     fun newNote() {
+        AudioPlayback.closeFor(this)
         saveViewState()
         flushAutosave()
         autosaveUri = null
@@ -8011,6 +8055,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  [noteOpen] so the editor is removed from the stack. The document stays as an inert buffer. */
     fun goHome() {
         if (!noteOpen) return
+        AudioPlayback.closeFor(this)
+        infiniteOrNull?.let { AudioPlayback.closeFor(it) }
         // A canvas has none of the paged note's text sessions, autosave binding or thumbnails yet,
         // so leaving one is just popping the layer.
         if (canvasOpen) {

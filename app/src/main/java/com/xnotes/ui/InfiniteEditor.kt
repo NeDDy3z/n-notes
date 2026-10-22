@@ -77,7 +77,7 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
-class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost {
+class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost, AudioOwner {
 
     private val appContext = context.applicationContext
 
@@ -133,6 +133,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onDoubleTap = { vp, toolType, selectedBefore -> onDoubleTap(vp, toolType, selectedBefore) },
         isEditingText = { editingLabel != null },
         onCommitText = { commitText() },
+        onAudioTap = { tapAudio(it) },
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
@@ -1566,6 +1567,36 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         return item
     }
 
+    /** Shows a message to the user; the paged editor that owns this canvas sets it. */
+    var onMessage: ((String) -> Unit)? = null
+
+    override fun audioRepaint(item: com.xnotes.core.model.AudioItem) = audioChanged(item, save = false)
+
+    override fun holdsAudio(item: com.xnotes.core.model.AudioItem): Boolean = document.containsRef(item)
+
+    override fun audioPositionKey(rid: Int): String? = document.path?.let { "$it#$rid" }
+
+    override fun audioFailed() {
+        onMessage?.invoke(appContext.getString(com.xnotes.R.string.err_audio_unplayable))
+    }
+
+    /** A finger tap at [at] on a pill plays it (see [AudioPlayback.tap]); false when there is none. */
+    fun tapAudio(at: Pt): Boolean {
+        val reach = Rect(at.x - 1.0, at.y - 1.0, 2.0, 2.0)
+        val item = document.itemsIn(reach).lastOrNull { it is com.xnotes.core.model.AudioItem && it.contains(at) } as? com.xnotes.core.model.AudioItem
+            ?: return false
+        AudioPlayback.tap(this, item, at)
+        return true
+    }
+
+    override fun selectedAudio(): com.xnotes.core.model.AudioItem? = selection.items.singleOrNull() as? com.xnotes.core.model.AudioItem
+
+    override fun playSelectedAudio() {
+        val item = selectedAudio() ?: return
+        val s = AudioPlayback.session
+        if (s != null && s.item === item) AudioPlayback.toggle() else AudioPlayback.open(this, item)
+    }
+
     /** [item] changed how it looks (its waveform arrived, or playback moved): mesh it again and keep the change. */
     fun audioChanged(item: com.xnotes.core.model.AudioItem, save: Boolean = true) {
         if (document.items.none { it === item }) return
@@ -1902,6 +1933,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     fun replaceDocument(next: InfiniteDocument) {
+        AudioPlayback.closeFor(this)
         clearFading() // whatever was melting belongs to the outgoing canvas
         // An open label belongs to the outgoing canvas too; its history goes with it.
         editingLabel?.labelHidden = false

@@ -310,6 +310,14 @@
     <string name="err_audio_too_big">This audio file is too large to attach.</string>
     <string name="err_audio_unplayable">This audio file cannot be played on this device.</string>
     <string name="err_read_audio">The audio file could not be read.</string>
+    <string name="audio_play">Play</string>
+    <string name="audio_pause">Pause</string>
+    <string name="audio_back">Back 10 seconds</string>
+    <string name="audio_forward">Forward 10 seconds</string>
+    <string name="audio_speed">Playback speed</string>
+    <string name="audio_close">Close</string>
+    <string name="audio_seek">Position</string>
+    <string name="audio_chip">Player, %1$s</string>
     <string name="fit_all">Fit all</string>
     <string name="gl_unavailable">GL unavailable</string>
     <string name="canvas_out_of_memory">Out of memory, some ink hidden</string>

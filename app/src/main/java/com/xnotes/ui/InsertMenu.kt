@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,10 +33,13 @@ class InsertRow(val icon: ImageVector, val label: String, val more: Boolean = fa
  */
 @Composable
 internal fun InsertButton(
+    owner: AudioOwner,
     imageRows: List<InsertRow>,
     onAudioFromFile: () -> Unit,
     popups: @Composable () -> Unit = {},
 ) {
+    // While a recording's player is open in this pane, the slot is its chip.
+    AudioPlayback.session?.takeIf { it.owner === owner }?.let { PlaybackChip(it); return }
     var expanded by remember { mutableStateOf(false) }
     Box {
         ToolbarIcon(XnotesIcons.paperclip, stringResource(R.string.insert), active = expanded) { expanded = true }

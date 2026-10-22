@@ -118,6 +118,8 @@ class InfiniteInteraction(
     private val isEditingText: () -> Boolean = { false },
     /** End that edit, keeping what was typed. */
     private val onCommitText: () -> Unit = {},
+    /** A pan that ended as a tap, at this content point, which an audio pill there may take. */
+    private val onAudioTap: (Pt) -> Boolean = { false },
 ) {
 
     private val choreographer = Choreographer.getInstance()
@@ -626,9 +628,12 @@ class InfiniteInteraction(
         cancelLongPress()
         val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed() && !panFromPenButton) ||
             (mode == CanvasPointerMode.PINCH && pinchPanAllowed())
+        // A pan that never moved is a tap, and a tap on a pill plays it, as a finger opens links on a note.
+        val panTap = mode == CanvasPointerMode.PAN && !panFromPenButton && panWasTap(e.getX(0).toDouble(), e.getY(0).toDouble())
+        val audioTapped = panTap && onAudioTap(viewport.viewportToContent(Pt(e.getX(0).toDouble(), e.getY(0).toDouble())))
         // A finger tap off the selection puts it away; a tap is the only way to say so with a
         // finger, since a drag there is a pan.
-        if (mode == CanvasPointerMode.PAN && panMayDismiss &&
+        if (!audioTapped && mode == CanvasPointerMode.PAN && panMayDismiss &&
             panWasTap(e.getX(0).toDouble(), e.getY(0).toDouble())
         ) {
             clearSelection()

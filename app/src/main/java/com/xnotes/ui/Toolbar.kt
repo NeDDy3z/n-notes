@@ -608,6 +608,7 @@ private fun PageCounter(current: Int, count: Int, modifier: Modifier) {
 private fun NoteInsertMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: () -> Unit, onInsertAudio: () -> Unit) {
     var stickersOpen by remember { mutableStateOf(false) }
     InsertButton(
+        owner = editor,
         imageRows = listOf(
             InsertRow(XnotesIcons.image, stringResource(R.string.insert_image_ellipsis)) { onInsertImage() },
             InsertRow(XnotesIcons.paste, stringResource(R.string.paste_image)) { editor.pasteImage() },

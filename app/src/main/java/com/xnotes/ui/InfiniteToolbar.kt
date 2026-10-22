@@ -127,6 +127,7 @@ fun InfiniteToolbar(
                     ) { editor.toggleWand() }
 
                     ToolbarItem.IMAGE -> InsertButton(
+                        owner = editor,
                         imageRows = listOf(InsertRow(XnotesIcons.image, stringResource(R.string.insert_image_ellipsis)) { onInsertImage() }),
                         onAudioFromFile = onInsertAudio,
                     )

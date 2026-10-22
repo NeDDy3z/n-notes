@@ -176,6 +176,9 @@ class InteractionController(
      *  once it is ready. */
     var onLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
+    /** A finger tap that may land on an audio pill, at [pageLocal] on page [pageIndex]; true when one took it. */
+    var onAudioTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
+
     /**
      * A tap that may open a markup, at viewport point [at]: a pan tap ([withLink], so a menu can offer
      * the link under it) or the markup tool's. True when a markup or its note icon took it.
@@ -539,6 +542,9 @@ class InteractionController(
     }
 
     val hasSelection: Boolean get() = selection.isNotEmpty()
+
+    /** The selected items, in the order they were picked. */
+    fun selectedItems(): List<CanvasItem> = selection.map { it.item }
 
     fun configFor(t: Tool): ToolConfig = toolConfigs[t] ?: ToolDefaults.configFor(t)
 
@@ -1041,6 +1047,9 @@ class InteractionController(
 
     /** Offer a finger tap at [content] to [onMarkupTap], then as a page + page-space point to [onLinkTap]. */
     private fun tryLinkTap(content: Pt): Boolean {
+        state.pageIndexAtContent(content)?.let { i ->
+            if (onAudioTap?.invoke(i, state.toPageSpace(i, content)) == true) return true
+        }
         if (onMarkupTap?.invoke(state.contentToViewport(content), true) == true) return true
         val cb = onLinkTap ?: return false
         val pageIndex = state.pageIndexAtContent(content) ?: return false

@@ -150,6 +150,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         com.xnotes.platform.FontCatalog.init(this)
         com.xnotes.platform.TemplateLibrary.init(this)
+        com.xnotes.ui.AudioPlayback.init(this)
         setTheme(com.xnotes.R.style.Theme_Xnotes) // leave the dark launch/splash theme behind
         applyFullscreen(!deviceHasDisplayCutout(this)) // provisional; reconciled once the editor loads prefs
         // The intent that started the task comes back whenever Android rebuilds it, from a saved state
@@ -252,6 +253,12 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         editor?.persist()
+    }
+
+    // Playback never goes on with xnotes off screen; a split window that only lost focus is still on it.
+    override fun onStop() {
+        super.onStop()
+        com.xnotes.ui.AudioPlayback.pause()
     }
 
     @Suppress("DEPRECATION") // RUNNING_* still arrive below Android 14

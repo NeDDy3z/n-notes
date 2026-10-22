@@ -141,7 +141,7 @@ object AudioPill {
     }
 
     /** The loudest of [peaks] under bar [i] of [n]. */
-    private fun peakAt(peaks: ByteArray, i: Int, n: Int): Int {
+    fun peakAt(peaks: ByteArray, i: Int, n: Int): Int {
         val from = (i.toLong() * peaks.size / n).toInt()
         val to = maxOf(from + 1, ((i + 1).toLong() * peaks.size / n).toInt()).coerceAtMost(peaks.size)
         var m = 0
