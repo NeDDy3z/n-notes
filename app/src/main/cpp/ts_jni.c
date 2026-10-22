@@ -19,6 +19,7 @@ const TSLanguage *tree_sitter_java(void);
 const TSLanguage *tree_sitter_javascript(void);
 const TSLanguage *tree_sitter_json(void);
 const TSLanguage *tree_sitter_kotlin(void);
+const TSLanguage *tree_sitter_lua(void);
 const TSLanguage *tree_sitter_php_only(void);
 const TSLanguage *tree_sitter_python(void);
 const TSLanguage *tree_sitter_rust(void);
@@ -40,6 +41,7 @@ static const LangEntry LANGS[] = {
     {"javascript", tree_sitter_javascript},
     {"json", tree_sitter_json},
     {"kotlin", tree_sitter_kotlin},
+    {"lua", tree_sitter_lua},
     {"php", tree_sitter_php_only},
     {"python", tree_sitter_python},
     {"rust", tree_sitter_rust},
