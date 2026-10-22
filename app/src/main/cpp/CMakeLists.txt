@@ -36,6 +36,8 @@ set(GRAMMAR_SOURCES
     grammars/rust/scanner.c
     grammars/typescript/parser.c
     grammars/typescript/scanner.c
+    grammars/yaml/parser.c
+    grammars/yaml/scanner.c
 )
 
 # libxnotests: the tree-sitter runtime, the bundled grammars and a thin JNI bridge.

@@ -25,6 +25,7 @@ const TSLanguage *tree_sitter_php_only(void);
 const TSLanguage *tree_sitter_python(void);
 const TSLanguage *tree_sitter_rust(void);
 const TSLanguage *tree_sitter_typescript(void);
+const TSLanguage *tree_sitter_yaml(void);
 
 typedef struct {
     const char *name;
@@ -48,6 +49,7 @@ static const LangEntry LANGS[] = {
     {"python", tree_sitter_python},
     {"rust", tree_sitter_rust},
     {"typescript", tree_sitter_typescript},
+    {"yaml", tree_sitter_yaml},
 };
 
 // --- query predicate evaluation ---
