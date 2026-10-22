@@ -15,6 +15,7 @@ const TSLanguage *tree_sitter_c(void);
 const TSLanguage *tree_sitter_cpp(void);
 const TSLanguage *tree_sitter_css(void);
 const TSLanguage *tree_sitter_diff(void);
+const TSLanguage *tree_sitter_dockerfile(void);
 const TSLanguage *tree_sitter_go(void);
 const TSLanguage *tree_sitter_html(void);
 const TSLanguage *tree_sitter_java(void);
@@ -41,6 +42,7 @@ static const LangEntry LANGS[] = {
     {"cpp", tree_sitter_cpp},
     {"css", tree_sitter_css},
     {"diff", tree_sitter_diff},
+    {"dockerfile", tree_sitter_dockerfile},
     {"go", tree_sitter_go},
     {"html", tree_sitter_html},
     {"java", tree_sitter_java},

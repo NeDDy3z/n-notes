@@ -18,6 +18,8 @@ set(GRAMMAR_SOURCES
     grammars/css/parser.c
     grammars/css/scanner.c
     grammars/diff/parser.c
+    grammars/dockerfile/parser.c
+    grammars/dockerfile/scanner.c
     grammars/go/parser.c
     grammars/html/parser.c
     grammars/html/scanner.c

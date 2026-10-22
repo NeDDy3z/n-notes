@@ -84,6 +84,7 @@ object MarkdownParser {
         "assembly" to "asm", "nasm" to "asm", "gas" to "asm", "x86asm" to "asm", "armasm" to "asm", "mipsasm" to "asm",
         "yml" to "yaml",
         "patch" to "diff",
+        "docker" to "dockerfile", "containerfile" to "dockerfile",
     )
 
     /** Common fence-info aliases to the bundled grammar ids. */
