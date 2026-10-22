@@ -1553,6 +1553,27 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         return true
     }
 
+    /** Place [audio] as a pill in the middle of the view, sized for this zoom, selected so it can be dragged at once. */
+    fun placeAudio(audio: com.xnotes.core.model.AudioData, name: String): com.xnotes.core.model.AudioItem {
+        val box = com.xnotes.core.model.AudioItem.boxAt(viewport.centerContent, document.dpi, viewport.zoom)
+        val item = com.xnotes.core.model.AudioItem(audio, box, name, com.xnotes.core.audio.RecordingIds.next(document.items), textMeasurer)
+        document.add(item)
+        history.push(AddCanvasItem(document, item))
+        selection.select(listOf(item))
+        markDirty()
+        refresh()
+        publishOverlay()
+        return item
+    }
+
+    /** [item] changed how it looks (its waveform arrived, or playback moved): mesh it again and keep the change. */
+    fun audioChanged(item: com.xnotes.core.model.AudioItem, save: Boolean = true) {
+        if (document.items.none { it === item }) return
+        document.itemsChanged(listOf(item))
+        if (save) markDirty()
+        view.publish()
+    }
+
     /** Pen up on an eraser drag: the whole drag is one undoable edit, however much it cut. */
     private fun commitErase(session: EraseSession) {
         val command = session.buildCommand() ?: return

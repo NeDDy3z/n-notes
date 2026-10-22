@@ -2120,6 +2120,75 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         view.requestRender()
     }
 
+    /**
+     * Attach the audio file at [uri] as a pill where the view is, on the canvas when one is open.
+     * The file is copied and checked off the main thread, and its waveform is read after it lands.
+     */
+    fun attachAudio(uri: android.net.Uri) {
+        autosaveScope.launch {
+            val result = withContext(Dispatchers.IO) { com.xnotes.platform.AudioFiles.attach(appContext, uri, imageDir) }
+            when (result) {
+                is com.xnotes.platform.AudioFiles.Result.Ok -> {
+                    val data = com.xnotes.core.model.AudioData(result.file, result.ext, result.durationMs, ByteArray(0))
+                    val name = result.name.ifBlank { appContext.getString(R.string.insert_group_audio) }
+                    val item = if (canvasOpen) infinite.placeAudio(data, name) else placeAudio(data, name)
+                    readPeaks(item)
+                }
+                com.xnotes.platform.AudioFiles.Result.TooBig -> message = appContext.getString(R.string.err_audio_too_big)
+                com.xnotes.platform.AudioFiles.Result.Unplayable -> message = appContext.getString(R.string.err_audio_unplayable)
+                com.xnotes.platform.AudioFiles.Result.Unreadable -> message = appContext.getString(R.string.err_read_audio)
+            }
+        }
+    }
+
+    /** Place [audio] as a pill on the page in view, centred where the view is, selected so it can be dragged at once. */
+    fun placeAudio(audio: com.xnotes.core.model.AudioData, name: String): com.xnotes.core.model.AudioItem {
+        val doc = state.document
+        val centre = state.viewportToContent(com.xnotes.core.geometry.Pt(state.viewportW / 2.0, state.viewportH / 2.0))
+        val index = (state.pageIndexAtContent(centre) ?: state.currentPageIndex()).coerceIn(0, doc.pages.lastIndex)
+        val page = doc.pages[index]
+        val cover = state.footprint(page)
+        val local = state.toPageSpace(index, centre)
+        val box = com.xnotes.core.model.AudioItem.boxAt(local, doc.dpi)
+        // Anywhere on the paper, margins included, but never hanging off it.
+        val rect = Rect(
+            box.x.coerceIn(cover.left, (cover.right - box.w).coerceAtLeast(cover.left)),
+            box.y.coerceIn(cover.top, (cover.bottom - box.h).coerceAtLeast(cover.top)),
+            box.w, box.h,
+        )
+        val rid = com.xnotes.core.audio.RecordingIds.next(doc.pages.flatMap { it.items })
+        val item = com.xnotes.core.model.AudioItem(audio, rect, name, rid, textMeasurer)
+        page.items.add(item)
+        state.appendToCache(page, item)
+        history.push(AddItem(page, item))
+        doc.dirty = true
+        refreshContent()
+        controller.selectPlaced(index, listOf(item))
+        view.requestRender()
+        return item
+    }
+
+    /** Read [item]'s waveform in the background, then show it and keep it with the note. */
+    private fun readPeaks(item: com.xnotes.core.model.AudioItem) {
+        val audio = item.audio
+        com.xnotes.platform.AudioPeaks.readLater(audio.file, audio.durationMs) { peaks ->
+            view.post {
+                if (item.audio !== audio) return@post
+                // A file nothing could decode still plays; a flat line stands in for its shape.
+                item.audio = audio.withPeaks(peaks ?: ByteArray(com.xnotes.core.model.AudioData.PEAK_BINS) { 40 })
+                if (canvasOpen && infiniteOrNull?.document?.items?.any { it === item } == true) {
+                    infinite.audioChanged(item)
+                    return@post
+                }
+                val page = state.document.pages.firstOrNull { p -> p.items.any { it === item } } ?: return@post
+                if (!state.repairRegion(page, item.paintBounds())) state.invalidatePage(page)
+                state.document.dirty = true
+                refreshContent()
+                view.requestRender()
+            }
+        }
+    }
+
     /** Save an encoded image into the on-disk sticker library (validated by a probe decode). */
     fun addSticker(bytes: ByteArray) {
         val file = runCatching {

@@ -49,6 +49,7 @@ fun InfiniteToolbar(
     onOpenBackstage: () -> Unit,
     onInsertImage: () -> Unit = {},
     onClosePane: (() -> Unit)? = null,
+    onInsertAudio: () -> Unit = {},
 ) {
     // The stroke tools use the same designed drawables the paged toolbar does, so a pen looks like
     // a pen on either canvas rather than like a generic glyph.
@@ -125,7 +126,10 @@ fun InfiniteToolbar(
                         active = editor.wandEnabled,
                     ) { editor.toggleWand() }
 
-                    ToolbarItem.IMAGE -> ToolbarIcon(XnotesIcons.image, stringResource(R.string.insert_image)) { onInsertImage() }
+                    ToolbarItem.IMAGE -> InsertButton(
+                        imageRows = listOf(InsertRow(XnotesIcons.image, stringResource(R.string.insert_image_ellipsis)) { onInsertImage() }),
+                        onAudioFromFile = onInsertAudio,
+                    )
 
                     ToolbarItem.COLORS ->
                         editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->

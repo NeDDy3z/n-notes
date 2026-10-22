@@ -95,6 +95,7 @@ fun Toolbar(
     onAddStickers: () -> Unit,
     onClosePane: (() -> Unit)? = null,
     onImportTemplate: () -> Unit = {},
+    onInsertAudio: () -> Unit = {},
 ) {
     // The five stroke tools use the designed vector drawables (res/drawable/ic_stroke_*),
     // tinted at the call site like every other icon; the rest use the built-in line set.
@@ -139,6 +140,7 @@ fun Toolbar(
                     onAddStickers = onAddStickers,
                     onToggleFullscreen = onToggleFullscreen,
                     onImportTemplate = onImportTemplate,
+                    onInsertAudio = onInsertAudio,
                 )
             }
         }
@@ -173,6 +175,7 @@ private fun ToolbarItemView(
     onAddStickers: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onImportTemplate: () -> Unit,
+    onInsertAudio: () -> Unit,
 ) {
     when (item) {
         // Canvas-only items; a stored paged layout can never hold one, so nothing is drawn.
@@ -209,7 +212,7 @@ private fun ToolbarItemView(
         ToolbarItem.RULER ->
             ToolbarIcon(XnotesIcons.ruler, stringResource(R.string.tool_ruler), active = editor.rulerVisible) { editor.toggleRuler() }
 
-        ToolbarItem.IMAGE -> ImageMenu(editor, onInsertImage, onAddStickers)
+        ToolbarItem.IMAGE -> NoteInsertMenu(editor, onInsertImage, onAddStickers, onInsertAudio)
 
         ToolbarItem.UNDO -> ToolbarIcon(XnotesIcons.undo, stringResource(R.string.undo), enabled = editor.canUndo, shortcut = Keys.UNDO) { editor.undo() }
         ToolbarItem.REDO -> ToolbarIcon(XnotesIcons.redo, stringResource(R.string.redo), enabled = editor.canRedo, shortcut = Keys.REDO) { editor.redo() }
@@ -602,16 +605,16 @@ private fun PageCounter(current: Int, count: Int, modifier: Modifier) {
 }
 
 @Composable
-private fun ImageMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: () -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
+private fun NoteInsertMenu(editor: Editor, onInsertImage: () -> Unit, onAddStickers: () -> Unit, onInsertAudio: () -> Unit) {
     var stickersOpen by remember { mutableStateOf(false) }
-    Box {
-        ToolbarIcon(XnotesIcons.image, stringResource(R.string.tool_image)) { expanded = true }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.paste_image)) }, onClick = { editor.pasteImage(); expanded = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.insert_image_ellipsis)) }, onClick = { onInsertImage(); expanded = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.stickers)) }, onClick = { expanded = false; stickersOpen = true })
-        }
+    InsertButton(
+        imageRows = listOf(
+            InsertRow(XnotesIcons.image, stringResource(R.string.insert_image_ellipsis)) { onInsertImage() },
+            InsertRow(XnotesIcons.paste, stringResource(R.string.paste_image)) { editor.pasteImage() },
+            InsertRow(XnotesIcons.sticker, stringResource(R.string.stickers), more = true) { stickersOpen = true },
+        ),
+        onAudioFromFile = onInsertAudio,
+    ) {
         if (stickersOpen) StickersMenu(editor, onAddStickers) { stickersOpen = false }
     }
 }

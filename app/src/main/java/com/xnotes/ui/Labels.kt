@@ -79,7 +79,7 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.TEXT -> R.string.tool_text
         ToolbarItem.TEXT_BOX -> R.string.tool_text_box
         ToolbarItem.MARKUP -> R.string.tool_markup
-        ToolbarItem.IMAGE -> R.string.tool_image
+        ToolbarItem.IMAGE -> R.string.insert
         ToolbarItem.UNDO -> R.string.undo
         ToolbarItem.REDO -> R.string.redo
         ToolbarItem.PAGE_NAV -> R.string.toolbar_page_nav

@@ -3243,6 +3243,12 @@ class InteractionController(
         requestRender()
     }
 
+    /** Select [items] just placed on page [pageIndex], as a paste leaves its clones, so they can be dragged at once. */
+    fun selectPlaced(pageIndex: Int, items: List<CanvasItem>) {
+        setSelection(items.map { Selected(pageIndex, it) })
+        refreshSelectionMenu()
+    }
+
     fun clearSelection() {
         // Restore the tool a long-press grab temporarily switched away from.
         longPressPrevTool?.let {

@@ -460,6 +460,14 @@ private fun EditorScreen(
         }
     }
 
+    // An audio file to attach, for the pane that asked; the editor copies it off the main thread.
+    var pendingAudioPane by remember { mutableStateOf<Editor?>(null) }
+    val attachAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val pane = pendingAudioPane
+        pendingAudioPane = null
+        if (uri != null && pane != null) pane.attachAudio(uri)
+    }
+
     // A PDF picked from a page's menu in the side panel; its pages go in right after that page.
     val insertPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val pending = pendingPdfInsert; pendingPdfInsert = null
@@ -894,6 +902,10 @@ private fun EditorScreen(
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
+                onInsertAudio = { pane ->
+                    pendingAudioPane = pane
+                    attachAudioLauncher.launch(arrayOf("audio/*", "application/ogg"))
+                },
                 onImportTemplate = { importTemplateLauncher.launch(arrayOf("*/*")) },
                 onTemplateFromImage = { kind ->
                     pendingTemplateKind = kind
@@ -1055,6 +1067,7 @@ private class PaneActions(
     val onInsertImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onAddStickers: () -> Unit,
+    val onInsertAudio: (Editor) -> Unit,
     val onImportTemplate: () -> Unit,
     val onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
@@ -1223,6 +1236,7 @@ private fun EditorPane(
                         onOpenBackstage = actions.onOpenBackstage,
                         onInsertImage = { actions.onInsertCanvasImage(editor, null) },
                         onClosePane = onClose,
+                        onInsertAudio = { actions.onInsertAudio(editor) },
                     )
                 }
                 ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
@@ -1252,6 +1266,7 @@ private fun EditorPane(
                         onAddStickers = actions.onAddStickers,
                         onClosePane = onClose,
                         onImportTemplate = actions.onImportTemplate,
+                        onInsertAudio = { actions.onInsertAudio(editor) },
                     )
                 }
                 ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->

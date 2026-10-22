@@ -304,6 +304,12 @@
     <string name="err_rename_note">Couldn’t rename the note.</string>
     <string name="untitled">Untitled</string>
     <string name="insert_image">Insert image</string>
+    <string name="insert_group_image">Image</string>
+    <string name="insert_group_audio">Audio</string>
+    <string name="audio_from_file">Audio from file…</string>
+    <string name="err_audio_too_big">This audio file is too large to attach.</string>
+    <string name="err_audio_unplayable">This audio file cannot be played on this device.</string>
+    <string name="err_read_audio">The audio file could not be read.</string>
     <string name="fit_all">Fit all</string>
     <string name="gl_unavailable">GL unavailable</string>
     <string name="canvas_out_of_memory">Out of memory, some ink hidden</string>

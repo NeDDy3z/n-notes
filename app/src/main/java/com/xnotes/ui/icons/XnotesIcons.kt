@@ -124,6 +124,15 @@ object XnotesIcons {
     val indentIncrease = icon("M21 12H11", "M21 18H11", "M21 6H11", "M3 8 7 12 3 16")
     val indentDecrease = icon("M21 12H11", "M21 18H11", "M21 6H11", "M7 8 3 12 7 16")
     val image = icon(rect(3.0, 3.0, 18.0, 18.0), circle(8.5, 8.5, 1.5), "M21 15l-5-5L5 21")
+
+    // The Insert button (Feather "paperclip"), and its menu's sticker, microphone and music rows (Lucide).
+    val paperclip = icon("M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48")
+    val sticker = icon(
+        "M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5Z", "M15 3v4a2 2 0 0 0 2 2h4",
+        "M8 13h.01", "M16 13h.01", "M10 16s.8 1 2 1c1.3 0 2-1 2-1",
+    )
+    val mic = icon("M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z", "M19 10v2a7 7 0 0 1-14 0v-2", "M12 19v3")
+    val music = icon("M9 18V5l12-2v13", circle(6.0, 18.0, 3.0), circle(18.0, 16.0, 3.0))
     // The screenshot tool: plain scissors (Feather "scissors"), the same glyph as Cut.
     val scissors = icon(circle(6.0, 6.0, 3.0), circle(6.0, 18.0, 3.0), "M20 4 8.12 15.88", "M14.47 14.48 20 20", "M8.12 8.12 12 12")
 
