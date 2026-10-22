@@ -34,6 +34,8 @@ set(GRAMMAR_SOURCES
     grammars/python/scanner.c
     grammars/rust/parser.c
     grammars/rust/scanner.c
+    grammars/toml/parser.c
+    grammars/toml/scanner.c
     grammars/typescript/parser.c
     grammars/typescript/scanner.c
     grammars/yaml/parser.c

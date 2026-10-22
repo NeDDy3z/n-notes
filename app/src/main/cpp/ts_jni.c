@@ -24,6 +24,7 @@ const TSLanguage *tree_sitter_lua(void);
 const TSLanguage *tree_sitter_php_only(void);
 const TSLanguage *tree_sitter_python(void);
 const TSLanguage *tree_sitter_rust(void);
+const TSLanguage *tree_sitter_toml(void);
 const TSLanguage *tree_sitter_typescript(void);
 const TSLanguage *tree_sitter_yaml(void);
 
@@ -48,6 +49,7 @@ static const LangEntry LANGS[] = {
     {"php", tree_sitter_php_only},
     {"python", tree_sitter_python},
     {"rust", tree_sitter_rust},
+    {"toml", tree_sitter_toml},
     {"typescript", tree_sitter_typescript},
     {"yaml", tree_sitter_yaml},
 };

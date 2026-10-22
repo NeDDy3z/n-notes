@@ -82,7 +82,7 @@ class TreeSitterHighlighter(private val context: Context) : CodeHighlighter {
         /** Languages whose grammars ship in libxnotests. */
         val SUPPORTED = setOf(
             "asm", "bash", "c", "cpp", "css", "go", "html", "java", "javascript", "json", "kotlin",
-            "lua", "php", "python", "rust", "typescript", "yaml",
+            "lua", "php", "python", "rust", "toml", "typescript", "yaml",
         )
     }
 }
