@@ -24,4 +24,4 @@ xnotes is a handwriting notebook for Android, built for the stylus. Take notes, 
 * Your notes, your folders: notes are saved as files in a folder you choose, not locked away in an app's database, so you stay in full control of them.
 * Works with stylus pens: S Pen and many others.
 * Always editable: nothing gets flattened, so every stroke can be moved, restyled or erased later.
-* Private: open source, no account, no ads, no tracking, no permissions.
+* Private: open source, no account, no ads, no tracking, no internet access.
