@@ -22,6 +22,8 @@ set(GRAMMAR_SOURCES
     grammars/kotlin/scanner.c
     grammars/python/parser.c
     grammars/python/scanner.c
+    grammars/typescript/parser.c
+    grammars/typescript/scanner.c
 )
 
 # libxnotests: the tree-sitter runtime, the bundled grammars and a thin JNI bridge.

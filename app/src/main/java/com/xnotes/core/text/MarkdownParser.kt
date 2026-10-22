@@ -73,10 +73,11 @@ import org.commonmark.node.Paragraph as MdParagraph
 object MarkdownParser {
 
     private val LANG_ALIASES = mapOf(
-        "js" to "javascript", "jsx" to "javascript", "ts" to "javascript",
+        "js" to "javascript", "jsx" to "javascript",
         "py" to "python", "kt" to "kotlin", "kts" to "kotlin",
         "sh" to "bash", "shell" to "bash", "zsh" to "bash",
         "c++" to "cpp", "cc" to "cpp", "cxx" to "cpp", "hpp" to "cpp",
+        "ts" to "typescript", "mts" to "typescript", "cts" to "typescript",
     )
 
     /** Common fence-info aliases to the bundled grammar ids. */

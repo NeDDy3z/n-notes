@@ -17,6 +17,7 @@ const TSLanguage *tree_sitter_javascript(void);
 const TSLanguage *tree_sitter_json(void);
 const TSLanguage *tree_sitter_kotlin(void);
 const TSLanguage *tree_sitter_python(void);
+const TSLanguage *tree_sitter_typescript(void);
 
 typedef struct {
     const char *name;
@@ -32,6 +33,7 @@ static const LangEntry LANGS[] = {
     {"json", tree_sitter_json},
     {"kotlin", tree_sitter_kotlin},
     {"python", tree_sitter_python},
+    {"typescript", tree_sitter_typescript},
 };
 
 // --- query predicate evaluation ---
