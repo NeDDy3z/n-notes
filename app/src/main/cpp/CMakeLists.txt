@@ -23,6 +23,8 @@ set(GRAMMAR_SOURCES
     grammars/kotlin/scanner.c
     grammars/python/parser.c
     grammars/python/scanner.c
+    grammars/rust/parser.c
+    grammars/rust/scanner.c
     grammars/typescript/parser.c
     grammars/typescript/scanner.c
 )

@@ -18,6 +18,7 @@ const TSLanguage *tree_sitter_javascript(void);
 const TSLanguage *tree_sitter_json(void);
 const TSLanguage *tree_sitter_kotlin(void);
 const TSLanguage *tree_sitter_python(void);
+const TSLanguage *tree_sitter_rust(void);
 const TSLanguage *tree_sitter_typescript(void);
 
 typedef struct {
@@ -35,6 +36,7 @@ static const LangEntry LANGS[] = {
     {"json", tree_sitter_json},
     {"kotlin", tree_sitter_kotlin},
     {"python", tree_sitter_python},
+    {"rust", tree_sitter_rust},
     {"typescript", tree_sitter_typescript},
 };
 

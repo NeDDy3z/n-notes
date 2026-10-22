@@ -79,6 +79,7 @@ object MarkdownParser {
         "c++" to "cpp", "cc" to "cpp", "cxx" to "cpp", "hpp" to "cpp",
         "ts" to "typescript", "mts" to "typescript", "cts" to "typescript",
         "golang" to "go",
+        "rs" to "rust",
     )
 
     /** Common fence-info aliases to the bundled grammar ids. */

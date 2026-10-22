@@ -162,6 +162,7 @@ private fun shortLangLabel(lang: String): String = when (lang) {
     "javascript" -> "js"
     "kotlin" -> "kt"
     "python" -> "py"
+    "rust" -> "rs"
     "typescript" -> "ts"
     else -> lang.take(4)
 }
