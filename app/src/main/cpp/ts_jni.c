@@ -12,6 +12,7 @@
 const TSLanguage *tree_sitter_bash(void);
 const TSLanguage *tree_sitter_c(void);
 const TSLanguage *tree_sitter_cpp(void);
+const TSLanguage *tree_sitter_css(void);
 const TSLanguage *tree_sitter_go(void);
 const TSLanguage *tree_sitter_html(void);
 const TSLanguage *tree_sitter_java(void);
@@ -31,6 +32,7 @@ static const LangEntry LANGS[] = {
     {"bash", tree_sitter_bash},
     {"c", tree_sitter_c},
     {"cpp", tree_sitter_cpp},
+    {"css", tree_sitter_css},
     {"go", tree_sitter_go},
     {"html", tree_sitter_html},
     {"java", tree_sitter_java},

@@ -14,6 +14,8 @@ set(GRAMMAR_SOURCES
     grammars/c/parser.c
     grammars/cpp/parser.c
     grammars/cpp/scanner.c
+    grammars/css/parser.c
+    grammars/css/scanner.c
     grammars/go/parser.c
     grammars/html/parser.c
     grammars/html/scanner.c

@@ -22,6 +22,7 @@ grammars/go/          https://github.com/tree-sitter/tree-sitter-go          tag
 grammars/rust/        https://github.com/tree-sitter/tree-sitter-rust        tag v0.24.2 (MIT)
                       assets/scm/rust.scm drops a stray quote that kept its constant pattern from matching
 grammars/html/        https://github.com/tree-sitter/tree-sitter-html        tag v0.23.2 (MIT)
+grammars/css/         https://github.com/tree-sitter/tree-sitter-css         tag v0.25.0 (MIT)
 
 --- pdfium: written by tools/pdfium-sync.sh, do not edit ---
 pdfium/           https://pdfium.googlesource.com/pdfium
