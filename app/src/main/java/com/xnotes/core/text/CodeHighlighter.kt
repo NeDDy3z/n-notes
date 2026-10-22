@@ -21,7 +21,8 @@ interface CodeHighlighter {
 
 /**
  * Maps .scm capture names to colours by longest dotted prefix ("keyword.return"
- * falls back to "keyword"). Two presets keyed to the app's dark/light paper
+ * falls back to "keyword"), and Neovim-style roots ("conditional", "boolean") to
+ * the slot they belong to. Two presets keyed to the app's dark/light paper
  * (github-dark and github-light); the dark preset and user-imported themes also
  * carry a code-block [background].
  */
@@ -32,12 +33,26 @@ class HighlightTheme(private val colors: Map<String, Rgba>, val background: Rgba
         while (true) {
             colors[name]?.let { return it }
             val dot = name.lastIndexOf('.')
-            if (dot < 0) return null
+            if (dot < 0) return NEOVIM_ROOTS[name]?.let { colors[it] }
             name = name.substring(0, dot)
         }
     }
 
     companion object {
+        /** Roots that Neovim-style queries use instead of ours, onto the slot they belong to. */
+        private val NEOVIM_ROOTS = mapOf(
+            "conditional" to "keyword",
+            "repeat" to "keyword",
+            "include" to "keyword",
+            "exception" to "keyword",
+            "boolean" to "constant",
+            "float" to "number",
+            "character" to "string",
+            "parameter" to "variable",
+            "field" to "property",
+            "method" to "function",
+        )
+
         // github-dark (Primer palette), resolved from its Helix theme.
         val DARK = HighlightTheme(
             mapOf(
