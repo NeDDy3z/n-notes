@@ -78,6 +78,7 @@ object MarkdownParser {
         "sh" to "bash", "shell" to "bash", "zsh" to "bash",
         "c++" to "cpp", "cc" to "cpp", "cxx" to "cpp", "hpp" to "cpp",
         "ts" to "typescript", "mts" to "typescript", "cts" to "typescript",
+        "golang" to "go",
     )
 
     /** Common fence-info aliases to the bundled grammar ids. */
