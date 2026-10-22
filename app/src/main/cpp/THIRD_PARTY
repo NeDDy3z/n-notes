@@ -33,6 +33,7 @@ grammars/yaml/        https://github.com/tree-sitter-grammars/tree-sitter-yaml  
                       only schema.core.c, the schema scanner.c includes by default
 grammars/toml/        https://github.com/tree-sitter-grammars/tree-sitter-toml  tag v0.7.0 (MIT)
                       assets/scm/toml.scm captures a pair's key, not the whole pair, as @property
+grammars/diff/        https://github.com/tree-sitter-grammars/tree-sitter-diff  tag v0.2.0 (MIT)
 
 --- pdfium: written by tools/pdfium-sync.sh, do not edit ---
 pdfium/           https://pdfium.googlesource.com/pdfium

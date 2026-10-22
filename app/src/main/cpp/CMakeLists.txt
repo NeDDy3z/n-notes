@@ -17,6 +17,7 @@ set(GRAMMAR_SOURCES
     grammars/cpp/scanner.c
     grammars/css/parser.c
     grammars/css/scanner.c
+    grammars/diff/parser.c
     grammars/go/parser.c
     grammars/html/parser.c
     grammars/html/scanner.c
