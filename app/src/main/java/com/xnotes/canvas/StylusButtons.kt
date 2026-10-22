@@ -7,8 +7,8 @@ import android.view.MotionEvent
  * Whether a stylus side button is currently down.
  *
  * Pens do not agree on how to report this, and getting it right took several releases of
- * device-specific work, so the infinite canvas latches it through this rather than working it out
- * again. Three delivery routes are covered:
+ * device-specific work, so both canvases latch it through this rather than each working it out.
+ * Three delivery routes are covered:
  *
  *  - the touch stream's `buttonState`, which most pens use;
  *  - the hovering generic-motion stream, for pens that report the button only while hovering and

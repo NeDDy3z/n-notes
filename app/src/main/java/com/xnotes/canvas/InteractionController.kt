@@ -225,10 +225,9 @@ class InteractionController(
     /** Tool the stylus side button activates while held, or null to ignore the button. */
     var penButtonTool: Tool? = Tool.ERASER
 
-    /** Side button as last seen on the hover/generic-motion stream or a stylus-button KeyEvent
-     *  (Feeder C, for Bluetooth pens that report it only there); read only at touch-down, so a
-     *  press after the pen is already down does not activate the mapped tool. */
-    private var stylusButtonHeld = false
+    /** The side button, latched as on the infinite canvas; read only at touch-down, so a press
+     *  after the pen is already down does not activate the mapped tool. */
+    private val stylusButtons = StylusButtonLatch()
 
     /** When true, the side-button tool also runs off the hover stream (no contact needed); eraser/pan only. */
     var penButtonHover: Boolean = false
@@ -644,9 +643,7 @@ class InteractionController(
     /** Drive the side-button tool (eraser/pan) off the hover stream while the button is held and
      *  "activate during hover" is on, so the pen erases or pans without touching the screen. */
     private fun handleHoverAction(e: MotionEvent): Boolean {
-        val buttonNow = e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS &&
-            e.actionMasked != MotionEvent.ACTION_HOVER_EXIT &&
-            ((e.buttonState and STYLUS_BUTTON_MASK) != 0 || stylusButtonHeld)
+        val buttonNow = e.actionMasked != MotionEvent.ACTION_HOVER_EXIT && stylusButtons.heldFor(e)
         val want = penButtonHover && buttonNow &&
             (penButtonTool == Tool.ERASER || penButtonTool == Tool.PAN)
         val vx = e.x.toDouble()
@@ -692,10 +689,7 @@ class InteractionController(
      *  (ACTION_BUTTON_PRESS/RELEASE), never in the touch buttonState. Latch it here; a release
      *  here also ends an in-progress hover gesture even if the pen has not moved. */
     fun onGenericMotion(e: MotionEvent) {
-        if (e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
-            stylusButtonHeld = (e.buttonState and STYLUS_BUTTON_MASK) != 0
-            if (!stylusButtonHeld && hoverActionTool != null) endHoverAction()
-        }
+        if (stylusButtons.onGenericMotion(e) && hoverActionTool != null) endHoverAction()
     }
 
     /** Feeder C: Bluetooth/USI pens often deliver the side button only as a KeyEvent, never in any
@@ -703,16 +697,8 @@ class InteractionController(
      *  key-up also ends a live hover gesture. Returns true if the key was a stylus side button, so
      *  the host consumes it. */
     fun onStylusButtonKey(keyCode: Int, down: Boolean): Boolean {
-        if (keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_PRIMARY &&
-            keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_SECONDARY &&
-            keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_TERTIARY &&
-            keyCode != KeyEvent.KEYCODE_STYLUS_BUTTON_TAIL &&
-            keyCode != VENDOR_HELD_BUTTON_KEYCODE
-        ) {
-            return false
-        }
-        stylusButtonHeld = down
-        if (!down && hoverActionTool != null) endHoverAction()
+        if (!stylusButtons.onKey(keyCode, down)) return false
+        if (!stylusButtons.held && hoverActionTool != null) endHoverAction()
         return true
     }
 
@@ -737,8 +723,7 @@ class InteractionController(
         //  - the stylus eraser end, or the held side button, force the eraser/side-button tool;
         //  - a finger pans unless finger-draw is enabled;
         //  - otherwise the armed tool.
-        val buttonHeld = drawingIsStylus &&
-            ((e.buttonState and STYLUS_BUTTON_MASK) != 0 || stylusButtonHeld)
+        val buttonHeld = stylusButtons.heldFor(e)
         val effectiveTool: Tool = when {
             toolType == MotionEvent.TOOL_TYPE_ERASER -> Tool.ERASER
             buttonHeld && penButtonTool != null -> penButtonTool!!
