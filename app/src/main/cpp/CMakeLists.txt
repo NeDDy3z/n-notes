@@ -9,6 +9,7 @@ project(xnotests C CXX)
 set(XNOTES_LINK_OPTIONS -Wl,--gc-sections -Wl,--build-id=none -Wl,-z,max-page-size=16384)
 
 set(GRAMMAR_SOURCES
+    grammars/asm/parser.c
     grammars/bash/parser.c
     grammars/bash/scanner.c
     grammars/c/parser.c

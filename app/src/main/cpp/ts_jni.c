@@ -9,6 +9,7 @@
 #include <string.h>
 #include "tree_sitter/api.h"
 
+const TSLanguage *tree_sitter_asm(void);
 const TSLanguage *tree_sitter_bash(void);
 const TSLanguage *tree_sitter_c(void);
 const TSLanguage *tree_sitter_cpp(void);
@@ -31,6 +32,7 @@ typedef struct {
 } LangEntry;
 
 static const LangEntry LANGS[] = {
+    {"asm", tree_sitter_asm},
     {"bash", tree_sitter_bash},
     {"c", tree_sitter_c},
     {"cpp", tree_sitter_cpp},
