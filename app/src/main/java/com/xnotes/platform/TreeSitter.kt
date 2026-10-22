@@ -83,7 +83,7 @@ class TreeSitterHighlighter(private val context: Context) : CodeHighlighter {
         val SUPPORTED = setOf(
             "asm", "bash", "c", "cpp", "css", "diff", "dockerfile", "go", "html", "java",
             "javascript", "json", "kotlin", "lua", "php", "python", "rust", "toml", "typescript",
-            "yaml",
+            "xml", "yaml",
         )
     }
 }

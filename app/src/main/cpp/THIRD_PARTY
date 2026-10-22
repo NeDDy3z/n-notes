@@ -35,6 +35,9 @@ grammars/toml/        https://github.com/tree-sitter-grammars/tree-sitter-toml  
                       assets/scm/toml.scm captures a pair's key, not the whole pair, as @property
 grammars/diff/        https://github.com/tree-sitter-grammars/tree-sitter-diff  tag v0.2.0 (MIT)
 grammars/dockerfile/  https://github.com/camdencheek/tree-sitter-dockerfile  tag v0.2.0 (MIT)
+grammars/xml/         https://github.com/tree-sitter-grammars/tree-sitter-xml  tag v0.7.0 (MIT)
+                      xml/src; scanner.c includes common/scanner.h, upstream's ../../common/scanner.h
+                      queries/xml/highlights.scm ships as assets/scm/xml.scm
 
 --- pdfium: written by tools/pdfium-sync.sh, do not edit ---
 pdfium/           https://pdfium.googlesource.com/pdfium

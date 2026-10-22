@@ -41,6 +41,8 @@ set(GRAMMAR_SOURCES
     grammars/toml/scanner.c
     grammars/typescript/parser.c
     grammars/typescript/scanner.c
+    grammars/xml/parser.c
+    grammars/xml/scanner.c
     grammars/yaml/parser.c
     grammars/yaml/scanner.c
 )

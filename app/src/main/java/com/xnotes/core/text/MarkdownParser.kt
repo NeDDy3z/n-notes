@@ -85,6 +85,7 @@ object MarkdownParser {
         "yml" to "yaml",
         "patch" to "diff",
         "docker" to "dockerfile", "containerfile" to "dockerfile",
+        "svg" to "xml", "xsd" to "xml", "xsl" to "xml", "xslt" to "xml", "plist" to "xml",
     )
 
     /** Common fence-info aliases to the bundled grammar ids. */

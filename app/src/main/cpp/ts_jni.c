@@ -28,6 +28,7 @@ const TSLanguage *tree_sitter_python(void);
 const TSLanguage *tree_sitter_rust(void);
 const TSLanguage *tree_sitter_toml(void);
 const TSLanguage *tree_sitter_typescript(void);
+const TSLanguage *tree_sitter_xml(void);
 const TSLanguage *tree_sitter_yaml(void);
 
 typedef struct {
@@ -55,6 +56,7 @@ static const LangEntry LANGS[] = {
     {"rust", tree_sitter_rust},
     {"toml", tree_sitter_toml},
     {"typescript", tree_sitter_typescript},
+    {"xml", tree_sitter_xml},
     {"yaml", tree_sitter_yaml},
 };
 
