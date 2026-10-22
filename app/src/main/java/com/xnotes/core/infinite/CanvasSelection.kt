@@ -106,8 +106,9 @@ class CanvasSelection(private val doc: InfiniteDocument) {
 
     /** The resize handles, in content space; a shape that keeps its aspect gets corners only. */
     fun handles(screenMargin: Double = 0.0): List<ResizeHandle> {
-        if (items.all { it is AudioItem }) return emptyList()
         val all = chromeBox(screenMargin)?.let { ResizeMath.obbHandles(it) } ?: return emptyList()
+        // A pill scales by its corners and lengthens by its sides; nothing stretches it upright.
+        if (items.all { it is AudioItem }) return all.filter { it.id != HandleId.T && it.id != HandleId.B }
         val square = (items.singleOrNull() as? ShapeItem)?.shape?.keepsAspect == true
         return if (square) all.filter { it.id in CORNERS } else all
     }
@@ -219,6 +220,8 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         val result = ResizeMath.obbResize(from, handle, pointer, margin)
         box = result.obb
         applyLive(result.transform)
+        // A pill stops at its smallest by itself, so its box is read back from it.
+        if (items.all { it is AudioItem }) box = boxOf(items)
     }
 
     /**

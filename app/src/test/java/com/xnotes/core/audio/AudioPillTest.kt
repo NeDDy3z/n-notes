@@ -120,4 +120,37 @@ class AudioPillTest {
         assertEquals(0, AudioData.peaksOf(FloatArray(0)).size)
         assertEquals(AudioData.PEAK_BINS, AudioData.peaksOf(levels).size)
     }
+
+    @Test fun aCornerScalesThePillWholeAndASideOnlyLengthensIt() {
+        val item = pill()
+        val before = AudioPill.layout(item).bars.size
+        item.applyTransform(com.xnotes.core.geometry.Affine.scaleAlongAxes(Pt(10.0, 20.0), 0.0, 2.0, 2.0))
+        assertEquals(Rect(10.0, 20.0, 756.0, 166.0), item.rect)
+        assertEquals(before, AudioPill.layout(item).bars.size)
+
+        val long = pill()
+        long.applyTransform(com.xnotes.core.geometry.Affine.scaleAlongAxes(Pt(10.0, 20.0), 0.0, 2.0, 1.0))
+        assertEquals(Rect(10.0, 20.0, 756.0, 83.0), long.rect)
+        assertTrue(AudioPill.layout(long).bars.size > 2 * before)
+    }
+
+    @Test fun shrinkingStopsWhereTheDiscAndClockStillFitAndTheHeldSideStays() {
+        val item = pill()
+        // Dragging the left side nearly onto the right one: the right side holds still.
+        item.applyTransform(com.xnotes.core.geometry.Affine.scaleAlongAxes(Pt(388.0, 20.0), 0.0, 0.05, 1.0))
+        assertEquals(388.0, item.rect.right, 1e-9)
+        assertEquals(83.0 * AudioItem.MIN_ASPECT, item.rect.w, 1e-9)
+        assertEquals(83.0, item.rect.h, 1e-9)
+        val tiny = pill()
+        tiny.applyTransform(com.xnotes.core.geometry.Affine.scaleAlongAxes(Pt(10.0, 20.0), 0.0, 0.01, 0.01))
+        assertEquals(AudioItem.MIN_HEIGHT, tiny.rect.h, 1e-9)
+        assertEquals(AudioItem.MIN_HEIGHT * AudioItem.MIN_ASPECT, tiny.rect.w, 1e-9)
+        assertEquals(10.0, tiny.rect.left, 1e-9)
+    }
+
+    @Test fun aMoveCarriesThePillAsItIs() {
+        val item = pill()
+        item.applyTransform(com.xnotes.core.geometry.Affine.translateBy(5.0, -7.0))
+        assertEquals(Rect(15.0, 13.0, 378.0, 83.0), item.rect)
+    }
 }

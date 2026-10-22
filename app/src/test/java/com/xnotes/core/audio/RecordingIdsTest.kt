@@ -107,7 +107,7 @@ class RecordingIdsTest {
         assertTrue(noPills.withoutAudio() === noPills)
     }
 
-    @Test fun aSelectionOfPillsOffersNoHandlesAndNoTurn() {
+    @Test fun aPillScalesByCornersAndLengthensBySidesButNeverTurns() {
         val doc = InfiniteDocument()
         val p = pill(1)
         val stroke = ink(null)
@@ -115,7 +115,10 @@ class RecordingIdsTest {
         doc.add(stroke)
         val sel = CanvasSelection(doc)
         sel.select(listOf(p))
-        assertTrue(sel.handles().isEmpty())
+        val ids = sel.handles().map { it.id }.toSet()
+        assertEquals(6, ids.size)
+        assertFalse(com.xnotes.canvas.HandleId.T in ids || com.xnotes.canvas.HandleId.B in ids)
+        assertTrue(com.xnotes.canvas.HandleId.L in ids && com.xnotes.canvas.HandleId.R in ids)
         assertNull(sel.rotateGrip(10.0))
         sel.select(listOf(p, stroke))
         assertTrue(sel.handles().isNotEmpty())

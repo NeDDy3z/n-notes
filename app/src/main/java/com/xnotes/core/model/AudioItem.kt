@@ -9,8 +9,8 @@ import com.xnotes.core.pal.TextMeasurer
 
 /**
  * A recording or an attached audio file, placed as a pill that plays it: a disc to play or pause,
- * the [name] and length over a waveform that shows how far playback has got. One fixed size, never
- * resized, turned or mirrored; it only moves.
+ * the [name] and length over a waveform that shows how far playback has got. It scales by its
+ * corners and lengthens by its sides, laying itself out again each time; it never turns or mirrors.
  *
  * [rid] identifies the recording within its document. Items added while it was being recorded carry
  * it in their [SyncMark], which is how playback finds the ink it should fade and seek by.
@@ -24,7 +24,7 @@ class AudioItem(
 ) : CanvasItem {
 
     override val kind = KIND
-    override val resizable = false
+    override val resizable = true
     override val mirrorable = false
     override var locked = false
 
@@ -57,18 +57,33 @@ class AudioItem(
         if (snap is AudioSnapshot) rect = snap.rect
     }
 
-    /** A selection's scale, turn or mirror only carries the pill's centre along: it keeps its size and stays upright. */
+    /**
+     * A selection's resize lengthens the pill along x and scales it along y: it lays itself out
+     * again from the new box, so a longer one shows more of the waveform and a taller one is bigger
+     * all over. It stays upright, and never shrinks past what its disc and clock need, growing back
+     * from whichever side held still.
+     */
     override fun applyTransform(t: Affine) {
-        val c = t.apply(rect.center)
-        rect = Rect(c.x - rect.w / 2.0, c.y - rect.h / 2.0, rect.w, rect.h)
+        val a = t.apply(rect.topLeft)
+        val b = t.apply(Pt(rect.right, rect.bottom))
+        val r = Rect.fromPoints(a, b)
+        val h = maxOf(r.h, MIN_HEIGHT)
+        val w = maxOf(r.w, h * MIN_ASPECT)
+        val leftHeld = kotlin.math.abs(a.x - rect.left) <= kotlin.math.abs(b.x - rect.right)
+        val topHeld = kotlin.math.abs(a.y - rect.top) <= kotlin.math.abs(b.y - rect.bottom)
+        rect = Rect(if (leftHeld) r.left else r.right - w, if (topHeld) r.top else r.bottom - h, w, h)
     }
 
     companion object {
         const val KIND = "audio"
 
-        /** The pill's size on paper. */
+        /** The pill's size on paper as it is placed. */
         const val WIDTH_MM = 64.0
         const val HEIGHT_MM = 14.0
+
+        /** The least a pill can be scaled down to, in content px, and how short it can get for its height. */
+        const val MIN_HEIGHT = 16.0
+        const val MIN_ASPECT = 2.4
 
         /** The pill's box centred on [center], sized for [dpi] content px per inch seen at [zoom]. */
         fun boxAt(center: Pt, dpi: Int, zoom: Double = 1.0): Rect {

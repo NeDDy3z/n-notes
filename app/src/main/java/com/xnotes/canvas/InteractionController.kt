@@ -1642,8 +1642,9 @@ class InteractionController(
     private fun selectionResizeHandles(): List<ResizeHandle> {
         val endpoint = singleEndpointShape()
         if (endpoint != null) return endpointHandles(endpoint)
-        if (selection.all { it.item is AudioItem }) return emptyList()
         val all = selectionChromeBox()?.let { ResizeMath.obbHandles(it) } ?: return emptyList()
+        // A pill scales by its corners and lengthens by its sides; nothing stretches it upright.
+        if (selection.all { it.item is AudioItem }) return all.filter { it.id != HandleId.T && it.id != HandleId.B }
         val square = (selection.singleOrNull()?.item as? ShapeItem)?.shape?.keepsAspect == true
         return if (square) all.filter { it.id in CORNER_HANDLES } else all
     }
@@ -2229,6 +2230,8 @@ class InteractionController(
             if (state.pageRects.getOrNull(sel.pageIndex) == null) continue
             sel.item.applyTransform(state.affineToPageSpace(sel.pageIndex, world))
         }
+        // A pill stops at its smallest by itself, so its box is read back from it.
+        if (txItems.isNotEmpty() && txItems.all { it.item is AudioItem }) selObb = selectionBox()
         for ((pi, f) in follows) {
             if (state.pageRects.getOrNull(pi) == null) continue
             f.follow(state.affineToPageSpace(pi, world))
