@@ -81,7 +81,7 @@ class TreeSitterHighlighter(private val context: Context) : CodeHighlighter {
     companion object {
         /** Languages whose grammars ship in libxnotests. */
         val SUPPORTED = setOf(
-            "bash", "c", "cpp", "css", "go", "html", "java", "javascript", "json", "kotlin",
+            "bash", "c", "cpp", "css", "go", "html", "java", "javascript", "json", "kotlin", "php",
             "python", "rust", "typescript",
         )
     }

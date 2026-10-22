@@ -25,6 +25,8 @@ set(GRAMMAR_SOURCES
     grammars/json/parser.c
     grammars/kotlin/parser.c
     grammars/kotlin/scanner.c
+    grammars/php/parser.c
+    grammars/php/scanner.c
     grammars/python/parser.c
     grammars/python/scanner.c
     grammars/rust/parser.c
