@@ -1691,6 +1691,34 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         if (s != null && s.item === item) AudioPlayback.toggle() else AudioPlayback.open(this, item)
     }
 
+    override fun renameSelectedAudio(name: String) {
+        val item = selectedAudio() ?: return
+        val next = name.trim()
+        if (next.isEmpty() || next == item.name) return
+        val command = OnCanvas(document, com.xnotes.core.history.RenameAudio(item, item.name, next), listOf(item))
+        command.redo()
+        history.push(command)
+        markDirty()
+        refresh()
+    }
+
+    override fun unlinkSelectedAudio() {
+        val item = selectedAudio() ?: return
+        val marks = document.items.mapNotNull { it.sync?.takeIf { m -> m.rid == item.rid }?.let { m -> it to m } }
+        if (marks.isEmpty()) {
+            onMessage?.invoke(appContext.getString(com.xnotes.R.string.audio_nothing_linked), null)
+            return
+        }
+        val command = com.xnotes.core.history.UnlinkSync(marks)
+        command.redo()
+        history.push(command)
+        itemsRevision++
+        markDirty()
+        refresh()
+        view.publish()
+        onMessage?.invoke(appContext.getString(com.xnotes.R.string.audio_unlinked), appContext.getString(com.xnotes.R.string.undo) to { undo() })
+    }
+
     /** [item] changed how it looks (its waveform arrived, or playback moved): mesh it again and keep the change. */
     fun audioChanged(item: com.xnotes.core.model.AudioItem, save: Boolean = true) {
         if (document.items.none { it === item }) return

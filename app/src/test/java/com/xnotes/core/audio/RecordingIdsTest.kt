@@ -123,4 +123,23 @@ class RecordingIdsTest {
         sel.select(listOf(stroke))
         assertNotNull(sel.rotateGrip(10.0))
     }
+
+    @Test fun renamingAndUnlinkingUndo() {
+        val p = pill(3)
+        val rename = com.xnotes.core.history.RenameAudio(p, "n", "Lecture 4")
+        rename.redo()
+        assertEquals("Lecture 4", p.name)
+        rename.undo()
+        assertEquals("n", p.name)
+
+        val a = ink(3, 100)
+        val b = ink(3, 200)
+        val unlink = com.xnotes.core.history.UnlinkSync(listOf(a to a.sync!!, b to b.sync!!))
+        unlink.redo()
+        assertNull(a.sync)
+        assertNull(b.sync)
+        unlink.undo()
+        assertEquals(SyncMark(3, 100), a.sync)
+        assertEquals(SyncMark(3, 200), b.sync)
+    }
 }

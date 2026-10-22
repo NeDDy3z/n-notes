@@ -1794,6 +1794,42 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (s != null && s.item === item) AudioPlayback.toggle() else AudioPlayback.open(this, item)
     }
 
+    override fun renameSelectedAudio(name: String) {
+        val item = selectedAudio() ?: return
+        val next = name.trim()
+        if (next.isEmpty() || next == item.name) return
+        val command = com.xnotes.core.history.RenameAudio(item, item.name, next)
+        command.redo()
+        history.push(command)
+        audioRepaint(item)
+        state.document.dirty = true
+        refreshContent()
+    }
+
+    override fun unlinkSelectedAudio() {
+        val item = selectedAudio() ?: return
+        val pages = ArrayList<Page>()
+        val marks = ArrayList<Pair<com.xnotes.core.model.CanvasItem, com.xnotes.core.model.SyncMark>>()
+        for (page in state.document.pages) {
+            var any = false
+            for (it in page.items) it.sync?.takeIf { m -> m.rid == item.rid }?.let { m -> marks.add(it to m); any = true }
+            if (any) pages.add(page)
+        }
+        if (marks.isEmpty()) {
+            message = appContext.getString(R.string.audio_nothing_linked)
+            return
+        }
+        val command = com.xnotes.core.history.UnlinkSync(marks)
+        command.redo()
+        history.push(command)
+        // A playback of it was fading that ink; it draws plain now.
+        if (state.fade?.rid == item.rid) for (page in pages) state.invalidatePage(page)
+        state.document.dirty = true
+        refreshContent()
+        view.requestRender()
+        say(appContext.getString(R.string.audio_unlinked), appContext.getString(R.string.undo) to { undo() })
+    }
+
     // --- selection menu / clipboard ---
 
     override val hasClipboardItems: Boolean get() = controller.hasClipboardItems()

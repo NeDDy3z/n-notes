@@ -496,6 +496,22 @@ private fun EditorScreen(
         }
     }
 
+    // A recording saved out of the note: its file copied as it is, off the main thread.
+    var pendingSaveAudio by remember { mutableStateOf<Pair<Editor, com.xnotes.core.model.AudioItem>?>(null) }
+    val saveAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val pending = pendingSaveAudio
+        pendingSaveAudio = null
+        if (uri == null || pending == null) return@rememberLauncherForActivityResult
+        val (pane, item) = pending
+        val file = item.audio.file
+        scope.launch {
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } != null }.getOrDefault(false)
+            }
+            pane.say(context.getString(if (ok) R.string.audio_saved else R.string.err_save_audio))
+        }
+    }
+
     // An audio file to attach, for the pane that asked; the editor copies it off the main thread.
     var pendingAudioPane by remember { mutableStateOf<Editor?>(null) }
     val attachAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -942,6 +958,22 @@ private fun EditorScreen(
                     pendingAudioPane = pane
                     attachAudioLauncher.launch(arrayOf("audio/*", "application/ogg"))
                 },
+                onSaveAudio = { pane, item ->
+                    pendingSaveAudio = pane to item
+                    saveAudioLauncher.launch(audioFileName(item))
+                },
+                onShareAudio = { pane, item ->
+                    scope.launch {
+                        val shared = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching {
+                                val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+                                java.io.File(dir, audioFileName(item)).also { item.audio.file.copyTo(it, overwrite = true) }
+                            }.getOrNull()
+                        }
+                        if (shared == null) pane.say(context.getString(R.string.err_share_audio))
+                        else runCatching { launchShare(shared, item.name, audioMime(item.audio.ext)) }.onFailure { pane.say(context.getString(R.string.err_share_audio)) }
+                    }
+                },
                 onRecordAudio = { pane ->
                     val mic = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
                         android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -1128,6 +1160,8 @@ private class PaneActions(
     val onAddStickers: () -> Unit,
     val onInsertAudio: (Editor) -> Unit,
     val onRecordAudio: (Editor) -> Unit,
+    val onSaveAudio: (Editor, com.xnotes.core.model.AudioItem) -> Unit,
+    val onShareAudio: (Editor, com.xnotes.core.model.AudioItem) -> Unit,
     val onImportTemplate: () -> Unit,
     val onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
@@ -1135,6 +1169,27 @@ private class PaneActions(
     val onSavePagesAsImages: (Editor, List<Int>) -> Unit,
     val onInsertPdf: (Editor, Int) -> Unit,
 )
+
+/** A recording's file name when it leaves the app: its name, made safe for any folder, and its format. */
+private fun audioFileName(item: com.xnotes.core.model.AudioItem): String {
+    val stem = item.name.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").trim().ifEmpty { "recording" }.take(96)
+    return "$stem.${item.audio.ext}"
+}
+
+/** The type another app is told a recording's file is. */
+private fun audioMime(ext: String): String = when (ext.lowercase()) {
+    "m4a", "mp4" -> "audio/mp4"
+    "aac" -> "audio/aac"
+    "mp3" -> "audio/mpeg"
+    "ogg" -> "audio/ogg"
+    "opus" -> "audio/opus"
+    "flac" -> "audio/flac"
+    "wav" -> "audio/wav"
+    "amr" -> "audio/amr"
+    "3gp" -> "audio/3gpp"
+    "webm" -> "audio/webm"
+    else -> "audio/*"
+}
 
 /** Neither pane of a split may be squeezed below this share of the split axis. */
 private const val MIN_PANE_RATIO = 0.18f
@@ -1311,7 +1366,11 @@ private fun EditorPane(
                             com.xnotes.ui.TextEditorOverlay(canvas, field)
                         }
                         floatingBar()
-                        com.xnotes.ui.SelectionMenu(canvas)
+                        com.xnotes.ui.SelectionMenu(
+                            canvas,
+                            onSaveAudio = { actions.onSaveAudio(editor, it) },
+                            onShareAudio = { actions.onShareAudio(editor, it) },
+                        )
                         com.xnotes.ui.TextStyleBar(canvas)
                         com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
                         com.xnotes.ui.CanvasDebugOverlay(canvas)
@@ -1354,7 +1413,11 @@ private fun EditorPane(
                                 com.xnotes.ui.TextEditorOverlay(editor, field)
                             }
                             floatingBar()
-                            com.xnotes.ui.SelectionMenu(editor)
+                            com.xnotes.ui.SelectionMenu(
+                                editor,
+                                onSaveAudio = { actions.onSaveAudio(editor, it) },
+                                onShareAudio = { actions.onShareAudio(editor, it) },
+                            )
                             com.xnotes.ui.ScreenshotMenu(editor)
                             com.xnotes.ui.TextStyleBar(editor)
                             com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })

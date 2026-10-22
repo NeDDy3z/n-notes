@@ -318,6 +318,16 @@
     <string name="audio_close">Close</string>
     <string name="audio_seek">Position</string>
     <string name="audio_follow">Follow</string>
+    <string name="rename_recording">Rename recording</string>
+    <string name="audio_name">Name</string>
+    <string name="audio_save">Save audio to a file…</string>
+    <string name="audio_share">Share audio…</string>
+    <string name="audio_unlink">Unlink its ink</string>
+    <string name="audio_unlinked">Ink unlinked from this recording</string>
+    <string name="audio_nothing_linked">No ink is tied to this recording.</string>
+    <string name="audio_saved">Audio saved</string>
+    <string name="err_save_audio">The audio could not be saved.</string>
+    <string name="err_share_audio">The audio could not be shared.</string>
     <string name="audio_chip">Player, %1$s</string>
     <string name="record_audio">Record audio</string>
     <string name="recording">Recording</string>

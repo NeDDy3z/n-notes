@@ -1,5 +1,6 @@
 package com.xnotes.ui
 
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
@@ -81,6 +82,12 @@ interface SelectionMenuHost : SwatchHost {
 
     /** Play or pause [selectedAudio]: the way to play it when a finger draws rather than pans. */
     fun playSelectedAudio()
+
+    /** Give [selectedAudio] a new name, undoably. */
+    fun renameSelectedAudio(name: String)
+
+    /** Untie the ink written during [selectedAudio] from it, undoably, with Undo on the message. */
+    fun unlinkSelectedAudio()
     fun dismissSelectionMenu()
 
     /** Pin the selection where it is and put it away; a held finger over it offers to release it. */
@@ -138,12 +145,17 @@ interface SelectionMenuHost : SwatchHost {
  * shown over turns by its own grip.
  */
 @Composable
-fun SelectionMenu(host: SelectionMenuHost) {
+fun SelectionMenu(
+    host: SelectionMenuHost,
+    onSaveAudio: ((com.xnotes.core.model.AudioItem) -> Unit)? = null,
+    onShareAudio: ((com.xnotes.core.model.AudioItem) -> Unit)? = null,
+) {
     val rect = host.selectionMenuRect ?: return
     val palette = LocalPalette.current
     val density = LocalDensity.current
     var overflowOpen by remember { mutableStateOf(false) }
     var styleOpen by remember { mutableStateOf(false) }
+    var renamingAudio by remember { mutableStateOf<com.xnotes.core.model.AudioItem?>(null) }
 
     val audio = host.selectedAudio()
     val barHeightPx = with(density) { 48.dp.toPx() }
@@ -184,6 +196,30 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     onDismissRequest = { overflowOpen = false },
                     properties = PopupProperties(focusable = false),
                 ) {
+                    // A lone recording's own actions come first.
+                    if (audio != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.rename)) },
+                            onClick = { overflowOpen = false; renamingAudio = audio },
+                        )
+                        onSaveAudio?.let { save ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_save)) },
+                                onClick = { overflowOpen = false; save(audio) },
+                            )
+                        }
+                        onShareAudio?.let { share ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_share)) },
+                                onClick = { overflowOpen = false; share(audio) },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.audio_unlink)) },
+                            onClick = { overflowOpen = false; host.unlinkSelectedAudio() },
+                        )
+                        androidx.compose.material3.HorizontalDivider(color = palette.border.toComposeColor())
+                    }
                     // Empty when nothing selected carries ink or a fill: an image or a text box has
                     // no colour-and-width pair to restyle.
                     val styles = host.selectionStyles()
@@ -224,9 +260,37 @@ fun SelectionMenu(host: SelectionMenuHost) {
                     // Closing settles any preview the slider left open.
                     SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
                 }
+                renamingAudio?.let { item ->
+                    AudioNameDialog(item.name, onConfirm = { renamingAudio = null; host.renameSelectedAudio(it) }) { renamingAudio = null }
+                }
             }
         }
     }
+}
+
+/** Rename a recording: its name, ready to type over. */
+@Composable
+private fun AudioNameDialog(initial: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, initial.length))) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.rename_recording)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.audio_name)) },
+                modifier = Modifier.focusRequester(focus),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { if (text.text.isBlank()) onDismiss() else onConfirm(text.text) }) { Text(stringResource(R.string.rename)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /**
