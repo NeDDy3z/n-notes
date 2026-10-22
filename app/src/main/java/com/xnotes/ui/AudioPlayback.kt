@@ -35,6 +35,12 @@ interface AudioOwner {
 
     /** Nothing plays while something records, since it would be recorded too. */
     fun audioBusy()
+
+    /**
+     * Playback of recording [rid] moved from [from] to [to] ms; [rid] is null once the player has
+     * closed. The ink tied to it fades ahead of the playhead, and the view may follow it.
+     */
+    fun audioPlayhead(rid: Int?, from: Int, to: Int)
 }
 
 /**
@@ -54,6 +60,9 @@ object AudioPlayback {
 
     var session by mutableStateOf<Session?>(null)
         private set
+
+    /** Whether the view follows the ink being played; a scroll by hand turns it off, the panel back on. */
+    var follow by mutableStateOf(true)
 
     /** The playback speed, kept from one recording to the next. */
     var speed by mutableFloatStateOf(1f)
@@ -113,11 +122,13 @@ object AudioPlayback {
         val start = (from ?: remembered).coerceIn(0, item.audio.durationMs.coerceAtLeast(0))
         val s = Session(owner, item).also { it.position = start }
         session = s
+        follow = true
         item.playhead = start
         item.playing = false
         lastSecond = -1
         lastStep = -1
         owner.audioRepaint(item)
+        owner.audioPlayhead(item.rid, -1, start)
         val mp = MediaPlayer()
         player = mp
         prepared = false
@@ -185,8 +196,10 @@ object AudioPlayback {
     fun seek(ms: Int, exact: Boolean = true) {
         val s = session ?: return
         val to = ms.coerceIn(0, s.duration.coerceAtLeast(0))
+        val from = s.position
         s.position = to
         s.item.playhead = to
+        s.owner.audioPlayhead(s.item.rid, from, to)
         if (prepared) runCatching { player?.seekTo(to.toLong(), if (exact) MediaPlayer.SEEK_CLOSEST else MediaPlayer.SEEK_PREVIOUS_SYNC) }
         lastSecond = -1
         s.owner.audioRepaint(s.item)
@@ -221,7 +234,20 @@ object AudioPlayback {
         session = null
         abandonFocus()
         listenForNoisy(false)
+        s.owner.audioPlayhead(null, s.position, s.position)
         s.owner.audioRepaint(s.item)
+    }
+
+    /** A scroll or zoom by hand in [owner] while its recording plays: the view stays where it is put. */
+    fun userMoved(owner: AudioOwner) {
+        val s = session ?: return
+        if (s.owner === owner && s.playing) follow = false
+    }
+
+    /** Play from a little before [ms], the moment ink was written: a finger tap on it during playback. */
+    fun playFromMoment(ms: Int) {
+        seek((ms - com.xnotes.core.audio.SyncIndex.LEAD_IN_MS).coerceAtLeast(0))
+        play()
     }
 
     /** A finger tap at [p] on [item]: the waveform plays from where it is touched, anywhere else plays or pauses. */
@@ -249,8 +275,10 @@ object AudioPlayback {
         val mp = player ?: return
         if (!prepared) return
         val pos = runCatching { mp.currentPosition }.getOrDefault(s.position).coerceIn(0, s.duration.coerceAtLeast(0))
+        val from = s.position
         s.position = pos
         s.item.playhead = pos
+        if (pos != from) s.owner.audioPlayhead(s.item.rid, from, pos)
         // The pill redraws only when what it shows changes: a second on its clock or a sliver of its waveform.
         val second = pos / 1000
         val step = pos / (s.duration / 200).coerceAtLeast(250)
@@ -265,8 +293,10 @@ object AudioPlayback {
         val s = session ?: return
         main.removeCallbacks(tick)
         wantPlay = false
+        val from = s.position
         s.position = s.duration
         s.item.playhead = s.duration
+        s.owner.audioPlayhead(s.item.rid, from, s.duration)
         s.playing = false
         s.item.playing = false
         abandonFocus()

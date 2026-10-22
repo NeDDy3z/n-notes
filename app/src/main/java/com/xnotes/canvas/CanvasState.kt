@@ -7,6 +7,7 @@ import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageInsets
+import com.xnotes.core.audio.InkFade
 import com.xnotes.core.model.PageLayers
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
@@ -753,6 +754,20 @@ class CanvasState(
         clampScroll()
     }
 
+    /** Scroll so content rect [c] is on screen, [margin] viewport px clear of the edges and any toolbar; not at all if it is. */
+    fun scrollIntoView(c: Rect, margin: Double) {
+        val tl = contentToViewport(Pt(c.left, c.top))
+        val br = contentToViewport(Pt(c.right, c.bottom))
+        val left = insetLeft + margin
+        val right = viewportW - insetRight - margin
+        val top = insetTop + margin
+        val bottom = viewportH - insetBottom - margin
+        if (right <= left || bottom <= top) return
+        val dx = if (tl.x < left || br.x > right) (tl.x + br.x) / 2 - (left + right) / 2 else 0.0
+        val dy = if (tl.y < top || br.y > bottom) (tl.y + br.y) / 2 - (top + bottom) / 2 else 0.0
+        if (dx != 0.0 || dy != 0.0) scrollBy(dx, dy)
+    }
+
     // --- pages & navigation ---
 
     // --- page style resolution (current page -> document "all pages" -> global default) ---
@@ -1155,6 +1170,22 @@ class CanvasState(
     private class InkItems(val under: List<CanvasItem>, val over: List<CanvasItem>)
 
     /**
+     * The ink a playback fades, read by every painter of a page, off the main thread too; immutable
+     * and swapped whole. Whoever changes it repaints what changed: a fade baked into a cache stays.
+     */
+    @Volatile
+    var fade: InkFade? = null
+
+    /** Paint one item, faint if the playback fades it. */
+    fun paintItem(item: CanvasItem, r: Renderer) {
+        val f = fade
+        if (f == null || !f.fades(item)) return item.paint(r)
+        r.saveLayerAlpha(item.paintBounds(), InkFade.ALPHA)
+        item.paint(r)
+        r.restore()
+    }
+
+    /**
      * Items baked into a page's ink cache: all but lifted items and highlighters ([isHighlighterInk]
      * — those composite live so they MULTIPLY against the background). While the flow is lifted, so
      * are the fills under it, which the view then paints live beneath it.
@@ -1178,9 +1209,10 @@ class CanvasState(
         val r = surface.renderer()
         r.scale(res, res)
         r.translate(-cover.left, -cover.top) // the surface covers the margins, so page space starts inset
-        for (item in items.under) item.paint(r)
+        val f = fade
+        InkFade.paint(items.under, r, f) { it.paint(r) }
         if (includeFlow) paintFlow?.invoke(page, r, cover)
-        for (item in items.over) item.paint(r)
+        InkFade.paint(items.over, r, f) { it.paint(r) }
         noteGeometryBuilt(page)
         return CacheEntry(surface, res, cover)
     }
@@ -1384,7 +1416,7 @@ class CanvasState(
         val r = existing.surface.renderer()
         r.scale(res, res)
         r.translate(-cover.left, -cover.top)
-        item.paint(r)
+        paintItem(item, r)
     }
 
     /**
@@ -1416,17 +1448,14 @@ class CanvasState(
     /** Repaint [page]'s cached ink where it meets [region]: the fills under its typed text, the text, then the rest. */
     private fun paintInk(page: Page, r: Renderer, region: Rect) {
         val n = PageLayers.underText(page.items)
+        val f = fade
         if (!flowLifted) {
-            for (i in 0 until n) {
-                val item = page.items[i]
-                if (!isLiftedItem(item) && item.paintBounds().intersects(region)) item.paint(r)
-            }
+            InkFade.paint(page.items.subList(0, n), r, f, { !isLiftedItem(it) && it.paintBounds().intersects(region) }) { it.paint(r) }
             paintFlow?.invoke(page, r, region)
         }
-        for (i in n until page.items.size) {
-            val item = page.items[i]
-            if (!isLiftedItem(item) && !item.isHighlighterInk() && item.paintBounds().intersects(region)) item.paint(r)
-        }
+        InkFade.paint(page.items.subList(n, page.items.size), r, f, {
+            !isLiftedItem(it) && !it.isHighlighterInk() && it.paintBounds().intersects(region)
+        }) { it.paint(r) }
     }
 
     /**
@@ -1436,10 +1465,7 @@ class CanvasState(
     fun paintUnderText(page: Page, r: Renderer, region: Rect) {
         if (!flowLifted) return
         val n = PageLayers.underText(page.items)
-        for (i in 0 until n) {
-            val item = page.items[i]
-            if (!isLiftedItem(item) && item.paintBounds().intersects(region)) item.paint(r)
-        }
+        InkFade.paint(page.items.subList(0, n), r, fade, { !isLiftedItem(it) && it.paintBounds().intersects(region) }) { it.paint(r) }
     }
 
     /** True when [item] is one of the fills under [page]'s typed text. */
@@ -1839,11 +1865,12 @@ class CanvasState(
             ri.clipRect(d.pr)
             ri.translate(d.pr.left, d.pr.top)
             applyPageTransform(ri, d.page)
-            for (item in d.items.under) item.paint(ri)
+            val f = fade
+            InkFade.paint(d.items.under, ri, f) { it.paint(ri) }
             if (withFlow && d.region.w > 0.0 && d.region.h > 0.0) {
                 paintFlow?.invoke(d.page, ri, d.region)
             }
-            for (item in d.items.over) item.paint(ri)
+            InkFade.paint(d.items.over, ri, f) { it.paint(ri) }
             ri.restore()
         }
     }
@@ -1861,7 +1888,7 @@ class CanvasState(
         r.clipRect(pr)
         r.translate(pr.left, pr.top)
         applyPageTransform(r, page)
-        item.paint(r)
+        paintItem(item, r)
         r.restore()
     }
 

@@ -155,6 +155,14 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     /** Runs a decode off the render thread; installed by the host. */
     var decodeOn: (Runnable) -> Unit = { it.run() }
 
+    /**
+     * The ink a playback fades, set from the main thread and read each frame. A faded item draws
+     * each of its runs stencilled and covered once at a quarter of its alpha, so it needs no new
+     * triangles and never darkens where it crosses itself; its neon halo is left out.
+     */
+    @Volatile
+    var fade: com.xnotes.core.audio.InkFade? = null
+
     /** Told on the render thread when committed items start or stop being left out for memory. */
     var onOutOfMemory: ((Boolean) -> Unit)? = null
     private var reportedOutOfMemory = false
@@ -351,15 +359,31 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         deferred.clear()
         var runStart = -1
         var runCount = 0
+        val fade = fade
         for (record in visible) {
+            val faded = fade != null && fade.fades(record.item)
             if (record.image != null) {
                 flushRun(runStart, runCount)
                 runStart = -1
                 runCount = 0
-                drawImage(record, record.image, frame)
+                drawImage(record, record.image, frame, alpha = if (faded) com.xnotes.core.audio.InkFade.ALPHA else 1.0)
                 rebind(program, frame, camChunkX, camChunkY)
                 store.bindForDraw(contextGen)
                 store.bindAttributes(program)
+                continue
+            }
+            if (faded) {
+                flushRun(runStart, runCount)
+                runStart = -1
+                runCount = 0
+                for (part in record.parts) {
+                    val pass = when (part.pass) {
+                        InkPass.MULTIPLY, InkPass.SCREEN, InkPass.EVEN_ODD -> part.pass
+                        else -> InkPass.TRANSLUCENT
+                    }
+                    drawMasked(store, part.slice, record.bounds, part.coverColor, part.coverAlpha * com.xnotes.core.audio.InkFade.ALPHA, frame, pass)
+                }
+                rebind(program, frame, camChunkX, camChunkY)
                 continue
             }
             for (part in record.parts) {
@@ -651,6 +675,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         image: ImageItem,
         frame: FrameState,
         lift: LiftTransform = LiftTransform.NONE,
+        alpha: Double = 1.0,
     ) {
         val shader = imageShader ?: return
         val rect = image.rect.translate(lift.dx, lift.dy)
@@ -681,7 +706,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             corners[2 * i] = (dx / frame.widthPx * 2.0 - 1.0).toFloat()
             corners[2 * i + 1] = (1.0 - dy / frame.heightPx * 2.0).toFloat()
         }
-        shader.draw(corners, texture, image.orientation / 90)
+        shader.draw(corners, texture, image.orientation / 90, alpha)
         lastDrawCalls++
     }
 

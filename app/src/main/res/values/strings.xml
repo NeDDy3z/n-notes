@@ -317,6 +317,7 @@
     <string name="audio_speed">Playback speed</string>
     <string name="audio_close">Close</string>
     <string name="audio_seek">Position</string>
+    <string name="audio_follow">Follow</string>
     <string name="audio_chip">Player, %1$s</string>
     <string name="record_audio">Record audio</string>
     <string name="recording">Recording</string>

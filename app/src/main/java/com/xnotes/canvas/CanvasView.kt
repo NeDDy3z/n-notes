@@ -536,7 +536,8 @@ class CanvasView @JvmOverloads constructor(
                             // Blit the pre-rendered opaque ribbon at the ink's alpha and blend,
                             // instead of re-tessellating the ribbon every frame.
                             val hc = st.highlighterCacheFor(item, page)
-                            r.drawRasterBlended(hc.surface, hc.cover, item.renderColor.a / 255.0, item.blendMode)
+                            val faint = if (st.fade?.fades(item) == true) com.xnotes.core.audio.InkFade.ALPHA else 1.0
+                            r.drawRasterBlended(hc.surface, hc.cover, item.renderColor.a / 255.0 * faint, item.blendMode)
                         }
                     }
                 }

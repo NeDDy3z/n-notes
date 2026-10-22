@@ -120,6 +120,8 @@ class InfiniteInteraction(
     private val onCommitText: () -> Unit = {},
     /** A pan that ended as a tap, at this content point, which an audio pill there may take. */
     private val onAudioTap: (Pt) -> Boolean = { false },
+    /** The view was panned or pinched by hand, as distinct from moved by the app. */
+    private val onUserMovedView: () -> Unit = {},
 ) {
 
     private val choreographer = Choreographer.getInstance()
@@ -1739,6 +1741,7 @@ class InfiniteInteraction(
 
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
+        onUserMovedView()
         if (singleFingerPanAllowed()) viewport.panByViewport(vx - lastPan.x, vy - lastPan.y)
         lastPan = Pt(vx, vy)
         onViewChanged()
@@ -1767,6 +1770,7 @@ class InfiniteInteraction(
 
     private fun updatePinch(e: MotionEvent) {
         if (e.pointerCount < 2) return
+        onUserMovedView()
         val a = Pt(e.getX(0).toDouble(), e.getY(0).toDouble())
         val b = Pt(e.getX(1).toDouble(), e.getY(1).toDouble())
         val dist = a.distanceTo(b)

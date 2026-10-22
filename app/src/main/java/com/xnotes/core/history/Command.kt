@@ -42,6 +42,9 @@ interface Command {
      * the old and the new one.
      */
     fun touchedMarkups(): List<Pair<Page, TextMarkup>> = emptyList()
+
+    /** The items this edit put in as new: a finished stroke, a drawn shape, a paste. A recording gives them their moment. */
+    fun added(): List<CanvasItem> = emptyList()
 }
 
 /** Append an item to a page (finishing a stroke, pasting/inserting, new text). */
@@ -55,6 +58,8 @@ class AddItem(private val page: Page, private val item: CanvasItem) : Command {
     }
 
     override fun touched(locate: (CanvasItem) -> Page?) = listOf(page to item)
+
+    override fun added() = listOf(item)
 }
 
 /** Put an item in at z position [at] on a page: a dropped colour's fill, under the lines it fills. */
@@ -68,6 +73,8 @@ class InsertItem(private val page: Page, private val item: CanvasItem, private v
     }
 
     override fun touched(locate: (CanvasItem) -> Page?) = listOf(page to item)
+
+    override fun added() = listOf(item)
 }
 
 /** Append several items to a page as one edit (paste / duplicate). */
@@ -81,6 +88,8 @@ class AddItems(private val page: Page, private val items: List<CanvasItem>) : Co
     }
 
     override fun touched(locate: (CanvasItem) -> Page?) = items.map { page to it }
+
+    override fun added() = items
 }
 
 /** Remove a set of (page, item) pairs (object erase, or delete selection). */
@@ -364,6 +373,8 @@ class CompositeCommand(private val commands: List<Command>) : Command {
     }
 
     override fun touchedMarkups(): List<Pair<Page, TextMarkup>> = commands.flatMap { it.touchedMarkups() }
+
+    override fun added(): List<CanvasItem> = commands.flatMap { it.added() }
 }
 
 /** Delete a page (reversible by re-inserting at its original index). */

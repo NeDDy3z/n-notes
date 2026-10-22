@@ -25,6 +25,8 @@ class AddCanvasItem(
     override fun undo() {
         doc.remove(item)
     }
+
+    override fun added() = listOf(item)
 }
 
 /** Put an item in at z position [at]: a dropped colour's fill, under the lines it fills. */
@@ -40,6 +42,8 @@ class InsertCanvasItem(
     override fun undo() {
         doc.remove(item)
     }
+
+    override fun added() = listOf(item)
 }
 
 /** Append several items as one edit (paste, duplicate, an eraser split's survivors). */
@@ -54,6 +58,8 @@ class AddCanvasItems(
     override fun undo() {
         doc.removeAll(items)
     }
+
+    override fun added() = items
 }
 
 /**

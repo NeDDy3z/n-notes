@@ -213,6 +213,20 @@ object AudioRecording {
         end()
     }
 
+    /** The moment an item [owner] adds now is given: while it records there and is not paused. */
+    fun markFor(owner: RecordOwner): com.xnotes.core.model.SyncMark? {
+        val s = session ?: return null
+        if (s.owner !== owner || s.paused) return null
+        return com.xnotes.core.model.SyncMark(s.rid, s.elapsedMs().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+
+    /** Give [items], just added by [owner], the moment of the recording running there; a pill never syncs. */
+    fun stamp(owner: RecordOwner, items: List<com.xnotes.core.model.CanvasItem>) {
+        if (items.isEmpty()) return
+        val mark = markFor(owner) ?: return
+        for (item in items) if (item !is AudioItem && item.sync == null) item.sync = mark
+    }
+
     /** What the notification shows, or null with nothing recording. */
     fun notice(): RecordingService.Notice? {
         val s = session ?: return null

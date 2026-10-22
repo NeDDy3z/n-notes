@@ -221,6 +221,15 @@ private const val PROCESS_TEXT_MAX = 100_000
 /** How far off an address written in a PDF's text a tap may land and still open it. */
 private const val AUTO_LINK_SLOP_DP = 4.0
 
+/** How near ink a finger tap during playback may land to play from it. */
+private const val INK_TAP_DP = 8.0
+
+/** Room kept round ink the view follows to. */
+private const val FOLLOW_MARGIN_DP = 64.0
+
+/** Past this many on one page, ink the playhead crossed repaints the page rather than each spot. */
+private const val MANY_CROSSED = 64
+
 /** A markdown file bigger than this is not notes; the import refuses it rather than lay out a book. */
 private const val MAX_MARKDOWN_BYTES = 8 * 1024 * 1024
 
@@ -1598,6 +1607,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.onMarkupTap = { at, withLink -> tapMarkup(at, withLink) }
         controller.onTap = { at -> tapClosesNotePeek(at) }
         controller.onAudioTap = { pageIndex, local -> tapAudio(pageIndex, local) }
+        controller.onUserMovedView = { AudioPlayback.userMoved(this) }
+        // Whatever is added while this note records takes the recording's moment.
+        history.onPush = { command -> AudioRecording.stamp(this, command.added()) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
             flowLinkAt(pageIndex, pageLocal)?.let {
                 openUrl(it)
@@ -1703,12 +1715,75 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override val recordingTitle: String get() = title
 
-    /** A finger tap on a pill plays it (see [AudioPlayback.tap]); a tap anywhere else is left to links and markups. */
+    /**
+     * A finger tap on a pill plays it (see [AudioPlayback.tap]); during playback a tap on ink written
+     * during that recording plays from a little before it. Anything else is left to links and markups.
+     */
     private fun tapAudio(pageIndex: Int, local: com.xnotes.core.geometry.Pt): Boolean {
         val page = state.document.pages.getOrNull(pageIndex) ?: return false
-        val item = page.items.lastOrNull { it is com.xnotes.core.model.AudioItem && it.contains(local) } as? com.xnotes.core.model.AudioItem ?: return false
-        AudioPlayback.tap(this, item, local)
+        val item = page.items.lastOrNull { it is com.xnotes.core.model.AudioItem && it.contains(local) } as? com.xnotes.core.model.AudioItem
+        if (item != null) {
+            AudioPlayback.tap(this, item, local)
+            return true
+        }
+        val s = AudioPlayback.session?.takeIf { it.owner === this } ?: return false
+        val reach = INK_TAP_DP * state.devicePxPerDp / state.zoom
+        val ink = page.items.lastOrNull { it.sync?.rid == s.item.rid && (it.contains(local) || it.intersectsCircle(local.x, local.y, reach)) }
+            ?: return false
+        AudioPlayback.playFromMoment(ink.sync!!.ms)
         return true
+    }
+
+    /** The playing recording's items in moment order, kept until the note changes. */
+    private var syncIndex: com.xnotes.core.audio.SyncIndex<Page>? = null
+    private var syncIndexVersion = -1
+
+    private fun syncIndexFor(rid: Int): com.xnotes.core.audio.SyncIndex<Page> {
+        syncIndex?.takeIf { it.rid == rid && syncIndexVersion == contentVersion }?.let { return it }
+        val items = state.document.pages.flatMap { p -> p.items.filter { it.sync?.rid == rid }.map { p to it } }
+        return com.xnotes.core.audio.SyncIndex(rid, items).also {
+            syncIndex = it
+            syncIndexVersion = contentVersion
+        }
+    }
+
+    override fun audioPlayhead(rid: Int?, from: Int, to: Int) {
+        val prev = state.fade
+        val next = rid?.let { com.xnotes.core.audio.InkFade(it, to) }
+        state.fade = next
+        if (prev == null && next == null) return
+        if (prev == null || next == null || prev.rid != next.rid) {
+            // The fade came, went or moved to another recording: every page holding that ink paints again.
+            val rids = setOfNotNull(prev?.rid, next?.rid)
+            for (page in state.document.pages) if (page.items.any { it.sync?.rid in rids }) state.invalidatePage(page)
+            view.requestRender()
+            return
+        }
+        if (from == to) return
+        // Only what the playhead passed changes, either way: repaint just where it lies.
+        val crossed = syncIndexFor(next.rid).between(minOf(from, to), maxOf(from, to))
+        if (crossed.isEmpty()) return
+        for ((page, entries) in crossed.groupBy { it.place }) {
+            if (entries.size > MANY_CROSSED) {
+                state.invalidatePage(page)
+                continue
+            }
+            val region = entries.map { it.item.paintBounds() }.reduce { a, b -> a.union(b) }
+            if (!state.repairRegion(page, region)) state.invalidatePage(page)
+        }
+        if (to > from && AudioPlayback.follow && AudioPlayback.session?.playing == true) crossed.last().let { followInk(it.place, it.item) }
+        view.requestRender()
+    }
+
+    /** Bring ink the playback just reached into view, turning to its page if need be; nothing when it is on screen. */
+    private fun followInk(page: Page, item: com.xnotes.core.model.CanvasItem) {
+        val i = state.document.pages.indexOf(page)
+        if (i < 0) return
+        val bounds = state.fromPageSpaceRect(i, item.paintBounds())
+        if (state.visibleContentRect().let { v -> v.contains(bounds.topLeft) && v.contains(com.xnotes.core.geometry.Pt(bounds.right, bounds.bottom)) }) return
+        if (!state.verticalScroll || i !in state.drawablePageRange()) state.goToPage(i)
+        state.scrollIntoView(bounds, FOLLOW_MARGIN_DP * state.devicePxPerDp)
+        refreshView()
     }
 
     override fun selectedAudio(): com.xnotes.core.model.AudioItem? = controller.selectedItems().singleOrNull() as? com.xnotes.core.model.AudioItem

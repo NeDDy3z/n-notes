@@ -176,6 +176,9 @@ class InteractionController(
      *  once it is ready. */
     var onLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
+    /** The view was panned or pinched by hand, as distinct from moved by the app. */
+    var onUserMovedView: (() -> Unit)? = null
+
     /** A finger tap that may land on an audio pill, at [pageLocal] on page [pageIndex]; true when one took it. */
     var onAudioTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
@@ -535,7 +538,7 @@ class InteractionController(
                 r.withSave {
                     r.translate(moveOffset.x, moveOffset.y)
                     state.applyPageTransform(r, page)
-                    sel.item.paint(r)
+                    state.paintItem(sel.item, r)
                 }
             }
         }
@@ -1545,6 +1548,7 @@ class InteractionController(
             }
             // Snapshot the page's items on first contact this gesture, before mutating it.
             if (!eraseSnapshots.containsKey(page)) eraseSnapshots[page] = page.items.toList()
+            for (f in frags) f.sync = item.sync // pieces were written when the whole was
             val b = frags.fold(item.paintBounds()) { acc, f -> acc.union(f.paintBounds()) }
             dirty = dirty?.union(b) ?: b
             page.items.removeAt(i)
@@ -3656,6 +3660,7 @@ class InteractionController(
 
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
+        onUserMovedView?.invoke()
         val dx = -(vx - lastPan.x)
         var dy = -(vy - lastPan.y)
         if (!state.verticalScroll) {
@@ -4057,6 +4062,7 @@ class InteractionController(
 
     private fun updatePinch(e: MotionEvent) {
         if (e.pointerCount < 2) return
+        onUserMovedView?.invoke()
         val a = Pt(e.getX(0).toDouble(), e.getY(0).toDouble())
         val b = Pt(e.getX(1).toDouble(), e.getY(1).toDouble())
         val dist = a.distanceTo(b)
@@ -4200,7 +4206,7 @@ class InteractionController(
                 r.withSave {
                     r.translate(pr.left + moveOffset.x, pr.top + moveOffset.y)
                     state.applyPageTransform(r, state.document.pages[sel.pageIndex])
-                    sel.item.paint(r)
+                    state.paintItem(sel.item, r)
                 }
             }
 
@@ -4210,7 +4216,7 @@ class InteractionController(
                 r.withSave {
                     r.translate(pr.left, pr.top)
                     state.applyPageTransform(r, state.document.pages[pi])
-                    for (item in f.items) item.paint(r)
+                    for (item in f.items) state.paintItem(item, r)
                 }
             }
 

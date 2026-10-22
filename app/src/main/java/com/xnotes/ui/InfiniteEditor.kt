@@ -77,6 +77,9 @@ import com.xnotes.ui.theme.Palette
  * ones, so a second object doing the same would delete the open note's live files.
  */
 @Stable
+/** How near ink a finger tap during playback may land to play from it, in dp. */
+private const val INK_TAP_DP = 8.0
+
 class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost, AudioHost {
 
     private val appContext = context.applicationContext
@@ -134,6 +137,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         isEditingText = { editingLabel != null },
         onCommitText = { commitText() },
         onAudioTap = { tapAudio(it) },
+        onUserMovedView = { AudioPlayback.userMoved(this) },
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
@@ -249,10 +253,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
      */
     private val modelListener = object : InfiniteDocument.Listener {
         override fun onItemAdded(item: CanvasItem) {
+            itemsRevision++
             pushItem(item)
         }
 
         override fun onItemRemoved(item: CanvasItem) {
+            itemsRevision++
             // Drop any mesh job still running for it, so its result cannot file the record again.
             if (item is ImageItem) vectorMeshGen.remove(item)
             scene.remove(item)
@@ -271,6 +277,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         }
 
         override fun onReset() {
+            itemsRevision++
             rebuildScene()
             view.publish()
         }
@@ -291,6 +298,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         scene.decodeOn = { work -> decodeExecutor.execute(work) }
         scene.onOutOfMemory = { short -> view.post { outOfMemory = short } }
         document.listener = modelListener
+        // Whatever is added while this canvas records takes the recording's moment.
+        history.onPush = { command -> AudioRecording.stamp(this, command.added()) }
     }
 
     /**
@@ -1618,13 +1627,60 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     override val recordingTitle: String get() = title
 
-    /** A finger tap at [at] on a pill plays it (see [AudioPlayback.tap]); false when there is none. */
+    /**
+     * A finger tap at [at] on a pill plays it (see [AudioPlayback.tap]); during playback a tap on ink
+     * written during that recording plays from a little before it. False when neither is there.
+     */
     fun tapAudio(at: Pt): Boolean {
-        val reach = Rect(at.x - 1.0, at.y - 1.0, 2.0, 2.0)
-        val item = document.itemsIn(reach).lastOrNull { it is com.xnotes.core.model.AudioItem && it.contains(at) } as? com.xnotes.core.model.AudioItem
-            ?: return false
-        AudioPlayback.tap(this, item, at)
+        val reach = INK_TAP_DP * devicePxPerDp / viewport.zoom
+        val near = document.itemsIn(Rect(at.x - reach, at.y - reach, 2 * reach, 2 * reach))
+        val item = near.lastOrNull { it is com.xnotes.core.model.AudioItem && it.contains(at) } as? com.xnotes.core.model.AudioItem
+        if (item != null) {
+            AudioPlayback.tap(this, item, at)
+            return true
+        }
+        val s = AudioPlayback.session?.takeIf { it.owner === this } ?: return false
+        val ink = near.lastOrNull { it.sync?.rid == s.item.rid && (it.contains(at) || it.intersectsCircle(at.x, at.y, reach)) } ?: return false
+        AudioPlayback.playFromMoment(ink.sync!!.ms)
         return true
+    }
+
+    /** The playing recording's items in moment order, kept until the canvas changes. */
+    private var syncIndex: com.xnotes.core.audio.SyncIndex<Unit>? = null
+    private var syncIndexRevision = -1
+
+    /** Bumped by every item added, removed or reloaded, so the index above knows it is stale. */
+    private var itemsRevision = 0
+
+    private fun syncIndexFor(rid: Int): com.xnotes.core.audio.SyncIndex<Unit> {
+        syncIndex?.takeIf { it.rid == rid && syncIndexRevision == itemsRevision }?.let { return it }
+        return com.xnotes.core.audio.SyncIndex(rid, document.items.filter { it.sync?.rid == rid }.map { Unit to it }).also {
+            syncIndex = it
+            syncIndexRevision = itemsRevision
+        }
+    }
+
+    override fun audioPlayhead(rid: Int?, from: Int, to: Int) {
+        val prev = scene.fade
+        val next = rid?.let { com.xnotes.core.audio.InkFade(it, to) }
+        scene.fade = next
+        if (prev == null && next == null) return
+        // A fade is two uniforms' worth of work on this canvas, so a frame is drawn only when it changes what shows.
+        if (prev != null && next != null && prev.rid == next.rid) {
+            val crossed = syncIndexFor(next.rid).between(minOf(from, to), maxOf(from, to))
+            if (crossed.isEmpty()) return
+            if (to > from && AudioPlayback.follow && AudioPlayback.session?.playing == true) followInk(crossed.last().item)
+        }
+        view.publish()
+    }
+
+    /** Bring ink the playback just reached into the middle of the view, the zoom kept; nothing when it is on screen. */
+    private fun followInk(item: CanvasItem) {
+        val b = item.paintBounds()
+        val v = viewport.visibleContentRect()
+        if (v.contains(b.topLeft) && v.contains(Pt(b.right, b.bottom))) return
+        viewport.centerOn(b.centerX, b.centerY)
+        onViewChanged()
     }
 
     override fun selectedAudio(): com.xnotes.core.model.AudioItem? = selection.items.singleOrNull() as? com.xnotes.core.model.AudioItem

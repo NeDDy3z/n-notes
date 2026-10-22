@@ -80,6 +80,7 @@ class EraseSession(private val doc: InfiniteDocument) {
                 if (!EraseRule.takes(item, cx, cy, radius)) continue
                 emptyList()
             }
+            for (f in fragments) f.sync = item.sync // pieces were written when the whole was
             val touched = item.paintBounds()
             val at = doc.replaceItem(item, fragments)
             if (at < 0) continue
