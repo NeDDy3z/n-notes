@@ -79,5 +79,8 @@ class AudioItem(
     }
 }
 
+/** [this] as an export draws it: recordings are left out of every export, so nothing of them shows. */
+fun List<CanvasItem>.withoutAudio(): List<CanvasItem> = if (none { it is AudioItem }) this else filterNot { it is AudioItem }
+
 /** Snapshot of a pill's geometry: only where it sits. */
 private data class AudioSnapshot(val rect: Rect) : GeometrySnapshot

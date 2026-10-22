@@ -38,6 +38,7 @@ import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.EraseRule
 import com.xnotes.core.model.deepCopyAll
 import com.xnotes.core.model.GeoHandle
+import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.RectHandle
@@ -1628,6 +1629,7 @@ class InteractionController(
     private fun selectionResizeHandles(): List<ResizeHandle> {
         val endpoint = singleEndpointShape()
         if (endpoint != null) return endpointHandles(endpoint)
+        if (selection.all { it.item is AudioItem }) return emptyList()
         val all = selectionChromeBox()?.let { ResizeMath.obbHandles(it) } ?: return emptyList()
         val square = (selection.singleOrNull()?.item as? ShapeItem)?.shape?.keepsAspect == true
         return if (square) all.filter { it.id in CORNER_HANDLES } else all
@@ -3586,6 +3588,7 @@ class InteractionController(
         val dx = if (offsetFromBoundsTopLeft) targetLocal.x - b.left + nudge else nudge
         val dy = if (offsetFromBoundsTopLeft) targetLocal.y - b.top + nudge else nudge
         for (c in clones) c.translate(dx, dy)
+        com.xnotes.core.audio.RecordingIds.adopt(clones, state.document.pages.flatMap { it.items }, moves = clipboardFromCut)
         page.items.addAll(clones)
         history.push(AddItems(page, clones))
         // A cut's clipboard is spent by the paste that lands it: the items were taken from the

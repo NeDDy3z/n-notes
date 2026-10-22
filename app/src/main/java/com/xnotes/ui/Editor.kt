@@ -1,5 +1,7 @@
 package com.xnotes.ui
 
+import com.xnotes.ui.theme.audioLook
+import com.xnotes.core.model.withoutAudio
 import android.content.Context
 import android.util.LruCache
 import androidx.compose.runtime.Stable
@@ -1688,7 +1690,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     }
                 }
                 val showFlow = local.w > 0.0 && local.h > 0.0
-                PageLayers.paint(itemsSnapshot(page), { if (showFlow) state.paintFlow?.invoke(page, r, local) }) { it.paint(r) }
+                PageLayers.paint(itemsSnapshot(page).withoutAudio(), { if (showFlow) state.paintFlow?.invoke(page, r, local) }) { it.paint(r) }
             }
         }
         return surface.bitmap
@@ -2326,6 +2328,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         cornerStyle = p.cornerStyle
         toolbarLook = p.toolbarLook
         state.palette = palette
+        com.xnotes.core.model.AudioLook.current = palette.audioLook()
         infiniteOrNull?.applyPalette(palette)
         infiniteOrNull?.applyInputPrefs(
             p.fingerDraws,
@@ -3024,7 +3027,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * polled before the costly steps (PDF background, each item) so a render abandoned mid-flight —
      * the side-panel row scrolled out of view — bails out instead of burning CPU the scroll needs.
      */
-    fun renderThumbnail(page: Page, widthPx: Int, active: () -> Boolean = { true }): android.graphics.Bitmap? {
+    fun renderThumbnail(page: Page, widthPx: Int, active: () -> Boolean = { true }, withAudio: Boolean = true): android.graphics.Bitmap? {
         val cover = state.footprint(page)
         val scale = widthPx / cover.w
         val w = widthPx.coerceAtLeast(1)
@@ -3039,7 +3042,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
             state.paintPageBackground?.invoke(page, r, scale, cover)
         }
-        val items = itemsSnapshot(page)
+        val items = itemsSnapshot(page).let { if (withAudio) it else it.withoutAudio() }
         val under = PageLayers.underText(items)
         for (i in 0 until under) items[i].paint(r)
         state.paintFlow?.invoke(page, r, cover)
@@ -3561,13 +3564,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun deleteImageTemps(doc: Document) {
         for (page in doc.pages) for (item in page.items) {
             if (item is ImageItem) runCatching { item.image.file.delete() }
+            if (item is com.xnotes.core.model.AudioItem) runCatching { item.audio.file.delete() }
         }
         for (file in doc.templatePackages.values) runCatching { file.delete() }
     }
 
     /** [deleteImageTemps] for a canvas, whose items are one flat list rather than per page. */
     private fun deleteCanvasImageTemps(doc: com.xnotes.core.infinite.InfiniteDocument) {
-        for (item in doc.items) if (item is ImageItem) runCatching { item.image.file.delete() }
+        for (item in doc.items) {
+            if (item is ImageItem) runCatching { item.image.file.delete() }
+            if (item is com.xnotes.core.model.AudioItem) runCatching { item.audio.file.delete() }
+        }
     }
 
     /** Drop a note's cached tile (memory + disk) so it re-renders with fresh content next time it's shown. */
@@ -6233,6 +6240,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val cmds = ArrayList<Command>()
         for (src in pageClipboard) {
             val clone = src.deepCopy(textMeasurer) // fresh clone each paste, so repeated pastes are independent
+            com.xnotes.core.audio.RecordingIds.adopt(clone.items, pages.flatMap { it.items }, moves = true)
             pages.add(at, clone)
             cmds.add(AddPage(state.document, clone, at))
             at++
@@ -6327,7 +6335,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** PNG bytes for page [index], rendered at full page resolution (paper + background + items), or null. */
     fun pageImagePng(index: Int): ByteArray? {
         val page = pageAt(index) ?: return null
-        val bmp = renderThumbnail(page, state.outerW(page).toInt().coerceAtLeast(1)) ?: return null
+        val bmp = renderThumbnail(page, state.outerW(page).toInt().coerceAtLeast(1), withAudio = false) ?: return null
         return java.io.ByteArrayOutputStream().use { out ->
             bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
             out.toByteArray()

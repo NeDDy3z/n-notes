@@ -534,6 +534,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         if (selection.isEmpty) return
         val clones = selection.items.deepCopyAll(textMeasurer)
         for (clone in clones) clone.translate(DUPLICATE_NUDGE, DUPLICATE_NUDGE)
+        com.xnotes.core.audio.RecordingIds.adopt(clones, document.items, moves = false)
         document.addAll(clones)
         history.push(AddCanvasItems(document, clones))
         selection.select(clones)
@@ -584,6 +585,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             dy = atContent.y - bounds.top
         }
         for (clone in clones) clone.translate(dx, dy)
+        com.xnotes.core.audio.RecordingIds.adopt(clones, document.items, moves = clipboardFromCut)
         document.addAll(clones)
         history.push(AddCanvasItems(document, clones))
         if (clipboardFromCut) {
@@ -1860,7 +1862,17 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         this.palette = palette
         view.paperColor = document.background.paperColor ?: palette.paper
         view.accent = palette.accent
+        // The pills are meshed in the accent, so a new one means new triangles for each.
+        val look = com.xnotes.core.model.AudioLook.current
+        if (look != meshedAudioLook) {
+            meshedAudioLook = look
+            for (item in document.items) if (item is com.xnotes.core.model.AudioItem) pushItem(item)
+            view.publish()
+        }
     }
+
+    /** The look the canvas's pills were last meshed in. */
+    private var meshedAudioLook: com.xnotes.core.model.AudioLook? = null
 
     // --- documents ---
 

@@ -11,6 +11,7 @@ import com.xnotes.core.history.Command
 import com.xnotes.core.history.CompositeCommand
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.TransformItems
+import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ConnectorItem
 import com.xnotes.core.model.GeometrySnapshot
@@ -105,6 +106,7 @@ class CanvasSelection(private val doc: InfiniteDocument) {
 
     /** The resize handles, in content space; a shape that keeps its aspect gets corners only. */
     fun handles(screenMargin: Double = 0.0): List<ResizeHandle> {
+        if (items.all { it is AudioItem }) return emptyList()
         val all = chromeBox(screenMargin)?.let { ResizeMath.obbHandles(it) } ?: return emptyList()
         val square = (items.singleOrNull() as? ShapeItem)?.shape?.keepsAspect == true
         return if (square) all.filter { it.id in CORNERS } else all
@@ -112,7 +114,7 @@ class CanvasSelection(private val doc: InfiniteDocument) {
 
     /** The rotate grip's centre, [arm] content pixels past the box's top edge. */
     fun rotateGrip(arm: Double, screenMargin: Double = 0.0): Pt? =
-        chromeBox(screenMargin)?.let { ResizeMath.obbRotateGrip(it, arm) }
+        if (items.any { it is AudioItem }) null else chromeBox(screenMargin)?.let { ResizeMath.obbRotateGrip(it, arm) }
 
     /** Which handle [p] lands on, within [tolerance] content pixels, or null. */
     fun hitHandle(p: Pt, tolerance: Double, screenMargin: Double = 0.0): HandleId? =

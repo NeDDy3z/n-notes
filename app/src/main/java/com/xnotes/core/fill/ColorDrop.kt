@@ -4,6 +4,7 @@ import com.xnotes.core.geometry.Pt
 import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.infinite.ShapeTessellator
 import com.xnotes.core.infinite.StrokeTessellator
+import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ConnectorItem
 import com.xnotes.core.model.ImageItem
@@ -178,7 +179,7 @@ object ColorDrop {
 
     /** True when [item] covers what lies under it at [at]: a picture or a fill. */
     private fun hides(item: CanvasItem, at: Pt) = when (item) {
-        is ImageItem -> item.contains(at)
+        is ImageItem, is AudioItem -> item.contains(at)
         is ShapeItem -> item.fillRgba != null && item.encloses(at)
         else -> false
     }
