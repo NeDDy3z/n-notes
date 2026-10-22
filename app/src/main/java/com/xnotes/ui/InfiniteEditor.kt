@@ -1557,7 +1557,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** Place [audio] as a pill in the middle of the view, sized for this zoom, selected so it can be dragged at once. */
     fun placeAudio(audio: com.xnotes.core.model.AudioData, name: String, rid: Int? = null): com.xnotes.core.model.AudioItem {
         val box = com.xnotes.core.model.AudioItem.boxAt(viewport.centerContent, document.dpi, viewport.zoom)
-        val item = com.xnotes.core.model.AudioItem(audio, box, name, rid ?: freshRecordingId(), textMeasurer)
+        // A recording keeps its own id, so the ink written during it stays tied, unless a pill took it meanwhile.
+        val taken = rid != null && document.items.any { it is com.xnotes.core.model.AudioItem && it.rid == rid }
+        val item = com.xnotes.core.model.AudioItem(audio, box, name, rid?.takeUnless { taken } ?: freshRecordingId(), textMeasurer)
         document.add(item)
         history.push(AddCanvasItem(document, item))
         selection.select(listOf(item))
@@ -1591,7 +1593,21 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun recordingMoved(item: com.xnotes.core.model.AudioItem, audio: com.xnotes.core.model.AudioData) {
         if (!document.containsRef(item)) return
         item.audio = audio
-        markDirty()
+        audioChanged(item)
+    }
+
+    override val recordingKey: String get() = document.path?.let { "canvas|$it" } ?: "canvas-session"
+
+    /** Place recordings a crash left behind for this canvas, once it has a size to place them in the middle of. */
+    fun recoverRecordings(fromSession: Boolean, tries: Int = 0) {
+        view.postDelayed({
+            if (view.width <= 0 || view.height <= 0) {
+                if (tries < 40) recoverRecordings(fromSession, tries + 1)
+                return@postDelayed
+            }
+            val keys = listOfNotNull(document.path?.let { "canvas|$it" }, "canvas-session".takeIf { fromSession })
+            AudioRecording.recover(this, keys)
+        }, 250L)
     }
 
     override fun recordingMessage(text: String, action: Pair<String, () -> Unit>?) {

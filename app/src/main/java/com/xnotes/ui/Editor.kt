@@ -756,6 +756,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         doc: com.xnotes.core.infinite.InfiniteDocument,
         uri: String?,
         displayName: String?,
+        fromSession: Boolean = false,
     ) {
         flushAutosave() // a paged note may be open underneath; do not leave its edits unwritten
         doc.path = uri
@@ -772,6 +773,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         canvasAutosaveUri?.let { rememberStamp(it) }
         canvasOpen = true
         noteOpen = true
+        canvas.recoverRecordings(fromSession)
     }
 
     /** Write [doc] to [uri] through a private temp, so a failed encode never truncates a good file. */
@@ -1673,7 +1675,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (pageOfAudio(item) == null) return
         item.audio = audio
         state.document.dirty = true
+        audioRepaint(item)
         refreshContent()
+    }
+
+    override val recordingKey: String get() = state.document.path?.let { "note|${documentKey(it)}" } ?: "note-session|$pane"
+
+    /**
+     * Place recordings a crash left behind for the note now open, once it is laid out, so they land
+     * where the view is. [fromSession]: this is the session the app came back to, which a recording
+     * in an unsaved note can only be found by.
+     */
+    private fun recoverRecordings(fromSession: Boolean, tries: Int = 0) {
+        view.postDelayed({
+            if (!state.didInitialFit || state.viewportW <= 0) {
+                if (tries < 40) recoverRecordings(fromSession, tries + 1)
+                return@postDelayed
+            }
+            val keys = listOfNotNull(state.document.path?.let { "note|${documentKey(it)}" }, "note-session|$pane".takeIf { fromSession })
+            AudioRecording.recover(this, keys)
+        }, 250L)
     }
 
     override fun recordingMessage(text: String, action: Pair<String, () -> Unit>?) = say(text, action)
@@ -2224,7 +2245,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             box.y.coerceIn(cover.top, (cover.bottom - box.h).coerceAtLeast(cover.top)),
             box.w, box.h,
         )
-        val item = com.xnotes.core.model.AudioItem(audio, rect, name, rid ?: freshRecordingId(), textMeasurer)
+        // A recording keeps its own id, so the ink written during it stays tied, unless a pill took it meanwhile.
+        val taken = rid != null && doc.pages.any { p -> p.items.any { it is com.xnotes.core.model.AudioItem && it.rid == rid } }
+        val item = com.xnotes.core.model.AudioItem(audio, rect, name, rid?.takeUnless { taken } ?: freshRecordingId(), textMeasurer)
         page.items.add(item)
         state.appendToCache(page, item)
         history.push(AddItem(page, item))
@@ -2691,7 +2714,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             if (canvasSession.exists()) canvasSession.load() else null
         }
         if (canvasDoc != null) {
-            openCanvasDocument(canvasDoc, canvasDoc.path, canvasDoc.displayName)
+            openCanvasDocument(canvasDoc, canvasDoc.path, canvasDoc.displayName, fromSession = true)
             sessionLoaded = true
             return
         }
@@ -2720,6 +2743,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             maybeBindAutosave(state.document.path) // resume autosave if the restored note is in the folder
             refreshContent()
             view.requestRender()
+            recoverRecordings(fromSession = true)
         }
         sessionLoaded = true
     }
@@ -5824,6 +5848,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         installInitialView(doc.path) // this note's remembered view, or fit width — never the last note's
         refreshContent()
         view.requestRender()
+        recoverRecordings(fromSession = false)
     }
 
     // --- tools & colour ---
