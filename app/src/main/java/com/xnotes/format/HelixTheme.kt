@@ -29,6 +29,7 @@ object HelixTheme {
         "property" to listOf("variable.other.member", "property"),
         "variable" to listOf("variable"),
         "punctuation" to listOf("punctuation"),
+        "tag" to listOf("tag"),
     )
 
     /** How many slots must resolve before the file counts as a usable theme. */

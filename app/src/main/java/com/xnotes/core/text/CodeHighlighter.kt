@@ -68,6 +68,7 @@ class HighlightTheme(private val colors: Map<String, Rgba>, val background: Rgba
                 "property" to Rgba(165, 214, 255, 255),
                 "variable" to Rgba(201, 209, 217, 255),
                 "punctuation" to Rgba(201, 209, 217, 255),
+                "tag" to Rgba(126, 231, 135, 255),
             ),
             background = Rgba(13, 17, 23, 255),
         )
@@ -87,6 +88,7 @@ class HighlightTheme(private val colors: Map<String, Rgba>, val background: Rgba
                 "property" to Rgba(10, 48, 105, 255),
                 "variable" to Rgba(36, 41, 47, 255),
                 "punctuation" to Rgba(36, 41, 47, 255),
+                "tag" to Rgba(17, 99, 41, 255),
             ),
         )
     }

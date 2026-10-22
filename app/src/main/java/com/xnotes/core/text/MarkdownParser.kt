@@ -80,6 +80,7 @@ object MarkdownParser {
         "ts" to "typescript", "mts" to "typescript", "cts" to "typescript",
         "golang" to "go",
         "rs" to "rust",
+        "htm" to "html", "xhtml" to "html",
     )
 
     /** Common fence-info aliases to the bundled grammar ids. */
