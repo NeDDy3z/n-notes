@@ -3,6 +3,8 @@ package com.xnotes.format
 import com.xnotes.core.geometry.Flip
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.AudioData
+import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ConnectorEnd
@@ -23,6 +25,7 @@ import com.xnotes.core.model.Routing
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.SyncMark
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextStyle
 import com.xnotes.core.pal.FontFace
@@ -229,11 +232,13 @@ class DocumentCodec(
     }
 
     /**
-     * Every STORED entry ahead of the tail, in the order it is written: [images], the packaged
-     * templates the styles name, then the source PDF. An in-place save checks a bundle against this.
+     * Every STORED entry ahead of the tail, in the order it is written: [images], the recordings,
+     * the packaged templates the styles name, then the source PDF. An in-place save checks a bundle
+     * against this.
      */
     internal fun storedEntries(doc: Document, images: List<Pair<String, File>>): List<Pair<String, File>> {
         val out = ArrayList(images)
+        out.addAll(audioAssets(doc))
         for (key in usedTemplateKeys(doc)) doc.templatePackages[key]?.let { out.add("$TEMPLATE_ASSET$key$TEMPLATE_EXT" to it) }
         doc.pdfFile?.let { out.add("assets/source.pdf" to it) }
         return out
@@ -253,6 +258,21 @@ class DocumentCodec(
                 // honest and older readers skip the item they can't decode.
                 val ext = if (Svg.isSvgFile(item.image.file)) "svg" else "png"
                 out.add("assets/image-%03d.%s".format(out.size, ext) to item.image.file)
+            }
+        }
+        return out
+    }
+
+    /**
+     * The recordings' entries, walked and named like [imageAssets]': the manifest takes them
+     * positionally from this list. Each keeps its own format's extension, which a reader reads back.
+     */
+    internal fun audioAssets(doc: Document): List<Pair<String, File>> {
+        val out = ArrayList<Pair<String, File>>()
+        for (page in doc.pages) {
+            for (item in page.items) {
+                if (item !is AudioItem) continue
+                out.add("$AUDIO_ASSET%03d.%s".format(out.size, audioExt(item.audio.ext)) to item.audio.file)
             }
         }
         return out
@@ -278,7 +298,9 @@ class DocumentCodec(
         j.endArray()
         j.name("pages").beginArray()
         val nextAsset = intArrayOf(0)
-        for (page in doc.pages) writePage(j, page, assets, nextAsset)
+        val audio = audioAssets(doc)
+        val nextAudio = intArrayOf(0)
+        for (page in doc.pages) writePage(j, page, assets, nextAsset, audio, nextAudio)
         j.endArray()
         writeStyle(j, doc.style)
         writeMargins(j, doc.margins)
@@ -291,6 +313,8 @@ class DocumentCodec(
         page: Page,
         assets: List<Pair<String, File>>,
         nextAsset: IntArray,
+        audio: List<Pair<String, File>>,
+        nextAudio: IntArray,
     ) {
         j.beginObject()
         j.name("width").value(page.width)
@@ -309,6 +333,10 @@ class DocumentCodec(
                     // from there keeps the entry and the manifest agreeing by construction.
                     val name = assets.getOrNull(nextAsset[0]++)?.first ?: continue
                     writeImage(j, item, name, ids[item])
+                }
+                is AudioItem -> {
+                    val name = audio.getOrNull(nextAudio[0]++)?.first ?: continue
+                    writeAudio(j, item, name)
                 }
                 is TextItem -> writeText(j, item, ids[item])
                 is ShapeItem -> writeShape(j, item, ids[item])
@@ -373,6 +401,7 @@ class DocumentCodec(
         if (s.smoothScale != 1.0) j.name("smooth_scale").value(s.smoothScale)
         // Straight-line strokes must reload un-smoothed, else the EMA pulls their far end inward.
         if (s.straight) j.name("straight").value(true)
+        s.sync?.let { writeSync(j, it) }
         if (s.locked) j.name("locked").value(true)
         j.endObject()
     }
@@ -390,8 +419,28 @@ class DocumentCodec(
         if (item.orientation != 0) j.name("orientation").value(item.orientation)
         if (item.angle != 0.0) j.name("angle").value(item.angle)
         if (item.flip != Flip.NONE) j.name("flip").value(item.flip.id)
+        item.sync?.let { writeSync(j, it) }
         if (item.locked) j.name("locked").value(true)
         j.endObject()
+    }
+
+    private fun writeAudio(j: JsonWrite, a: AudioItem, assetName: String) {
+        j.beginObject()
+        j.name("kind").value(AudioItem.KIND)
+        j.name("asset").value(assetName)
+        j.name("rect").beginArray().value(a.rect.x).value(a.rect.y).value(a.rect.w).value(a.rect.h).endArray()
+        j.name("rid").value(a.rid)
+        j.name("name").value(a.name)
+        j.name("duration_ms").value(a.audio.durationMs)
+        if (a.audio.peaks.isNotEmpty()) j.name("peaks").value(java.util.Base64.getEncoder().encodeToString(a.audio.peaks))
+        if (a.locked) j.name("locked").value(true)
+        j.endObject()
+    }
+
+    /** Only on an item added during a recording, so every other item writes exactly as before. */
+    private fun writeSync(j: JsonWrite, m: SyncMark) {
+        j.name("rec").value(m.rid)
+        j.name("rec_ms").value(m.ms)
     }
 
     private fun writeText(j: JsonWrite, t: TextItem, id: Int?) {
@@ -408,6 +457,7 @@ class DocumentCodec(
         // and notes that use neither serialize exactly as before.
         if (t.height > 0.0) j.name("height").value(t.height)
         if (t.face != TextItem.DEFAULT_FACE) j.name("font_face").value(t.face.id)
+        t.sync?.let { writeSync(j, it) }
         if (t.locked) j.name("locked").value(true)
         j.endObject()
     }
@@ -479,6 +529,7 @@ class DocumentCodec(
             if (s.labelAt != 0.5) j.name("at").value(s.labelAt)
             j.endObject()
         }
+        s.sync?.let { writeSync(j, it) }
         if (s.locked) j.name("locked").value(true)
         j.endObject()
     }
@@ -542,6 +593,7 @@ class DocumentCodec(
             if (c.labelAt != 0.5) j.name("at").value(c.labelAt)
             j.endObject()
         }
+        c.sync?.let { writeSync(j, it) }
         if (c.locked) j.name("locked").value(true)
         j.endObject()
     }
@@ -637,6 +689,7 @@ class DocumentCodec(
         val templates = HashMap<String, String>()
         val packages = HashMap<String, File>()
         val imageFiles = HashMap<String, File>()
+        val audioFiles = HashMap<String, File>()
         var pdfFile: File? = null
         ZipInputStream(input).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
@@ -675,6 +728,15 @@ class DocumentCodec(
                             val f = File.createTempFile("img", null, imageDir)
                             FileOutputStream(f).use { zis.copyTo(it) }
                             imageFiles[name] = f
+                            timing?.assetsMs += (System.nanoTime() - started) / 1_000_000L
+                        }
+                    } else if (name.startsWith(AUDIO_ASSET)) {
+                        // A recording streams to disk beside the images; it is played from the file.
+                        if (imageDir != null) {
+                            val started = System.nanoTime()
+                            val f = File.createTempFile("aud", null, imageDir)
+                            FileOutputStream(f).use { zis.copyTo(it) }
+                            audioFiles[name] = f
                             timing?.assetsMs += (System.nanoTime() - started) / 1_000_000L
                         }
                     } else if (name.startsWith(TEMPLATE_ASSET) && name.endsWith(TEMPLATE_EXT)) {
@@ -733,15 +795,21 @@ class DocumentCodec(
         for ((page, specs, glue) in m.pageImages) {
             var dropped = 0
             for (spec in specs) {
-                val item = materializeImage(spec, imageFiles)
+                val item = when (spec) {
+                    is PendingImage -> materializeImage(spec, imageFiles)
+                    is PendingAudio -> materializeAudio(spec, audioFiles, m.dpi)
+                }
                 if (item == null) {
                     dropped++
                 } else {
                     page.items.add(spec.index - dropped, item)
-                    glue.named(item, spec.id)
+                    if (spec is PendingImage) glue.named(item, spec.id)
                 }
             }
         }
+        // A recording whose item did not survive leaves its file behind; nothing else will delete it.
+        val used = m.pageImages.flatMap { it.second }.filterIsInstance<PendingAudio>().map { it.asset }.toSet()
+        for ((name, f) in audioFiles) if (name !in used) f.delete()
         // Every page's items are in, so connectors can glue to whatever their ends name.
         for (glue in m.pageGlue) glue.resolve()
 
@@ -782,14 +850,16 @@ class DocumentCodec(
         var newPageSize: PageSizeChoice? = null
         val bookmarks = ArrayList<Bookmark>()
         val pages = ArrayList<Page>()
-        val pageImages = ArrayList<Triple<Page, List<PendingImage>, GlueRead>>()
+        val pageImages = ArrayList<Triple<Page, List<Pending>, GlueRead>>()
         val pageGlue = ArrayList<GlueRead>()
     }
 
-    /** An image item parsed before its asset entry has streamed out of the zip. */
+    /** An item parsed before its asset entry has streamed out of the zip, and the slot it goes back to. */
+    private sealed class Pending(val index: Int, val asset: String)
+
     private class PendingImage(
-        val index: Int,
-        val asset: String,
+        index: Int,
+        asset: String,
         val rect: Rect?,
         val srcW: Int,
         val srcH: Int,
@@ -798,7 +868,19 @@ class DocumentCodec(
         val flip: Flip,
         val locked: Boolean,
         val id: Int?,
-    )
+        val sync: SyncMark?,
+    ) : Pending(index, asset)
+
+    private class PendingAudio(
+        index: Int,
+        asset: String,
+        val rect: Rect?,
+        val rid: Int,
+        val name: String,
+        val durationMs: Int,
+        val peaks: ByteArray,
+        val locked: Boolean,
+    ) : Pending(index, asset)
 
     /**
      * A note's page count, PDF flag and created time, read from [ch] through the zip's central directory
@@ -912,7 +994,7 @@ class DocumentCodec(
             var style = PageStyle()
             var margins = PageMargins()
             val items = mutableListOf<CanvasItem>()
-            val pending = ArrayList<PendingImage>()
+            val pending = ArrayList<Pending>()
             val glue = GlueRead()
             p.beginObject()
             while (p.hasNext()) {
@@ -945,7 +1027,7 @@ class DocumentCodec(
         p.endArray()
     }
 
-    private fun parseItems(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<PendingImage>, glue: GlueRead) {
+    private fun parseItems(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<Pending>, glue: GlueRead) {
         if (p.peek() != JsonPull.Token.BEGIN_ARRAY) return p.skipValue()
         p.beginArray()
         while (p.hasNext()) parseItem(p, items, pending, glue)
@@ -998,6 +1080,12 @@ class DocumentCodec(
         var dashed = false
         var dashLength = 10.0
         var dashGap = 8.0
+        var rid = 0
+        var name = ""
+        var durationMs = 0
+        var peaks: ByteArray? = null
+        var rec: Int? = null
+        var recMs = 0
     }
 
     /** Stroke config fields as written; null = absent, so defaults resolve exactly as before. */
@@ -1019,7 +1107,7 @@ class DocumentCodec(
         var highlighterInverse: Boolean? = null
     }
 
-    private fun parseItem(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<PendingImage>, glue: GlueRead) {
+    private fun parseItem(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<Pending>, glue: GlueRead) {
         if (p.peek() != JsonPull.Token.BEGIN_OBJECT) return p.skipValue()
         val s = ItemScratch()
         p.beginObject()
@@ -1069,11 +1157,18 @@ class DocumentCodec(
                 "dash_length" -> s.dashLength = doubleOr(p, 10.0)
                 "dash_gap" -> s.dashGap = doubleOr(p, 8.0)
                 "locked" -> s.locked = boolOr(p, false)
+                "rid" -> s.rid = intOr(p, 0)
+                "name" -> s.name = stringOr(p, "")
+                "duration_ms" -> s.durationMs = intOr(p, 0)
+                "peaks" -> s.peaks = stringOrNull(p)?.let { runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }
+                "rec" -> s.rec = intOrNull(p)
+                "rec_ms" -> s.recMs = intOr(p, 0)
                 else -> p.skipValue()
             }
         }
         p.endObject()
         val before = items.size
+        val sync = s.rec?.let { SyncMark(it, s.recMs) }
         when (s.kind) {
             Stroke.KIND -> items.add(buildStroke(s))
             ImageItem.KIND -> {
@@ -1082,9 +1177,15 @@ class DocumentCodec(
                     pending.add(
                         PendingImage(
                             items.size + pending.size, asset, s.rect, s.srcW, s.srcH,
-                            s.orientation, s.angle, Flip.fromId(s.flip), s.locked, s.id,
+                            s.orientation, s.angle, Flip.fromId(s.flip), s.locked, s.id, sync,
                         ),
                     )
+                }
+            }
+            AudioItem.KIND -> {
+                val asset = s.asset
+                if (!asset.isNullOrEmpty()) {
+                    pending.add(PendingAudio(items.size + pending.size, asset, s.rect, s.rid, s.name, s.durationMs, s.peaks ?: ByteArray(0), s.locked))
                 }
             }
             TextItem.KIND -> items.add(
@@ -1108,6 +1209,7 @@ class DocumentCodec(
         if (items.size > before) glue.named(items[before], s.id)
         // Absent on every note written before locking existed, which reads back as unlocked.
         if (s.locked && items.size > before) items[before].locked = true
+        if (sync != null && items.size > before) items[before].sync = sync
     }
 
     private fun buildStroke(s: ItemScratch): Stroke {
@@ -1480,6 +1582,17 @@ class DocumentCodec(
         }
         val rect = spec.rect ?: Rect(0.0, 0.0, w.toDouble(), h.toDouble())
         return ImageItem(ImageData(file, w, h), rect, spec.orientation, spec.angle, spec.flip)
+            .also {
+                it.locked = spec.locked
+                it.sync = spec.sync
+            }
+    }
+
+    private fun materializeAudio(spec: PendingAudio, audioFiles: Map<String, File>, dpi: Int): AudioItem? {
+        val file = audioFiles[spec.asset] ?: return null
+        val rect = spec.rect?.takeIf { it.w > 0.0 && it.h > 0.0 } ?: AudioItem.boxAt(Pt.ZERO, dpi).let { it.translate(-it.x, -it.y) }
+        val ext = audioExt(spec.asset.substringAfterLast('.', ""))
+        return AudioItem(AudioData(file, ext, spec.durationMs, spec.peaks), rect, spec.name, spec.rid, textMeasurer)
             .also { it.locked = spec.locked }
     }
 
@@ -1623,6 +1736,12 @@ class DocumentCodec(
         private const val STAND_IN_FLATTEN = 0.25
 
         private const val TEMPLATE_DIR = "templates/"
+
+        /** A recording is a STORED asset too, its format's extension after the number. */
+        private const val AUDIO_ASSET = "assets/audio-"
+
+        /** [ext] as an entry may carry it: short and plain, or the generic "m4a". */
+        internal fun audioExt(ext: String): String = ext.lowercase().takeIf { Regex("[a-z0-9]{1,5}").matches(it) } ?: "m4a"
 
         /** A packaged template is a STORED asset, a name older readers skip rather than misread as text. */
         private const val TEMPLATE_ASSET = "assets/template-"

@@ -32,6 +32,11 @@ interface CanvasItem {
      */
     var locked: Boolean
 
+    /** The moment of a recording this item was added at, or null. Kinds that never sync keep the default. */
+    var sync: SyncMark?
+        get() = null
+        set(_) {}
+
     /** Draw the item; [r] is already translated to the page origin and scaled. */
     fun paint(r: Renderer)
 

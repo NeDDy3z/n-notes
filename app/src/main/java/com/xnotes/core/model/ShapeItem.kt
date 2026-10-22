@@ -74,6 +74,7 @@ class ShapeItem(
     override val kind = KIND
     override val resizable = true
     override var locked = false
+    override var sync: SyncMark? = null
 
     /** Drawn text is words, which a mirror would turn backwards. */
     override val mirrorable: Boolean get() = shape != ShapeKind.GLYPHS

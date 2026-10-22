@@ -7,6 +7,8 @@ import com.xnotes.core.geometry.Affine
 import com.xnotes.core.geometry.Flip
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.AudioData
+import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.ConnectorEnd
 import com.xnotes.core.model.ConnectorItem
@@ -27,6 +29,7 @@ import com.xnotes.core.pal.FontFace
 import com.xnotes.core.model.TextStyle
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.SyncMark
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.StrokeSimplify
@@ -1055,6 +1058,105 @@ class DocumentCodecTest {
         assertEquals(Routing.ROUNDED, bc.routing)
         assertEquals(c.elbow, bc.elbow)
         assertEquals(1, back[1].items.size)
+    }
+
+    private fun recording(bytes: ByteArray = byteArrayOf(9, 8, 7, 6, 5), ext: String = "m4a", rid: Int = 1) =
+        AudioItem(
+            AudioData(imageFile(bytes), ext, 125_000, byteArrayOf(0, 64, 127, -1)),
+            Rect(30.0, 40.0, 378.0, 83.0), "22 Oct, 14:05", rid, FakeTextMeasurer(),
+        )
+
+    @Test fun aRecordingRoundTripsWithItsAudioWaveformNameAndSlot() {
+        val doc = Document(dpi = 150)
+        val page = Page(1240.0, 1754.0)
+        page.items.add(Stroke(Tool.PEN, ToolConfig(), mutableListOf(Sample(1.0, 1.0, 1.0))))
+        page.items.add(recording(ext = "mp3", rid = 7).apply { locked = true })
+        page.items.add(TextItem(Pt(5.0, 5.0), text = "top", measurer = FakeTextMeasurer()))
+        doc.pages.add(page)
+
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        val names = mutableListOf<String>()
+        ZipInputStream(ByteArrayInputStream(out.toByteArray())).use { zis ->
+            var e = zis.nextEntry
+            while (e != null) {
+                names.add(e.name)
+                if (e.name.startsWith("assets/audio-")) assertEquals(java.util.zip.ZipEntry.STORED, e.method)
+                e = zis.nextEntry
+            }
+        }
+        assertTrue(names.contains("assets/audio-000.mp3"))
+
+        val items = roundTrip(doc).pages[0].items
+        assertTrue(items[0] is Stroke)
+        val back = items[1] as AudioItem
+        assertTrue(items[2] is TextItem)
+        assertArrayEquals(byteArrayOf(9, 8, 7, 6, 5), back.audio.file.readBytes())
+        assertEquals("mp3", back.audio.ext)
+        assertEquals(125_000, back.audio.durationMs)
+        assertArrayEquals(byteArrayOf(0, 64, 127, -1), back.audio.peaks)
+        assertEquals(Rect(30.0, 40.0, 378.0, 83.0), back.rect)
+        assertEquals("22 Oct, 14:05", back.name)
+        assertEquals(7, back.rid)
+        assertTrue(back.locked)
+        assertEquals(-1, back.playhead)
+    }
+
+    @Test fun syncMarksRideEveryKindAndOnlyWhereSet() {
+        val doc = Document(dpi = 150)
+        val page = Page(1240.0, 1754.0)
+        val stroke = Stroke(Tool.PEN, ToolConfig(), mutableListOf(Sample(1.0, 1.0, 1.0))).apply { sync = SyncMark(3, 4_500) }
+        val plain = Stroke(Tool.PEN, ToolConfig(), mutableListOf(Sample(2.0, 2.0, 1.0)))
+        val image = ImageItem(ImageData(imageFile(), 8, 8), Rect(0.0, 0.0, 8.0, 8.0)).apply { sync = SyncMark(3, 9_000) }
+        val text = TextItem(Pt(5.0, 5.0), text = "t", measurer = FakeTextMeasurer()).apply { sync = SyncMark(3, 12_000) }
+        val shape = ShapeItem(ShapeKind.RECTANGLE, Pt(0.0, 0.0), Pt(9.0, 9.0), Rgba(1, 2, 3, 255)).apply { sync = SyncMark(4, 1) }
+        page.items.addAll(listOf(stroke, plain, image, text, shape))
+        doc.pages.add(page)
+
+        val back = roundTrip(doc).pages[0].items
+        assertEquals(SyncMark(3, 4_500), back[0].sync)
+        assertNull(back[1].sync)
+        assertEquals(SyncMark(3, 9_000), back[2].sync)
+        assertEquals(SyncMark(3, 12_000), back[3].sync)
+        assertEquals(SyncMark(4, 1), back[4].sync)
+    }
+
+    @Test fun aNoteWithoutRecordingsWritesNoRecordingFields() {
+        val doc = Document(dpi = 150)
+        doc.pages.add(Page(200.0, 200.0).apply { items.add(Stroke(Tool.PEN, ToolConfig(), mutableListOf(Sample(1.0, 1.0, 1.0)))) })
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        val manifest = manifestOf(out.toByteArray())
+        assertFalse(manifest.contains("\"rec\""))
+        assertFalse(manifest.contains("audio"))
+    }
+
+    @Test fun recordingsSitBetweenTheImagesAndThePdfInTheStoredEntries() {
+        val doc = Document(dpi = 150)
+        val page = Page(200.0, 200.0)
+        page.items.add(recording())
+        page.items.add(ImageItem(ImageData(imageFile(), 8, 8), Rect(0.0, 0.0, 8.0, 8.0)))
+        doc.pages.add(page)
+        doc.pdfFile = imageFile(byteArrayOf(0x25, 0x50, 0x44, 0x46))
+        val entries = codec.storedEntries(doc, codec.imageAssets(doc)).map { it.first }
+        assertEquals(listOf("assets/image-000.png", "assets/audio-000.m4a", "assets/source.pdf"), entries)
+    }
+
+    @Test fun aRecordingWhoseAudioIsMissingIsDroppedAndTheRestKeepTheirOrder() {
+        val manifest = """{"format":"xnote","version":1,"dpi":150,"pages":[{"width":200,"height":200,"items":[""" +
+            """{"kind":"audio","asset":"assets/audio-000.m4a","rect":[0,0,10,2],"rid":1,"name":"x","duration_ms":5},""" +
+            """{"kind":"text","pos":[1,1],"width":10,"text":"after"}]}]}"""
+        val bundle = ByteArrayOutputStream().also { out ->
+            java.util.zip.ZipOutputStream(out).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+                zos.write(manifest.toByteArray())
+                zos.closeEntry()
+            }
+        }.toByteArray()
+        val imageDir = Files.createTempDirectory("xnotes-img").toFile()
+        val items = codec.read(ByteArrayInputStream(bundle), imageDir = imageDir).pages[0].items
+        assertEquals(1, items.size)
+        assertEquals("after", (items[0] as TextItem).text)
     }
 }
 
