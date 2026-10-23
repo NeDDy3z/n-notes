@@ -262,6 +262,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             // Drop any mesh job still running for it, so its result cannot file the record again.
             if (item is ImageItem) vectorMeshGen.remove(item)
             scene.remove(item)
+            if (item === AudioPlayback.session?.item) AudioPlayback.closeIfGone(this@InfiniteEditor)
         }
 
         override fun onOrderChanged() {
@@ -280,6 +281,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             itemsRevision++
             rebuildScene()
             view.publish()
+            AudioPlayback.closeIfGone(this@InfiniteEditor)
         }
     }
 

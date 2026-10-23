@@ -266,6 +266,12 @@ object AudioPlayback {
         if (session?.owner === owner) close()
     }
 
+    /** [owner]'s document changed: once the edit settles, close the player if a delete, cut or undo took its pill. */
+    fun closeIfGone(owner: AudioOwner) {
+        val s = session?.takeIf { it.owner === owner } ?: return
+        main.post { if (session === s && !owner.holdsAudio(s.item)) close() }
+    }
+
     private fun onTick(force: Boolean) {
         val s = session ?: return
         if (!s.owner.holdsAudio(s.item)) {

@@ -3098,6 +3098,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         dirty = state.document.dirty
         title = state.document.title
         contentVersion++
+        AudioPlayback.closeIfGone(this)
         refreshView()
         refreshSearch()
         if (autosaveUri != null && state.document.dirty) scheduleAutosave()
