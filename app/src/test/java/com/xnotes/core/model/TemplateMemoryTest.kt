@@ -99,6 +99,19 @@ class TemplateMemoryTest {
     }
 
     @Test
+    fun aStyleSwapsItsSettingsThroughAMap() {
+        val kept = HashMap<String, TemplateSettings>()
+        var s = PageStyle(pageColor = Rgba(9, 9, 9), template = "lines").withSettings(lines)
+        s = s.withTemplate("grid", PageTemplates.NONE, kept)
+        assertTrue(s.settings.isEmpty)
+        assertEquals(Rgba(9, 9, 9), s.pageColor)
+        s = s.withTemplate("lines", PageTemplates.NONE, kept)
+        assertEquals(lines, s.settings)
+        // A template left with nothing set leaves nothing behind.
+        assertEquals(setOf("lines"), kept.keys)
+    }
+
+    @Test
     fun recallShowsWhatATemplateHadWhileAnotherIsShown() {
         val d = note(PageStyle(template = "grid").withSettings(grid))
         val page = d.pages[0]
