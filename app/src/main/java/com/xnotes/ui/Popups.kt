@@ -72,6 +72,7 @@ import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolConversions
 import com.xnotes.platform.FontCatalog
+import com.xnotes.platform.TemplateLibrary
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.SwatchRole
 import com.xnotes.ui.icons.XnotesIcons
@@ -249,6 +250,11 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
     // The level below whose settings show through, when it shows the same template.
     val lower = docStyle.takeIf { tab == 1 && (it.template ?: PageTemplates.NONE) == shownKey }
     val look = TemplateLook.of(style, lower, LocalPalette.current.paper, below = if (tab == 1) docStyle else null)
+    // A strip tile draws its template as this tab shows it, as last set during this visit, or as it comes.
+    fun drawing(e: TemplateLibrary.Entry): TemplateDrawing {
+        val kept = if (tab == 0) memory.recall(null, e.key) else editor.currentPage?.let { memory.recall(it, e.key) }
+        return TemplateDrawing.inStrip(e, style, shownKey, kept, docStyle.takeIf { tab == 1 }, look.paper, editor.documentDpi)
+    }
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         if (customizing && shown != null) {
@@ -292,9 +298,7 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                 entries = choices,
                 selected = style.template,
                 pageMm = editor.currentPageMm,
-                ink = look.ink,
-                accent = look.accent,
-                paper = look.paper,
+                drawing = ::drawing,
                 onSelect = { pick(it) },
                 onImport = onImportTemplate,
                 onRemove = { editor.removeTemplate(it) },
@@ -452,17 +456,9 @@ private fun TemplateCustomizer(
         }
 
         Spacer(Modifier.size(12.dp))
-        val numbers = HashMap<String, Double>()
-        lower?.params?.let(numbers::putAll)
-        style.params?.let(numbers::putAll)
-        val spacing = t.spacingParam
-        (style.spacing ?: lower?.spacing)?.let { px -> if (spacing != null) numbers[spacing.name] = px * 25.4 / dpi }
-        val colors = (lower?.colors ?: emptyMap()) + (style.colors ?: emptyMap())
+        val drawn = TemplateDrawing.of(t, style.settings, lower?.settings, look.paper, dpi)
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            TemplatePreview(
-                t, key, editor.currentPageMm, look.ink, look.accent, look.paper,
-                com.xnotes.core.template.TemplateValues(numbers, colors), 112.dp,
-            )
+            TemplatePreview(t, key, editor.currentPageMm, drawn.look.ink, drawn.look.accent, drawn.look.paper, drawn.values, 112.dp)
         }
 
         if (t.usesInk) {
