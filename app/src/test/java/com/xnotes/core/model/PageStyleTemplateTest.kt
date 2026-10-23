@@ -84,6 +84,33 @@ class PageStyleTemplateTest {
     }
 
     @Test
+    fun olderNotesKeepWhatTheirPagesBorrowed() {
+        val d = Document()
+        d.style = all
+        val grid = Page(100.0, 100.0).also { it.style = PageStyle(template = "grid", spacing = 20.0) }
+        val other = Page(100.0, 100.0).also { it.style = PageStyle(template = "abcdef0123456789", accentColor = Rgba(0, 0, 0)) }
+        val follower = Page(100.0, 100.0).also { it.style = PageStyle(spacing = 30.0) }
+        d.pages.addAll(listOf(grid, other, follower))
+        d.keepBorrowedTemplateSettings()
+        // A built-in ruling borrowed everything from the note's built-in ruling, its own values winning.
+        assertEquals(PageStyle(template = "grid", spacing = 20.0).withSettings(all.settings.copy(spacing = 20.0)), grid.style)
+        // Any other template borrowed only the colours.
+        assertEquals(PageStyle(template = "abcdef0123456789", patternColor = Rgba(1, 2, 3), accentColor = Rgba(0, 0, 0)), other.style)
+        assertEquals(PageStyle(spacing = 30.0), follower.style)
+    }
+
+    @Test
+    fun aNoteShowingNoTemplateLentEverything() {
+        val d = Document()
+        d.style = PageStyle(spacing = 80.0, params = mapOf("gap" to 3.0))
+        val p = Page(100.0, 100.0).also { it.style = PageStyle(template = "abcdef0123456789", params = mapOf("rows" to 2.0)) }
+        d.pages.add(p)
+        d.keepBorrowedTemplateSettings()
+        assertEquals(80.0, p.resolvedSpacing(d)!!, 0.0)
+        assertEquals(mapOf("gap" to 3.0, "rows" to 2.0), p.resolvedParams(d))
+    }
+
+    @Test
     fun settingsComeOutAndGoBackWhole() {
         val t = all.settings
         assertEquals(TemplateSettings(Rgba(1, 2, 3), 80.0, Rgba(4, 5, 6), mapOf("gap" to 3.0), mapOf("rule" to Rgba(7, 8, 9))), t)

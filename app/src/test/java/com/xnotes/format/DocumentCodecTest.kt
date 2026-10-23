@@ -704,6 +704,30 @@ class DocumentCodecTest {
         assertEquals(back.pressure, twice.pressure, 0.0)
     }
 
+    @Test fun olderNotesKeepWhatTheirPagesBorrowedAcrossTemplates() {
+        // No "writer" field: written when a page's built-in ruling took the note's spacing and colour.
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use {
+            it.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+            it.write(
+                ("{\"format\":\"xnote\",\"version\":1,\"style\":{\"pattern\":\"lines\",\"spacing\":48,\"pattern_color\":[1,2,3,4]}," +
+                    "\"pages\":[{\"width\":100,\"height\":100,\"style\":{\"pattern\":\"grid\"},\"items\":[]}]}").toByteArray(),
+            )
+            it.closeEntry()
+        }
+        val s = codec.read(ByteArrayInputStream(out.toByteArray())).pages[0].style
+        assertEquals(PagePattern.GRID.id, s.template)
+        assertEquals(48.0, s.spacing!!, 0.0)
+        assertEquals(Rgba(1, 2, 3, 4), s.patternColor)
+    }
+
+    @Test fun aCurrentNoteKeepsAPagesDefaultColour() {
+        val doc = Document(dpi = 150)
+        doc.style = PageStyle(template = PagePattern.LINES.id, patternColor = Rgba(1, 2, 3, 4))
+        doc.pages.add(Page(100.0, 100.0).also { it.style = PageStyle(template = PagePattern.GRID.id) })
+        assertNull(roundTrip(doc).pages[0].style.patternColor)
+    }
+
     @Test fun pageStyleRoundTrips() {
         val doc = Document(dpi = 150)
         doc.style = PageStyle(template = PagePattern.LINES.id, spacing = 48.0) // document-wide ("all pages")

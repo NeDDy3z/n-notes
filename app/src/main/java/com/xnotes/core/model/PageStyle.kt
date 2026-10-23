@@ -128,3 +128,24 @@ fun Page.resolvedColors(doc: Document): Map<String, Rgba> {
     for (s in settingLevels(doc).asReversed()) s.colors?.let { out.putAll(it) }
     return out
 }
+
+/**
+ * Copy into each page what older notes let it borrow from the note's style across templates: the
+ * colours always, the spacing and parameters between built-in rulings or from no template at all.
+ */
+fun Document.keepBorrowedTemplateSettings() {
+    val noteKey = style.template ?: PageTemplates.NONE
+    for (page in pages) {
+        val key = page.style.template ?: continue
+        if (key == PageTemplates.NONE || key == noteKey) continue
+        var s = page.style
+        if (s.patternColor == null) s = s.copy(patternColor = style.patternColor)
+        if (s.accentColor == null) s = s.copy(accentColor = style.accentColor)
+        if (style.template == null || (PageTemplates.isBuiltIn(key) && PageTemplates.isBuiltIn(noteKey))) {
+            if (s.spacing == null) s = s.copy(spacing = style.spacing)
+            style.params?.let { s = s.copy(params = it + (s.params ?: emptyMap())) }
+            style.colors?.let { s = s.copy(colors = it + (s.colors ?: emptyMap())) }
+        }
+        page.style = s
+    }
+}

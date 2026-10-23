@@ -28,6 +28,7 @@ import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.SyncMark
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextStyle
+import com.xnotes.core.model.keepBorrowedTemplateSettings
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.ImageCodec
 import com.xnotes.core.pal.TextMeasurer
@@ -794,6 +795,7 @@ class DocumentCodec(
             return doc
         }
         doc.pages.addAll(m.pages)
+        if (m.writer < OWN_TEMPLATE_SETTINGS_SINCE) doc.keepBorrowedTemplateSettings()
         markupBytes?.let { MarkupsXfdf.readInto(doc.pages, it) }
 
         // Image entries stream out of the zip after the manifest, so image items materialize only
@@ -1730,11 +1732,14 @@ class DocumentCodec(
 
         /** The com.xnotes versionCode stamped into manifests this build writes ("writer"), kept
          *  in step with the release that carries it. Old readers ignore the unknown key. */
-        const val WRITER = 48
+        const val WRITER = 67
 
         /** Writers at/after this versionCode reduce ink samples at pen-up; ink from older
          *  writers (or files with no "writer" at all) is compacted once at load instead. */
         private const val SIMPLIFIED_SINCE = 43
+
+        /** Pages in notes from writers before this versionCode borrowed template settings; they are copied in at load. */
+        private const val OWN_TEMPLATE_SETTINGS_SINCE = 67
 
         private const val NOT_XNOTE = "Not an xnotes document"
 
