@@ -283,6 +283,8 @@ internal fun NewNoteScreen(
         val canCreate = !busy && sizeOk
 
         val look = TemplateLook.of(style, null, palette.paper)
+        // A cover draws in its own colours; only the paper comes from the pages' style.
+        val coverLook = TemplateLook.of(coverStyle, null, palette.paper, below = style)
         val pageKey = style.template ?: PageTemplates.NONE
         val pageT = pages.firstOrNull { it.key == pageKey }?.template
         val coverKey = coverStyle.template
@@ -324,13 +326,13 @@ internal fun NewNoteScreen(
         }
 
         @Composable
-        fun Thumb(t: Template?, key: String, values: TemplateValues, w: Dp, h: Dp, keep: Boolean) {
-            Box(Modifier.size(w, h).background(look.paper.toComposeColor())) {
+        fun Thumb(t: Template?, key: String, values: TemplateValues, w: Dp, h: Dp, keep: Boolean, tint: TemplateLook = look) {
+            Box(Modifier.size(w, h).background(tint.paper.toComposeColor())) {
                 if (t != null) {
                     val spec = if (keep) {
-                        TemplateThumbs.spec(key, pageMm, look.ink, look.accent, look.paper, values, thumbPx(w))
+                        TemplateThumbs.spec(key, pageMm, tint.ink, tint.accent, tint.paper, values, thumbPx(w))
                     } else {
-                        TemplateThumbs.Spec(key, pageMm, look.ink, look.accent, look.paper, values.numbers, values.colors, thumbPx(w))
+                        TemplateThumbs.Spec(key, pageMm, tint.ink, tint.accent, tint.paper, values.numbers, values.colors, thumbPx(w))
                     }
                     val bmp = rememberTemplateThumb(t, spec, keep)
                     // A picture drawn just now fades in; one drawn before shows at once.
@@ -524,7 +526,7 @@ internal fun NewNoteScreen(
                     if (!coverOn && coverT != null) coverOn = true
                 }) {
                     if (hasCover) {
-                        Box(paper) { Thumb(coverT, coverKey!!, valuesOf(coverStyle, coverT), w, h, keep = false) }
+                        Box(paper) { Thumb(coverT, coverKey!!, valuesOf(coverStyle, coverT), w, h, keep = false, tint = coverLook) }
                     } else {
                         Dashed(w, h) {
                             Icon(XnotesIcons.plus, null, tint = dim, modifier = Modifier.size(22.dp))

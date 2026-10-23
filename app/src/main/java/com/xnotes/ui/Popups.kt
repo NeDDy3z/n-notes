@@ -231,9 +231,9 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
     val inherited = if (tab == 0) PageTemplates.NONE else docStyle.template ?: PageTemplates.NONE
     val shownKey = style.template ?: inherited
     val shown = if (shownKey == PageTemplates.NONE) null else editor.templateFor(shownKey)
-    // The level below whose parameters show through, when they belong to the shown template.
-    val lower = docStyle.takeIf { tab == 1 && (it.template == null || PageTemplates.compatible(it.template, shownKey)) }
-    val look = TemplateLook.of(style, if (tab == 1) docStyle else null, LocalPalette.current.paper)
+    // The level below whose settings show through, when it shows the same template.
+    val lower = docStyle.takeIf { tab == 1 && (it.template ?: PageTemplates.NONE) == shownKey }
+    val look = TemplateLook.of(style, lower, LocalPalette.current.paper, below = if (tab == 1) docStyle else null)
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         if (customizing && shown != null) {

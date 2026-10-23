@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.xnotes.R
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.PageStyle
+import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.template.Template
 import com.xnotes.core.template.TemplatePage
@@ -253,10 +254,10 @@ internal object TemplateThumbs {
 /** The effective colours a style level draws its template with. */
 internal data class TemplateLook(val ink: Rgba, val accent: Rgba, val paper: Rgba) {
     companion object {
-        /** [style]'s colours over [below] (the document's style, under a page's own). */
-        fun of(style: PageStyle, below: PageStyle?, defaultPaper: Rgba) = TemplateLook(
-            ink = style.patternColor ?: below?.patternColor ?: PageStyle.DEFAULT_PATTERN_COLOR,
-            accent = style.accentColor ?: below?.accentColor ?: PageStyle.DEFAULT_ACCENT_COLOR,
+        /** [style]'s colours over [lower] (the document's style, when it shows the same template), its paper over [below]'s. */
+        fun of(style: PageStyle, lower: PageStyle?, defaultPaper: Rgba, below: PageStyle? = lower) = TemplateLook(
+            ink = style.patternColor ?: lower?.patternColor ?: PageStyle.DEFAULT_PATTERN_COLOR,
+            accent = style.accentColor ?: lower?.accentColor ?: PageStyle.DEFAULT_ACCENT_COLOR,
             paper = style.pageColor ?: below?.pageColor ?: defaultPaper,
         )
     }
@@ -272,7 +273,9 @@ internal fun PrewarmTemplateThumbs(editor: Editor, popupOpen: Boolean) {
         if (popupOpen || !editor.noteOpen) return@LaunchedEffect
         delay(PREWARM_DELAY_MS)
         val doc = editor.documentStyle
-        val looks = listOf(TemplateLook.of(doc, null, defaultPaper), TemplateLook.of(editor.currentPageStyle, doc, defaultPaper))
+        val page = editor.currentPageStyle
+        val lower = doc.takeIf { page.template == null || page.template == (it.template ?: PageTemplates.NONE) }
+        val looks = listOf(TemplateLook.of(doc, null, defaultPaper), TemplateLook.of(page, lower, defaultPaper, below = doc))
         TemplateThumbs.prewarm(editor.templateChoices(), editor.currentPageMm, looks, wPx)
     }
 }
