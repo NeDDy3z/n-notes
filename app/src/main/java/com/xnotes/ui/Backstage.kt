@@ -509,7 +509,7 @@ private fun BackstageRail(modifier: Modifier, nav: SidebarNav, onExpand: () -> U
                 key(pin.uri) {
                     var menuOpen by remember { mutableStateOf(false) }
                     Box {
-                        RailItem(XnotesIcons.folder, pin.name, selected = i == nav.activePin, onLongClick = { menuOpen = true }) { nav.onOpenPin(pin) }
+                        RailItem(XnotesIcons.folder, pin.name, selected = i == nav.activePin, labelled = true, onLongClick = { menuOpen = true }) { nav.onOpenPin(pin) }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.unpin_from_sidebar)) }, onClick = { menuOpen = false; nav.onUnpin(pin) })
                         }
@@ -603,34 +603,39 @@ private fun Command(icon: ImageVector, label: String, selected: Boolean = false,
     }
 }
 
-/** One rail destination: an icon in a pill that fills when selected, its label beneath. */
+/** One rail destination: an icon in a pill that fills when selected. Only [labelled] ones show their name beneath; the rest name themselves in a tip. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false, labelled: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
     val pill = MaterialTheme.shapes.large
-    Column(
-        Modifier.width(RAIL_WIDTH).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(top = 6.dp, bottom = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            Modifier.size(width = 56.dp, height = 32.dp).clip(pill)
-                .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent),
-            contentAlignment = Alignment.Center,
+    val item = @Composable {
+        Column(
+            Modifier.width(RAIL_WIDTH).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(top = if (labelled) 6.dp else 8.dp, bottom = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(icon, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
+            Box(
+                Modifier.size(width = 56.dp, height = 32.dp).clip(pill)
+                    .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, if (labelled) null else label, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
+            }
+            if (labelled) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    label,
+                    color = palette.text.toComposeColor(),
+                    fontSize = 11.sp,
+                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            color = palette.text.toComposeColor(),
-            fontSize = 11.sp,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
     }
+    if (labelled) item() else Tooltip(label, side = TipSide.RIGHT) { item() }
 }
 
 /** A small caption over a group of sidebar rows. */
