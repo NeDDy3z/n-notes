@@ -481,9 +481,10 @@ object TemplateLibrary {
     /**
      * Paint [page]'s template into [r] in page-local content px. [cover] is the page's whole paper,
      * margins included; [region] is the part being painted. A page showing an imported PDF gets its
-     * template in the margins only, so the PDF itself is never drawn over.
+     * template in the margins only, so the PDF itself is never drawn over. [minLine] is the thinnest
+     * line in content px, so a thumbnail's ruling stays visible.
      */
-    fun paint(r: Renderer, doc: Document, page: Page, cover: Rect, region: Rect) {
+    fun paint(r: Renderer, doc: Document, page: Page, cover: Rect, region: Rect, minLine: Double = 0.0) {
         val key = page.resolvedTemplate(doc)
         val t = template(doc, key) ?: return
         val mm = doc.dpi / 25.4
@@ -499,7 +500,7 @@ object TemplateLibrary {
                 Rect(paper.x / mm, paper.y / mm, paper.w / mm, paper.h / mm),
                 ink, accent, values,
             )
-            TemplatePainter.paint(r, layouts.layout(t, tp), mm, region, picture = pictures(doc, key))
+            TemplatePainter.paint(r, layouts.layout(t, tp), mm, region, minLine, pictures(doc, key))
         }
     }
 }

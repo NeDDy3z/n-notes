@@ -2006,32 +2006,35 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * Text markups go into the PDF raster, under its colour filter; a page without a PDF draws them last.
      */
     private fun installPageBackground() {
-        state.paintPageBackground = { page, renderer, res, region ->
-            val src = pdfSource
-            val pi = page.pdfPage
-            val markups = page.markups
-            if (src != null && pi != null) {
-                // The raster covers the page's content box only; a margin is paper beside it.
-                val slice = clampToContent(region, page)
-                if (slice != null) {
-                    val rx = (slice.left * res).toInt()
-                    val ry = (slice.top * res).toInt()
-                    val rw = kotlin.math.ceil(slice.w * res).toInt()
-                    val rh = kotlin.math.ceil(slice.h * res).toInt()
-                    // A point is dpi/72 content px, not a fit to the paper: older imports stored whole
-                    // points, so their PDF runs past the paper by under a point, cropped as before.
-                    val pxPerPt = res * state.document.dpi / 72.0
-                    src.renderRegion(pi, pxPerPt, rx, ry, rw, rh, pdfPageFilter(), markups)?.let { bg ->
-                        renderer.drawRaster(bg, slice)
-                        bg.recycle()
-                    }
+        state.paintPageBackground = { page, renderer, res, region -> paintBackground(page, renderer, res, region) }
+    }
+
+    /** The open note's page background over [region] at [res]; [minLine] is the template's thinnest line in content px. */
+    private fun paintBackground(page: Page, renderer: Renderer, res: Double, region: Rect, minLine: Double = 0.0) {
+        val src = pdfSource
+        val pi = page.pdfPage
+        val markups = page.markups
+        if (src != null && pi != null) {
+            // The raster covers the page's content box only; a margin is paper beside it.
+            val slice = clampToContent(region, page)
+            if (slice != null) {
+                val rx = (slice.left * res).toInt()
+                val ry = (slice.top * res).toInt()
+                val rw = kotlin.math.ceil(slice.w * res).toInt()
+                val rh = kotlin.math.ceil(slice.h * res).toInt()
+                // A point is dpi/72 content px, not a fit to the paper: older imports stored whole
+                // points, so their PDF runs past the paper by under a point, cropped as before.
+                val pxPerPt = res * state.document.dpi / 72.0
+                src.renderRegion(pi, pxPerPt, rx, ry, rw, rh, pdfPageFilter(), markups)?.let { bg ->
+                    renderer.drawRaster(bg, slice)
+                    bg.recycle()
                 }
             }
-            // A template covers a blank note page whole; on an imported PDF page it rules the
-            // margins only, so the page itself is never drawn over.
-            TemplateLibrary.paint(renderer, state.document, page, state.footprint(page), region)
-            if (pi == null) MarkupPainter.paint(renderer, markups, state.document.dpi / 72.0)
         }
+        // A template covers a blank note page whole; on an imported PDF page it rules the
+        // margins only, so the page itself is never drawn over.
+        TemplateLibrary.paint(renderer, state.document, page, state.footprint(page), region, minLine)
+        if (pi == null) MarkupPainter.paint(renderer, markups, state.document.dpi / 72.0)
     }
 
     /** [region] cropped to [page]'s content box (its stored size), or null when it misses it. */
@@ -3303,8 +3306,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * Renders a page to a thumbnail bitmap (paper + PDF/template background + items). [active] is
      * polled before the costly steps (PDF background, each item) so a render abandoned mid-flight —
      * the side-panel row scrolled out of view — bails out instead of burning CPU the scroll needs.
+     * [lineFloor] is the template's thinnest line in output px.
      */
-    fun renderThumbnail(page: Page, widthPx: Int, active: () -> Boolean = { true }, withAudio: Boolean = true): android.graphics.Bitmap? {
+    fun renderThumbnail(page: Page, widthPx: Int, active: () -> Boolean = { true }, withAudio: Boolean = true, lineFloor: Double = 0.0): android.graphics.Bitmap? {
         val cover = state.footprint(page)
         val scale = widthPx / cover.w
         val w = widthPx.coerceAtLeast(1)
@@ -3317,7 +3321,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!active()) return null
         // Paints the PDF page too, not just the ruling.
         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
-            state.paintPageBackground?.invoke(page, r, scale, cover)
+            paintBackground(page, r, scale, cover, lineFloor / scale)
         }
         val items = itemsSnapshot(page).let { if (withAudio) it else it.withoutAudio() }
         val under = PageLayers.underText(items)
@@ -3378,7 +3382,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             cachedPageThumbnail(page)?.let { return@withContext it }
             // Render in page space sized so the rotated result lands at [widthPx] wide.
             val renderW = (state.outerW(page) * (widthPx / state.displayW(page))).roundToInt().coerceAtLeast(1)
-            val bmp = renderThumbnail(page, renderW, active = { isActive && isCurrentThumbnail(generation) })
+            val bmp = renderThumbnail(page, renderW, active = { isActive && isCurrentThumbnail(generation) }, lineFloor = 1.0)
                 ?.let { rotateForView(it) } ?: return@withContext null
             synchronized(pageThumbs) {
                 if (!isActive || !isCurrentThumbnail(generation) || version != contentVersion) {
@@ -3608,8 +3612,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val r = surface.renderer()
         r.scale(scale, scale)
         r.translate(-cover.left, -cover.top)
-        // Only a cover shows its design on a tile; ruled first pages stay as they always were.
-        if (page.cover) TemplateLibrary.paint(r, doc, page, cover, cover)
+        // A pixel per 300 px of tile, so the ruling survives the disk cache's half-size decode.
+        TemplateLibrary.paint(r, doc, page, cover, cover, maxOf(1.0, maxOf(w, h) / 300.0) / scale)
         doc.pdfFile?.let { file ->
             runCatching {
                 com.xnotes.platform.PdfSource.create(file)?.let { src ->
