@@ -56,6 +56,7 @@ import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.PageTemplates
+import com.xnotes.core.model.TemplateMemory
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextMarkup
@@ -2923,9 +2924,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The document-wide style override; per-page styles layer on top (see [PageStyle]). */
     val documentStyle: PageStyle get() = state.document.style
 
+    /** The page in view, or null when there is none. */
+    val currentPage: Page? get() = state.document.pages.getOrNull(state.currentPageIndex())
+
     /** The current page's own style override (an empty [PageStyle] when there is no page). */
     val currentPageStyle: PageStyle
-        get() = state.document.pages.getOrNull(state.currentPageIndex())?.style ?: PageStyle()
+        get() = currentPage?.style ?: PageStyle()
 
     /** The saved All Pages style stamped onto newly created notes (empty ⇒ app built-ins). */
     var newNoteStyle by mutableStateOf(settings.newNoteStyle)
@@ -2993,18 +2997,40 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return doc
     }
 
-    /** Replace the document-wide ("All Pages") style override. */
-    fun setDocumentStyle(style: PageStyle) {
+    /** Replace the document-wide ("All Pages") style override, and with it the own styles in [pages]. */
+    fun setDocumentStyle(style: PageStyle, pages: Map<Page, PageStyle> = emptyMap()) {
         val prev = state.document.style
-        if (prev == style) return
+        if (prev == style && pages.isEmpty()) return
         TemplateLibrary.embed(state.document, style.template, imageDir)
         state.document.style = style
+        for ((page, own) in pages) {
+            page.style = own
+            state.invalidateBackground(page)
+        }
         applyStyleChange(prev, style, state.document.pages.toList())
+    }
+
+    /** Set the All Pages template to [key]; [memory] keeps what the note and the pages following it had for the one left. */
+    fun setDocumentTemplate(key: String, memory: TemplateMemory) {
+        val change = memory.pickForNote(state.document, key)
+        setDocumentStyle(change.style, change.pages)
+    }
+
+    /** All Pages back to Default: [memory] forgets everything, and the pages following the note lose their settings. */
+    fun resetDocumentStyle(memory: TemplateMemory) {
+        val change = memory.resetNote(state.document)
+        setDocumentStyle(change.style, change.pages)
+    }
+
+    /** Set the current page's template to [key] (null follows All Pages); [memory] keeps what it had for the one left. */
+    fun setCurrentPageTemplate(key: String?, memory: TemplateMemory) {
+        val page = currentPage ?: return
+        setCurrentPageStyle(memory.pickForPage(state.document, page, key))
     }
 
     /** Replace the current page's style override. */
     fun setCurrentPageStyle(style: PageStyle) {
-        val page = state.document.pages.getOrNull(state.currentPageIndex()) ?: return
+        val page = currentPage ?: return
         val prev = page.style
         if (prev == style) return
         TemplateLibrary.embed(state.document, style.template, imageDir)

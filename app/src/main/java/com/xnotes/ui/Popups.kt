@@ -61,6 +61,8 @@ import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageStyle
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.model.TemplateMemory
+import com.xnotes.core.model.TemplateSettings
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.MarkupMode
@@ -202,11 +204,14 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
  * Page", each editing the paper colour and the template. Controls are tri-state: "Default"
  * leaves the field unset so it inherits the level below (page, document, then the global
  * page-colour preference or a built-in default). The All Pages template has no "Default", since
- * nothing sits below it but None. Customize opens the shown template on a page of its
- * own, with its colours and parameters. Like [ToolConfigPopup], the popup holds the edited style
- * locally and pushes each change to the [Editor] (which persists, but never undoes). The All Pages
- * tab also offers making its style the default stamped onto new notes, plus a Reset back to
- * all-Default. Below both tabs sits the note's new page size, which neither tab nor Reset touches.
+ * nothing sits below it but None. Customize opens the shown template on a page of its own, with
+ * its colours and parameters, which belong to that template alone; while the popup is open each
+ * level keeps them for every template it showed ([TemplateMemory]), so trying another loses
+ * nothing. Like [ToolConfigPopup], the popup holds the edited style locally and pushes each
+ * change to the [Editor] (which persists, but never undoes). The All Pages tab also offers making
+ * its style the default stamped onto new notes, plus a Reset back to all-Default, which forgets
+ * that memory too. Below both tabs sits the note's new page size, which neither tab nor Reset
+ * touches.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -220,11 +225,21 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
     // default, and stays for the rest of the popup session (so it doesn't vanish when checked).
     // An all-Default style hides it regardless (e.g. after Reset): there is nothing to save.
     var showNewNoteRow by remember { mutableStateOf(editor.documentStyle != editor.newNoteStyle) }
+    // What each level had for the templates it showed during this visit.
+    val memory = remember { TemplateMemory() }
+    // Both levels are read back: a template picked for All Pages also changes the pages following it.
+    fun synced() {
+        docStyle = editor.documentStyle
+        pageStyle = editor.currentPageStyle
+        if (docStyle != editor.newNoteStyle) showNewNoteRow = true
+    }
     fun apply(next: PageStyle) {
-        if (tab == 0) {
-            docStyle = next; editor.setDocumentStyle(next)
-            if (next != editor.newNoteStyle) showNewNoteRow = true
-        } else { pageStyle = next; editor.setCurrentPageStyle(next) }
+        if (tab == 0) editor.setDocumentStyle(next) else editor.setCurrentPageStyle(next)
+        synced()
+    }
+    fun pick(key: String?) {
+        if (tab == 0) editor.setDocumentTemplate(key ?: PageTemplates.NONE, memory) else editor.setCurrentPageTemplate(key, memory)
+        synced()
     }
 
     // What this level shows with no template of its own: the document's, on the page tab.
@@ -262,9 +277,9 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 // With nothing below All Pages, an unset template there already means None.
-                if (tab == 1) ModeChip(stringResource(R.string.default_choice), style.template == null) { apply(style.withTemplate(null, inherited)) }
+                if (tab == 1) ModeChip(stringResource(R.string.default_choice), style.template == null) { pick(null) }
                 val none = style.template == PageTemplates.NONE || (tab == 0 && style.template == null)
-                ModeChip(stringResource(R.string.none), none) { apply(style.withTemplate(PageTemplates.NONE, inherited)) }
+                ModeChip(stringResource(R.string.none), none) { pick(PageTemplates.NONE) }
             }
             Spacer(Modifier.size(6.dp))
             val libraryVersion = TemplateLibraryUi.version
@@ -280,7 +295,7 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                 ink = look.ink,
                 accent = look.accent,
                 paper = look.paper,
-                onSelect = { apply(style.withTemplate(it, inherited)) },
+                onSelect = { pick(it) },
                 onImport = onImportTemplate,
                 onRemove = { editor.removeTemplate(it) },
                 onKeep = { editor.keepNoteTemplate(it) },
@@ -321,7 +336,10 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                     Spacer(Modifier.size(4.dp))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    ModeChip(stringResource(R.string.reset), false) { apply(PageStyle()) }
+                    ModeChip(stringResource(R.string.reset), false) {
+                        editor.resetDocumentStyle(memory)
+                        synced()
+                    }
                 }
             }
 
@@ -486,7 +504,7 @@ private fun TemplateCustomizer(
         Spacer(Modifier.size(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             ModeChip(stringResource(R.string.reset), false) {
-                apply(style.copy(patternColor = null, accentColor = null, spacing = null, params = null, colors = null))
+                apply(style.withSettings(TemplateSettings()))
             }
         }
     }
