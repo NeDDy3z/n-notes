@@ -227,7 +227,7 @@ private const val INK_TAP_DP = 8.0
 /** Room kept round ink the view follows to. */
 private const val FOLLOW_MARGIN_DP = 64.0
 
-/** Past this many on one page, ink the playhead crossed repaints the page rather than each spot. */
+/** Past this many on one page, ink the playhead crossed rebuilds off-thread rather than repainting inline. */
 private const val MANY_CROSSED = 64
 
 /** A markdown file bigger than this is not notes; the import refuses it rather than lay out a book. */
@@ -1753,9 +1753,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.fade = next
         if (prev == null && next == null) return
         if (prev == null || next == null || prev.rid != next.rid) {
-            // The fade came, went or moved to another recording: every page holding that ink paints again.
-            val rids = setOfNotNull(prev?.rid, next?.rid)
-            for (page in state.document.pages) if (page.items.any { it.sync?.rid in rids }) state.invalidatePage(page)
+            // The fade came, went or moved to another recording: the ink it faded or fades now paints
+            // again, rebuilt behind the pages still showing, so nothing blinks.
+            val regions = HashMap<Page, Rect>()
+            for (page in state.document.pages) for (item in page.items) {
+                if (prev?.fades(item) != true && next?.fades(item) != true) continue
+                val b = item.paintBounds()
+                regions[page] = regions[page]?.union(b) ?: b
+            }
+            state.refreshInkRegions(regions)
             view.requestRender()
             return
         }
@@ -1763,14 +1769,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // Only what the playhead passed changes, either way: repaint just where it lies.
         val crossed = syncIndexFor(next.rid).between(minOf(from, to), maxOf(from, to))
         if (crossed.isEmpty()) return
+        val wide = HashMap<Page, Rect>()
         for ((page, entries) in crossed.groupBy { it.place }) {
-            if (entries.size > MANY_CROSSED) {
-                state.invalidatePage(page)
-                continue
-            }
             val region = entries.map { it.item.paintBounds() }.reduce { a, b -> a.union(b) }
-            if (!state.repairRegion(page, region)) state.invalidatePage(page)
+            if (entries.size > MANY_CROSSED) wide[page] = region
+            else if (!state.repairRegion(page, region)) state.invalidatePage(page)
         }
+        state.refreshInkRegions(wide)
         if (to > from && AudioPlayback.follow && AudioPlayback.session?.playing == true) crossed.last().let { followInk(it.place, it.item) }
         view.requestRender()
     }

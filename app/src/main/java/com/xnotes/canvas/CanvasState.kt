@@ -478,6 +478,9 @@ class CanvasState(
     private val pendingInk = HashSet<Page>()
     private val pendingBg = HashSet<Page>()
 
+    /** Where [repairRegion] repainted a page while its build was in flight, to paint again on what the build brings. */
+    private val repairedMeanwhile = HashMap<Page, Rect>()
+
     /**
      * Pages whose cached ink is known to be out of date and is being rebuilt off-thread (see
      * [refreshAllInk]). The surface stays in [caches] and keeps being blitted meanwhile, so the page
@@ -1153,9 +1156,12 @@ class CanvasState(
             val entry = renderInk(page, res, items, withFlow)
             postToMain {
                 pendingInk.remove(page)
+                val meanwhile = repairedMeanwhile.remove(page)
                 if (gen == cacheGen) {
                     caches[page] = entry
                     staleInk.remove(page)
+                    // The build painted from what it read then; a repair since, as a playhead crossing ink, would be lost.
+                    meanwhile?.let { repaintCached(entry, page, it) }
                 }
                 // Repaint either way. A build the page outgrew mid-flight (a margin drag bumps the
                 // generation on every tick) is discarded here, and the draw loop is what schedules
@@ -1433,16 +1439,22 @@ class CanvasState(
         repairSharpInk(page, dirtyRect) // erase from the sharp ink layer in place, no re-render
         if (pendingSharp) pendingSharpEdits.add(page to dirtyRect)
         val entry = caches[page] ?: return false
+        repaintCached(entry, page, dirtyRect)
+        if (page in pendingInk) repairedMeanwhile[page] = repairedMeanwhile[page]?.union(dirtyRect) ?: dirtyRect
+        return true
+    }
+
+    /** Clear [rect] (page-local) of [entry]'s ink and paint [page]'s items there again. */
+    private fun repaintCached(entry: CacheEntry, page: Page, rect: Rect) {
         val cover = entry.cover
         val r = entry.surface.renderer()
         r.save()
         r.scale(entry.res, entry.res)
         r.translate(-cover.left, -cover.top)
-        r.clipRect(dirtyRect)
+        r.clipRect(rect)
         r.clear()
-        paintInk(page, r, dirtyRect)
+        paintInk(page, r, rect)
         r.restore()
-        return true
     }
 
     /** Repaint [page]'s cached ink where it meets [region]: the fills under its typed text, the text, then the rest. */
@@ -1585,6 +1597,24 @@ class CanvasState(
         cacheGen++
         sharpGen++
         for (page in pages) {
+            if (page !in caches) continue
+            staleInk.add(page)
+            scheduleInk(page, clampedRes(page))
+        }
+    }
+
+    /**
+     * [refreshInk] for a change spread over [regions] (page-local) too wide to repaint inline, as
+     * playback's fade coming or going: the sharp viewport is patched there in place, not dropped,
+     * so a deep zoom stays crisp while the pages rebuild.
+     */
+    fun refreshInkRegions(regions: Map<Page, Rect>) {
+        if (regions.isEmpty()) return
+        cacheGen++
+        for ((page, rect) in regions) {
+            val padded = rect.outset(SHARP_EDIT_PAD)
+            repairSharpInk(page, padded)
+            if (pendingSharp) pendingSharpEdits.add(page to padded)
             if (page !in caches) continue
             staleInk.add(page)
             scheduleInk(page, clampedRes(page))
