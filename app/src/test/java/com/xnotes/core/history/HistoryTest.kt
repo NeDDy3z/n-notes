@@ -3,6 +3,7 @@ package com.xnotes.core.history
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.ImageItem
@@ -125,6 +126,43 @@ class HistoryTest {
         assertEquals(2, doc.pages.size)
         del.undo()
         assertSame(newPage, doc.pages[1])
+    }
+
+    @Test fun movedPagesLandTogetherInTheirOrder() {
+        val pages = listOf("a", "b", "c", "d", "e")
+        assertEquals(listOf("a", "c", "e", "b", "d"), MovePages.order(pages, setOf("b", "d"), 5))
+        assertEquals(listOf("b", "d", "a", "c", "e"), MovePages.order(pages, setOf("d", "b"), 0))
+        assertEquals(listOf("a", "b", "d", "c", "e"), MovePages.order(pages, setOf("b", "d"), 2))
+        assertEquals(pages, MovePages.order(pages, setOf("c"), 3)) // dropped right after itself
+        assertEquals(listOf("c", "a", "b", "d", "e"), MovePages.order(pages, setOf("c"), -4))
+    }
+
+    @Test fun movePagesUndoesAndCarriesBookmarks() {
+        val doc = Document.blank(count = 4)
+        val (p0, p1, p2, p3) = doc.pages.toList()
+        doc.bookmarks.add(Bookmark(1, "one"))
+        doc.bookmarks.add(Bookmark(3, "three"))
+        val before = doc.pages.toList()
+        val cmd = MovePages(doc, before, MovePages.order(before, listOf(p1), 4))
+        cmd.redo()
+        assertEquals(listOf(p0, p2, p3, p1), doc.pages)
+        assertEquals(listOf(3, 2), doc.bookmarks.map { it.page })
+        cmd.redo() // idempotent
+        assertEquals(listOf(p0, p2, p3, p1), doc.pages)
+        cmd.undo()
+        assertEquals(before, doc.pages)
+        assertEquals(listOf(1, 3), doc.bookmarks.map { it.page })
+    }
+
+    @Test fun movePagesKeepsAPageItNeverKnew() {
+        val doc = Document.blank(count = 3)
+        val before = doc.pages.toList()
+        val cmd = MovePages(doc, before, before.reversed())
+        cmd.redo()
+        val stray = Page(100.0, 100.0)
+        doc.pages.add(1, stray)
+        cmd.undo()
+        assertEquals(before + stray, doc.pages)
     }
 
     @Test fun historyStackSemantics() {

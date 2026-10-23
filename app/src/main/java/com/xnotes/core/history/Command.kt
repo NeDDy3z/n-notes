@@ -394,6 +394,44 @@ class DeletePage(
     }
 }
 
+/**
+ * Put the pages in a new order: [before] and [after] hold the same pages. Built before it is
+ * applied, so it can note which page each bookmark points at and carry the bookmark along.
+ */
+class MovePages(
+    private val document: Document,
+    private val before: List<Page>,
+    private val after: List<Page>,
+) : Command {
+    private val marks = document.bookmarks.mapNotNull { mark -> before.getOrNull(mark.page)?.let { mark to it } }
+
+    override fun redo() = arrange(after)
+
+    override fun undo() = arrange(before)
+
+    private fun arrange(order: List<Page>) {
+        val pages = document.pages
+        // Pages never override equals, so these sets compare by reference. A page this move never
+        // knew stays in the note, after the rest.
+        val present = HashSet(pages)
+        val known = HashSet(order)
+        val next = order.filter { it in present } + pages.filter { it !in known }
+        pages.clear()
+        pages.addAll(next)
+        for ((mark, page) in marks) next.indexOf(page).takeIf { it >= 0 }?.let { mark.page = it }
+    }
+
+    companion object {
+        /** [pages] with [moving] taken out, kept in their order, and put back together before the page at [gap], an index into [pages]. */
+        fun <T> order(pages: List<T>, moving: Collection<T>, gap: Int): List<T> {
+            val carried = HashSet(moving)
+            val stay = pages.filter { it !in carried }
+            val at = pages.subList(0, gap.coerceIn(0, pages.size)).count { it !in carried }
+            return stay.subList(0, at) + pages.filter { it in carried } + stay.subList(at, stay.size)
+        }
+    }
+}
+
 // --- touched-region helpers ---
 
 /**

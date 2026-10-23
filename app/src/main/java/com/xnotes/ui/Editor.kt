@@ -36,6 +36,7 @@ import com.xnotes.core.history.DeletePage
 import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
 import com.xnotes.core.history.InsertItem
+import com.xnotes.core.history.MovePages
 import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.RestyleItems
 import com.xnotes.core.history.RestyleText
@@ -6132,7 +6133,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         command.redo()
         history.push(command)
-        afterHistory(structural = false, regions = touchedRegions(command))
+        afterHistory(state.document.pages, null, regions = touchedRegions(command))
     }
 
     fun setShapeKind(kind: com.xnotes.core.shapes.ShapeKind) {
@@ -6166,28 +6167,24 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowText.flushBurst() // the open typing burst is the first thing Ctrl+Z takes back
         if (controller.isEditingLabel) controller.commitTextEdit() // and so is a label being typed
         val command = history.nextUndo
-        val pagesBefore = state.document.pages.size
+        val pagesBefore = state.document.pages.toList()
+        val viewed = viewedPage()
         val was = touchedRegions(command)
         history.undo()
         bakeMarkups(command)
-        afterHistory(
-            structural = state.document.pages.size != pagesBefore,
-            regions = spanning(was, touchedRegions(command)),
-        )
+        afterHistory(pagesBefore, viewed, regions = spanning(was, touchedRegions(command)))
     }
 
     fun redo() {
         flowText.flushBurst()
         if (controller.isEditingLabel) controller.commitTextEdit()
         val command = history.nextRedo
-        val pagesBefore = state.document.pages.size
+        val pagesBefore = state.document.pages.toList()
+        val viewed = viewedPage()
         val was = touchedRegions(command)
         history.redo()
         bakeMarkups(command)
-        afterHistory(
-            structural = state.document.pages.size != pagesBefore,
-            regions = spanning(was, touchedRegions(command)),
-        )
+        afterHistory(pagesBefore, viewed, regions = spanning(was, touchedRegions(command)))
     }
 
     /** Applies a markup edit (built, not yet applied) as one undo step. */
@@ -6240,15 +6237,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    private fun afterHistory(structural: Boolean, regions: List<Pair<Page, Rect>>?) {
+    private fun afterHistory(pagesBefore: List<Page>, viewed: Pair<Page, Rect>?, regions: List<Pair<Page, Rect>>?) {
         controller.clearSelection()
-        if (structural) state.relayout() // page add/remove shifts layout; page-keyed caches survive
+        val pages = state.document.pages
+        if (pages != pagesBefore) {
+            state.relayout() // page add/remove/move shifts layout; page-keyed caches survive
+            // Only the order changed: the page in view stays put, and bookmarks moved with their pages.
+            if (pages.size == pagesBefore.size) {
+                viewed?.let { (page, was) -> state.keepPageInPlace(page, was) }
+                bookmarkVersion++
+            }
+        }
         // The in-place repaint below reads the published flow snapshot: republish it first
         // so an undone/redone flow edit repaints at its post-history layout.
         republishFlowIfStale()
         // Repair the ink caches rather than dropping them — dropping blanked every visible page to
-        // bare paper for a frame (the undo/redo flicker). Only AddPage/DeletePage change the page
-        // set, so relayout (which re-renders the sharp viewport) is gated on that. A command that
+        // bare paper for a frame (the undo/redo flicker). Only the page commands change the page
+        // list, so relayout (which re-renders the sharp viewport) is gated on that. A command that
         // named its regions repairs just those, here and now; one that couldn't hands every cached
         // page to the cache thread instead, because repainting them all inline is a stall long
         // enough to time out input on a dense note.
@@ -6556,6 +6561,36 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         afterPageEdit()
     }
 
+    /**
+     * Move [moving] together, in their order, to just before the page at [gap] (an index into the
+     * pages as they stand), as one undoable step. The cover stays first. True when the order changed.
+     */
+    fun movePages(moving: List<Page>, gap: Int): Boolean {
+        val pages = state.document.pages
+        val cover = pages.firstOrNull()?.takeIf { it.cover }
+        val carried = moving.filter { p -> p !== cover && pages.any { it === p } }
+        if (carried.isEmpty()) return false
+        val before = pages.toList()
+        val after = MovePages.order(before, carried, gap.coerceIn(if (cover != null) 1 else 0, before.size))
+        if (after == before) return false
+        val viewed = viewedPage()
+        val cmd = MovePages(state.document, before, after)
+        cmd.redo()
+        history.push(cmd)
+        state.relayout()
+        viewed?.let { (page, was) -> state.keepPageInPlace(page, was) }
+        bookmarkVersion++
+        afterPageEdit()
+        return true
+    }
+
+    /** The page in view and where it lies, so a reorder can keep it there. */
+    private fun viewedPage(): Pair<Page, Rect>? {
+        val i = state.currentPageIndex()
+        val page = state.document.pages.getOrNull(i) ?: return null
+        return state.pageRects.getOrNull(i)?.let { page to it }
+    }
+
     // --- side-panel page selection (multi-select) ---
 
     val canPastePages: Boolean get() = pageClipboard.isNotEmpty()
@@ -6564,12 +6599,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun isPageSelected(index: Int): Boolean {
         val p = pageAt(index) ?: return false
-        return selectedPages.any { it === p }
+        return isPageSelected(p)
     }
+
+    fun isPageSelected(page: Page): Boolean = selectedPages.any { it === page }
 
     /** Selected page indices in document order. */
     fun selectedPageIndices(): List<Int> =
         state.document.pages.mapIndexedNotNull { i, p -> if (selectedPages.any { it === p }) i else null }
+
+    /** The selected pages in document order. */
+    fun selectedPagesInOrder(): List<Page> = state.document.pages.filter { p -> selectedPages.any { it === p } }
 
     /** Toggle a page's membership in the selection (entering selection mode on the first add). */
     fun togglePageSelection(index: Int) {

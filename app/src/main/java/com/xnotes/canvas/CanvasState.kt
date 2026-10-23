@@ -892,6 +892,16 @@ class CanvasState(
         clampScroll()
     }
 
+    /** After a relayout, scroll by as much as [page] moved from [was], so it stays where it showed. */
+    fun keepPageInPlace(page: Page, was: Rect) {
+        val i = document.pages.indexOfFirst { it === page }
+        val now = pageRects.getOrNull(i) ?: return
+        scrollX += (now.left - was.left) * zoom
+        scrollY += (now.top - was.top) * zoom
+        if (!verticalScroll) currentRow = rowIndexOf(i)
+        clampScroll()
+    }
+
     /** End a paginated turn on [row], at the height the slide showed it at. */
     fun landFlip(row: Int) {
         val rows = rowRanges()
