@@ -29,7 +29,8 @@ class InsertRow(val icon: ImageVector, val label: String, val more: Boolean = fa
 /**
  * The Insert button, the same on both bars: one menu, pictures in one group and sound in the other.
  * [imageRows] are the bar's own picture rows, since a note offers more of them than a canvas does;
- * [popups] are menus those rows open, anchored to the button like the menu itself.
+ * [popups] are menus those rows open, anchored to the button like the menu itself. While this pane
+ * records, or a recording's player is open in it, that chip sits beside the button, which stays.
  */
 @Composable
 internal fun InsertButton(
@@ -39,10 +40,8 @@ internal fun InsertButton(
     onRecord: () -> Unit,
     popups: @Composable () -> Unit = {},
 ) {
-    // While this pane records, or a recording's player is open in it, the slot is that chip.
-    AudioRecording.session?.takeIf { it.owner === owner }?.let { RecordingChip(it); return }
-    AudioPlayback.session?.takeIf { it.owner === owner }?.let { PlaybackChip(it); return }
     var expanded by remember { mutableStateOf(false) }
+    val recording = AudioRecording.session
     Box {
         ToolbarIcon(XnotesIcons.paperclip, stringResource(R.string.insert), active = expanded) { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -50,17 +49,25 @@ internal fun InsertButton(
             for (row in imageRows) InsertMenuRow(row.icon, row.label, row.more) { expanded = false; row.onPick() }
             HorizontalDivider(Modifier.padding(vertical = 6.dp), color = LocalPalette.current.border.toComposeColor())
             InsertGroup(stringResource(R.string.insert_group_audio))
-            // One recording at a time, so while the other pane records this one says so.
-            val elsewhere = AudioRecording.session != null
+            // One recording at a time, so while one runs, here or in the other pane, this says where.
             InsertMenuRow(
                 XnotesIcons.mic,
                 stringResource(R.string.record_audio),
-                enabled = !elsewhere,
-                supporting = if (elsewhere) stringResource(R.string.recording_other_pane) else null,
+                enabled = recording == null,
+                supporting = when {
+                    recording == null -> null
+                    recording.owner === owner -> stringResource(R.string.recording_in_progress)
+                    else -> stringResource(R.string.recording_other_pane)
+                },
             ) { expanded = false; onRecord() }
             InsertMenuRow(XnotesIcons.music, stringResource(R.string.audio_from_file)) { expanded = false; onAudioFromFile() }
         }
         popups()
+    }
+    val playback = AudioPlayback.session
+    when {
+        recording != null && recording.owner === owner -> RecordingChip(recording)
+        playback != null && playback.owner === owner -> PlaybackChip(playback)
     }
 }
 

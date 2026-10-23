@@ -339,6 +339,7 @@
     <string name="recording_discard">Discard</string>
     <string name="recording_discarded">Recording discarded</string>
     <string name="recording_other_pane">The other pane is recording</string>
+    <string name="recording_in_progress">A recording is in progress</string>
     <string name="recording_channel">Recordings</string>
     <string name="recording_chip">Recording, %1$s</string>
     <string name="err_mic_needed">Recording needs the microphone.</string>

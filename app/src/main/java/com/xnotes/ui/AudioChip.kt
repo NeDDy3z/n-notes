@@ -76,8 +76,8 @@ internal fun PlayGlyph(playing: Boolean, color: Color, size: Dp) {
 }
 
 /**
- * The Insert slot while a recording's player is open in this pane: where playback stands, and a
- * tap opens the player. Down a side rail the time stacks, minutes over seconds.
+ * Beside Insert while a recording's player is open in this pane: where playback stands, and a tap
+ * opens the player. Down a side rail the time stacks, minutes over seconds.
  */
 @Composable
 internal fun PlaybackChip(session: AudioPlayback.Session) {
@@ -87,7 +87,7 @@ internal fun PlaybackChip(session: AudioPlayback.Session) {
     val time = AudioTime.format(session.position, session.duration >= 3_600_000)
     val fg = palette.selectionForeground.toComposeColor()
     val label = stringResource(R.string.audio_chip, time)
-    Box(Modifier.padding(horizontal = 4.dp)) {
+    Box(Modifier.chipAir(bar.vertical)) {
         val shape = RoundedCornerShape(bar.circle / 2)
         val base = Modifier
             .clip(shape)
@@ -118,7 +118,7 @@ internal fun PlaybackChip(session: AudioPlayback.Session) {
 }
 
 /**
- * The Insert slot while this pane records: a red chip with the recorded time and a beating dot,
+ * Beside Insert while this pane records: a red chip with the recorded time and a beating dot,
  * calmer when paused. A tap opens Pause or Resume, Stop and place, and Discard. Down a side rail
  * the time stacks, as the player's does.
  */
@@ -142,7 +142,7 @@ internal fun RecordingChip(session: AudioRecording.Session) {
         ),
         label = "dot",
     )
-    Box(Modifier.padding(horizontal = 4.dp)) {
+    Box(Modifier.chipAir(bar.vertical)) {
         val base = Modifier
             .clip(shape)
             .then(
@@ -206,6 +206,12 @@ internal fun RecordingChip(session: AudioRecording.Session) {
         }
     }
 }
+
+/** Air along the bar, so a chip sits as far from its neighbours as two buttons sit apart. */
+private fun Modifier.chipAir(vertical: Boolean) = padding(
+    horizontal = if (vertical) 0.dp else 4.dp,
+    vertical = if (vertical) 4.dp else 0.dp,
+)
 
 /** The recording dot's red, the colour every recorder uses for it, whatever the theme. */
 private val REC_RED = Color(0xFFFF5449)
