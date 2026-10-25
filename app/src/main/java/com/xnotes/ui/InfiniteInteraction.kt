@@ -297,14 +297,25 @@ class InfiniteInteraction(
     private var pinchInitZoom = 1.0
     private var pinchAnchorContent = Pt.ZERO
 
+    // The view as this touch went down, put back if Android takes the touch back (see takeBackTouch).
+    private var downScroll = Pt.ZERO
+    private var downZoom = 1.0
+
+    // Android took back a finger of this touch, so the rest of it is ignored.
+    private var touchTakenBack = false
+
     fun onTouch(e: MotionEvent): Boolean {
+        if (touchTakenBack && e.actionMasked != MotionEvent.ACTION_DOWN) return true
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                touchTakenBack = false
                 tapCandidate = true
                 tapDownAt = Pt(e.x.toDouble(), e.y.toDouble())
                 tapDownTime = e.eventTime
                 tapDownSelected = selection()?.items?.toHashSet() ?: emptySet()
                 handleDown(e)
+                downScroll = Pt(viewport.scrollX, viewport.scrollY)
+                downZoom = viewport.zoom
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 tapCandidate = false
@@ -314,17 +325,37 @@ class InfiniteInteraction(
                 if (tapCandidate && Pt(e.x.toDouble(), e.y.toDouble()).distanceTo(tapDownAt) > TAP_SLOP_PX) tapCandidate = false
                 handleMove(e)
             }
-            MotionEvent.ACTION_POINTER_UP -> handlePointerUp(e)
+            MotionEvent.ACTION_POINTER_UP ->
+                if (movingView() && InteractionController.isCancelledLift(e)) {
+                    touchTakenBack = true
+                    takeBackTouch()
+                } else {
+                    handlePointerUp(e)
+                }
             MotionEvent.ACTION_UP -> {
                 handleUp(e)
                 tapUp(e)
             }
-            MotionEvent.ACTION_CANCEL -> {
-                tapCandidate = false
-                abortGesture()
-            }
+            MotionEvent.ACTION_CANCEL -> takeBackTouch()
         }
         return true
+    }
+
+    private fun movingView(): Boolean = mode == CanvasPointerMode.PAN || mode == CanvasPointerMode.PINCH
+
+    /** Android took this touch back, as its palm rejection does with a resting hand: drop the
+     *  gesture, and put back a view it scrolled or zoomed, as the paged canvas does. */
+    private fun takeBackTouch() {
+        tapCandidate = false
+        val movedView = movingView()
+        abortGesture()
+        if (movedView) {
+            viewport.zoom = downZoom
+            viewport.scrollX = downScroll.x
+            viewport.scrollY = downScroll.y
+            onViewChanged()
+            requestRender()
+        }
     }
 
     // Taps, for the double tap that types a shape's label.

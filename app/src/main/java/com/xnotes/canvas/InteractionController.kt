@@ -1,5 +1,6 @@
 package com.xnotes.canvas
 
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
@@ -289,6 +290,8 @@ class InteractionController(
     private var panFromPenButton = false // a side-button pan parks where the pen lifted: no glide
     private var downStoppedFling = false // this touch landed on a moving glide, so its lift isn't a dismiss tap
     private var panMayCommitText = false // pan begun off an open text box: a tap commits it, a drag scrolls
+    private var downView: CanvasState.ViewSnapshot? = null // the view as this touch went down, put back if Android takes the touch back
+    private var touchTakenBack = false // Android took back a finger of this touch, so the rest of it is ignored
     // Framework singletons, created lazily on first use (always a gesture on the main thread) so
     // the controller's selection/edit logic stays constructible — and unit-testable — off-device.
     private val choreographer by lazy { Choreographer.getInstance() }
@@ -596,10 +599,13 @@ class InteractionController(
     // --- touch entry point ---
 
     fun onTouch(e: MotionEvent): Boolean {
+        if (touchTakenBack && e.actionMasked != MotionEvent.ACTION_DOWN) return true
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                touchTakenBack = false
                 tapDown(e)
                 handleDown(e)
+                downView = state.snapshotView()
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 tapCandidate = false
@@ -609,18 +615,32 @@ class InteractionController(
                 if (tapCandidate && Pt(e.x.toDouble(), e.y.toDouble()).distanceTo(tapDownViewport) > TAP_SLOP) tapCandidate = false
                 handleMove(e)
             }
-            MotionEvent.ACTION_POINTER_UP -> handlePointerUp(e)
+            MotionEvent.ACTION_POINTER_UP ->
+                if (movingView() && isCancelledLift(e)) {
+                    touchTakenBack = true
+                    takeBackTouch()
+                } else {
+                    handlePointerUp(e)
+                }
             MotionEvent.ACTION_UP -> {
                 handleUp(e)
                 tapUp(e)
             }
-            MotionEvent.ACTION_CANCEL -> {
-                tapCandidate = false
-                abortGesture()
-                requestRender()
-            }
+            MotionEvent.ACTION_CANCEL -> takeBackTouch()
         }
         return true
+    }
+
+    private fun movingView(): Boolean = mode == PointerMode.PAN || mode == PointerMode.PINCH
+
+    /** Android took this touch back, as its palm rejection does with a resting hand: drop the
+     *  gesture, and put back a view it scrolled or zoomed, since the hand never meant to. */
+    private fun takeBackTouch() {
+        tapCandidate = false
+        val movedView = movingView()
+        abortGesture()
+        if (movedView) downView?.let { state.restoreView(it); onViewChanged() }
+        requestRender()
     }
 
     fun onHover(e: MotionEvent): Boolean {
@@ -4634,6 +4654,12 @@ class InteractionController(
         val STYLUS_BUTTON_MASK =
             MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY or
                 MotionEvent.BUTTON_SECONDARY or MotionEvent.BUTTON_TERTIARY
+
+        /** A finger lifting that Android judged accidental, a resting palm say (FLAG_CANCELED, Android 13 on). */
+        fun isCancelledLift(e: MotionEvent): Boolean = isCancelledLift(e.flags, Build.VERSION.SDK_INT)
+
+        internal fun isCancelledLift(flags: Int, sdk: Int): Boolean =
+            sdk >= Build.VERSION_CODES.TIRAMISU && (flags and MotionEvent.FLAG_CANCELED) != 0
 
         /** Magic wand: idle time (ms) after the last stroke before the held batch fades. */
         const val WAND_HOLD_MS = 1000L
