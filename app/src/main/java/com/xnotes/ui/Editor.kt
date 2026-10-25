@@ -19,6 +19,7 @@ import com.xnotes.canvas.EditingField
 import com.xnotes.canvas.FlowTextController
 import com.xnotes.canvas.InitialView
 import com.xnotes.canvas.InteractionController
+import com.xnotes.canvas.StylusButtonLatch
 import com.xnotes.canvas.TextBar
 import com.xnotes.core.fill.ColorDrop
 import com.xnotes.core.fill.DropAction
@@ -8865,8 +8866,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /** Feeder C entry point: route stylus side-button key presses (Bluetooth/USI pens) to the
-     *  controller's held latch, and the vendor double-tap/click keycodes to their gesture handlers.
-     *  Returns true when consumed, so the host swallows the key. */
+     *  controller's held latch, and the vendor double-tap/click keycodes to their gesture handlers;
+     *  a held key that can also be clicked goes to both. Returns true when consumed, so the host
+     *  swallows the key. */
     fun onStylusButtonKey(e: android.view.KeyEvent): Boolean {
         if (e.keyCode == penDoubleTapKeycode) return onPenDoubleTapKey(e)
         if (e.keyCode in penButtonTapKeycodes) return onPenButtonTapKey(e)
@@ -8877,8 +8879,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         // A canvas is on top: the same key stream drives its pen, so a Bluetooth or USI side
         // button behaves there exactly as it does on a note.
-        if (canvasOpen) return infinite.onStylusButtonKey(e.keyCode, down)
-        return controller.onStylusButtonKey(e.keyCode, down)
+        val held = if (canvasOpen) infinite.onStylusButtonKey(e.keyCode, down) else controller.onStylusButtonKey(e.keyCode, down)
+        if (held && e.keyCode in penButtonClickKeycodes) onPenButtonClick(e)
+        return held
     }
 
     // Pens with no side button (e.g. Huawei M-Pencil) report a barrel double-tap as a vendor key
@@ -8925,6 +8928,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 if (penTapDownCode == e.keyCode) penTapDownCode = 0 else dispatchTapGesture(action)
         }
         return true
+    }
+
+    // Held side buttons whose hardware also reports a quick click, so the user gets both (see
+    // ButtonClick): a click runs the side button's tap action. OnePlus Pad Go 2 Stylo -> F21.
+    private val penButtonClickKeycodes = setOf(android.view.KeyEvent.KEYCODE_F21)
+    private fun onPenButtonClick(e: android.view.KeyEvent) {
+        val clicks = StylusButtonLatch.clicks
+        if (e.action == android.view.KeyEvent.ACTION_DOWN) {
+            if (e.repeatCount == 0 && preferences.stylusButtonTap != "none") clicks.onPress(e.downTime)
+        } else if (clicks.onRelease(e.eventTime) && !e.isCanceled) {
+            dispatchTapGesture(preferences.stylusButtonTap)
+        }
     }
 
     fun newNote() {

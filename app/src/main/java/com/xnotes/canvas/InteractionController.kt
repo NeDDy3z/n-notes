@@ -641,7 +641,8 @@ class InteractionController(
      *  "activate during hover" is on, so the pen erases or pans without touching the screen. */
     private fun handleHoverAction(e: MotionEvent): Boolean {
         val buttonNow = e.actionMasked != MotionEvent.ACTION_HOVER_EXIT && stylusButtons.heldFor(e)
-        val want = penButtonHover && buttonNow &&
+        // A press that may still be a click waits, so a click never erases under the hovering pen.
+        val want = penButtonHover && buttonNow && !StylusButtonLatch.clicks.mayStillClick(e.eventTime) &&
             (penButtonTool == Tool.ERASER || penButtonTool == Tool.PAN)
         val vx = e.x.toDouble()
         val vy = e.y.toDouble()

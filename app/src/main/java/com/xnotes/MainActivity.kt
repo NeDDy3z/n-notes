@@ -214,6 +214,7 @@ class MainActivity : ComponentActivity() {
     // so the view tree never opens a touch target and the whole stroke is dropped. Rewrite them
     // here, the last point they are intact, and dispatch normally. A no-op on every other device.
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        StylusButtonLatch.clicks.onTouch(ev) // a side-button press with the pen tip down is a hold, never a click
         val standard = standardPenAction(ev.actionMasked)
         if (standard < 0 || ev.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
             return super.dispatchTouchEvent(ev)
