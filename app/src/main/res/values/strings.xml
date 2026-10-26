@@ -709,6 +709,8 @@
     <string name="save_as">Save as</string>
     <string name="no_contents">— no table of contents —</string>
     <string name="add_bookmark">Add bookmark</string>
+    <string name="rename_bookmark">Rename bookmark</string>
+    <string name="bookmark_options">Bookmark options</string>
     <string name="no_bookmarks">— no bookmarks —</string>
     <string name="add">Add</string>
     <string name="page_n">Page %1$d</string>

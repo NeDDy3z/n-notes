@@ -911,7 +911,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The current document's storage location (a SAF content URI string), or null. */
     val currentUri: String? get() = state.document.path
 
-    val bookmarks: List<Bookmark> get() = state.document.bookmarks.toList()
+    /** The bookmarks in page order; ones on the same page keep the order they were made in. */
+    val bookmarks: List<Bookmark> get() = state.document.bookmarks.sortedBy { it.page }
 
     val controller: InteractionController = InteractionController(
         state,
@@ -3437,13 +3438,22 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         dirty = true
     }
 
-    fun removeBookmark(index: Int) {
-        if (index in state.document.bookmarks.indices) {
-            state.document.bookmarks.removeAt(index)
-            state.document.dirty = true
-            bookmarkVersion++
-            dirty = true
-        }
+    fun renameBookmark(mark: Bookmark, label: String) {
+        val found = state.document.bookmarks.firstOrNull { it === mark } ?: return
+        if (label.isBlank() || label == found.label) return
+        found.label = label
+        state.document.dirty = true
+        bookmarkVersion++
+        dirty = true
+    }
+
+    fun removeBookmark(mark: Bookmark) {
+        val i = state.document.bookmarks.indexOfFirst { it === mark }
+        if (i < 0) return
+        state.document.bookmarks.removeAt(i)
+        state.document.dirty = true
+        bookmarkVersion++
+        dirty = true
     }
 
     // --- file operations (SAF streams provided by the activity) ---

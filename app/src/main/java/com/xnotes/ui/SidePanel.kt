@@ -758,6 +758,7 @@ private fun ContentsTab(editor: Editor) {
 private fun BookmarksTab(editor: Editor) {
     val palette = LocalPalette.current
     var showAdd by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<com.xnotes.core.model.Bookmark?>(null) }
     // Read the version so the list recomposes on add/remove.
     val version = editor.bookmarkVersion
     val bookmarks = remember(version) { editor.bookmarks }
@@ -774,9 +775,9 @@ private fun BookmarksTab(editor: Editor) {
             EmptyHint(stringResource(R.string.no_bookmarks))
         } else {
             LazyColumn(Modifier.fillMaxWidth()) {
-                itemsIndexed(bookmarks) { i, bm ->
+                itemsIndexed(bookmarks) { _, bm ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { editor.goToPage(bm.page) }.padding(horizontal = 10.dp, vertical = 6.dp),
+                        Modifier.fillMaxWidth().clickable { editor.goToPage(bm.page) }.padding(start = 10.dp, top = 2.dp, bottom = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -785,15 +786,24 @@ private fun BookmarksTab(editor: Editor) {
                             fontSize = 12.sp,
                             modifier = Modifier.weight(1f),
                         )
-                        Tooltip(stringResource(R.string.remove)) {
-                            IconButton(onClick = { editor.removeBookmark(i) }) {
-                                Icon(XnotesIcons.trash, stringResource(R.string.remove), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
-                            }
-                        }
+                        BookmarkMenu(editor, bm) { renaming = bm }
                     }
                 }
             }
         }
+    }
+
+    renaming?.let { mark ->
+        var label by remember(mark) { mutableStateOf(mark.label) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text(stringResource(R.string.rename_bookmark)) },
+            text = { OutlinedTextField(value = label, onValueChange = { label = it }, singleLine = true) },
+            confirmButton = {
+                TextButton(onClick = { editor.renameBookmark(mark, label); renaming = null }, enabled = label.isNotBlank()) { Text(stringResource(R.string.rename)) }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 
     if (showAdd) {
@@ -808,6 +818,25 @@ private fun BookmarksTab(editor: Editor) {
             },
             dismissButton = { TextButton(onClick = { showAdd = false }) { Text(stringResource(R.string.cancel)) } },
         )
+    }
+}
+
+/** A bookmark row's three-dot menu: Rename and Delete. */
+@Composable
+private fun BookmarkMenu(editor: Editor, mark: com.xnotes.core.model.Bookmark, onRename: () -> Unit) {
+    val palette = LocalPalette.current
+    var open by remember { mutableStateOf(false) }
+    fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
+    Box {
+        Tooltip(stringResource(R.string.bookmark_options)) {
+            IconButton(onClick = { open = true }) {
+                Icon(XnotesIcons.more, stringResource(R.string.bookmark_options), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = menuIcon(XnotesIcons.edit), onClick = { open = false; onRename() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { open = false; editor.removeBookmark(mark) })
+        }
     }
 }
 
