@@ -553,6 +553,9 @@
     <string name="merging_notes">正在合并笔记…</string>
     <string name="merged_into">已合并到 %1$s</string>
     <string name="err_merge_notes">无法合并笔记。</string>
+    <string name="pin_to_top">固定到顶部</string>
+    <string name="unpin_from_top">取消固定到顶部</string>
+    <string name="err_pin_note">无法固定笔记。</string>
     <string name="drag_to_reorder">拖动以调整顺序</string>
     <string name="unlock_zoom">解锁缩放</string>
     <string name="lock_zoom_fit_width">在适应宽度时锁定缩放</string>

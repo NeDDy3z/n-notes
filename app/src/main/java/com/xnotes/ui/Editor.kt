@@ -204,6 +204,9 @@ private const val SIDECAR_FILE = "colors.json"
 /** In the root folder's sidecar only: the names given to colour codes, so they sync with the notes. */
 private const val COLOR_NAMES_FILE = "color-names.json"
 
+/** The top folder's sidecar file naming the notes pinned to the top of it. */
+private const val PINS_FILE = "pins.json"
+
 /** Inside the top folder's sidecar: deleted items, each in a folder of its own with a [TRASH_INFO] beside it. */
 private const val TRASH_DIR = "trash"
 private const val TRASH_INFO = "trash.json"
@@ -4505,6 +4508,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun onDocumentMoved(oldUri: String, newUri: String, newName: String? = null) {
         val from = documentKey(oldUri)
         val to = documentKey(newUri)
+        if (oldUri != newUri) repin(oldUri, newUri)
         if (oldUri != newUri) {
             createdStore.rekeyTree(from, to)
             viewStates.rekeyTree(from, to)
@@ -5456,6 +5460,108 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             appContext.contentResolver, parent, android.provider.DocumentsContract.Document.MIME_TYPE_DIR, SIDECAR_DIR,
         ) ?: return null
         return android.provider.DocumentsContract.getDocumentId(made)
+    }
+
+    // --- notes pinned to the top of the top folder, kept in its sidecar so they sync with the notes ---
+
+    /** The notes pinned to the top of the explorer's top folder, as their paths under it, oldest pin first. */
+    var notePins by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** Re-reads [notePins] for the current root, which another device may have changed. IO. */
+    fun loadNotePins() {
+        notePins = browseRoot?.let { readNotePins(it) }.orEmpty()
+    }
+
+    private fun readNotePins(root: String): List<String> = runCatching {
+        val tree = android.net.Uri.parse(root)
+        val sidecarId = sidecarDir(tree, browseRootDocId(root), create = false) ?: return@runCatching emptyList()
+        val fileId = findChildDocId(tree, sidecarId, PINS_FILE, dir = false) ?: return@runCatching emptyList()
+        val text = appContext.contentResolver.openInputStream(android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, fileId))
+            ?.use { it.readBytes().toString(Charsets.UTF_8) } ?: return@runCatching emptyList()
+        val pins = org.json.JSONObject(text).optJSONArray("pins") ?: return@runCatching emptyList()
+        (0 until pins.length()).mapNotNull { i -> pins.optString(i).takeIf { it.isNotBlank() } }.distinct()
+    }.getOrDefault(emptyList())
+
+    private fun writeNotePins(root: String, pins: List<String>): Boolean = runCatching {
+        val tree = android.net.Uri.parse(root)
+        val sidecarId = sidecarDir(tree, browseRootDocId(root), create = pins.isNotEmpty()) ?: return@runCatching pins.isEmpty()
+        writeSidecarJson(tree, sidecarId, PINS_FILE, org.json.JSONObject().put("version", 1).put("pins", org.json.JSONArray(pins)))
+    }.getOrDefault(false).also { if (it) notePins = pins }
+
+    /** Where the document at [uri] lies under the top folder [root], as a pin names it; null outside it. */
+    private fun pinPath(root: String, uri: String): String? = runCatching {
+        val rootId = browseRootDocId(root)
+        val id = browseDocId(uri)
+        id.removePrefix("$rootId/").takeIf { id.startsWith("$rootId/") && it.isNotEmpty() }
+    }.getOrNull()
+
+    fun isNotePinned(uri: String): Boolean = browseRoot?.let { pinPath(it, uri) }?.let { it in notePins } == true
+
+    /** Pin the note at [uri] to the top of the top folder, or unpin it. IO. */
+    fun setNotePinned(uri: String, pin: Boolean): Boolean {
+        val root = browseRoot ?: return false
+        val path = pinPath(root, uri) ?: return false
+        return writeNotePins(root, readNotePins(root).filter { it != path } + listOfNotNull(path.takeIf { pin }))
+    }
+
+    /** Keep the pins on what went from [fromUri] to [toUri], a note or a folder and all in it; one moved into the sidecar (Trash) loses its pin. IO. */
+    private fun repin(fromUri: String, toUri: String) {
+        val root = browseRoot ?: return
+        val from = pinPath(root, fromUri) ?: return
+        val pins = readNotePins(root)
+        if (pins.none { it == from || it.startsWith("$from/") }) return
+        val to = pinPath(root, toUri)?.takeIf { !it.startsWith("$SIDECAR_DIR/") }
+        val next = pins.mapNotNull { p ->
+            when {
+                p == from -> to
+                p.startsWith("$from/") -> to?.let { it + p.removePrefix(from) }
+                else -> p
+            }
+        }.distinct()
+        writeNotePins(root, next)
+    }
+
+    /** The pinned notes and canvases as the explorer lists them, dropping pins whose file is gone. IO. */
+    fun pinnedEntries(root: String): List<BrowseEntry> {
+        val pins = notePins
+        if (pins.isEmpty()) return emptyList()
+        val tree = android.net.Uri.parse(root)
+        val rootId = browseRootDocId(root)
+        val colours = HashMap<String, Map<String, Rgba>>()
+        val kept = ArrayList<String>()
+        val out = ArrayList<BrowseEntry>()
+        for (path in pins) {
+            val id = "$rootId/$path"
+            val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id)
+            val entry = runCatching {
+                appContext.contentResolver.query(
+                    uri,
+                    arrayOf(
+                        android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
+                        android.provider.DocumentsContract.Document.COLUMN_SIZE,
+                        android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                    ),
+                    null, null, null,
+                )?.use { c ->
+                    if (!c.moveToFirst()) return@use null
+                    val name = c.getString(0) ?: return@use null
+                    if (c.getString(1) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR || !com.xnotes.core.util.DocumentKind.isDocument(name)) return@use null
+                    val parentId = id.substringBeforeLast('/')
+                    val colour = colours.getOrPut(parentId) { sidecarDir(tree, parentId, create = false)?.let { readSidecarColors(tree, it) }.orEmpty() }[name]
+                    val modified = if (!c.isNull(3)) c.getLong(3) else 0L
+                    BrowseEntry(
+                        name, uri.toString(), false, if (!c.isNull(2)) c.getLong(2) else 0L, modified,
+                        created = createdStore.get(documentKey(uri.toString())) ?: modified, parentDocId = parentId, color = colour,
+                    )
+                }
+            }.getOrNull() ?: continue
+            kept += path
+            out += entry
+        }
+        if (kept.size < pins.size) writeNotePins(root, kept)
+        return out
     }
 
     /** Re-reads [colorNames] for the current root, which another device may have changed. IO. */

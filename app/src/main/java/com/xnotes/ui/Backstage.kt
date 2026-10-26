@@ -141,6 +141,7 @@ import com.xnotes.settings.ExplorerView
 import com.xnotes.settings.ExplorerLayout
 import com.xnotes.settings.FolderPlacement
 import com.xnotes.settings.GroupBy
+import com.xnotes.settings.ThumbShape
 import com.xnotes.settings.TileSize
 import com.xnotes.core.util.DocumentKind
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -288,7 +289,12 @@ private fun BackstageContent(
     val scope = rememberCoroutineScope()
     var renamingColor by remember { mutableStateOf<Rgba?>(null) }
     // Colour names live in the notes folder, so pick up another device's edits whenever Home comes back.
-    LaunchedEffect(editor.browseRoot, editor.noteOpen) { withContext(Dispatchers.IO) { editor.loadColorNames() } }
+    LaunchedEffect(editor.browseRoot, editor.noteOpen) {
+        withContext(Dispatchers.IO) {
+            editor.loadColorNames()
+            editor.loadNotePins()
+        }
+    }
     val colors = editor.colorNames.entries.sortedBy { it.value.lowercase() }.map { it.key to it.value }
     val activeColor = if (view == BackstageView.HOME) explorerColor else null
     val recentActive = view == BackstageView.HOME && explorerRecent
@@ -1064,11 +1070,20 @@ private fun ExplorerSection(
         if (showRecent || shelves) value = withContext(Dispatchers.IO) { editor.recentEntries(root) }
     }
     val recentByUri = remember(recents) { recents.orEmpty().associateBy { it.entry.documentUri } }
+    // Pinned notes head the top folder in the layouts that read top to bottom, nowhere else.
+    val showPinned = stack.isEmpty() && !flat &&
+        (layout == ExplorerLayout.GRID || layout == ExplorerLayout.GALLERY || layout == ExplorerLayout.LIST)
+    val pinnedRaw by produceState(emptyList<BrowseEntry>(), root, showPinned, editor.notePins, refreshKey, editor.noteOpen, editor.treeVersion) {
+        value = if (showPinned && editor.notePins.isNotEmpty()) withContext(Dispatchers.IO) { editor.pinnedEntries(root) } else emptyList()
+    }
+    val pinnedUris = remember(pinnedRaw) { pinnedRaw.mapTo(HashSet()) { it.documentUri } }
     val source: List<BrowseEntry>? = when {
         showRecent -> recents?.map { it.entry }
         colorFilter != null -> colorResults
         searching -> results
         layout == ExplorerLayout.TIMELINE -> timeline?.files
+        // A pinned note living in the top folder shows under Pinned only.
+        showPinned && pinnedUris.isNotEmpty() -> entries?.filterNot { it.documentUri in pinnedUris }
         else -> entries
     }
     // Page counts, PDF flags and the created times files record fill in behind the listing, a few files at a time.
@@ -1101,6 +1116,7 @@ private fun ExplorerSection(
                 .sortedWith(explorerComparator(view.sortKey, view.descending) { it.created })
         }
     }
+    val pinned = remember(pinnedRaw, arrange, showPinned) { if (showPinned) arrange(pinnedRaw).filterNot { it.isDir } else emptyList() }
     val now = remember(arranged) { System.currentTimeMillis() }
     val folderRow = remember(arranged, view.folders, layout) {
         if (view.folders == FolderPlacement.TOP && layout != ExplorerLayout.TIMELINE) arranged.orEmpty().filter { it.isDir } else emptyList()
@@ -1231,6 +1247,7 @@ private fun ExplorerSection(
             selecting = { selection.isNotEmpty() },
             isCut = { e -> clipboard?.let { c -> c.isCut && c.entries.any { it.documentUri == e.documentUri } } == true },
             isPinned = { e -> e.isDir && editor.isPinned(e.documentUri) },
+            isNotePinned = { e -> !e.isDir && editor.isNotePinned(e.documentUri) },
             isDropTarget = { e -> dragPos != null && dropTargetUri == e.documentUri },
             isPulsing = { e -> pulseUri == e.documentUri },
             onPulseDone = { e -> if (pulseUri == e.documentUri) pulseUri = null },
@@ -1260,6 +1277,13 @@ private fun ExplorerSection(
                 color = { e, c -> recolor(listOf(e), c) },
                 nameColor = { namingColor = it },
                 togglePin = { e -> if (editor.isPinned(e.documentUri)) editor.unpinFolder(e.documentUri) else editor.pinFolder(e.documentUri, e.name) },
+                toggleNotePin = { e ->
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) { editor.setNotePinned(e.documentUri, !editor.isNotePinned(e.documentUri)) }
+                        if (!ok) opError = context.getString(R.string.err_pin_note)
+                        refreshKey++
+                    }
+                },
                 share = { callsNow.value.shareFile(it.documentUri) },
                 saveCopy = { callsNow.value.saveCopyFile(it.documentUri) },
                 exportPdf = { callsNow.value.exportFilePdf(it.documentUri) },
@@ -1270,11 +1294,16 @@ private fun ExplorerSection(
     val folderNames = timeline?.folderNames
     val clock24 = android.text.format.DateFormat.is24HourFormat(context)
     // Kept while what it describes holds, so a drag (which recomposes this every frame) leaves the tiles be.
-    val body = remember(view, folderRow, groups, metas, counts, now, clock24, prefs, host, showRecent, recentByUri, folderNames, layout, words) { ExplorerBody(
+    val restLabel = stringResource(R.string.in_folder, rootName ?: stringResource(R.string.folder))
+    val body = remember(view, folderRow, groups, metas, counts, now, clock24, prefs, host, showRecent, recentByUri, folderNames, layout, words, pinned, restLabel, shelves, rootDocId) { ExplorerBody(
         editor = editor,
         view = view,
         folders = folderRow,
         groups = groups,
+        // Home's shelves, when they're up, take the pinned notes in among their own.
+        pinned = if (shelves) emptyList() else pinned,
+        restLabel = restLabel,
+        pinnedWhere = { e -> e.parentDocId.takeIf { it != rootDocId }?.removePrefix("$rootDocId/")?.replace("/", " / ") },
         metas = metas,
         counts = counts,
         now = now,
@@ -1330,6 +1359,7 @@ private fun ExplorerSection(
         showRecent && recents!!.isEmpty() -> EmptyState(stringResource(R.string.recent_empty), EmptyArt.RECENT)
         source == null -> EmptyState(stringResource(R.string.loading))
         layout == ExplorerLayout.COLUMNS -> null
+        pinned.isNotEmpty() -> null
         source.isEmpty() -> EmptyState(
             if (layout == ExplorerLayout.TIMELINE) stringResource(R.string.nothing_here_yet) else stringResource(R.string.folder_empty),
             EmptyArt.PAGES, offersCreate = true,
@@ -1435,6 +1465,7 @@ private fun ExplorerSection(
     val viewNow = rememberUpdatedState(view)
     val pinchable = layout == ExplorerLayout.GRID || layout == ExplorerLayout.GALLERY || layout == ExplorerLayout.TIMELINE
     val filesNow = rememberUpdatedState(arranged.orEmpty())
+    val pinnedNow = rememberUpdatedState(pinned)
     Box(Modifier.fillMaxSize()) {
         Box(
             // The keyboard slides over the files; ending the body at its edge lets the last ones scroll clear of it.
@@ -1494,7 +1525,8 @@ private fun ExplorerSection(
                         if (selection.none { it.documentUri == hitUri }) {
                             // First long-press selects. Consume to the up (Initial pass, ahead of the
                             // tile) so its click can't toggle the selection straight back off.
-                            (filesNow.value.firstOrNull { it.documentUri == hitUri } ?: timeline?.files?.firstOrNull { it.documentUri == hitUri })?.let {
+                            val hit = filesNow.value.firstOrNull { it.documentUri == hitUri } ?: pinnedNow.value.firstOrNull { it.documentUri == hitUri }
+                            (hit ?: timeline?.files?.firstOrNull { it.documentUri == hitUri })?.let {
                                 renaming = null; opError = null; selection.add(it)
                             }
                             do {
@@ -1554,7 +1586,8 @@ private fun ExplorerSection(
         ) {
             val shelfBlock: (@Composable () -> Unit)? = if (!shelves) null else ({
                 HomeShelves(
-                    body, recents.orEmpty(), editor.sidebarPins, rootName ?: stringResource(R.string.folder),
+                    body, recents.orEmpty(), pinned, layout == ExplorerLayout.GALLERY || (layout == ExplorerLayout.GRID && view.thumb == ThumbShape.PAGE),
+                    editor.sidebarPins, rootName ?: stringResource(R.string.folder),
                     counts = countsLabel(words, arranged.orEmpty().count { it.isDir }, arranged.orEmpty().count { !it.isDir }),
                     onSeeAll = { showRecent = true; selection.clear() },
                     onOpenRecent = { host.onClick(it) },
@@ -2102,6 +2135,8 @@ internal fun EntryMenu(
     onColor: ((Rgba?) -> Unit)? = null,
     pinned: Boolean = false,
     onTogglePin: (() -> Unit)? = null,
+    notePinned: Boolean = false,
+    onToggleNotePin: (() -> Unit)? = null,
     onNameColor: (() -> Unit)? = null,
     onMoveTo: (() -> Unit)? = null,
     onPreview: (() -> Unit)? = null,
@@ -2125,6 +2160,9 @@ internal fun EntryMenu(
             if (onNameColor != null) DropdownMenuItem(text = { Text(stringResource(R.string.name_colour_ellipsis)) }, onClick = { onDismiss(); onNameColor() })
             if (onTogglePin != null) {
                 DropdownMenuItem(text = { Text(if (pinned) stringResource(R.string.unpin_from_sidebar) else stringResource(R.string.pin_to_sidebar)) }, onClick = { onDismiss(); onTogglePin() })
+            }
+            if (onToggleNotePin != null) {
+                DropdownMenuItem(text = { Text(if (notePinned) stringResource(R.string.unpin_from_top) else stringResource(R.string.pin_to_top)) }, onClick = { onDismiss(); onToggleNotePin() })
             }
             DropdownMenuItem(text = { Text(deleteLabel) }, onClick = { onDismiss(); onDelete?.invoke() })
             if (onShare != null) {
