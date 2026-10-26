@@ -556,6 +556,17 @@
     <string name="pin_to_top">固定到顶部</string>
     <string name="unpin_from_top">取消固定到顶部</string>
     <string name="err_pin_note">无法固定笔记。</string>
+    <string name="pref_backup">备份</string>
+    <string name="pref_backup_help">你的笔和工具、工具栏、颜色、主题、手势和手写笔按键、新笔记、画布和表格的默认设置、浏览器视图、导入的字体和代码主题，打包成一个文件，带到另一台设备上。笔记文件夹、固定项、最近项和这台设备的性能设置不会带走。</string>
+    <string name="export_settings">导出设置…</string>
+    <string name="import_settings">导入设置…</string>
+    <string name="import_settings_title">导入设置？</string>
+    <string name="import_settings_confirm">此文件中的内容将替换当前的设置，文件中没有的内容保持不变。</string>
+    <string name="settings_exported">设置已导出。</string>
+    <string name="settings_imported">设置已导入。</string>
+    <string name="err_export_settings">无法导出设置。</string>
+    <string name="err_import_settings">该文件不含 xnotes 设置。</string>
+    <string name="replace">替换</string>
     <string name="drag_to_reorder">拖动以调整顺序</string>
     <string name="unlock_zoom">解锁缩放</string>
     <string name="lock_zoom_fit_width">在适应宽度时锁定缩放</string>

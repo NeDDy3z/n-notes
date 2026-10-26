@@ -615,6 +615,27 @@ private fun EditorScreen(
         step(0)
     }
 
+    // A settings backup written where the user picks, or read and held for the go-ahead to apply it.
+    val exportSettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { resolver.openOutputStream(uri, "wt")?.use { editor.exportSettings(it) } != null }.getOrDefault(false)
+            }
+            editor.message = context.getString(if (ok) R.string.settings_exported else R.string.err_export_settings)
+        }
+    }
+    var pendingBackup by remember { mutableStateOf<Editor.SettingsBackup?>(null) }
+    val importSettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val backup = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { resolver.openInputStream(uri)?.use { editor.readSettingsBackup(it) } }.getOrNull()
+            }
+            if (backup == null) editor.message = context.getString(R.string.err_import_settings) else pendingBackup = backup
+        }
+    }
+
     // A photo the camera app is taking, into a cache file handed to it, for the pane that asked.
     var pendingPhoto by remember { mutableStateOf<Pair<Editor, java.io.File>?>(null) }
     val takePhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
@@ -931,6 +952,10 @@ private fun EditorScreen(
                 onExitApp = { (context as? android.app.Activity)?.finish() },
                 onImportCodeTheme = { importCodeThemeLauncher.launch(arrayOf("*/*")) },
                 onImportFont = { importFontLauncher.launch(arrayOf("*/*")) },
+                onBackup = { export ->
+                    if (export) exportSettingsLauncher.launch("xnotes-settings-${java.time.LocalDate.now()}.zip")
+                    else importSettingsLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+                },
                 onImportPdf = { importPdfLauncher.launch(arrayOf("application/pdf")) },
                 onOpenFile = { uri -> guarded(editor) { openTreeFile(uri) } },
                 onPickRoot = { pickRootLauncher.launch(null) },
@@ -1077,6 +1102,23 @@ private fun EditorScreen(
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null }) {
+                    androidx.compose.material3.Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    pendingBackup?.let { backup ->
+        com.xnotes.ui.AlertDialog(
+            onDismissRequest = { pendingBackup = null },
+            title = { androidx.compose.material3.Text(stringResource(R.string.import_settings_title)) },
+            text = { androidx.compose.material3.Text(stringResource(R.string.import_settings_confirm)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingBackup = null; editor.applySettingsBackup(backup) }) {
+                    androidx.compose.material3.Text(stringResource(R.string.replace))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingBackup = null }) {
                     androidx.compose.material3.Text(stringResource(R.string.cancel))
                 }
             },

@@ -204,6 +204,9 @@ private const val SIDECAR_FILE = "colors.json"
 /** In the root folder's sidecar only: the names given to colour codes, so they sync with the notes. */
 private const val COLOR_NAMES_FILE = "color-names.json"
 
+/** The most a settings backup's entry may hold: fonts are the largest thing in one. */
+private const val SETTINGS_ENTRY_MAX = 32L * 1024 * 1024
+
 /** The top folder's sidecar file naming the notes pinned to the top of it. */
 private const val PINS_FILE = "pins.json"
 
@@ -8095,6 +8098,120 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         applyPreferences(settings.prefs.copy(codeThemePath = file.path, codeThemeName = sourceName))
         retheme()
         message = appContext.getString(R.string.code_theme_imported)
+    }
+
+    // --- settings backup: how the app is set up, as one zip to carry to another device ---
+
+    /** A settings backup as read, waiting for the go-ahead to replace the settings with it. */
+    class SettingsBackup internal constructor(
+        internal val settings: org.json.JSONObject,
+        internal val fonts: List<Pair<String, ByteArray>>,
+        internal val codeTheme: Pair<String?, ByteArray>?,
+        internal val keepsBuiltInCodeTheme: Boolean,
+    )
+
+    /**
+     * Write how the app is set up to [out] as a zip: settings.json, without the notes folder, pins,
+     * recents, per-folder views or this device's performance switches, then the imported fonts and
+     * the code theme as files. IO.
+     */
+    fun exportSettings(out: OutputStream) {
+        val json = com.xnotes.settings.SettingsBackup.portable(settings.toJson())
+        val theme = settings.prefs.codeThemePath?.let { java.io.File(it) }?.takeIf { it.isFile }
+        val root = org.json.JSONObject()
+            .put("format", com.xnotes.settings.SettingsBackup.FORMAT)
+            .put("version", com.xnotes.settings.SettingsBackup.VERSION)
+            .put("settings", json)
+            .put("code_theme", theme != null)
+            .apply { if (theme != null) settings.prefs.codeThemeName?.let { put("code_theme_name", it) } }
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("settings.json"))
+            zip.write(root.toString(2).toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+            for (font in com.xnotes.platform.FontCatalog.customFontFiles()) {
+                zip.putNextEntry(java.util.zip.ZipEntry("fonts/${font.name}"))
+                font.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+            if (theme != null) {
+                zip.putNextEntry(java.util.zip.ZipEntry("code-theme.toml"))
+                theme.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+        }
+    }
+
+    /** The settings backup in [input], or null when it is not one. IO. */
+    fun readSettingsBackup(input: InputStream): SettingsBackup? = runCatching {
+        var root: org.json.JSONObject? = null
+        val fonts = ArrayList<Pair<String, ByteArray>>()
+        var theme: ByteArray? = null
+        java.util.zip.ZipInputStream(input).use { zis ->
+            while (true) {
+                val entry = zis.nextEntry ?: break
+                val name = entry.name
+                val wanted = name == "settings.json" || name == "code-theme.toml" ||
+                    (name.startsWith("fonts/") && name.count { it == '/' } == 1 && name.length > 6)
+                if (!wanted || entry.isDirectory) continue
+                val bytes = readAtMost(zis, SETTINGS_ENTRY_MAX) ?: return@runCatching null
+                when {
+                    name == "settings.json" -> root = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
+                    name == "code-theme.toml" -> theme = bytes
+                    else -> fonts += name.removePrefix("fonts/") to bytes
+                }
+            }
+        }
+        val r = root?.takeIf { it.optString("format") == com.xnotes.settings.SettingsBackup.FORMAT } ?: return@runCatching null
+        val json = r.optJSONObject("settings") ?: return@runCatching null
+        SettingsBackup(json, fonts, theme?.let { r.optString("code_theme_name").ifEmpty { null } to it }, !r.optBoolean("code_theme", true))
+    }.getOrNull()
+
+    /** Up to [max] bytes of the zip entry [zis] stands at, or null when it holds more. */
+    private fun readAtMost(zis: java.util.zip.ZipInputStream, max: Long): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val n = zis.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > max) return null
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+
+    /**
+     * Take on [backup]: everything it carries replaces what is set here, and what it leaves out
+     * stays. Its fonts join the font list, and its code theme replaces the one in use.
+     */
+    fun applySettingsBackup(backup: SettingsBackup) {
+        val merged = com.xnotes.settings.SettingsBackup.merged(settings.toJson(), backup.settings)
+        val next = runCatching { Settings.fromJson(merged) }.getOrNull() ?: run {
+            message = appContext.getString(R.string.err_import_settings)
+            return
+        }
+        settings = next
+        settingsRepo.save(next)
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.applySettings()
+            editor.explorerView = next.explorerView
+            editor.markdownInput = next.prefs.markdownInput
+            editor.slashCommands = next.prefs.slashCommands
+            editor.infiniteOrNull?.let { c ->
+                c.toolbarLayout = next.canvasToolbarLayout
+                c.toolbarColorCount = next.toolbarColorCount
+            }
+            editor.republishFlow(invalidate = true)
+            editor.state.invalidateAllCaches()
+            editor.refreshView()
+            editor.prefsVersion++
+            editor.view.requestRender()
+        }
+        for ((name, bytes) in backup.fonts) com.xnotes.platform.FontCatalog.importFont(appContext, bytes, name)
+        fontsChanged()
+        backup.codeTheme?.let { (name, bytes) -> importCodeTheme(bytes, name) } ?: run { if (backup.keepsBuiltInCodeTheme) resetCodeTheme() }
+        message = appContext.getString(R.string.settings_imported)
     }
 
     /** Back to the built-in dark/light code colours. */
