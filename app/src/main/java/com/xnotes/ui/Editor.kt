@@ -6617,6 +6617,25 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         goToPage(firstAt)
     }
 
+    /**
+     * Put copies of the pages at [indices] as one block, in order, right after the last of them,
+     * as one undo step, and reveal the first copy. A copied cover becomes an ordinary page.
+     */
+    fun duplicatePages(indices: List<Int>) {
+        val pages = state.document.pages
+        val picked = indices.filter { it in pages.indices }.distinct().sorted()
+        if (picked.isEmpty()) return
+        val clones = picked.map { pages[it].deepCopy(textMeasurer) }
+        // Adopted together, so ink tied to a recording on another copied page follows that copy.
+        com.xnotes.core.audio.RecordingIds.adopt(clones.flatMap { it.items }, pages.flatMap { it.items }, moves = true)
+        val firstAt = picked.last() + 1
+        val cmds = clones.mapIndexed { n, clone -> AddPage(state.document, clone, firstAt + n).also { it.redo() } }
+        history.push(CompositeCommand(cmds))
+        clearPageSelection()
+        afterPageEdit()
+        goToPage(firstAt)
+    }
+
     /** Delete [indices] as one undoable edit, refusing to empty the note. */
     fun deletePages(indices: List<Int>) {
         val pages = state.document.pages
