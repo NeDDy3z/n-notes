@@ -379,14 +379,7 @@ class InteractionController(
      *  erase yields to a two-finger pinch, a stylus erase ignores incidental finger/palm contact. */
     private var erasingWithFinger = false
 
-    // ITEM CLIPBOARD (in-app, for copy/cut/paste/duplicate)
-    private val itemClipboard = mutableListOf<CanvasItem>()
-
-    /** Whether the clipboard was filled by a cut. A cut moves the items rather than copying them,
-     *  so the first paste puts them back and spends the clipboard; a copy's stays for as long as
-     *  the user wants it. */
-    private var clipboardFromCut = false
-    fun hasClipboardItems(): Boolean = itemClipboard.isNotEmpty()
+    fun hasClipboardItems(): Boolean = ItemClipboard.clip != null
 
     // SHAPE
     var shapeConfig: ShapeConfig = ShapeConfig()
@@ -3525,25 +3518,21 @@ class InteractionController(
 
     // --- clipboard: copy / cut / duplicate / paste ---
 
-    /** Copy the selection into the in-app clipboard. Pure: no tool/selection side effects, so
-     *  cut/duplicate can reuse it without tripping the select tool's switch-back. */
-    private fun copyToClipboard() {
+    /** Put copies of the selection on the shared item clipboard; a [cut]'s are spent by the paste that lands them. */
+    private fun copyToClipboard(cut: Boolean) {
         if (selection.isEmpty()) return
-        itemClipboard.clear()
-        clipboardFromCut = false
-        itemClipboard.addAll(selection.map { it.item }.deepCopyAll(textMeasurer))
+        ItemClipboard.clip = ItemClipboard.Clip(selection.map { it.item }.deepCopyAll(textMeasurer), state.document.dpi, state.document, cut)
     }
 
     fun copySelection() {
         if (selection.isEmpty()) return
-        copyToClipboard()
+        copyToClipboard(cut = false)
         maybeSwitchBackAfterSelect()
     }
 
     fun cutSelection() {
         if (selection.isEmpty()) return
-        copyToClipboard()
-        clipboardFromCut = true
+        copyToClipboard(cut = true)
         deleteSelection() // also runs the select tool's switch-back, once
     }
 
@@ -3573,41 +3562,52 @@ class InteractionController(
 
     fun duplicateSelection() {
         if (selection.isEmpty()) return
-        copyToClipboard()
         val pageIndex = selection.first().pageIndex
-        // Paste offset slightly from the originals (not repositioned to a point).
-        pasteClonesOnPage(pageIndex, Pt.ZERO, offsetFromBoundsTopLeft = false, nudge = 24.0)
+        // Offset slightly from the originals, leaving the clipboard as it was.
+        val clones = selection.map { it.item }.deepCopyAll(textMeasurer)
+        for (c in clones) c.translate(DUPLICATE_NUDGE, DUPLICATE_NUDGE)
+        landClones(pageIndex, clones, moves = false)
         maybeSwitchBackAfterSelect()
     }
 
     /** Paste the clipboard items so their top-left lands at the given content point. */
     fun pasteItemsAt(content: Pt) {
         val pageIndex = state.pageIndexAtContent(content) ?: state.currentPageIndex()
-        pasteClonesOnPage(pageIndex, content, offsetFromBoundsTopLeft = true, nudge = 0.0)
+        pasteOnPage(pageIndex, content, centred = false)
     }
 
-    private fun pasteClonesOnPage(pageIndex: Int, target: Pt, offsetFromBoundsTopLeft: Boolean, nudge: Double) {
-        if (itemClipboard.isEmpty()) return
-        val page = state.document.pages.getOrNull(pageIndex) ?: return
+    /** Paste the clipboard items centred in the view, on the page there. */
+    fun pasteAtViewCentre() {
+        val centre = state.viewportToContent(Pt(state.viewportW / 2.0, state.viewportH / 2.0))
+        val pageIndex = state.pageIndexAtContent(centre) ?: state.currentPageIndex()
+        pasteOnPage(pageIndex, centre, centred = true)
+    }
+
+    /** Land fresh copies of the clipboard's items on page [pageIndex], their box's top-left (or centre, when [centred]) at [target]. */
+    private fun pasteOnPage(pageIndex: Int, target: Pt, centred: Boolean) {
+        val clip = ItemClipboard.clip ?: return
         if (state.pageRects.getOrNull(pageIndex) == null) return
-        val clones = itemClipboard.deepCopyAll(textMeasurer)
+        val clones = ItemClipboard.copiesFor(clip, state.document.dpi, clip.isFrom(state.document), textMeasurer)
         // Collective bounds (page-local) of the clones.
         var box: Rect? = null
         for (c in clones) box = box?.union(c.bounds()) ?: c.bounds()
         val b = box ?: return
         val targetLocal = state.toPageSpace(pageIndex, target)
-        val dx = if (offsetFromBoundsTopLeft) targetLocal.x - b.left + nudge else nudge
-        val dy = if (offsetFromBoundsTopLeft) targetLocal.y - b.top + nudge else nudge
+        val dx = targetLocal.x - (if (centred) b.center.x else b.left)
+        val dy = targetLocal.y - (if (centred) b.center.y else b.top)
         for (c in clones) c.translate(dx, dy)
-        com.xnotes.core.audio.RecordingIds.adopt(clones, state.document.pages.flatMap { it.items }, moves = clipboardFromCut)
+        // A cut's clipboard is spent by the paste that lands it: the items were taken from where
+        // they were, so putting them down finishes the move rather than starting a series of copies.
+        if (clip.cut && ItemClipboard.clip === clip) ItemClipboard.clip = null
+        landClones(pageIndex, clones, moves = clip.cut)
+    }
+
+    /** Put [clones] on page [pageIndex] as one undo step and leave them selected. */
+    private fun landClones(pageIndex: Int, clones: List<CanvasItem>, moves: Boolean) {
+        val page = state.document.pages.getOrNull(pageIndex) ?: return
+        com.xnotes.core.audio.RecordingIds.adopt(clones, state.document.pages.flatMap { it.items }, moves = moves)
         page.items.addAll(clones)
         history.push(AddItems(page, clones))
-        // A cut's clipboard is spent by the paste that lands it: the items were taken from the
-        // page, so putting them down finishes the move rather than starting a series of copies.
-        if (clipboardFromCut) {
-            itemClipboard.clear()
-            clipboardFromCut = false
-        }
         state.document.dirty = true
         // The clones are immediately selected (lifted) below; setSelection repairs their
         // region in place, so no separate page rebuild is needed here.
@@ -4569,6 +4569,9 @@ class InteractionController(
 
     companion object {
         const val MIN_SAMPLE_DIST = 1.0
+
+        /** Content px a duplicate lands from its original, so the copy is visibly a copy. */
+        const val DUPLICATE_NUDGE = 24.0
 
         /** Pen-up reduction tolerance, viewport px at the draw zoom (see [simplifyForCommit]). */
         const val SIMPLIFY_EPS = 0.2

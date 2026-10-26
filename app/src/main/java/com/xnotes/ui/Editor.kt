@@ -353,8 +353,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private val batchDir = tempDir("batchpdf")
 
     init {
-        // The purge above took the files of pages an earlier editor in this process copied.
-        if (pane == Pane.PRIMARY) PageClipboard.put(null)
+        // The purge above took the files of what an earlier editor in this process copied.
+        if (pane == Pane.PRIMARY) {
+            PageClipboard.put(null)
+            com.xnotes.canvas.ItemClipboard.clip = null
+        }
     }
 
     /** The sticker library: encoded image files kept under filesDir across sessions (never purged).
@@ -7319,6 +7322,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_S -> keyActions.save()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_E -> keyActions.exportPdf()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_C && pdfText.selection != null -> copyPdfText()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_C -> controller.copySelection()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_X -> controller.cutSelection()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_V -> controller.pasteAtViewCentre()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_D -> controller.duplicateSelection()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_A -> selectAll()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_B -> toggleSidebar()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_F -> openSearch()
