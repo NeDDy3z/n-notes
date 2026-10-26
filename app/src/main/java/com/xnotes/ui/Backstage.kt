@@ -109,6 +109,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -1029,7 +1030,6 @@ private fun ExplorerSection(
         showRecent = false
         selection.clear()
     }
-    BackHandler(enabled = selection.isNotEmpty()) { selection.clear() }
 
     val folderKey = editor.folderKey(root, currentDocId)
     val view = editor.viewFor(folderKey)
@@ -1759,6 +1759,8 @@ private fun ExplorerSection(
             }
             // While items are picked, the selection bar stays pinned where the chip row starts.
             if (selection.isNotEmpty()) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
+                // Registered when the bar appears, after the search field's, so Back clears the picks first.
+                BackHandler { selection.clear() }
                 SelectionBar(selection.size, onClear = { selection.clear() }, onSelectAll = { selection.clear(); selection.addAll(arranged.orEmpty()) }) {
                     val files = selection.filterNot { it.isDir }
                     val fg = palette.selectionForeground.toComposeColor()
@@ -2046,6 +2048,7 @@ internal fun ExplorerSearchField(query: String, onQueryChange: (String) -> Unit,
     val palette = LocalPalette.current
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     // `active` bootstraps the field into composition on tap so its FocusRequester can grab focus;
     // `focused` is the real focus state. Either keeps the pill expanded.
     var active by remember { mutableStateOf(false) }
@@ -2087,7 +2090,7 @@ internal fun ExplorerSearchField(query: String, onQueryChange: (String) -> Unit,
                 textStyle = TextStyle(color = palette.text.toComposeColor(), fontSize = 14.sp),
                 cursorBrush = SolidColor(palette.accent.toComposeColor()),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                 modifier = Modifier.weight(1f)
                     .focusRequester(focus)
                     .onFocusChanged {
