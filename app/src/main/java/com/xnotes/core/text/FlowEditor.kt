@@ -93,6 +93,7 @@ class FlowEditor(private val flow: TextFlow) {
                 breakToPage = if (i == 0 && props.breakBefore) props.breakToPage else null,
                 listStart = if (i == 0) props.listStart else null,
                 quote = props.quote,
+                dir = props.dir,
             ).also { normalize(it) }
         }
         val removed = flow.paragraphs.subList(start.para, end.para + 1).toList()

@@ -1,8 +1,12 @@
 package com.xnotes.canvas
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.text.Editable
 import android.text.Selection
+import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.SpanWatcher
 import android.text.Spanned
 import android.text.TextWatcher
 import android.util.Log
@@ -32,6 +36,11 @@ import com.xnotes.core.text.TextFlow
  * The mirror must read exactly as the model does whenever the IME edits it,
  * since its offsets are mapped straight onto the model. The watcher checks that
  * before every edit and resyncs rather than land one where the text has moved.
+ *
+ * Selection travels the other way: a [SpanWatcher] on the mirror adopts whatever
+ * selection the platform or the IME sets there (select all, a word or line
+ * selection, an accessibility action), so editing commands need no per-command
+ * handling to reach the flow.
  */
 class FlowInput(
     private val view: CanvasView,
@@ -111,6 +120,69 @@ class FlowInput(
             session.setSelection(FlowRange(flow().posAtGlobal(selS), flow().posAtGlobal(selE)), syncIme = false)
             notifySelection()
         }
+    }
+
+    /**
+     * Carries a selection the platform or the IME makes on the editable into the model.
+     *
+     * A text field needs no code for this because its `Editable` *is* its document. Here
+     * the mirror is a projection of the flow, so this is the one direction of data flow
+     * that has to be bridged by hand: selection. Every editing command that ends up
+     * moving the platform's selection (select all, a word/line selection, an accessibility
+     * action, a future IME command) lands here instead of each command needing its own
+     * handler.
+     *
+     * Runs on a post, never inline: `Selection.setSelection` installs the start span and
+     * the end span one after the other, so inside these callbacks the pair is briefly
+     * half-updated (new start, old end). Reading after the update has settled is the only
+     * safe point.
+     */
+    private val selectionWatcher = object : SpanWatcher {
+        override fun onSpanAdded(text: Spannable, what: Any, start: Int, end: Int) {
+            if (isSelectionSpan(what)) onMirrorSelectionChanged()
+        }
+
+        override fun onSpanRemoved(text: Spannable, what: Any, start: Int, end: Int) {
+            if (isSelectionSpan(what)) onMirrorSelectionChanged()
+        }
+
+        override fun onSpanChanged(text: Spannable, what: Any, ostart: Int, oend: Int, nstart: Int, nend: Int) {
+            if (isSelectionSpan(what)) onMirrorSelectionChanged()
+        }
+
+        private fun isSelectionSpan(what: Any): Boolean =
+            what === Selection.SELECTION_START || what === Selection.SELECTION_END
+    }
+
+    private var selectionSyncPosted = false
+
+    /** Coalesce any number of span notifications into one read of the settled selection. */
+    private fun onMirrorSelectionChanged() {
+        if (selectionSyncPosted) return
+        selectionSyncPosted = true
+        view.post {
+            selectionSyncPosted = false
+            syncSelectionFromMirror()
+        }
+    }
+
+    /**
+     * Adopt the mirror's selection as the model's. Does nothing when there is nothing to
+     * adopt: a closed session, a mirror that no longer matches the model (an edit is in
+     * flight and [afterTextChanged]/[resync] own it), or a selection the model already has.
+     * [syncIme] stays false so the model can never write the mirror back in a cycle.
+     */
+    private fun syncSelectionFromMirror() {
+        if (!session.active) return
+        val f = flow()
+        val last = f.globalOffset(f.endPos())
+        if (mirror.length != last) return
+        val s = Selection.getSelectionStart(mirror).coerceIn(0, last)
+        val e = Selection.getSelectionEnd(mirror).coerceIn(0, last)
+        val range = FlowRange(f.posAtGlobal(s), f.posAtGlobal(e))
+        if (range == session.selection) return
+        session.setSelection(range, syncIme = false)
+        notifySelection()
     }
 
     init {
@@ -223,6 +295,7 @@ class FlowInput(
         mirror.clearSpans()
         mirror.replace(0, mirror.length, flow().plainText())
         mirror.setSpan(watcher, 0, mirror.length, Spanned.SPAN_INCLUSIVE_INCLUSIVE)
+        mirror.setSpan(selectionWatcher, 0, mirror.length, Spanned.SPAN_INCLUSIVE_INCLUSIVE)
         val (s, e) = selectionGlobal()
         Selection.setSelection(mirror, s.coerceIn(0, mirror.length), e.coerceIn(0, mirror.length))
         suppressWatcher = false
@@ -318,6 +391,33 @@ class FlowInput(
     private fun imm(): InputMethodManager? =
         view.context.getSystemService(InputMethodManager::class.java)
 
+    /**
+     * Copy (or cut) the mirror's selection the way a text field does: the editable holds
+     * both the text and the selection, and the result goes to the platform clipboard.
+     * A cut deletes through the editable so the edit travels the ordinary typed-text path
+     * ([watcher] -> `applyReplace`); the model's selection is synced first because the
+     * controller only lets a delete cross a table cell when it is the selection the user
+     * made.
+     */
+    private fun copyMirrorSelection(cut: Boolean): Boolean {
+        var s = Selection.getSelectionStart(mirror)
+        var e = Selection.getSelectionEnd(mirror)
+        if (s < 0 || e < 0) return false
+        if (s > e) {
+            val swap = s
+            s = e
+            e = swap
+        }
+        if (s == e) return false
+        val cm = view.context.getSystemService(ClipboardManager::class.java) ?: return false
+        cm.setPrimaryClip(ClipData.newPlainText("xnotes text", mirror.subSequence(s, e).toString()))
+        if (cut) {
+            syncSelectionFromMirror()
+            mirror.replace(s, e, "")
+        }
+        return true
+    }
+
     // --- the connection ---
 
     fun createInputConnection(outAttrs: EditorInfo): InputConnection {
@@ -365,12 +465,32 @@ class FlowInput(
             return buildExtracted()
         }
 
+        /**
+         * The editing commands an IME (or a hardware keyboard's shortcut) sends here; the
+         * base class answers `false` to all of them, so a text editor has to provide them.
+         * They are written against the editable, the way `EditableInputConnection` writes
+         * them against a `TextView`: select all moves the mirror's selection and the
+         * [selectionWatcher] carries it into the flow; copy reads the mirror's selection;
+         * cut is a copy plus an ordinary `replace` on the mirror, which the text watcher
+         * turns into a model edit exactly like typed text. Only paste is the app's own,
+         * because paste here is not plain `commitText` (it has explicit modes).
+         */
         override fun performContextMenuAction(id: Int): Boolean {
-            if (id == android.R.id.paste) {
-                onPaste()
-                return true
+            when (id) {
+                android.R.id.selectAll -> {
+                    Selection.setSelection(mirror, 0, mirror.length)
+                    // The watcher reports on a post; a copy issued right after this call
+                    // wants the model already knowing what is selected.
+                    syncSelectionFromMirror()
+                    notifySelection()
+                    return true
+                }
+                android.R.id.copy -> return copyMirrorSelection(cut = false)
+                android.R.id.cut -> return copyMirrorSelection(cut = true)
+                android.R.id.paste -> onPaste()
+                else -> return super.performContextMenuAction(id)
             }
-            return super.performContextMenuAction(id)
+            return true
         }
 
         override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {

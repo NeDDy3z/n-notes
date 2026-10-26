@@ -10,6 +10,7 @@ import com.xnotes.core.text.CharStyle
 import com.xnotes.core.text.FlowMargins
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.Run
 import com.xnotes.core.text.TextFlow
@@ -358,4 +359,16 @@ class FlowXmlTest {
         assertEquals(null, back[4].quote?.kind)
         assertNotNull(back[4].quote)
     }
+    @Test
+    fun aRightToLeftParagraphKeepsItsDirection() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("سلام")), dir = ParaDir.RTL))
+            paragraphs.add(Paragraph(mutableListOf(Run("plain"))))
+        }
+        assertTrue("style:writing-mode=\"rl-tb\"" in String(FlowXml.write(flow)))
+        val back = roundTrip(flow)
+        assertEquals(ParaDir.RTL, back.paragraphs[0].dir)
+        assertEquals(ParaDir.LTR, back.paragraphs[1].dir)
+    }
+
 }

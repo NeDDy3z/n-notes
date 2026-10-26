@@ -25,6 +25,19 @@ class FlowEditorTest {
     }
 
     @Test
+    fun aSplitParagraphKeepsItsDirection() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("سلام")), dir = ParaDir.RTL))
+        }
+        val (cmd, _) = FlowEditor(flow).insertText(FlowPos(0, 4), "\n")
+        assertEquals(2, flow.paragraphs.size)
+        assertEquals(ParaDir.RTL, flow.paragraphs[1].dir)
+        cmd!!.undo()
+        assertEquals(1, flow.paragraphs.size)
+        assertEquals(ParaDir.RTL, flow.paragraphs[0].dir)
+    }
+
+    @Test
     fun typingInheritsThePrecedingCharacterStyle() {
         val flow = TextFlow().apply { paragraphs.add(para("ab", CharStyle(bold = true))) }
         val (cmd, caret) = FlowEditor(flow).insertText(FlowPos(0, 1), "X")

@@ -10,6 +10,7 @@ import com.xnotes.core.text.FlowQuote
 import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.Run
 import com.xnotes.core.text.TableBlock
@@ -140,6 +141,8 @@ object FlowXml {
         if (p.align != ParaAlign.LEFT) append(" fo:text-align=\"${p.align.id}\"")
         if (p.indent != 0) append(" fo:margin-left=\"${p.indent * INDENT_MM_PER_LEVEL}mm\" xnotes:indent=\"${p.indent}\"")
         if (p.breakBefore) append(" fo:break-before=\"page\"")
+        // ODF's paragraph writing mode: rl-tb is the right-to-left line direction.
+        if (p.dir == ParaDir.RTL) append(" style:writing-mode=\"rl-tb\"")
         append("/>\n  </style:style>\n")
     }
 
@@ -156,11 +159,11 @@ object FlowXml {
     }
 
     /** What a paragraph's automatic style holds. */
-    private data class ParaProps(val align: ParaAlign, val indent: Int, val breakBefore: Boolean) {
+    private data class ParaProps(val align: ParaAlign, val indent: Int, val breakBefore: Boolean, val dir: ParaDir = ParaDir.LTR) {
         companion object {
             val PLAIN = ParaProps(ParaAlign.LEFT, 0, false)
 
-            fun of(p: Paragraph) = ParaProps(p.align, p.indent, p.breakBefore)
+            fun of(p: Paragraph) = ParaProps(p.align, p.indent, p.breakBefore, p.dir)
         }
     }
 
@@ -530,7 +533,9 @@ object FlowXml {
             ?: attr(props, "margin-left")?.removeSuffix("mm")?.toDoubleOrNull()
                 ?.let { (it / INDENT_MM_PER_LEVEL).toInt() }
             ?: 0
-        return ParaProps(align, indent.coerceIn(0, Paragraph.MAX_INDENT), attr(props, "break-before") == "page")
+        // ODF writes a right-to-left paragraph as writing-mode rl-tb.
+        val dir = if (attr(props, "writing-mode") == "rl-tb") ParaDir.RTL else ParaDir.LTR
+        return ParaProps(align, indent.coerceIn(0, Paragraph.MAX_INDENT), attr(props, "break-before") == "page", dir)
     }
 
     private fun parseParagraph(
@@ -552,6 +557,7 @@ object FlowXml {
             listStart = (p.parentNode as? Element)
                 ?.takeIf { (it.localName ?: it.nodeName) == "list-item" }
                 ?.let { attr(it, "start-value")?.toIntOrNull() },
+            dir = props.dir,
         )
         if (para.list != ListKind.ORDERED) para.listStart = null
         collectRuns(p, CharStyle.DEFAULT, charStyles, para.runs)

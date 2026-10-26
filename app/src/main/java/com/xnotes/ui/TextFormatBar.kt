@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.FormatTextdirectionLToR
+import androidx.compose.material.icons.filled.FormatTextdirectionRToL
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.CheckBox
@@ -73,6 +75,7 @@ import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.CalloutKind
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.SlashCommands
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.tools.Tool
@@ -89,9 +92,9 @@ import kotlin.math.roundToInt
  * order, like Google Docs: heading level, font face, size, bold/italic/underline/
  * strikethrough, font colour, highlight, insert menu (the "/" entries without a
  * button of their own), link, code block (tap toggles, long-press picks the language),
- * equation, table, alignment (cycles), ordered, unordered and checkbox lists,
- * indent, outdent. Inside a table cell the heading, list, code, table and indent controls
- * disable. Centred when it fits, scrollable when it does not.
+ * equation, table, direction (automatic, LTR and RTL), alignment (cycles), ordered,
+ * unordered and checkbox lists, indent, outdent. Inside a table cell the heading, list,
+ * code, table and indent controls disable. Centred when it fits, scrollable when it does not.
  */
 @Composable
 fun TextFormatBar(editor: Editor) {
@@ -136,6 +139,17 @@ fun TextFormatBar(editor: Editor) {
                 tableDialog = true
             }
             BarDivider()
+            BarIcon(
+                if ((para?.dir ?: ParaDir.LTR) == ParaDir.RTL) {
+                    Icons.Filled.FormatTextdirectionRToL
+                } else {
+                    Icons.Filled.FormatTextdirectionLToR
+                },
+                stringResource(R.string.text_direction),
+                active = para?.dir == ParaDir.RTL,
+            ) {
+                editor.flowToggleDir()
+            }
             BarIcon(alignIcon(para?.align ?: ParaAlign.LEFT), stringResource(R.string.alignment), active = para != null && para.align != ParaAlign.LEFT) {
                 editor.flowCycleAlign()
             }

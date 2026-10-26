@@ -239,4 +239,48 @@ class FlowLayoutTest {
         assertEquals(listOf("\"ab", "\\n", "cd\""), segs.map { it.text })
         assertEquals(listOf(string, escape, string), segs.map { it.style.color })
     }
+
+    private fun rtlLine(text: String, align: ParaAlign = ParaAlign.LEFT, width: Double = 100.0): PlacedLine {
+        val flow = TextFlow().apply {
+            margins = FlowMargins(0.0, 0.0, 0.0, 0.0)
+            paragraphs.add(Paragraph(mutableListOf(Run(text)), align = align, dir = ParaDir.RTL))
+        }
+        return layout.layout(flow, listOf(PageBox(width, 50.0)), 150).pages[0].lines.single()
+    }
+
+    @Test
+    fun aRightToLeftLineStartsAtTheRightEdge() {
+        // "سلام دنیا" is 9 chars, 64.8 wide, so it sits at the right of a 100-wide
+        // column; the first word is the rightmost and the second is to its left.
+        val line = rtlLine("سلام دنیا")
+        assertEquals(100.0, line.caretX(0), 1e-9)
+        assertEquals(71.2, line.segs.first { it.text == "سلام" }.x, 1e-9)
+        assertEquals(35.2, line.segs.first { it.text == "دنیا" }.x, 1e-9)
+        assertEquals(35.2, line.caretX(9), 1e-9)
+        // A tap reads off the visual side it landed on, not the offset's own end.
+        assertEquals(0, line.offsetAt(99.0))
+        assertEquals(7, line.offsetAt(50.0))
+    }
+
+    @Test
+    fun anEnglishPhraseInsideRightToLeftTextKeepsItsOrder() {
+        // "سلام hello world": the Arabic word runs right to left, but the two English
+        // words keep their own left-to-right order inside the line.
+        val line = rtlLine("سلام hello world", width = 200.0)
+        val salaam = line.segs.first { it.text == "سلام" }
+        val hello = line.segs.first { it.text == "hello" }
+        val world = line.segs.first { it.text == "world" }
+        assertTrue(salaam.x > world.x)
+        assertTrue(world.x > hello.x)
+        // And the Arabic word's own characters run right to left.
+        assertTrue(line.caretX(0) > line.caretX(1))
+    }
+
+    @Test
+    fun rightAlignmentMovesAnRtlLineToTheLeftEdge() {
+        val line = rtlLine("سلام دنیا", ParaAlign.RIGHT)
+        // The end side of an RTL paragraph is its left edge, so the last word starts there.
+        assertEquals(0.0, line.segs.first { it.text == "دنیا" }.x, 1e-9)
+        assertEquals(64.8, line.caretX(0), 1e-9)
+    }
 }

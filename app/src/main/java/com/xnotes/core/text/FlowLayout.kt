@@ -10,6 +10,15 @@ import com.xnotes.core.pal.MathSize
 import com.xnotes.core.pal.MathTypesetter
 import com.xnotes.core.pal.TextMeasurer
 
+/** A character whose script runs right to left (Hebrew, Arabic and their relatives). */
+private fun isRtlChar(c: Char): Boolean = when (c.code) {
+    in 0x0590..0x05FF, in 0x0600..0x06FF, in 0x0700..0x074F, in 0x0750..0x077F,
+    in 0x0780..0x07BF, in 0x07C0..0x07FF, in 0x0800..0x083F, in 0x0840..0x085F,
+    in 0x08A0..0x08FF, in 0xFB1D..0xFB4F, in 0xFB50..0xFDFF, in 0xFE70..0xFEFF,
+    -> true
+    else -> false
+}
+
 /**
  * The concrete font a run resolves to: style overrides over the flow defaults,
  * a heading's level sizing its text. Code is mono, and so is maths: a formula
@@ -831,6 +840,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         quoteId: Int = -1,
     ): PlacedLine {
         val n = bl.endChar - bl.startChar
+        val rtl = para.dir == ParaDir.RTL
         // A display equation with nothing beside it sits centred, which is where
         // one belongs. It is centred here rather than by turning the paragraph's
         // alignment on, because that would outlive the equation and leave the
@@ -839,14 +849,17 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         val justify = para.align == ParaAlign.JUSTIFY &&
             !lastLineOfPara && !bl.hardBroken && bl.spaceCount > 0
         val extraPerSpace = if (justify) ((avail - bl.width) / bl.spaceCount).coerceAtLeast(0.0) else 0.0
+        // The offset is measured from the side the line starts at: the left of an LTR
+        // paragraph, the right of an RTL one. LEFT means that start side either way,
+        // RIGHT the end side, so the same offsets mirror with the anchor.
         val alignOffset = when {
             centreDisplay || para.align == ParaAlign.CENTER -> ((avail - bl.width) / 2.0).coerceAtLeast(0.0)
             para.align == ParaAlign.RIGHT -> (avail - bl.width).coerceAtLeast(0.0)
             else -> 0.0
         }
-        val left = contentRect.left + indentPx + alignOffset
-        val xs = DoubleArray(n + 1)
-        xs[0] = left
+        // Justify's extra space is the same either way: it widens the spaces the
+        // line breaks at, which are gaps in the visual run wherever it starts.
+        val adv = DoubleArray(n)
         var stretched = 0
         for (k in 0 until n) {
             val ci = bl.startChar + k
@@ -855,8 +868,20 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 a += extraPerSpace
                 stretched++
             }
-            xs[k + 1] = xs[k] + a
+            adv[k] = a
         }
+        val xs = if (rtl) {
+            rtlBoundaries(shape, bl, adv, contentRect.right - indentPx - alignOffset)
+        } else {
+            DoubleArray(n + 1).also { xs ->
+                xs[0] = contentRect.left + indentPx + alignOffset
+                for (k in 0 until n) xs[k + 1] = xs[k] + adv[k]
+            }
+        }
+        // A right-to-left line keeps its boundaries indexed by logical character, so
+        // one span may run backwards in x: take the lower edge as its start.
+        fun xAt(off: Int): Double = xs[off - bl.startChar]
+        fun leftOf(a: Int, b: Int): Double = minOf(xAt(a), xAt(b))
         val segs = mutableListOf<Seg>()
         val decos = mutableListOf<Deco>()
         val mathStarts = mutableListOf<Int>()
@@ -870,7 +895,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 val font = shape.runFonts[r]
                 val style = para.runs[r].style
                 if (style.underline || style.strike || style.highlight != null || style.code || style.link != null) {
-                    decos.add(Deco(xs[from - bl.startChar], xs[to - bl.startChar], font, style))
+                    decos.add(Deco(leftOf(from, to), maxOf(xAt(from), xAt(to)), font, style))
                 }
                 // A formula is one segment whatever is inside it: splitting at its
                 // spaces would hand the painter pieces of LaTeX to set separately.
@@ -878,7 +903,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 if (show == MathShow.FORMULA || show == MathShow.PENDING) {
                     segs.add(
                         Seg(
-                            shape.text.substring(from, to), xs[from - bl.startChar], font, style,
+                            shape.text.substring(from, to), leftOf(from, to), font, style,
                             math = true, start = from, box = shape.mathBox[r], pending = show == MathShow.PENDING,
                         ),
                     )
@@ -888,7 +913,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 }
                 // Showing its source instead: chip it so it cannot read as prose.
                 if (show != null) {
-                    decos.add(Deco(xs[from - bl.startChar], xs[to - bl.startChar], font, style, show))
+                    decos.add(Deco(leftOf(from, to), maxOf(xAt(from), xAt(to)), font, style, show))
                 }
                 // Words draw one run-fragment at a time; spaces are gaps the xs already carry.
                 var s = from
@@ -900,7 +925,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                     var e = s
                     while (e < to && shape.text[e] != ' ') e++
                     if (spans == null) {
-                        segs.add(Seg(shape.text.substring(s, e), xs[s - bl.startChar], font, style, start = s))
+                        segs.add(Seg(shape.text.substring(s, e), leftOf(s, e), font, style, start = s))
                     } else {
                         emitHighlighted(shape, spans, s, e, xs, bl.startChar, font, style, segs)
                     }
@@ -910,15 +935,21 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             runStart = runEnd
         }
         val marker = if (firstLineOfPara && para.list != ListKind.NONE) {
-            val gutterLeft = contentRect.left + (if (para.quote != null) QUOTE_INSET_PX else 0.0) + para.indent * INDENT_STEP_PX
+            // A gutter on the start side: left of the text, or right of it when the paragraph runs RTL.
+            val gutterLeft = if (rtl) {
+                contentRect.right - para.indent * INDENT_STEP_PX - MARKER_GUTTER_PX
+            } else {
+                contentRect.left + (if (para.quote != null) QUOTE_INSET_PX else 0.0) + para.indent * INDENT_STEP_PX
+            }
             val gutter = Rect(gutterLeft, y, MARKER_GUTTER_PX, bl.height)
             val font = FontSpec(flow.defaultSizePt, flow.defaultFace)
             if (para.list == ListKind.ORDERED) {
                 val label = "$ordinal."
                 val labelW = measurer.advances(label, font).sum()
-                Marker(para.list, para.checked, ordinal, gutter, label, gutter.right - MARKER_GAP - labelW, font)
+                val labelX = if (rtl) gutter.left + MARKER_GAP else gutter.right - MARKER_GAP - labelW
+                Marker(para.list, para.checked, ordinal, gutter, label, labelX, font, rtl)
             } else {
-                Marker(para.list, para.checked, ordinal, gutter, font = font)
+                Marker(para.list, para.checked, ordinal, gutter, font = font, rtl = rtl)
             }
         } else {
             null
@@ -936,7 +967,115 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             quoteId = quoteId,
             quoteBar = contentRect.left,
             callout = para.quote?.kind,
+            rtl = rtl,
         )
+    }
+
+    /**
+     * Character-boundary x for a right-to-left line. The line is split into words and
+     * the space runs between them, each word classified by its first strong character;
+     * a space takes the direction of the words around it when they agree, and the
+     * paragraph's direction when they do not (the bidi rule for neutral text). Runs of
+     * one direction then display as one block: the blocks run right to left, so their
+     * order is reversed, while a left-to-right block (an English phrase, a Latin name)
+     * keeps its own order inside the line.
+     *
+     * Boundaries stay indexed by logical character, so the caret and hit-testing need no
+     * direction of their own: one logical span can run backwards in x, which is why
+     * callers take the lower edge as its start.
+     */
+    private fun rtlBoundaries(shape: ParaShape, bl: BrokenLine, adv: DoubleArray, right: Double): DoubleArray {
+        val text = shape.text
+        val off = bl.startChar
+        val n = bl.endChar - off
+        val xs = DoubleArray(n + 1)
+        if (n <= 0) {
+            xs[0] = right
+            return xs
+        }
+        // Trailing spaces hang: the line breaks without counting them, so they sit
+        // outside the aligned width and are placed after everything else.
+        var contentEnd = bl.endChar
+        while (contentEnd > off && text[contentEnd - 1] == ' ') contentEnd--
+        if (contentEnd == off) {
+            // Nothing but spaces: hang them from the right edge, as an RTL line would.
+            xs[0] = right
+            for (k in 0 until n) xs[k + 1] = xs[k] - adv[k]
+            return xs
+        }
+        // Runs of one direction, in logical order, covering [off, contentEnd).
+        val runs = ArrayList<IntArray>() // start, end, rtl flag (1 = right to left)
+        fun add(start: Int, end: Int, rtl: Boolean) {
+            val flag = if (rtl) 1 else 0
+            val last = runs.lastOrNull()
+            if (last != null && last[1] == start && last[2] == flag) last[1] = end
+            else runs += intArrayOf(start, end, flag)
+        }
+        fun wordRtl(start: Int, end: Int): Boolean {
+            for (k in start until end) {
+                val c = text[k]
+                when {
+                    isRtlChar(c) -> return true
+                    c.isLetter() -> return false
+                }
+            }
+            return true // digits and punctuation take the paragraph's direction
+        }
+        var i = off
+        // Leading spaces have no strong text before them: they take the paragraph's direction.
+        if (text[i] == ' ') {
+            var e = i
+            while (e < contentEnd && text[e] == ' ') e++
+            add(i, e, rtl = true)
+            i = e
+        }
+        while (i < contentEnd) {
+            var w = i
+            while (w < contentEnd && text[w] != ' ') w++
+            val wordEnd = w
+            val rtl = wordRtl(i, wordEnd)
+            // The space run after the word takes the direction of its neighbours when they
+            // agree, and the paragraph's when they do not.
+            var s = wordEnd
+            while (s < contentEnd && text[s] == ' ') s++
+            val gapEnd = s
+            add(i, wordEnd, rtl)
+            if (gapEnd > wordEnd) {
+                val nextRtl = if (gapEnd < contentEnd) {
+                    var ne = gapEnd
+                    while (ne < contentEnd && text[ne] != ' ') ne++
+                    wordRtl(gapEnd, ne)
+                } else {
+                    true
+                }
+                add(wordEnd, gapEnd, if (nextRtl == rtl) rtl else true)
+            }
+            i = gapEnd
+        }
+        // Blocks display right to left, so the reverse order is the visual order; the
+        // rightmost block is the logical first.
+        var x = right - (off until contentEnd).sumOf { adv[it - off] }
+        for (r in runs.asReversed()) {
+            val width = (r[0] until r[1]).sumOf { adv[it - off] }
+            if (r[2] == 1) {
+                // Ascending index runs right to left: the block starts at its right edge.
+                xs[r[0] - off] = x + width
+                for (k in r[0] until r[1]) xs[k - off + 1] = xs[k - off] - adv[k - off]
+            } else {
+                xs[r[0] - off] = x
+                for (k in r[0] until r[1]) xs[k - off + 1] = xs[k - off] + adv[k - off]
+            }
+            x += width
+        }
+        // Trailing spaces hang to the left of the last character's end.
+        var cur = xs[contentEnd - off]
+        var k = contentEnd
+        while (k < bl.endChar) {
+            cur -= adv[k - off]
+            xs[k - off + 1] = cur
+            k++
+        }
+        return xs
     }
 
     /** The font of the run holding character [at], or the empty paragraph's when there is none. */
@@ -995,7 +1134,13 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 }
             }
             val st = if (covering != null) style.copy(color = covering.color) else style
-            segs.add(Seg(shape.text.substring(i, boundary), xs[i - blStart], font, st, start = i))
+            segs.add(
+                Seg(
+                    shape.text.substring(i, boundary),
+                    minOf(xs[i - blStart], xs[boundary - blStart]),
+                    font, st, start = i,
+                ),
+            )
             i = boundary
         }
     }

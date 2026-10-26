@@ -102,6 +102,7 @@ import com.xnotes.core.text.InputRules
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.PlainMath
 import com.xnotes.core.text.SlashCommands
@@ -8853,6 +8854,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowParaOp { it.align = next }
     }
 
+    /** The direction the bar reports: the caret paragraph's, LTR when there is none. */
+    fun flowCaretDir(): ParaDir = flowCaretParagraph()?.dir ?: ParaDir.LTR
+
+    /** Flip the paragraph(s) between left-to-right and right-to-left. */
+    fun flowToggleDir() {
+        val next = if (flowCaretDir() == ParaDir.RTL) ParaDir.LTR else ParaDir.RTL
+        flowParaOp { it.dir = next }
+    }
+
     fun flowIndent(delta: Int) = flowParaOp { it.indent += delta }
 
     /** Tab inside a list item nests it (Shift un-nests) rather than typing a tab. */
@@ -9701,11 +9711,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!sel.collapsed) flowText.replaceExternal(sel, "")
     }
 
+    /** The selected flow text, or null when nothing is selected (what the touch menu's copy asks for). */
+    private fun flowSelectedText(): String? {
+        val sel = flowText.selection.normalized()
+        if (sel.collapsed) return null
+        val flow = state.document.flow
+        return CellIndex(flow.paragraphs).textOf(flow.paragraphs, sel)
+    }
+
     private fun flowCopySelection(cut: Boolean) {
         val sel = flowText.selection.normalized()
         if (sel.collapsed) return
-        val flow = state.document.flow
-        val text = CellIndex(flow.paragraphs).textOf(flow.paragraphs, sel)
+        val text = flowSelectedText() ?: return
         val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager ?: return
         cm.setPrimaryClip(android.content.ClipData.newPlainText("xnotes text", text))
