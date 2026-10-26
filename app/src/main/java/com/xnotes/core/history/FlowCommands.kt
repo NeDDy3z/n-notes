@@ -7,6 +7,7 @@ import com.xnotes.core.text.FlowQuote
 import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.Run
 import com.xnotes.core.text.TableSnapshot
@@ -32,6 +33,7 @@ class ParaSnapshot private constructor(
     private val breakToPage: Int?,
     private val listStart: Int?,
     private val quote: FlowQuote?,
+    private val dir: ParaDir,
 ) {
     fun applyTo(para: Paragraph) {
         para.runs.clear()
@@ -50,6 +52,7 @@ class ParaSnapshot private constructor(
         para.breakToPage = breakToPage
         para.listStart = listStart
         para.quote = quote
+        para.dir = dir
         para.touch()
     }
 
@@ -60,7 +63,7 @@ class ParaSnapshot private constructor(
             table === para.table && cellStart == para.cellStart &&
             headingLevel == para.headingLevel && rule == para.rule && breakBefore == para.breakBefore &&
             breakToPage == para.breakToPage &&
-            listStart == para.listStart && quote === para.quote &&
+            listStart == para.listStart && quote === para.quote && dir == para.dir &&
             runs.size == para.runs.size &&
             runs.indices.all { runs[it].text == para.runs[it].text && runs[it].style == para.runs[it].style }
 
@@ -69,6 +72,7 @@ class ParaSnapshot private constructor(
             para.runs.map { it.deepCopy() },
             para.align, para.indent, para.list, para.checked, para.codeLang, para.table, para.cellStart,
             para.headingLevel, para.rule, para.breakBefore, para.breakToPage, para.listStart, para.quote,
+            para.dir,
         )
     }
 }

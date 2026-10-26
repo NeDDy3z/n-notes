@@ -95,6 +95,21 @@ class CanvasView @JvmOverloads constructor(
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean =
         onKey?.invoke(event) == true || super.onKeyDown(keyCode, event)
 
+    /**
+     * Editing shortcuts go to the flow before an IME can claim them as its own editing
+     * commands (select all, copy, cut, paste). An IME running those against its mirror
+     * would move a selection the note never reads. Plain keys are left alone so
+     * composing and autocorrect still reach the IME.
+     */
+    override fun onKeyPreIme(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN && event.isCtrlPressed &&
+            onKey?.invoke(event) == true
+        ) {
+            return true
+        }
+        return super.onKeyPreIme(keyCode, event)
+    }
+
     /** Transparent debug HUD (frame rate / cache / heap), toggled by a four-finger tap. */
     val debugOverlay = DebugOverlay()
 

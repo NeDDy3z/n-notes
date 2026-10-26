@@ -326,7 +326,8 @@ object FlowPainter {
         for (b in breaks.sorted() + seg.end) {
             if (b <= a || b > seg.end) continue
             r.beginMark(Mark.FlowText(line.paraIndex, a, b))
-            val x = seg.x + line.caretX(a) - line.caretX(seg.start)
+            // Each piece sits on the lower boundary of its span, so a right-to-left run lands too.
+            val x = minOf(line.caretX(a), line.caretX(b))
             r.drawTextRun(seg.text.substring(a - seg.start, b - seg.start), x, line.baseline, seg.font, color)
             r.endMark()
             a = b
@@ -339,7 +340,11 @@ object FlowPainter {
         when (m.kind) {
             ListKind.BULLET -> {
                 val radius = (ascent * 0.16).coerceIn(2.0, 6.0)
-                val cx = m.rect.right - FlowLayout.MARKER_GAP - radius
+                val cx = if (m.rtl) {
+                    m.rect.left + FlowLayout.MARKER_GAP + radius
+                } else {
+                    m.rect.right - FlowLayout.MARKER_GAP - radius
+                }
                 val cy = line.baseline - ascent * 0.32
                 r.drawBullet(Pt(cx, cy), radius, line.baseline, m.font, color)
             }
@@ -348,13 +353,22 @@ object FlowPainter {
             }
             ListKind.CHECK -> {
                 val side = (ascent * 0.85).coerceIn(8.0, 26.0)
-                val box = Rect(m.rect.right - FlowLayout.MARKER_GAP - side, line.baseline - side, side, side)
+                // The box hugs the text's side: its right when the line runs LTR, its left when RTL.
+                val left = if (m.rtl) {
+                    m.rect.left + FlowLayout.MARKER_GAP
+                } else {
+                    m.rect.right - FlowLayout.MARKER_GAP - side
+                }
+                val box = Rect(left, line.baseline - side, side, side)
                 r.drawCheckbox(box, (side / 9.0).coerceAtLeast(1.2), m.checked, line.baseline, m.font, color)
             }
             ListKind.NONE -> return
         }
         // Copied, a marker is followed by a real space, so "• item" does not read "•item".
-        if (r.writesText) r.drawTextRun(" ", m.rect.right - FlowLayout.MARKER_GAP, line.baseline, m.font, color)
+        if (r.writesText) {
+            val gapX = if (m.rtl) m.rect.left + FlowLayout.MARKER_GAP else m.rect.right - FlowLayout.MARKER_GAP
+            r.drawTextRun(" ", gapX, line.baseline, m.font, color)
+        }
     }
 
     /** What [style]'s text draws in: its own colour, else a link's, else the flow's. */

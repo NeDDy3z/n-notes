@@ -16,6 +16,20 @@ enum class ParaAlign(val id: String) {
     }
 }
 
+/**
+ * A paragraph's text direction: which end its lines start at. Typing order always
+ * follows the characters; this is the side the first character of a line sits on.
+ * [id] is the stable serialized token.
+ */
+enum class ParaDir(val id: String) {
+    LTR("ltr"),
+    RTL("rtl");
+
+    companion object {
+        fun fromId(id: String?): ParaDir = entries.firstOrNull { it.id == id } ?: LTR
+    }
+}
+
 /** What kind of list item a paragraph is, if any. [id] is the stable serialized token. */
 enum class ListKind(val id: String) {
     NONE("none"),
@@ -117,6 +131,8 @@ class Paragraph(
     var listStart: Int? = null,
     /** The quote or callout this paragraph sits in; code lines, rules and cells never do. */
     var quote: FlowQuote? = null,
+    /** Which end the lines start at: [ParaDir.RTL] lays the text out right to left. */
+    var dir: ParaDir = ParaDir.LTR,
 ) {
     /** Bumped on any content or style mutation; layout caches key on it. */
     var rev: Int = 0
@@ -137,13 +153,13 @@ class Paragraph(
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
         align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
-            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null && quote == null
+            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null && quote == null && dir == ParaDir.LTR
 
     /** A copy sharing [table] and [quote]; [TextFlow.deepCopy] remaps tables onto copies. */
     fun deepCopy(): Paragraph =
         Paragraph(
             runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart, headingLevel,
-            rule = rule, breakBefore = breakBefore, breakToPage = breakToPage, listStart = listStart, quote = quote,
+            rule = rule, breakBefore = breakBefore, breakToPage = breakToPage, listStart = listStart, quote = quote, dir = dir,
         ).also { it.rev = rev }
 
     companion object {
