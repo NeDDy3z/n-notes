@@ -74,7 +74,8 @@ interface SelectionMenuHost : SwatchHost {
     fun deleteSelection()
     fun cutSelection()
     fun copySelection()
-    fun bringToFront()
+    /** Move the selection up or down the stack of items it sits in, as one undo step. */
+    fun arrange(how: com.xnotes.core.model.Arrange)
     fun duplicateSelection()
 
     /** The audio pill selected on its own, which the bar offers to play. */
@@ -140,7 +141,7 @@ interface SelectionMenuHost : SwatchHost {
 
 /**
  * Floating action bar shown above a settled selection (spec-adjacent): delete,
- * cut, copy, bring-to-front, duplicate, and an overflow menu for the rest.
+ * cut, copy, arrange, duplicate, and an overflow menu for the rest.
  * Hidden while moving/resizing. Rotation is not here: everything the bar can be
  * shown over turns by its own grip.
  */
@@ -154,6 +155,7 @@ fun SelectionMenu(
     val palette = LocalPalette.current
     val density = LocalDensity.current
     var overflowOpen by remember { mutableStateOf(false) }
+    var arrangeOpen by remember { mutableStateOf(false) }
     var styleOpen by remember { mutableStateOf(false) }
     var renamingAudio by remember { mutableStateOf<com.xnotes.core.model.AudioItem?>(null) }
 
@@ -187,7 +189,18 @@ fun SelectionMenu(
             ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), shortcut = Keys.DELETE) { host.deleteSelection() }
             ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
             ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { host.copySelection(); host.dismissSelectionMenu() }
-            ActionIcon(XnotesIcons.front, stringResource(R.string.bring_to_front)) { host.bringToFront(); host.dismissSelectionMenu() }
+            Box {
+                ActionIcon(XnotesIcons.front, stringResource(R.string.arrange)) { arrangeOpen = true }
+                DropdownMenu(
+                    expanded = arrangeOpen,
+                    onDismissRequest = { arrangeOpen = false },
+                    properties = PopupProperties(focusable = false),
+                ) {
+                    for ((how, label) in ARRANGE_ROWS) {
+                        DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { arrangeOpen = false; host.arrange(how) })
+                    }
+                }
+            }
             ActionIcon(XnotesIcons.duplicate, stringResource(R.string.duplicate)) { host.duplicateSelection() }
             Box {
                 ActionIcon(XnotesIcons.more, stringResource(R.string.more)) { overflowOpen = true }
@@ -267,6 +280,14 @@ fun SelectionMenu(
         }
     }
 }
+
+/** The Arrange menu's rows, top of the stack first. */
+private val ARRANGE_ROWS = listOf(
+    com.xnotes.core.model.Arrange.FRONT to R.string.bring_to_front,
+    com.xnotes.core.model.Arrange.FORWARD to R.string.bring_forward,
+    com.xnotes.core.model.Arrange.BACKWARD to R.string.send_backward,
+    com.xnotes.core.model.Arrange.BACK to R.string.send_to_back,
+)
 
 /** Rename a recording: its name, ready to type over. */
 @Composable

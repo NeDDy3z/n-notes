@@ -719,6 +719,10 @@
 
     <!-- Selection and long-press menus -->
     <string name="bring_to_front">Bring to front</string>
+    <string name="bring_forward">Bring forward</string>
+    <string name="send_backward">Send backward</string>
+    <string name="send_to_back">Send to back</string>
+    <string name="arrange">Arrange</string>
     <string name="duplicate">Duplicate</string>
     <string name="change_style">Change style</string>
     <string name="lock">Lock</string>

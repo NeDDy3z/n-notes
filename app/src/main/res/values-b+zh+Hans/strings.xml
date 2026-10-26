@@ -593,6 +593,10 @@
 
     <!-- Selection and long-press menus -->
     <string name="bring_to_front">置于顶层</string>
+    <string name="bring_forward">上移一层</string>
+    <string name="send_backward">下移一层</string>
+    <string name="send_to_back">置于底层</string>
+    <string name="arrange">排列</string>
     <string name="duplicate">创建副本</string>
     <string name="change_style">更改样式</string>
     <string name="lock">锁定</string>

@@ -6707,7 +6707,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override fun deleteSelection() = controller.deleteSelection()
     fun selectAll() = controller.selectAll()
-    override fun bringToFront() = controller.bringToFront()
+    override fun arrange(how: com.xnotes.core.model.Arrange) = controller.arrange(how)
     override fun selectionStyles() = controller.selectionStyles()
 
     override fun selectionFills() = controller.selectionFills()
@@ -6800,6 +6800,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_0 -> fitWidth()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_9 -> fitPage()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_8 -> fitHeight()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_RIGHT_BRACKET ->
+                arrange(if (shift) com.xnotes.core.model.Arrange.FRONT else com.xnotes.core.model.Arrange.FORWARD)
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_LEFT_BRACKET ->
+                arrange(if (shift) com.xnotes.core.model.Arrange.BACK else com.xnotes.core.model.Arrange.BACKWARD)
             ctrl -> return false
             e.keyCode == android.view.KeyEvent.KEYCODE_DEL || e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> deleteSelection()
             e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE -> escape()

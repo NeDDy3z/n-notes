@@ -634,11 +634,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         insertImage(bytes, content)
     }
 
-    /** Put the selection on top. On a flat canvas that is purely a reorder of the item list. */
-    override fun bringToFront() {
+    /** Restack the selection. On a flat canvas that is purely a reorder of the item list. */
+    override fun arrange(how: com.xnotes.core.model.Arrange) {
         if (selection.isEmpty) return
         val before = document.items.toList()
-        val after = com.xnotes.core.infinite.bringToFrontOrder(before, selection.items)
+        val picked = HashSet(selection.items)
+        val after = com.xnotes.core.model.arrangeOrder(before, { it in picked }, how) { it.paintBounds() }
         if (!com.xnotes.core.infinite.sameOrder(before, after)) {
             document.replaceAll(after)
             history.push(ReplaceCanvasItems(document, before, after))
@@ -2009,6 +2010,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_0 -> zoomToFit()
             ctrl && (e.keyCode == android.view.KeyEvent.KEYCODE_PLUS || e.keyCode == android.view.KeyEvent.KEYCODE_EQUALS) -> zoomBy(ZOOM_STEP)
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_MINUS -> zoomBy(1.0 / ZOOM_STEP)
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_RIGHT_BRACKET ->
+                arrange(if (shift) com.xnotes.core.model.Arrange.FRONT else com.xnotes.core.model.Arrange.FORWARD)
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_LEFT_BRACKET ->
+                arrange(if (shift) com.xnotes.core.model.Arrange.BACK else com.xnotes.core.model.Arrange.BACKWARD)
             e.keyCode == android.view.KeyEvent.KEYCODE_DEL || e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> deleteSelection()
             e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE -> interaction.clearSelection()
             e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT -> panStep(-1, 0)

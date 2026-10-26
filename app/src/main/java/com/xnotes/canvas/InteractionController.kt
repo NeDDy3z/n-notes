@@ -22,6 +22,9 @@ import com.xnotes.core.history.EditText
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.ReorderItems
+import com.xnotes.core.infinite.sameOrder
+import com.xnotes.core.model.Arrange
+import com.xnotes.core.model.arrangeOrder
 import com.xnotes.core.history.RemoveMarkup
 import com.xnotes.core.history.ReplacePageItems
 import com.xnotes.core.history.ResizeItem
@@ -3399,26 +3402,28 @@ class InteractionController(
         setSelection(all)
     }
 
-    fun bringToFront() {
+    /**
+     * Restack the selection on each page it covers, as one undo step. The selection is let go
+     * afterwards: selected items are painted above the page, so their new depth only shows once
+     * they are back in its cache.
+     */
+    fun arrange(how: Arrange) {
         if (selection.isEmpty()) return
-        val byPage = selection.groupBy { it.pageIndex }
-        for ((pageIndex, sels) in byPage) {
+        val cmds = ArrayList<Command>()
+        for ((pageIndex, sels) in selection.groupBy { it.pageIndex }) {
             val page = state.document.pages.getOrNull(pageIndex) ?: continue
-            val selectedSet = sels.map { it.item }.toSet()
+            val picked = sels.mapTo(HashSet()) { it.item }
             val old = page.items.toList()
-            val kept = old.filter { it !in selectedSet }
-            val moved = old.filter { it in selectedSet }
-            val new = kept + moved
-            if (new != old) {
-                history.push(ReorderItems(page, old, new))
-                page.items.clear()
-                page.items.addAll(new)
-                // Selected items are lifted (excluded from the cache); the reorder moves only
-                // those, leaving the cached non-lifted items' order unchanged. The new z-order
-                // bakes into the cache when the selection is next cleared — no rebuild here.
-            }
+            val new = arrangeOrder(old, { it in picked }, how) { it.paintBounds() }
+            if (sameOrder(old, new)) continue
+            cmds.add(ReorderItems(page, old, new))
+            page.items.clear()
+            page.items.addAll(new)
         }
+        if (cmds.isEmpty()) return
+        history.push(cmds.singleOrNull() ?: CompositeCommand(cmds))
         state.document.dirty = true
+        clearSelection()
         onContentChanged()
         maybeSwitchBackAfterSelect()
     }
