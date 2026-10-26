@@ -6569,16 +6569,47 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         if (base == null) return JoinedPdf(staged, 0, sizes) // a plain note takes the PDF as it is
         try {
-            val baseSizes = baseSource?.takeIf { it.file == base }?.allPageSizePoints() ?: return null
-            val out = runCatching { java.io.File.createTempFile("source", ".pdf", pdfDir) }.getOrNull() ?: return null
-            if (com.xnotes.platform.PdfJoin.append(appContext, base, staged, out, baseSizes, sizes) { importCancelled.get() }) {
-                return JoinedPdf(out, baseSizes.size / 2, sizes)
-            }
-            out.delete()
-            return null
+            return joinFile(staged, sizes, base, baseSource)
         } finally {
             staged.delete()
         }
+    }
+
+    /**
+     * Join [extra], whose pages measure [sizes], onto [base] as [baseSource] reads it, into a new
+     * source file; with no [base], [extra] is copied to be the source. [extra] is left as it was.
+     * Null when it failed or was cancelled. IO.
+     */
+    private fun joinFile(extra: java.io.File, sizes: FloatArray, base: java.io.File?, baseSource: com.xnotes.platform.PdfSource?): JoinedPdf? {
+        val out = runCatching { java.io.File.createTempFile("source", ".pdf", pdfDir) }.getOrNull() ?: return null
+        if (base == null) {
+            if (runCatching { extra.copyTo(out, overwrite = true) }.isSuccess) return JoinedPdf(out, 0, sizes)
+            out.delete()
+            return null
+        }
+        val baseSizes = baseSource?.takeIf { it.file == base }?.allPageSizePoints()
+        if (baseSizes != null && com.xnotes.platform.PdfJoin.append(appContext, base, extra, out, baseSizes, sizes) { importCancelled.get() }) {
+            return JoinedPdf(out, baseSizes.size / 2, sizes)
+        }
+        out.delete()
+        return null
+    }
+
+    /**
+     * Pack the pages of [doc] at [indices] to go into another note, with a PDF of their own made
+     * of the PDF pages they show. Null when that PDF could not be made. IO.
+     */
+    private fun packPages(doc: Document, indices: List<Int>): com.xnotes.core.model.PageCargo? {
+        val cargo = com.xnotes.core.model.PageCargo.pack(doc, indices, textMeasurer)
+        val source = doc.pdfFile
+        if (cargo.pdfIndices.isEmpty() || source == null) return cargo
+        val out = runCatching { java.io.File.createTempFile("pages", ".pdf", pdfDir) }.getOrNull() ?: return null
+        if (!com.xnotes.platform.PdfJoin.subset(appContext, source, cargo.pdfIndices, out)) {
+            out.delete()
+            return null
+        }
+        cargo.pdf = out
+        return cargo
     }
 
     /** Clear every item off the pages at [indices] but keep the pages and their backgrounds, as one undo step. */
