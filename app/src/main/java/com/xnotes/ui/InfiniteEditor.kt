@@ -45,6 +45,7 @@ import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.PageLayers
+import com.xnotes.core.model.withoutAudio
 import com.xnotes.core.model.deepCopyAll
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Labelled
@@ -632,6 +633,48 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun pasteClipboardImageAt(content: Pt) {
         val bytes = com.xnotes.platform.SystemClipboard.imageBytes(appContext) ?: return
         insertImage(bytes, content)
+    }
+
+    override fun copySelectionAsImage() {
+        val bmp = renderSelectionBitmap()
+        val ok = bmp != null && com.xnotes.platform.SystemClipboard.putImage(appContext, bmp, "xnotes selection")
+        onMessage?.invoke(appContext.getString(if (ok) R.string.image_copied else R.string.err_copy_image), null)
+    }
+
+    override fun selectionImageForShare(): java.io.File? {
+        val file = renderSelectionBitmap()?.let { com.xnotes.platform.ShareFiles.png(appContext, it, document.title) }
+        if (file == null) onMessage?.invoke(appContext.getString(R.string.err_share_image), null)
+        return file
+    }
+
+    /**
+     * The selected items alone over the canvas's paper and ruling, cut to their bounds, at twice
+     * content size with the longest side capped, like the paged Screenshot tool's capture.
+     */
+    private fun renderSelectionBitmap(): android.graphics.Bitmap? {
+        if (selection.isEmpty) return null
+        val picked = HashSet(selection.items)
+        val items = document.items.filter { it in picked }.withoutAudio()
+        val bounds = items.map { it.paintBounds() }.reduceOrNull { a, b -> a.union(b) } ?: return null
+        if (bounds.w <= 0.0 || bounds.h <= 0.0) return null
+        val maxDim = 4096.0
+        val res = minOf(2.0, maxDim / bounds.w, maxDim / bounds.h).coerceAtLeast(0.05)
+        val surface = com.xnotes.platform.AndroidRasterSurface.create(
+            kotlin.math.ceil(bounds.w * res).toInt().coerceIn(1, maxDim.toInt()),
+            kotlin.math.ceil(bounds.h * res).toInt().coerceIn(1, maxDim.toInt()),
+        )
+        surface.fill(view.paperColor)
+        val r = surface.renderer()
+        r.scale(res, res)
+        r.translate(-bounds.left, -bounds.top)
+        val bg = document.background
+        if (bg.pattern != com.xnotes.core.model.PagePattern.NONE) {
+            val spacing = bg.clampedSpacing
+            val period = spacing * com.xnotes.core.infinite.BackgroundPattern.levelMultiplier(spacing, res)
+            com.xnotes.core.model.paintPagePattern(r, bg.pattern, bg.patternColor, period, bounds, bounds)
+        }
+        for (item in items) item.paint(r)
+        return surface.bitmap
     }
 
     /** Restack the selection. On a flat canvas that is purely a reorder of the item list. */

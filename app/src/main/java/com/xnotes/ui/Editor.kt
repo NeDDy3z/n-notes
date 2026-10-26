@@ -1864,15 +1864,57 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun copyScreenshotAsImage() {
         val rect = controller.screenshotRect ?: return
         val bmp = renderRegionBitmap(rect)
-        val ok = bmp != null && putBitmapOnClipboard(bmp, "xnotes capture")
+        val ok = bmp != null && com.xnotes.platform.SystemClipboard.putImage(appContext, bmp, "xnotes capture")
         controller.clearScreenshot()
         controller.switchBackAfterScreenshot() // return to the previous pen, like the eraser
         message = if (ok) appContext.getString(R.string.image_copied) else appContext.getString(R.string.err_copy_image)
     }
 
+    /** The screenshot tool's capture as a PNG for the share sheet, putting the capture away; null when it failed. */
+    fun screenshotImageForShare(): java.io.File? {
+        val rect = controller.screenshotRect ?: return null
+        val file = renderRegionBitmap(rect)?.let { com.xnotes.platform.ShareFiles.png(appContext, it, state.document.title) }
+        controller.clearScreenshot()
+        controller.switchBackAfterScreenshot()
+        if (file == null) message = appContext.getString(R.string.err_share_image)
+        return file
+    }
+
+    override fun copySelectionAsImage() {
+        val bmp = renderSelectionBitmap()
+        val ok = bmp != null && com.xnotes.platform.SystemClipboard.putImage(appContext, bmp, "xnotes selection")
+        message = appContext.getString(if (ok) R.string.image_copied else R.string.err_copy_image)
+    }
+
+    override fun selectionImageForShare(): java.io.File? {
+        val file = renderSelectionBitmap()?.let { com.xnotes.platform.ShareFiles.png(appContext, it, state.document.title) }
+        if (file == null) message = appContext.getString(R.string.err_share_image)
+        return file
+    }
+
+    /** The selected items alone over the pages beneath them, cut to their bounds; null with nothing selected. */
+    private fun renderSelectionBitmap(): android.graphics.Bitmap? {
+        val picked = controller.selectedItems()
+        if (picked.isEmpty()) return null
+        val locate = itemPageLocator()
+        var bounds: com.xnotes.core.geometry.Rect? = null
+        for (item in picked) {
+            val page = locate(item) ?: continue
+            val pr = state.pageRects.getOrNull(state.document.pages.indexOfFirst { it === page }) ?: continue
+            val cover = state.footprint(page)
+            val box = item.paintBounds().translate(pr.left - cover.left, pr.top - cover.top)
+            bounds = bounds?.union(box) ?: box
+        }
+        return bounds?.let { renderRegionBitmap(it, HashSet(picked)) }
+    }
+
     /** Render a content-space rectangle (whatever it overlaps: pages, backgrounds, ink, the gap)
-     *  into a bitmap, the screenshot tool's "what I see" capture. */
-    private fun renderRegionBitmap(content: com.xnotes.core.geometry.Rect): android.graphics.Bitmap? {
+     *  into a bitmap, the screenshot tool's "what I see" capture. With [only], just those items
+     *  are drawn over the pages, and no typed text. */
+    private fun renderRegionBitmap(
+        content: com.xnotes.core.geometry.Rect,
+        only: Set<com.xnotes.core.model.CanvasItem>? = null,
+    ): android.graphics.Bitmap? {
         if (content.w <= 0.0 || content.h <= 0.0) return null
         // 2x content for crispness, but cap the longest side so a big capture can't blow up memory.
         val maxDim = 4096.0
@@ -1905,24 +1947,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                         state.paintPageBackground?.invoke(page, r, res, local)
                     }
                 }
-                val showFlow = local.w > 0.0 && local.h > 0.0
-                PageLayers.paint(itemsSnapshot(page).withoutAudio(), { if (showFlow) state.paintFlow?.invoke(page, r, local) }) { it.paint(r) }
+                val showFlow = only == null && local.w > 0.0 && local.h > 0.0
+                val items = itemsSnapshot(page).withoutAudio().let { all -> if (only == null) all else all.filter { it in only } }
+                PageLayers.paint(items, { if (showFlow) state.paintFlow?.invoke(page, r, local) }) { it.paint(r) }
             }
         }
         return surface.bitmap
     }
-
-    /** Write [bmp] to the FileProvider-exposed cache and set it as the primary clip (an image uri). */
-    private fun putBitmapOnClipboard(bmp: android.graphics.Bitmap, label: String): Boolean = runCatching {
-        val dir = java.io.File(appContext.cacheDir, "clipboard").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() }
-        val file = java.io.File(dir, "capture.png")
-        java.io.FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-        val uri = androidx.core.content.FileProvider.getUriForFile(appContext, "${appContext.packageName}.fileprovider", file)
-        val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        cm.setPrimaryClip(android.content.ClipData.newUri(appContext.contentResolver, label, uri))
-        true
-    }.getOrDefault(false)
 
     override fun pasteItemsAt(content: com.xnotes.core.geometry.Pt) {
         controller.pasteItemsAt(content)

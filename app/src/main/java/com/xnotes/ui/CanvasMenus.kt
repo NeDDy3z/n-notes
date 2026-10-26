@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -137,6 +138,12 @@ interface SelectionMenuHost : SwatchHost {
 
     /** Mirror the selection about its own centre, left to right or [upsideDown], as one undo step. */
     fun mirrorSelection(upsideDown: Boolean)
+
+    /** Put the selection, drawn alone over what lies beneath it and cut to its bounds, on the clipboard as a picture. */
+    fun copySelectionAsImage()
+
+    /** That picture as a PNG ready for the share sheet, or null (with a message) when it could not be made. */
+    fun selectionImageForShare(): java.io.File?
 }
 
 /**
@@ -150,6 +157,7 @@ fun SelectionMenu(
     host: SelectionMenuHost,
     onSaveAudio: ((com.xnotes.core.model.AudioItem) -> Unit)? = null,
     onShareAudio: ((com.xnotes.core.model.AudioItem) -> Unit)? = null,
+    onShareImage: ((java.io.File) -> Unit)? = null,
 ) {
     val rect = host.selectionMenuRect ?: return
     val palette = LocalPalette.current
@@ -264,6 +272,16 @@ fun SelectionMenu(
                         enabled = mirrors,
                         onClick = { overflowOpen = false; host.mirrorSelection(upsideDown = true) },
                     )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.copy_as_image)) },
+                        onClick = { overflowOpen = false; host.copySelectionAsImage() },
+                    )
+                    onShareImage?.let { share ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.share_as_image)) },
+                            onClick = { overflowOpen = false; host.selectionImageForShare()?.let(share) },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.lock)) },
                         onClick = { overflowOpen = false; host.lockSelection() },
@@ -487,13 +505,13 @@ private fun StepDot(glyph: String, label: String, enabled: Boolean, onClick: () 
  * "Copy as image" button that renders the region and puts it on the system clipboard.
  */
 @Composable
-fun ScreenshotMenu(editor: Editor) {
+fun ScreenshotMenu(editor: Editor, onShare: (java.io.File) -> Unit) {
     val rect = editor.screenshotMenu ?: return
     val palette = LocalPalette.current
     val density = LocalDensity.current
 
     val barHeightPx = with(density) { 44.dp.toPx() }
-    val barWidthPx = with(density) { 170.dp.toPx() }
+    val barWidthPx = with(density) { 216.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
@@ -507,23 +525,28 @@ fun ScreenshotMenu(editor: Editor) {
             .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
             .clip(MaterialTheme.shapes.medium)
             .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium)
-            .clickable { editor.copyScreenshotAsImage() }
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            XnotesIcons.copy,
-            contentDescription = stringResource(R.string.copy_as_image),
-            tint = palette.text.toComposeColor(),
-            modifier = Modifier.size(20.dp),
-        )
-        Text(
-            stringResource(R.string.copy_as_image),
-            color = palette.text.toComposeColor(),
-            fontSize = 14.sp,
-            modifier = Modifier.padding(start = 8.dp),
-        )
+        Row(
+            Modifier.clickable { editor.copyScreenshotAsImage() }.padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                XnotesIcons.copy,
+                contentDescription = stringResource(R.string.copy_as_image),
+                tint = palette.text.toComposeColor(),
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                stringResource(R.string.copy_as_image),
+                color = palette.text.toComposeColor(),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        Box(Modifier.width(1.dp).height(24.dp).background(palette.border.toComposeColor()))
+        ActionIcon(XnotesIcons.share, stringResource(R.string.share)) { editor.screenshotImageForShare()?.let(onShare) }
     }
 }
 

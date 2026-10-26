@@ -709,8 +709,10 @@
     <string name="save_as">Save as</string>
     <string name="no_contents">— no table of contents —</string>
     <string name="add_bookmark">Add bookmark</string>
+    <string name="share_as_image">Share as image</string>
+    <string name="err_share_image">Couldn’t share the image.</string>
     <string name="take_photo">Take photo</string>
-    <string name="err_no_camera">No camera app to take a photo with</string>
+    <string name="err_no_camera">No camera app to take a photo with.</string>
     <string name="pref_volume_keys_turn_pages">Volume keys turn pages</string>
     <string name="rename_bookmark">Rename bookmark</string>
     <string name="bookmark_options">Bookmark options</string>

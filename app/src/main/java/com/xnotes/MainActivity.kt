@@ -986,6 +986,10 @@ private fun EditorScreen(
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
                 onTakePhoto = { pane -> takePhoto(pane) },
+                onShareImage = { file ->
+                    runCatching { launchShare(file, file.nameWithoutExtension, "image/png") }
+                        .onFailure { editor.message = context.getString(R.string.err_share_image) }
+                },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
                 onInsertAudio = { pane ->
                     pendingAudioPane = pane
@@ -1197,6 +1201,8 @@ private class PaneActions(
     val onRecordAudio: (Editor) -> Unit,
     val onSaveAudio: (Editor, com.xnotes.core.model.AudioItem) -> Unit,
     val onShareAudio: (Editor, com.xnotes.core.model.AudioItem) -> Unit,
+    /** Hand a PNG the pane rendered (a selection or a capture) to the share sheet. */
+    val onShareImage: (java.io.File) -> Unit,
     val onImportTemplate: () -> Unit,
     val onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
@@ -1406,6 +1412,7 @@ private fun EditorPane(
                             canvas,
                             onSaveAudio = { actions.onSaveAudio(editor, it) },
                             onShareAudio = { actions.onShareAudio(editor, it) },
+                            onShareImage = actions.onShareImage,
                         )
                         com.xnotes.ui.TextStyleBar(canvas)
                         com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
@@ -1454,8 +1461,9 @@ private fun EditorPane(
                                 editor,
                                 onSaveAudio = { actions.onSaveAudio(editor, it) },
                                 onShareAudio = { actions.onShareAudio(editor, it) },
+                                onShareImage = actions.onShareImage,
                             )
-                            com.xnotes.ui.ScreenshotMenu(editor)
+                            com.xnotes.ui.ScreenshotMenu(editor, onShare = actions.onShareImage)
                             com.xnotes.ui.TextStyleBar(editor)
                             com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
                             com.xnotes.ui.FlowEditMenu(editor)
