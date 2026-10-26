@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
@@ -452,6 +453,8 @@ private fun PageThumb(
     val selected = editor.isPageSelected(index)
     var menuOpen by remember { mutableStateOf(false) }
     var sizing by remember { mutableStateOf(false) }
+    var extracting by remember { mutableStateOf<Boolean?>(null) }
+    extracting?.let { move -> ExtractDialog(editor, listOf(index), move) { extracting = null } }
     if (sizing) {
         editor.pageSizeChoice(index)?.let { initial ->
             PageSizeDialog(initial, onApply = { sizing = false; editor.resizePages(listOf(index), it) }) { sizing = false }
@@ -509,7 +512,10 @@ private fun PageThumb(
                             Icon(XnotesIcons.more, stringResource(R.string.page_options), tint = palette.text.toComposeColor(), modifier = Modifier.size(16.dp))
                         }
                     }
-                    PageContextMenu(editor, index, page.cover, page.pdfPage != null, menuOpen, { menuOpen = false }, { sizing = true }, onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPdf, onPickCover)
+                    PageContextMenu(
+                        editor, index, page.cover, page.pdfPage != null, menuOpen, { menuOpen = false }, { sizing = true }, { extracting = it },
+                        onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPdf, onPickCover,
+                    )
                 }
             }
         }
@@ -547,6 +553,7 @@ private fun PageContextMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onPageSize: () -> Unit,
+    onExtract: (move: Boolean) -> Unit,
     onSharePages: (List<Int>, Boolean) -> Unit,
     onSavePagesAsPdf: (List<Int>) -> Unit,
     onSavePagesAsImages: (List<Int>) -> Unit,
@@ -590,6 +597,8 @@ private fun PageContextMenu(
                 }
                 DropdownMenuItem(text = { Text(stringResource(R.string.rotate_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { sub = MENU_ROTATE })
                 DropdownMenuItem(text = { Text(stringResource(R.string.page_size_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.pageSize), enabled = !isPdf, onClick = { onDismiss(); onPageSize() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.extract_to_new_note)) }, leadingIcon = menuIcon(XnotesIcons.extract), onClick = { onDismiss(); onExtract(false) })
+                DropdownMenuItem(text = { Text(stringResource(R.string.move_to_new_note)) }, leadingIcon = menuIcon(XnotesIcons.moveToFolder), onClick = { onDismiss(); onExtract(true) })
                 DropdownMenuItem(text = { Text(stringResource(R.string.erase_page)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { editor.deletePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
@@ -597,6 +606,34 @@ private fun PageContextMenu(
             }
         }
     }
+}
+
+/** Extract or Move to new note: the name the new note gets, the note's own with which pages suggested, then the pages go into it. */
+@Composable
+private fun ExtractDialog(editor: Editor, indices: List<Int>, move: Boolean, onDismiss: () -> Unit) {
+    val suggested = remember(indices) { editor.extractName(indices) }
+    var name by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(suggested, androidx.compose.ui.text.TextRange(0, suggested.length))) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (move) R.string.move_to_new_note_title else R.string.extract_to_new_note_title)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.new_note_name)) },
+                modifier = Modifier.focusRequester(focus),
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = name.text.isNotBlank(), onClick = { onDismiss(); editor.extractPages(indices, name.text.trim(), move) }) {
+                Text(stringResource(if (move) R.string.move else R.string.extract))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /** A Share or Save as sub-page: its back row, then Image (PNG) and PDF; [onPick] says which. */
@@ -654,7 +691,9 @@ private fun PageSelectionMore(
     var open by remember { mutableStateOf(false) }
     var sub by remember { mutableStateOf(MENU_MAIN) }
     var sizing by remember { mutableStateOf<com.xnotes.core.model.PageSizeChoice?>(null) }
+    var extracting by remember { mutableStateOf<Pair<List<Int>, Boolean>?>(null) }
     LaunchedEffect(open) { if (!open) sub = MENU_MAIN }
+    extracting?.let { (picked, move) -> ExtractDialog(editor, picked, move) { extracting = null } }
     fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
     fun close() { open = false }
     sizing?.let { initial ->
@@ -690,6 +729,14 @@ private fun PageSelectionMore(
                         },
                     )
                     DropdownMenuItem(text = { Text(stringResource(R.string.erase)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { close(); editor.erasePages(editor.selectedPageIndices()) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.extract_to_new_note)) }, leadingIcon = menuIcon(XnotesIcons.extract), onClick = {
+                        close()
+                        extracting = editor.selectedPageIndices() to false
+                    })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.move_to_new_note)) }, leadingIcon = menuIcon(XnotesIcons.moveToFolder), onClick = {
+                        close()
+                        extracting = editor.selectedPageIndices() to true
+                    })
                     DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
                     DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
                 }

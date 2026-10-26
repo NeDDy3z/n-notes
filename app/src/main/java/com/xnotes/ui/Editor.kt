@@ -6681,7 +6681,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val base = doc.pdfFile
         val baseSource = pdfSource
         importCancelled.set(false)
-        pastingPages = true
+        busyWith = R.string.pasting_pages
         importing = true
         PageClipboard.use(clip)
         val joined = try {
@@ -6693,7 +6693,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
         } finally {
             importing = false
-            pastingPages = false
+            busyWith = null
             PageClipboard.done(clip)
         }
         if (joined == null || importCancelled.get() || state.document !== doc || doc.pdfFile != base) {
@@ -6719,9 +6719,109 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         goToPage(firstAt)
     }
 
-    /** True while a paste joins its pages' PDF onto this note's: the progress dialog says so. */
-    var pastingPages by mutableStateOf(false)
+    /** What the progress dialog says while [importing] is not an import: a paste of pages, a note being made. */
+    var busyWith by mutableStateOf<Int?>(null)
         private set
+
+    /** Opens a stored note in this pane, guarded like a tap in the explorer; the screen around it installs it. */
+    var openInPane: ((String) -> Unit)? = null
+
+    /** A file this editor made: its uri and the name it got. */
+    class MadeFile(val uri: String, val name: String)
+
+    /**
+     * Copy the pages at [indices] into a new note named [name], next to this one, or in the top
+     * folder when this note lies outside it; with [move] they then leave this note, as one undo
+     * step. This note stays open, and a message names the new one with a button to open it.
+     */
+    fun extractPages(indices: List<Int>, name: String, move: Boolean) {
+        val root = browseRoot ?: run { message = appContext.getString(R.string.err_extract_pages); return }
+        val doc = state.document
+        val picked = indices.filter { it in doc.pages.indices }.distinct().sorted()
+        if (picked.isEmpty()) return
+        if (move && picked.size >= doc.pages.size) {
+            message = appContext.getString(R.string.err_keep_one_page)
+            return
+        }
+        val leaving = picked.map { doc.pages[it] }
+        val cargo = com.xnotes.core.model.PageCargo.pack(doc, picked, textMeasurer)
+        // A name of its own for the PDF, which a note switched away from meanwhile would delete.
+        val sourcePdf = doc.pdfFile?.takeIf { cargo.pdfIndices.isNotEmpty() }?.let { keepPdf(it) }
+        val parentId = currentUri?.takeIf { isUnderTree(it, root) }?.let { parentDocIdOf(it) } ?: browseRootDocId(root)
+        autosaveScope.launch {
+            importCancelled.set(false)
+            busyWith = R.string.making_note
+            importing = true
+            val made = try {
+                withContext(Dispatchers.IO) {
+                    writeCargoNote(root, parentId, name, doc, cargo, sourcePdf)?.also { made ->
+                        if (importCancelled.get()) {
+                            runCatching { android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, android.net.Uri.parse(made.uri)) }
+                        }
+                    }
+                }
+            } finally {
+                importing = false
+                busyWith = null
+                sourcePdf?.delete()
+                cargo.pdf?.delete()
+            }
+            if (importCancelled.get()) return@launch
+            if (made == null) {
+                message = appContext.getString(R.string.err_extract_pages)
+                return@launch
+            }
+            if (move && state.document === doc) deletePages(leaving.map { p -> doc.pages.indexOfFirst { it === p } }.filter { it >= 0 })
+            val folder = withContext(Dispatchers.IO) {
+                queryDisplayName(android.provider.DocumentsContract.buildDocumentUriUsingTree(android.net.Uri.parse(root), parentId))
+            } ?: ""
+            say(
+                appContext.getString(R.string.pages_now_in, com.xnotes.core.util.DocumentKind.stripSuffix(made.name), folder),
+                appContext.getString(R.string.open) to { openInPane?.invoke(made.uri) },
+            )
+        }
+    }
+
+    /**
+     * Write [cargo], pages from [from], as a new note named [rawName] under [parentId]: their pages,
+     * PDF pages and bookmarks, no typed text, and [from]'s note-wide look for pages added later. IO.
+     */
+    private fun writeCargoNote(
+        root: String, parentId: String, rawName: String, from: Document,
+        cargo: com.xnotes.core.model.PageCargo, sourcePdf: java.io.File?,
+    ): MadeFile? {
+        val note = Document(dpi = cargo.dpi, created = System.currentTimeMillis())
+        note.style = from.style
+        note.margins = from.margins
+        note.newPageSize = from.newPageSize
+        from.style.template?.let { key ->
+            from.templates[key]?.let { note.templates = note.templates + (key to it) }
+            from.templatePackages[key]?.let { note.templatePackages = note.templatePackages + (key to it) }
+        }
+        (settings.newNoteFlow ?: factoryFlow).applyTo(note.flow)
+        val pdf = cargoPdf(cargo, sourcePdf)
+        if (cargo.pdfIndices.isNotEmpty() && pdf == null) return null
+        note.pdfFile = pdf
+        val pages = cargo.unpack(note, if (pdf != null) 0 else null, textMeasurer)
+        if (cargo.cover) pages.firstOrNull()?.cover = true
+        note.pages.addAll(pages)
+        note.bookmarks.addAll(cargo.bookmarks.map { Bookmark(it.page, it.label) })
+        val name = uniqueDocumentName(root, parentId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        val uri = createNoteFile(root, parentId, name) { codec.write(note, it) } ?: return null
+        return MadeFile(uri, name)
+    }
+
+    /** The name Extract suggests for the pages at [indices]: the note's, then which pages or how many. */
+    fun extractName(indices: List<Int>): String {
+        val picked = indices.distinct().sorted()
+        val title = state.document.title
+        val run = picked.isNotEmpty() && picked.last() - picked.first() == picked.size - 1
+        return when {
+            picked.size == 1 -> appContext.getString(R.string.extract_name_page, title, picked[0] + 1)
+            run -> appContext.getString(R.string.extract_name_run, title, picked.first() + 1, picked.last() + 1)
+            else -> appContext.getString(R.string.extract_name_count, title, picked.size)
+        }
+    }
 
     /**
      * Put copies of the pages at [indices] as one block, in order, right after the last of them,

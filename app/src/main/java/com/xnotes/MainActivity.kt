@@ -57,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -993,6 +994,7 @@ private fun EditorScreen(
                     runCatching { launchShare(file, file.nameWithoutExtension, "image/png") }
                         .onFailure { editor.message = context.getString(R.string.err_share_image) }
                 },
+                onOpenFile = { pane, uri -> scope.launch { openInto(pane, uri) } },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
                 onInsertAudio = { pane ->
                     pendingAudioPane = pane
@@ -1126,11 +1128,7 @@ private fun EditorScreen(
         val batch = importer.importProgress
         if (batch != null) PdfImportBatchDialog(batch.done, batch.total) { importer.cancelImportInProgress() }
         else PdfImportDialog(
-            label = when {
-                importer.pastingPages -> R.string.pasting_pages
-                importer.pendingImport?.markdown == true -> R.string.importing_markdown
-                else -> R.string.importing_pdf
-            },
+            label = importer.busyWith ?: if (importer.pendingImport?.markdown == true) R.string.importing_markdown else R.string.importing_pdf,
             onCancel = { importer.cancelImportInProgress() }, // the stream-copy stops at its next buffer
         )
     }
@@ -1235,6 +1233,8 @@ private class PaneActions(
     val onShareAudio: (Editor, com.xnotes.core.model.AudioItem) -> Unit,
     /** Hand a PNG the pane rendered (a selection or a capture) to the share sheet. */
     val onShareImage: (java.io.File) -> Unit,
+    /** Open a stored note in [Editor]'s pane, as a tap on it in the explorer would. */
+    val onOpenFile: (Editor, String) -> Unit,
     val onImportTemplate: () -> Unit,
     val onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit,
     val onSharePages: (Editor, List<Int>, Boolean) -> Unit,
@@ -1380,6 +1380,7 @@ private fun EditorPane(
     val palette = LocalPalette.current
     val focusRequester = remember { FocusRequester() }
     val focused = app.active === editor
+    SideEffect { editor.openInPane = { uri -> actions.onOpenFile(editor, uri) } }
     // This pane owns the keyboard while it is the focused one; (re)grab it as that changes.
     LaunchedEffect(focused, editor.noteOpen) {
         if (focused && editor.noteOpen) runCatching { focusRequester.requestFocus() }
