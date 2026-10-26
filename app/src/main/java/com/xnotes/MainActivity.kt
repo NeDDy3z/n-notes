@@ -201,6 +201,7 @@ class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // The pen writes in whichever pane has the focus, so its button keys go to that pane too.
         if (editor?.active?.onStylusButtonKey(event) == true) return true
+        if (editor?.active?.onVolumeKey(event) == true) return true
         return super.dispatchKeyEvent(event)
     }
 

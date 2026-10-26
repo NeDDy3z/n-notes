@@ -220,6 +220,14 @@ private const val PDF_TEXT_MENU_SETTLE_MS = 250L
 /** Text handed to another app's text action at most, well inside what an intent can carry. */
 private const val PROCESS_TEXT_MAX = 100_000
 
+/** Ctrl shortcuts a focused text field keeps for itself (select, clipboard, undo, word moves). */
+private val FIELD_CTRL_KEYS = setOf(
+    android.view.KeyEvent.KEYCODE_A, android.view.KeyEvent.KEYCODE_C, android.view.KeyEvent.KEYCODE_V,
+    android.view.KeyEvent.KEYCODE_X, android.view.KeyEvent.KEYCODE_Z, android.view.KeyEvent.KEYCODE_Y,
+    android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+    android.view.KeyEvent.KEYCODE_DEL, android.view.KeyEvent.KEYCODE_FORWARD_DEL,
+)
+
 /** How far off an address written in a PDF's text a tap may land and still open it. */
 private const val AUTO_LINK_SLOP_DP = 4.0
 
@@ -6758,9 +6766,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     var keyActions = KeyActions()
 
+    /** A text field in the side panel has the keyboard: typing and its editing keys are its own. */
+    var panelFieldFocused = false
+
     fun handleKeyDown(e: android.view.KeyEvent): Boolean {
         // A canvas is on top: it owns the keyboard, and understands only its own shortcuts.
         if (canvasOpen) return infinite.handleKeyDown(e)
+        if (panelFieldFocused && (!e.isCtrlPressed || e.keyCode in FIELD_CTRL_KEYS)) return false
         // A live flow caret session owns the keyboard first (Ctrl+B means bold here).
         if (flowText.active && handleFlowKey(e)) return true
         // While editing a text box, let the field consume keys (only Escape commits).
@@ -6791,8 +6803,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ctrl -> return false
             e.keyCode == android.view.KeyEvent.KEYCODE_DEL || e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> deleteSelection()
             e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE -> escape()
-            e.keyCode == android.view.KeyEvent.KEYCODE_PAGE_UP -> prevPage()
-            e.keyCode == android.view.KeyEvent.KEYCODE_PAGE_DOWN -> nextPage()
+            e.keyCode == android.view.KeyEvent.KEYCODE_PAGE_UP || e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> prevPage()
+            e.keyCode == android.view.KeyEvent.KEYCODE_PAGE_DOWN || e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT ||
+                e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> nextPage()
+            e.keyCode == android.view.KeyEvent.KEYCODE_SPACE -> if (shift) prevPage() else nextPage()
             e.keyCode == android.view.KeyEvent.KEYCODE_F11 -> keyActions.fullscreen()
             e.keyCode == android.view.KeyEvent.KEYCODE_P -> selectTool(Tool.PEN)
             e.keyCode == android.view.KeyEvent.KEYCODE_C -> selectTool(Tool.CALLIGRAPHY)
@@ -6803,6 +6818,21 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             e.keyCode == android.view.KeyEvent.KEYCODE_S -> selectTool(Tool.SHAPE)
             e.keyCode == android.view.KeyEvent.KEYCODE_T -> selectTool(Tool.TEXT)
             else -> return false
+        }
+        return true
+    }
+
+    /**
+     * The volume keys, when Preferences make them turn pages: up for the previous page, down for
+     * the next, one page a press. They keep the volume while a recording plays or no note is up.
+     */
+    fun onVolumeKey(e: android.view.KeyEvent): Boolean {
+        val up = e.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP
+        if (!up && e.keyCode != android.view.KeyEvent.KEYCODE_VOLUME_DOWN) return false
+        if (!settings.prefs.volumeKeysTurnPages || !noteOpen || canvasOpen) return false
+        if (AudioPlayback.session?.playing == true) return false
+        if (e.action == android.view.KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
+            if (up) prevPage() else nextPage()
         }
         return true
     }

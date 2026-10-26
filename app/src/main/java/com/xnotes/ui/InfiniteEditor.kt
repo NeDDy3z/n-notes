@@ -2011,9 +2011,20 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_MINUS -> zoomBy(1.0 / ZOOM_STEP)
             e.keyCode == android.view.KeyEvent.KEYCODE_DEL || e.keyCode == android.view.KeyEvent.KEYCODE_FORWARD_DEL -> deleteSelection()
             e.keyCode == android.view.KeyEvent.KEYCODE_ESCAPE -> interaction.clearSelection()
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT -> panStep(-1, 0)
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> panStep(1, 0)
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> panStep(0, -1)
+            e.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> panStep(0, 1)
             else -> return false
         }
         return true
+    }
+
+    /** Show more of the canvas toward ([dx], [dy]) by an eighth of the view, as the arrow keys do. */
+    private fun panStep(dx: Int, dy: Int) {
+        viewport.panByViewport(-dx * viewport.widthPx / PAN_STEPS, -dy * viewport.heightPx / PAN_STEPS)
+        onViewChanged()
+        view.publish()
     }
 
     /** Select everything unlocked on the canvas, which on an unbounded one means most of it. */
@@ -2220,6 +2231,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     companion object {
         /** Zoom step for the keyboard, matching a comfortable notch of a pinch. */
         const val ZOOM_STEP = 1.25
+
+        /** An arrow key moves the view by this fraction of itself, as a divisor. */
+        const val PAN_STEPS = 8.0
 
         /** Content pixels a duplicate lands from its original, so the copy is visibly a copy. */
         const val DUPLICATE_NUDGE = 24.0
