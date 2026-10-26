@@ -237,6 +237,10 @@ object XnotesIcons {
     )
     val paste = icon("M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2", "M9 2h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z")
     val more = icon(circle(12.0, 5.0, 1.0), circle(12.0, 12.0, 1.0), circle(12.0, 19.0, 1.0))
+    val camera = icon(
+        "M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z",
+        circle(12.0, 13.0, 3.0),
+    )
     val menu = icon("M4 6h16", "M4 12h16", "M4 18h16")
     val search = icon(circle(11.0, 11.0, 8.0), "M21 21l-4.35-4.35")
 

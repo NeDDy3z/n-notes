@@ -281,6 +281,7 @@
     <string name="close_pane">关闭此窗格</string>
     <string name="paste_image">粘贴图片</string>
     <string name="insert_image_ellipsis">插入图片…</string>
+    <string name="take_photo">拍照</string>
     <string name="stickers">贴纸</string>
     <string name="add_stickers">添加贴纸…</string>
     <string name="no_stickers">尚无贴纸。</string>

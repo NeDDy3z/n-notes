@@ -1554,15 +1554,17 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         }
         // Land it at a comfortable size for the current view rather than at its pixel size, which
         // on an unbounded canvas would be arbitrary.
+        val turn = com.xnotes.platform.ImageDecoder.exifTurn(file.path)
+        val (iw, ih) = if (turn % 180 != 0) size.height to size.width else size.width to size.height
         val visible = viewport.visibleContentRect()
         val maxW = visible.w * 0.6
         val maxH = visible.h * 0.6
-        val scale = minOf(1.0, maxW / size.width, maxH / size.height)
-        val w = size.width * scale
-        val h = size.height * scale
+        val scale = minOf(1.0, maxW / iw, maxH / ih)
+        val w = iw * scale
+        val h = ih * scale
         val centre = atContent ?: viewport.centerContent
         val rect = Rect(centre.x - w / 2.0, centre.y - h / 2.0, w, h)
-        commitItem(ImageItem(ImageData(file, size.width, size.height), rect))
+        commitItem(ImageItem(ImageData(file, size.width, size.height), rect, orientation = turn))
         return true
     }
 

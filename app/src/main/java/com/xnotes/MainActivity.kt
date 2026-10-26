@@ -611,6 +611,35 @@ private fun EditorScreen(
         step(0)
     }
 
+    // A photo the camera app is taking, into a cache file handed to it, for the pane that asked.
+    var pendingPhoto by remember { mutableStateOf<Pair<Editor, java.io.File>?>(null) }
+    val takePhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        val (pane, file) = pendingPhoto ?: return@rememberLauncherForActivityResult
+        pendingPhoto = null
+        scope.launch {
+            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                (if (taken) runCatching { file.readBytes() }.getOrNull() else null).also { file.delete() }
+            }
+            if (bytes == null || bytes.isEmpty()) return@launch
+            if (pane.canvasOpen) pane.infinite.insertImage(bytes) else pane.insertImageAt(bytes, null)
+        }
+    }
+
+    fun takePhoto(pane: Editor) {
+        val file = runCatching {
+            val dir = java.io.File(context.cacheDir, "camera").apply { mkdirs() }
+            java.io.File(dir, "photo-${System.currentTimeMillis()}.jpg")
+        }.getOrNull() ?: return
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        pendingPhoto = pane to file
+        try {
+            takePhotoLauncher.launch(uri)
+        } catch (_: android.content.ActivityNotFoundException) {
+            pendingPhoto = null
+            pane.message = context.getString(R.string.err_no_camera)
+        }
+    }
+
     // An image picked for the infinite canvas: read the bytes and hand them straight over.
     val insertCanvasImageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -956,6 +985,7 @@ private fun EditorScreen(
                     pendingCanvasInsert = PendingInsert(pane, at)
                     insertCanvasImageLauncher.launch(arrayOf("image/*"))
                 },
+                onTakePhoto = { pane -> takePhoto(pane) },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
                 onInsertAudio = { pane ->
                     pendingAudioPane = pane
@@ -1160,6 +1190,8 @@ private class PaneActions(
     val onClosePane: (Editor) -> Unit,
     val onInsertImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
     val onInsertCanvasImage: (Editor, com.xnotes.core.geometry.Pt?) -> Unit,
+    /** Take a photo with the camera app and place it like an inserted picture, on the canvas when [Editor.canvasOpen]. */
+    val onTakePhoto: (Editor) -> Unit,
     val onAddStickers: () -> Unit,
     val onInsertAudio: (Editor) -> Unit,
     val onRecordAudio: (Editor) -> Unit,
@@ -1356,6 +1388,7 @@ private fun EditorPane(
                         onClosePane = onClose,
                         onInsertAudio = { actions.onInsertAudio(editor) },
                         onRecordAudio = { actions.onRecordAudio(editor) },
+                        onTakePhoto = { actions.onTakePhoto(editor) },
                     )
                 }
                 ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
@@ -1391,6 +1424,7 @@ private fun EditorPane(
                         onImportTemplate = actions.onImportTemplate,
                         onInsertAudio = { actions.onInsertAudio(editor) },
                         onRecordAudio = { actions.onRecordAudio(editor) },
+                        onTakePhoto = { actions.onTakePhoto(editor) },
                     )
                 }
                 ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->

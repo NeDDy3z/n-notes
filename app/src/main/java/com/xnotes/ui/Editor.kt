@@ -2314,11 +2314,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .coerceIn(0, state.document.pages.lastIndex)
         val page = state.document.pages[index]
         val pr = state.pageRects.getOrNull(index)
+        // A photo stands the way its camera's EXIF data says, turned in place rather than re-encoded.
+        val turn = com.xnotes.platform.ImageDecoder.exifTurn(file.path)
+        val (iw, ih) = if (turn % 180 != 0) size.height to size.width else size.width to size.height
         val maxW = page.width * 0.6
         val maxH = page.height * 0.6
-        val scale = minOf(1.0, maxW / size.width, maxH / size.height)
-        val w = size.width * scale
-        val h = size.height * scale
+        val scale = minOf(1.0, maxW / iw, maxH / ih)
+        val w = iw * scale
+        val h = ih * scale
         // Placed anywhere on the paper, margins included, but never hanging off it.
         val cover = state.footprint(page)
         val rect = if (atContent != null && pr != null) {
@@ -2330,7 +2333,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         } else {
             Rect((page.width - w) / 2.0, (page.height - h) / 2.0, w, h)
         }
-        val item = ImageItem(ImageData(file, size.width, size.height), rect)
+        val item = ImageItem(ImageData(file, size.width, size.height), rect, orientation = turn)
         page.items.add(item)
         state.appendToCache(page, item)
         history.push(AddItem(page, item))
