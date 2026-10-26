@@ -23,6 +23,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -78,6 +80,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -1182,6 +1185,31 @@ private class ExportProgress(val done: Int, val total: Int, val counting: String
 }
 
 /**
+ * A tap here, or any pen stroke, lets the side panel's page selection go; a finger that scrolls or
+ * pinches keeps it. Watched on the way in and never consumed, so whatever is under it still acts.
+ */
+private fun Modifier.endsPageSelection(editor: Editor): Modifier = pointerInput(editor) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (!editor.inPageSelectionMode) return@awaitEachGesture
+        if (down.type == PointerType.Stylus || down.type == PointerType.Eraser) {
+            editor.clearPageSelection()
+            return@awaitEachGesture
+        }
+        while (true) {
+            val e = awaitPointerEvent(PointerEventPass.Initial)
+            if (e.changes.any { it.id != down.id && it.pressed }) return@awaitEachGesture
+            val c = e.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+            if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) return@awaitEachGesture
+            if (!c.pressed) {
+                editor.clearPageSelection()
+                return@awaitEachGesture
+            }
+        }
+    }
+}
+
+/**
  * What a pane can ask the screen around it to do: open a SAF picker, run an export, or change the
  * window. Each callback takes the pane it is acting for, because in a split there are two of them
  * and a picker's result has to come back to the one that opened it.
@@ -1421,7 +1449,7 @@ private fun EditorPane(
                 }
             } else {
                 val bar: @Composable () -> Unit = {
-                    Toolbar(
+                    Box(Modifier.endsPageSelection(editor)) { Toolbar(
                         editor,
                         onToggleFullscreen = actions.onToggleFullscreen,
                         onOpenBackstage = actions.onOpenBackstage,
@@ -1432,7 +1460,7 @@ private fun EditorPane(
                         onInsertAudio = { actions.onInsertAudio(editor) },
                         onRecordAudio = { actions.onRecordAudio(editor) },
                         onTakePhoto = { actions.onTakePhoto(editor) },
-                    )
+                    ) }
                 }
                 ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->
                     Row(modifier = Modifier.fillMaxSize()) {
@@ -1447,7 +1475,7 @@ private fun EditorPane(
                                 onTemplateFromImage = actions.onTemplateFromImage,
                             )
                         }
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds().endsPageSelection(editor)) {
                             AndroidView(
                                 factory = { detached(editor.surfaces) },
                                 modifier = Modifier.fillMaxSize(),

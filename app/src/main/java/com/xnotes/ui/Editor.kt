@@ -6564,14 +6564,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    /** Clear all of a page's items but keep the page (and its PDF/template background). Undoable. */
-    fun erasePage(index: Int) {
-        val page = pageAt(index) ?: return
-        if (page.items.isEmpty()) { message = appContext.getString(R.string.page_already_empty); return }
-        val removals = page.items.map { page to it }
-        page.items.clear()
+    /** Clear every item off the pages at [indices] but keep the pages and their backgrounds, as one undo step. */
+    fun erasePages(indices: List<Int>) {
+        val pages = indices.distinct().sorted().mapNotNull { pageAt(it) }
+        val removals = pages.flatMap { page -> page.items.map { page to it } }
+        if (removals.isEmpty()) {
+            message = appContext.getString(if (pages.size > 1) R.string.pages_already_empty else R.string.page_already_empty)
+            return
+        }
+        for (page in pages) {
+            page.items.clear()
+            state.invalidatePage(page)
+        }
         history.push(EraseItems(removals))
-        state.invalidatePage(page)
         afterPageEdit()
     }
 
@@ -6690,6 +6695,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun clearPageSelection() {
         if (selectedPages.isNotEmpty()) selectedPages.clear()
+    }
+
+    fun selectAllPages() {
+        val pages = state.document.pages
+        if (selectedPages.size == pages.size) return
+        selectedPages.clear()
+        selectedPages.addAll(pages)
     }
 
     // --- export a subset of pages (side-panel Share / Save as) ---

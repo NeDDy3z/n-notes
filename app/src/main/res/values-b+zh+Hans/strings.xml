@@ -555,6 +555,7 @@
     <string name="canvas_forked">此画布已在其他位置更改。你的编辑现已保存在“%1$s”中。</string>
     <string name="err_keep_one_page">笔记必须至少保留一页。</string>
     <string name="page_already_empty">该页面已经为空。</string>
+    <string name="pages_already_empty">这些页面已经为空。</string>
     <string name="err_helix_theme">不是可用的 Helix 主题（需要独立的 .toml 文件）。</string>
     <string name="err_store_theme">无法保存主题文件。</string>
     <string name="code_theme_imported">已导入代码主题。</string>
@@ -581,6 +582,7 @@
     <string name="add_page">添加页面</string>
     <string name="insert_pdf">插入 PDF</string>
     <string name="erase_page">清空页面</string>
+    <string name="erase">清空</string>
     <string name="share_ellipsis">分享…</string>
     <string name="save_as_ellipsis">另存为…</string>
     <string name="clear_selection">取消选择</string>

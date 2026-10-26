@@ -247,12 +247,17 @@ private fun PagesTab(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     // Only a held, near-still single finger qualifies; a lift, a scroll or a second finger ends the wait first.
+                    var tapped = false
                     val longPress = try {
                         withTimeout(viewConfiguration.longPressTimeoutMillis) {
                             while (true) {
                                 val e = awaitPointerEvent()
                                 val c = e.changes.firstOrNull { it.id == down.id }
-                                if (c == null || !c.pressed || c.isConsumed) return@withTimeout false
+                                if (c == null || c.isConsumed) return@withTimeout false
+                                if (!c.pressed) {
+                                    tapped = true
+                                    return@withTimeout false
+                                }
                                 if (e.changes.any { it.id != down.id && it.pressed }) return@withTimeout false
                                 if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeout false
                             }
@@ -261,7 +266,11 @@ private fun PagesTab(
                     } catch (_: PointerEventTimeoutCancellationException) {
                         true
                     }
-                    if (!longPress) return@awaitEachGesture
+                    if (!longPress) {
+                        // A tap no page took landed on the panel's empty space, which lets the selection go.
+                        if (tapped && editor.inPageSelectionMode) editor.clearPageSelection()
+                        return@awaitEachGesture
+                    }
                     val half = THUMB_W.toPx() / 2f
                     if (abs(down.position.x - size.width / 2f) > half) return@awaitEachGesture
                     val row = listState.layoutInfo.visibleItemsInfo.firstOrNull { down.position.y - pad in it.offset.toFloat()..(it.offset + it.size).toFloat() }
@@ -531,15 +540,14 @@ private fun PageContextMenu(
     fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         when (sub) {
-            MENU_SHARE -> {
-                DropdownMenuItem(text = { Text(stringResource(R.string.back_share_as)) }, onClick = { sub = MENU_MAIN })
-                DropdownMenuItem(text = { Text(stringResource(R.string.image_png)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onSharePages(one, false); onDismiss() })
-                DropdownMenuItem(text = { Text("PDF") }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { onSharePages(one, true); onDismiss() })
-            }
-            MENU_SAVE -> {
-                DropdownMenuItem(text = { Text(stringResource(R.string.back_save_as)) }, onClick = { sub = MENU_MAIN })
-                DropdownMenuItem(text = { Text(stringResource(R.string.image_png)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onSavePagesAsImages(one); onDismiss() })
-                DropdownMenuItem(text = { Text("PDF") }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { onSavePagesAsPdf(one); onDismiss() })
+            MENU_SHARE, MENU_SAVE -> PageFormatRows(sub == MENU_SHARE, { sub = MENU_MAIN }) { image ->
+                val saving = sub == MENU_SAVE
+                onDismiss()
+                when {
+                    saving && image -> onSavePagesAsImages(one)
+                    saving -> onSavePagesAsPdf(one)
+                    else -> onSharePages(one, !image)
+                }
             }
             else -> {
                 // The cover is only ever the first page, so only it offers these.
@@ -559,7 +567,7 @@ private fun PageContextMenu(
                     DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, leadingIcon = menuIcon(XnotesIcons.paste), onClick = { editor.pastePagesAfter(index); onDismiss() })
                 }
                 DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { editor.deletePages(one); onDismiss() })
-                DropdownMenuItem(text = { Text(stringResource(R.string.erase_page)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePage(index); onDismiss() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.erase_page)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
                 DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
             }
@@ -567,7 +575,20 @@ private fun PageContextMenu(
     }
 }
 
-/** Bottom action bar shown while pages are multi-selected. */
+/** A Share or Save as sub-page: its back row, then Image (PNG) and PDF; [onPick] says which. */
+@Composable
+private fun PageFormatRows(share: Boolean, onBack: () -> Unit, onPick: (image: Boolean) -> Unit) {
+    val palette = LocalPalette.current
+    fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
+    DropdownMenuItem(text = { Text(stringResource(if (share) R.string.back_share_as else R.string.back_save_as)) }, onClick = onBack)
+    DropdownMenuItem(text = { Text(stringResource(R.string.image_png)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onPick(true) })
+    DropdownMenuItem(text = { Text("PDF") }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { onPick(false) })
+}
+
+/**
+ * Bottom action bar shown while pages are multi-selected: Select all, Copy and Delete, and a
+ * three-dot menu with the rest. A tap anywhere but the pages and this bar lets the selection go.
+ */
 @Composable
 private fun PageSelectionBar(
     editor: Editor,
@@ -589,11 +610,49 @@ private fun PageSelectionBar(
             }
             Text("${editor.pageSelectionCount}", color = palette.text.toComposeColor(), fontSize = 13.sp)
             Spacer(Modifier.weight(1f))
+            BarAction(XnotesIcons.selectAll, stringResource(R.string.select_all)) { editor.selectAllPages() }
             BarAction(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyPages(editor.selectedPageIndices()) }
-            BarAction(XnotesIcons.cut, stringResource(R.string.cut)) { editor.cutPages(editor.selectedPageIndices()) }
             BarAction(XnotesIcons.trash, stringResource(R.string.delete)) { editor.deletePages(editor.selectedPageIndices()) }
-            FormatMenu(XnotesIcons.download, stringResource(R.string.save_as), { onSavePagesAsImages(editor.selectedPageIndices()) }, { onSavePagesAsPdf(editor.selectedPageIndices()) })
-            FormatMenu(XnotesIcons.share, stringResource(R.string.share), { onSharePages(editor.selectedPageIndices(), false) }, { onSharePages(editor.selectedPageIndices(), true) })
+            PageSelectionMore(editor, onSharePages, onSavePagesAsPdf, onSavePagesAsImages)
+        }
+    }
+}
+
+/** The selection bar's three-dot menu: everything else that can be done to the selected pages. */
+@Composable
+private fun PageSelectionMore(
+    editor: Editor,
+    onSharePages: (List<Int>, Boolean) -> Unit,
+    onSavePagesAsPdf: (List<Int>) -> Unit,
+    onSavePagesAsImages: (List<Int>) -> Unit,
+) {
+    val palette = LocalPalette.current
+    var open by remember { mutableStateOf(false) }
+    var sub by remember { mutableStateOf(MENU_MAIN) }
+    LaunchedEffect(open) { if (!open) sub = MENU_MAIN }
+    fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
+    fun close() { open = false }
+    Box {
+        BarAction(XnotesIcons.more, stringResource(R.string.more)) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { close() }) {
+            when (sub) {
+                MENU_SHARE, MENU_SAVE -> PageFormatRows(sub == MENU_SHARE, { sub = MENU_MAIN }) { image ->
+                    val picked = editor.selectedPageIndices()
+                    val saving = sub == MENU_SAVE
+                    close()
+                    when {
+                        saving && image -> onSavePagesAsImages(picked)
+                        saving -> onSavePagesAsPdf(picked)
+                        else -> onSharePages(picked, !image)
+                    }
+                }
+                else -> {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, leadingIcon = menuIcon(XnotesIcons.cut), onClick = { close(); editor.cutPages(editor.selectedPageIndices()) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.erase)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { close(); editor.erasePages(editor.selectedPageIndices()) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
+                }
+            }
         }
     }
 }
@@ -603,21 +662,6 @@ private fun BarAction(icon: ImageVector, desc: String, onClick: () -> Unit) {
     Tooltip(desc) {
         IconButton(onClick = onClick, modifier = Modifier.size(34.dp)) {
             Icon(icon, desc, tint = LocalPalette.current.textDim.toComposeColor(), modifier = Modifier.size(19.dp))
-        }
-    }
-}
-
-/** An action that opens a small Image/PDF chooser (used by the bottom bar's Save as / Share). */
-@Composable
-private fun FormatMenu(icon: ImageVector, desc: String, onImage: () -> Unit, onPdf: () -> Unit) {
-    val palette = LocalPalette.current
-    var open by remember { mutableStateOf(false) }
-    fun menuIcon(i: ImageVector) = @Composable { Icon(i, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
-    Box {
-        BarAction(icon, desc) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.image_png)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { open = false; onImage() })
-            DropdownMenuItem(text = { Text("PDF") }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { open = false; onPdf() })
         }
     }
 }

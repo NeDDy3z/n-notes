@@ -676,6 +676,8 @@
     <string name="canvas_forked">This canvas changed elsewhere. Your edits are now in “%1$s”.</string>
     <string name="err_keep_one_page">A note must keep at least one page.</string>
     <string name="page_already_empty">That page is already empty.</string>
+    <string name="pages_already_empty">Those pages are already empty.</string>
+    <string name="erase">Erase</string>
     <string name="err_helix_theme">Not a usable Helix theme (a self-contained .toml is needed).</string>
     <string name="err_store_theme">Couldn\'t store the theme file.</string>
     <string name="code_theme_imported">Code theme imported.</string>
