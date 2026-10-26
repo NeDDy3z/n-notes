@@ -1715,21 +1715,33 @@ private fun ExplorerSection(
                     if (pair != null) ExplorerIcon(XnotesIcons.split, stringResource(R.string.open_side_by_side), fg) { selection.clear(); calls.openSplit(pair[0], pair[1]) }
                     ExplorerIcon(XnotesIcons.moveToFolder, stringResource(R.string.move_to_folder), fg) { moving = selection.toList() }
                     ExplorerIcon(XnotesIcons.copy, stringResource(R.string.copy), fg) { clipboard = ClipItem(selection.toList(), false); selection.clear() }
-                    ExplorerIcon(XnotesIcons.cut, stringResource(R.string.cut), fg) { clipboard = ClipItem(selection.toList(), true); selection.clear() }
-                    var colorsOpen by remember { mutableStateOf(false) }
-                    Box {
-                        ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), fg) { colorsOpen = true }
-                        DropdownMenu(expanded = colorsOpen, onDismissRequest = { colorsOpen = false }) {
-                            ColorCodeMenuContent { c -> colorsOpen = false; recolor(selection.toList(), c); selection.clear() }
-                        }
-                    }
-                    ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), fg, enabled = files.size == selection.size) {
-                        val uris = files.map { it.documentUri }
-                        selection.clear()
-                        if (uris.size == 1) calls.shareFile(uris[0]) else calls.shareFiles(uris)
-                    }
                     SelectionDivider()
                     ExplorerIcon(XnotesIcons.trash, if (prefs.trashDays == 0) stringResource(R.string.delete) else stringResource(R.string.move_to_trash), palette.danger.toComposeColor()) { remove(selection.toList()) }
+                    // The rest wait in a menu, so the bar stays short enough to read at a glance.
+                    var moreOpen by remember { mutableStateOf(false) }
+                    var colours by remember { mutableStateOf(false) }
+                    LaunchedEffect(moreOpen) { if (!moreOpen) colours = false }
+                    Box {
+                        ExplorerIcon(XnotesIcons.more, stringResource(R.string.more), fg) { moreOpen = true }
+                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                            if (colours) {
+                                ColorCodeMenuContent { c -> moreOpen = false; recolor(selection.toList(), c); selection.clear() }
+                            } else {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, onClick = {
+                                    moreOpen = false
+                                    clipboard = ClipItem(selection.toList(), true)
+                                    selection.clear()
+                                })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.colour_code)) }, onClick = { colours = true })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.share)) }, enabled = files.size == selection.size, onClick = {
+                                    moreOpen = false
+                                    val uris = files.map { it.documentUri }
+                                    selection.clear()
+                                    if (uris.size == 1) calls.shareFile(uris[0]) else calls.shareFiles(uris)
+                                })
+                            }
+                        }
+                    }
                 }
             }
         }
