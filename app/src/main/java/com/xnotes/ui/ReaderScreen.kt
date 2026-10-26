@@ -578,7 +578,8 @@ private fun readerHtmlBody(context: Context, file: ReaderFile, labels: ReaderHtm
         ReaderKind.DOCX -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.docx(it, ::newParser, labels) }, wide = false)
         ReaderKind.PPTX -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.pptx(it, ::newParser, labels) }, wide = false)
         ReaderKind.XLSX -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.xlsx(it, ::newParser, labels) }, wide = true)
-        ReaderKind.PDF, null -> null
+        // An sdocx never reaches the reader: the explorer opens it as a convert-to-note import.
+        ReaderKind.PDF, ReaderKind.SDOCX, null -> null
     }
 }
 
