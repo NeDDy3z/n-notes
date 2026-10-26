@@ -1,8 +1,8 @@
 package com.xnotes.core.history
 
-import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageMarks
 import com.xnotes.core.text.FlowQuote
 import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.ListKind
@@ -29,6 +29,7 @@ class ParaSnapshot private constructor(
     private val headingLevel: Int,
     private val rule: Boolean,
     private val breakBefore: Boolean,
+    private val breakToPage: Int?,
     private val listStart: Int?,
     private val quote: FlowQuote?,
 ) {
@@ -46,6 +47,7 @@ class ParaSnapshot private constructor(
         para.headingLevel = headingLevel
         para.rule = rule
         para.breakBefore = breakBefore
+        para.breakToPage = breakToPage
         para.listStart = listStart
         para.quote = quote
         para.touch()
@@ -57,6 +59,7 @@ class ParaSnapshot private constructor(
             checked == para.checked && codeLang == para.codeLang &&
             table === para.table && cellStart == para.cellStart &&
             headingLevel == para.headingLevel && rule == para.rule && breakBefore == para.breakBefore &&
+            breakToPage == para.breakToPage &&
             listStart == para.listStart && quote === para.quote &&
             runs.size == para.runs.size &&
             runs.indices.all { runs[it].text == para.runs[it].text && runs[it].style == para.runs[it].style }
@@ -65,7 +68,7 @@ class ParaSnapshot private constructor(
         fun of(para: Paragraph): ParaSnapshot = ParaSnapshot(
             para.runs.map { it.deepCopy() },
             para.align, para.indent, para.list, para.checked, para.codeLang, para.table, para.cellStart,
-            para.headingLevel, para.rule, para.breakBefore, para.listStart, para.quote,
+            para.headingLevel, para.rule, para.breakBefore, para.breakToPage, para.listStart, para.quote,
         )
     }
 }
@@ -144,7 +147,7 @@ class AddPageAuto(
     private val page: Page,
     private val index: Int,
 ) : Command {
-    private var marks: List<Pair<Int, Bookmark>> = emptyList()
+    private var marks = PageMarks.NONE
 
     override fun redo() {
         if (document.pages.none { it === page }) document.insertPage(page, index, marks)

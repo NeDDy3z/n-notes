@@ -1,6 +1,5 @@
 package com.xnotes.core.history
 
-import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.DrawStyle
@@ -8,6 +7,7 @@ import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.model.GeometrySnapshot
 import com.xnotes.core.model.Labelled
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageMarks
 import com.xnotes.core.model.PageShape
 import com.xnotes.core.model.Resizable
 import com.xnotes.core.model.Rgba
@@ -349,7 +349,7 @@ class AddPage(
     private val page: Page,
     private val index: Int,
 ) : Command {
-    private var marks: List<Pair<Int, Bookmark>> = emptyList()
+    private var marks = PageMarks.NONE
 
     override fun redo() {
         if (!document.pages.containsRef(page)) document.insertPage(page, index, marks)
@@ -404,7 +404,7 @@ class DeletePage(
     private val page: Page,
     private val index: Int,
 ) : Command {
-    private var marks: List<Pair<Int, Bookmark>> = emptyList()
+    private var marks = PageMarks.NONE
 
     override fun redo() {
         if (document.pages.containsRef(page)) marks = document.removePage(page)
@@ -428,6 +428,7 @@ class MovePages(
     private fun arrange(order: List<Page>) {
         val pages = document.pages
         val marks = document.bookmarks.mapNotNull { mark -> pages.getOrNull(mark.page)?.let { mark to it } }
+        val breaks = document.flow.paragraphs.mapNotNull { para -> para.breakToPage?.let { pages.getOrNull(it) }?.let { para to it } }
         // Pages never override equals, so these sets compare by reference. A page this move never
         // knew stays in the note, after the rest.
         val present = HashSet(pages)
@@ -436,6 +437,7 @@ class MovePages(
         pages.clear()
         pages.addAll(next)
         for ((mark, page) in marks) next.indexOf(page).takeIf { it >= 0 }?.let { mark.page = it }
+        for ((para, page) in breaks) next.indexOf(page).takeIf { it >= 0 }?.let { para.breakToPage = it }
     }
 
     companion object {

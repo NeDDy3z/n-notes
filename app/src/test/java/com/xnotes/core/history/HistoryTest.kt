@@ -193,6 +193,30 @@ class HistoryTest {
         assertEquals(listOf(2), doc.bookmarks.map { it.page })
     }
 
+    @Test fun aBreakAimedAtAPageStaysWithItAsPagesComeAndGo() {
+        val doc = Document.blank(count = 4)
+        val pages = doc.pages.toList()
+        val para = com.xnotes.core.text.Paragraph(breakBefore = true, breakToPage = 2)
+        doc.flow.paragraphs.add(para)
+        val add = AddPage(doc, Page(100.0, 100.0), 0).also { it.redo() }
+        assertEquals(3, para.breakToPage)
+        add.undo()
+        assertEquals(2, para.breakToPage)
+        val del = DeletePage(doc, pages[2], 2).also { it.redo() }
+        // The page that takes the deleted one's place takes its break too, until undo.
+        assertEquals(2, para.breakToPage)
+        del.undo()
+        assertEquals(2, para.breakToPage)
+        val earlier = DeletePage(doc, pages[0], 0).also { it.redo() }
+        assertEquals(1, para.breakToPage)
+        earlier.undo()
+        assertEquals(2, para.breakToPage)
+        val move = MovePages(doc, pages, listOf(pages[2], pages[0], pages[1], pages[3])).also { it.redo() }
+        assertEquals(0, para.breakToPage)
+        move.undo()
+        assertEquals(2, para.breakToPage)
+    }
+
     @Test fun movedPagesLandTogetherInTheirOrder() {
         val pages = listOf("a", "b", "c", "d", "e")
         assertEquals(listOf("a", "c", "e", "b", "d"), MovePages.order(pages, setOf("b", "d"), 5))
