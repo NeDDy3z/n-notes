@@ -346,6 +346,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Where a batch export renders each document before it joins the zip; one file at a time. */
     private val batchDir = tempDir("batchpdf")
 
+    init {
+        // The purge above took the files of pages an earlier editor in this process copied.
+        if (pane == Pane.PRIMARY) PageClipboard.put(null)
+    }
+
     /** The sticker library: encoded image files kept under filesDir across sessions (never purged).
      *  Only [java.io.File] handles are held in memory; thumbnails and inserts decode from disk. */
     // The directory keeps its old "stamps" name so libraries saved before the rename still load.
@@ -917,7 +922,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Deep-cloned pages held for paste (cleared when the document changes). A snapshot list so
      *  paste affordances recompose when it gains/loses contents. */
-    private val pageClipboard = mutableStateListOf<Page>()
 
     /** The current document's storage location (a SAF content URI string), or null. */
     val currentUri: String? get() = state.document.path
@@ -6041,7 +6045,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.clearSelection()
         controller.resetGestureState() // drop the outgoing note's fling/elastic so it can't bleed in
         clearPageSelection()
-        pageClipboard.clear() // clones reference the outgoing document; don't paste them into another
         state.document = doc
         rebuildPdfSource()
         adoptOpenPdf(doc) // outgoing note's PDF source is now closed; delete its temp file
@@ -6596,20 +6599,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * Pack the pages of [doc] at [indices] to go into another note, with a PDF of their own made
-     * of the PDF pages they show. Null when that PDF could not be made. IO.
+     * [cargo]'s own PDF of the PDF pages it shows, made from [source], its note's PDF, the first
+     * time it is asked for. Null when it shows none or it could not be made. IO.
      */
-    private fun packPages(doc: Document, indices: List<Int>): com.xnotes.core.model.PageCargo? {
-        val cargo = com.xnotes.core.model.PageCargo.pack(doc, indices, textMeasurer)
-        val source = doc.pdfFile
-        if (cargo.pdfIndices.isEmpty() || source == null) return cargo
+    private fun cargoPdf(cargo: com.xnotes.core.model.PageCargo, source: java.io.File?): java.io.File? = synchronized(cargo) {
+        cargo.pdf?.takeIf { it.exists() }?.let { return it }
+        if (cargo.pdfIndices.isEmpty() || source == null) return null
         val out = runCatching { java.io.File.createTempFile("pages", ".pdf", pdfDir) }.getOrNull() ?: return null
         if (!com.xnotes.platform.PdfJoin.subset(appContext, source, cargo.pdfIndices, out)) {
             out.delete()
             return null
         }
         cargo.pdf = out
-        return cargo
+        out
     }
 
     /** Clear every item off the pages at [indices] but keep the pages and their backgrounds, as one undo step. */
@@ -6628,13 +6630,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         afterPageEdit()
     }
 
-    /** Deep-clone [indices] (document order) into the page clipboard for a later paste. */
-    fun copyPages(indices: List<Int>) {
-        val pages = indices.distinct().sorted().mapNotNull { pageAt(it) }
-        if (pages.isEmpty()) return
-        pageClipboard.clear()
-        pages.forEach { pageClipboard.add(it.deepCopy(textMeasurer)) }
-    }
+    /** Put copies of the pages at [indices] (note order) on the page clipboard, for a paste in any note. */
+    fun copyPages(indices: List<Int>) = putPagesBy(indices, cut = false)
 
     /** Copy [indices] to the clipboard then delete them (kept ≥ 1 page). */
     fun cutPages(indices: List<Int>) {
@@ -6643,27 +6640,88 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             message = appContext.getString(R.string.err_keep_one_page)
             return
         }
-        copyPages(indices)
+        putPagesBy(indices, cut = true)
         deletePages(indices)
     }
 
-    /** Insert fresh clones of the page clipboard right after [index]; selects nothing, reveals the first. */
+    private fun putPagesBy(indices: List<Int>, cut: Boolean) {
+        val doc = state.document
+        val cargo = com.xnotes.core.model.PageCargo.pack(doc, indices, textMeasurer)
+        if (cargo.size == 0) return
+        val pdf = doc.pdfFile?.takeIf { cargo.pdfIndices.isNotEmpty() }?.let { keepPdf(it) }
+        PageClipboard.put(PageClipboard.Clip(cargo, java.lang.ref.WeakReference(doc), pdf, cut))
+    }
+
+    /** [file] under a second name in the PDF temp dir, else a copy, so it outlives its note; null when neither worked. */
+    private fun keepPdf(file: java.io.File): java.io.File? {
+        val to = runCatching { java.io.File.createTempFile("clip", ".pdf", pdfDir).also { it.delete() } }.getOrNull() ?: return null
+        if (runCatching { android.system.Os.link(file.path, to.path) }.isSuccess) return to
+        return runCatching { file.copyTo(to, overwrite = true) }.getOrNull() ?: run { to.delete(); null }
+    }
+
+    /**
+     * Put fresh copies of the clipboard's pages right after [index], as one undo step, and reveal
+     * the first. Back in their own note they paste as they were. In another note they keep their
+     * look and bring their bookmarks, and PDF pages first join their PDF onto this note's, behind
+     * the progress dialog.
+     */
     fun pastePagesAfter(index: Int) {
-        if (pageClipboard.isEmpty()) return
-        val pages = state.document.pages
-        val firstAt = (index + 1).coerceIn(0, pages.size)
-        var at = firstAt
-        val cmds = ArrayList<Command>()
-        for (src in pageClipboard) {
-            val clone = src.deepCopy(textMeasurer) // fresh clone each paste, so repeated pastes are independent
-            com.xnotes.core.audio.RecordingIds.adopt(clone.items, pages.flatMap { it.items }, moves = true)
-            cmds.add(AddPage(state.document, clone, at).also { it.redo() })
-            at++
+        val clip = PageClipboard.clip ?: return
+        val doc = state.document
+        val cargo = clip.cargo
+        when {
+            clip.isFrom(doc) -> landPages(cargo.unpackHome(doc, textMeasurer), index, if (clip.cut) cargo.bookmarks else emptyList())
+            cargo.pdfIndices.isEmpty() || clip.sourcePdf == null -> landPages(cargo.unpack(doc, null, textMeasurer), index, cargo.bookmarks)
+            else -> autosaveScope.launch { pasteWithPdf(clip, index) }
         }
+    }
+
+    private suspend fun pasteWithPdf(clip: PageClipboard.Clip, index: Int) {
+        val doc = state.document
+        val base = doc.pdfFile
+        val baseSource = pdfSource
+        importCancelled.set(false)
+        pastingPages = true
+        importing = true
+        PageClipboard.use(clip)
+        val joined = try {
+            withContext(Dispatchers.IO) {
+                val extra = cargoPdf(clip.cargo, clip.sourcePdf) ?: return@withContext null
+                val read = com.xnotes.platform.PdfSource.open(extra)
+                val sizes = try { read.allPageSizePoints() } finally { read.close() } ?: return@withContext null
+                joinFile(extra, sizes, base, baseSource)
+            }
+        } finally {
+            importing = false
+            pastingPages = false
+            PageClipboard.done(clip)
+        }
+        if (joined == null || importCancelled.get() || state.document !== doc || doc.pdfFile != base) {
+            joined?.file?.delete()
+            if (joined == null && !importCancelled.get()) message = appContext.getString(R.string.err_paste_pages)
+            return
+        }
+        doc.pdfFile = joined.file
+        adoptOpenPdf(doc)
+        rebuildPdfSource()
+        landPages(clip.cargo.unpack(doc, joined.first, textMeasurer), index, clip.cargo.bookmarks)
+    }
+
+    /** Put [pages] in after page [index] as one undo step, [marks] (bookmarks by place in [pages]) on them, and reveal the first. */
+    private fun landPages(pages: List<Page>, index: Int, marks: List<Bookmark>) {
+        if (pages.isEmpty()) return
+        val doc = state.document
+        val firstAt = (index + 1).coerceIn(0, doc.pages.size)
+        val cmds = pages.mapIndexed { n, page -> AddPage(doc, page, firstAt + n).also { it.redo() } }
+        for (b in marks) doc.bookmarks.add(Bookmark(firstAt + b.page, b.label))
         history.push(CompositeCommand(cmds))
         afterPageEdit()
         goToPage(firstAt)
     }
+
+    /** True while a paste joins its pages' PDF onto this note's: the progress dialog says so. */
+    var pastingPages by mutableStateOf(false)
+        private set
 
     /**
      * Put copies of the pages at [indices] as one block, in order, right after the last of them,
@@ -6789,7 +6847,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     // --- side-panel page selection (multi-select) ---
 
-    val canPastePages: Boolean get() = pageClipboard.isNotEmpty()
+    val canPastePages: Boolean get() = PageClipboard.clip != null
     val pageSelectionCount: Int get() = selectedPages.size
     val inPageSelectionMode: Boolean get() = selectedPages.isNotEmpty()
 
@@ -8397,7 +8455,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.clearSelection()
         controller.resetGestureState() // drop the outgoing note's fling/elastic so it can't bleed in
         clearPageSelection()
-        pageClipboard.clear()
         state.invalidateAllCaches()
         state.relayout()
         installInitialView(null) // a fresh in-memory note: fit width

@@ -44,7 +44,7 @@ class PageCargoTest {
         val src = note(Page(100.0, 100.0, pdfPage = 7), Page(100.0, 100.0), Page(100.0, 100.0, pdfPage = 3), Page(100.0, 100.0, pdfPage = 7))
         val cargo = PageCargo.pack(src, listOf(3, 0, 1, 2), measurer)
         assertEquals(listOf(7, 3), cargo.pdfIndices)
-        assertEquals(listOf(7, null, 3, 7), cargo.sourcePdfPages())
+        assertEquals(listOf(7, null, 3, 7), cargo.unpackHome(src, measurer).map { it.pdfPage })
         val landed = cargo.unpack(note(Page(10.0, 10.0)), pdfBase = 5, measurer = measurer)
         assertEquals(listOf(5, null, 6, 5), landed.map { it.pdfPage })
         val blank = cargo.unpack(note(Page(10.0, 10.0)), pdfBase = null, measurer = measurer)
@@ -74,6 +74,16 @@ class PageCargoTest {
         assertTrue(newPill.rid != 2)
         assertEquals(newPill.rid, items[1].sync?.rid)
         assertNull(items[2].sync)
+    }
+
+    @Test fun goingBackHomeThePagesAreAsTheyWere() {
+        val ink = stroke(Pt(0.0, 0.0), Pt(1.0, 1.0)).also { it.sync = SyncMark(9, 10) }
+        val src = note(Page(100.0, 100.0, items = mutableListOf(ink)), Page(100.0, 100.0, items = mutableListOf(pill(9))))
+        src.style = PageStyle(template = "lines")
+        val home = PageCargo.pack(src, listOf(0), measurer).unpackHome(src, measurer).single()
+        // Still following the note-wide style, and still tied to the recording on the other page.
+        assertNull(home.style.template)
+        assertEquals(9, home.items.single().sync?.rid)
     }
 
     @Test fun pagesAreRescaledToTheTargetsDpi() {

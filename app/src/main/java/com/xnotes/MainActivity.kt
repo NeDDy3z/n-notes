@@ -1126,7 +1126,11 @@ private fun EditorScreen(
         val batch = importer.importProgress
         if (batch != null) PdfImportBatchDialog(batch.done, batch.total) { importer.cancelImportInProgress() }
         else PdfImportDialog(
-            markdown = importer.pendingImport?.markdown == true,
+            label = when {
+                importer.pastingPages -> R.string.pasting_pages
+                importer.pendingImport?.markdown == true -> R.string.importing_markdown
+                else -> R.string.importing_pdf
+            },
             onCancel = { importer.cancelImportInProgress() }, // the stream-copy stops at its next buffer
         )
     }
@@ -1726,8 +1730,7 @@ private fun SavingDialog() {
  * cost is copying the (possibly large) source bytes — so it shows an animated spinner.
  */
 @Composable
-private fun PdfImportDialog(markdown: Boolean, onCancel: () -> Unit) =
-    SpinnerDialog(stringResource(if (markdown) R.string.importing_markdown else R.string.importing_pdf), onCancel)
+private fun PdfImportDialog(label: Int, onCancel: () -> Unit) = SpinnerDialog(stringResource(label), onCancel)
 
 /**
  * Determinate "Importing PDFs…" dialog for a multi-file import: a ring filled by files finished plus

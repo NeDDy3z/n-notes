@@ -644,6 +644,8 @@
     <string name="pdf_alt_image">Image</string>
     <string name="importing_pdf">Importing PDF…</string>
     <string name="importing_pdfs">Importing PDFs…</string>
+    <string name="pasting_pages">Pasting pages…</string>
+    <string name="err_paste_pages">Couldn’t paste the pages.</string>
     <string name="importing_markdown">Importing Markdown…</string>
     <string name="import_progress">%1$d of %2$d imported</string>
     <plurals name="imported_pdfs">
