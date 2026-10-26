@@ -68,6 +68,29 @@ class Document(
         return page
     }
 
+    /**
+     * Put [page] in at [index] (clamped), moving every bookmark from there on down a page, and put
+     * back [marks], the bookmarks [removePage] took off it, where they stood. Returns the index.
+     */
+    fun insertPage(page: Page, index: Int, marks: List<Pair<Int, Bookmark>> = emptyList()): Int {
+        val at = index.coerceIn(0, pages.size)
+        pages.add(at, page)
+        for (mark in bookmarks) if (mark.page >= at) mark.page++
+        for ((slot, mark) in marks) bookmarks.add(slot.coerceIn(0, bookmarks.size), mark.also { it.page = at })
+        return at
+    }
+
+    /** Take [page] out with the bookmarks on it, moving later ones up a page. Returns those bookmarks with their list slots. */
+    fun removePage(page: Page): List<Pair<Int, Bookmark>> {
+        val at = pages.indexOfFirst { it === page }
+        if (at < 0) return emptyList()
+        pages.removeAt(at)
+        val taken = bookmarks.withIndex().filter { it.value.page == at }.map { it.index to it.value }
+        for ((slot, _) in taken.asReversed()) bookmarks.removeAt(slot)
+        for (mark in bookmarks) if (mark.page > at) mark.page--
+        return taken
+    }
+
     /** The size of a blank page added after [previous]: [newPageSize] if set, else [previous]'s, else A4 portrait. */
     fun blankPageSize(previous: Page?): Pair<Double, Double> =
         newPageSize?.pixels(dpi)

@@ -1,5 +1,6 @@
 package com.xnotes.core.history
 
+import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.DrawStyle
@@ -338,20 +339,20 @@ class ReorderItems(
     }
 }
 
-/** Insert a page at an index. */
+/** Insert a page at an index; bookmarks stay on their pages. */
 class AddPage(
     private val document: Document,
     private val page: Page,
     private val index: Int,
 ) : Command {
+    private var marks: List<Pair<Int, Bookmark>> = emptyList()
+
     override fun redo() {
-        if (!document.pages.containsRef(page)) {
-            document.pages.add(index.coerceIn(0, document.pages.size), page)
-        }
+        if (!document.pages.containsRef(page)) document.insertPage(page, index, marks)
     }
 
     override fun undo() {
-        document.pages.removeRef(page)
+        marks = document.removePage(page)
     }
 }
 
@@ -377,40 +378,36 @@ class CompositeCommand(private val commands: List<Command>) : Command {
     override fun added(): List<CanvasItem> = commands.flatMap { it.added() }
 }
 
-/** Delete a page (reversible by re-inserting at its original index). */
+/** Delete a page and its bookmarks (reversible by re-inserting both at the original index). */
 class DeletePage(
     private val document: Document,
     private val page: Page,
     private val index: Int,
 ) : Command {
+    private var marks: List<Pair<Int, Bookmark>> = emptyList()
+
     override fun redo() {
-        document.pages.removeRef(page)
+        if (document.pages.containsRef(page)) marks = document.removePage(page)
     }
 
     override fun undo() {
-        if (!document.pages.containsRef(page)) {
-            document.pages.add(index.coerceIn(0, document.pages.size), page)
-        }
+        if (!document.pages.containsRef(page)) document.insertPage(page, index, marks)
     }
 }
 
-/**
- * Put the pages in a new order: [before] and [after] hold the same pages. Built before it is
- * applied, so it can note which page each bookmark points at and carry the bookmark along.
- */
+/** Put the pages in a new order: [before] and [after] hold the same pages. Bookmarks go with their pages. */
 class MovePages(
     private val document: Document,
     private val before: List<Page>,
     private val after: List<Page>,
 ) : Command {
-    private val marks = document.bookmarks.mapNotNull { mark -> before.getOrNull(mark.page)?.let { mark to it } }
-
     override fun redo() = arrange(after)
 
     override fun undo() = arrange(before)
 
     private fun arrange(order: List<Page>) {
         val pages = document.pages
+        val marks = document.bookmarks.mapNotNull { mark -> pages.getOrNull(mark.page)?.let { mark to it } }
         // Pages never override equals, so these sets compare by reference. A page this move never
         // knew stays in the note, after the rest.
         val present = HashSet(pages)

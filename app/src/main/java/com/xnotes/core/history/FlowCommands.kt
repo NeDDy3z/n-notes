@@ -1,5 +1,6 @@
 package com.xnotes.core.history
 
+import com.xnotes.core.model.Bookmark
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.Page
 import com.xnotes.core.text.FlowQuote
@@ -143,16 +144,13 @@ class AddPageAuto(
     private val page: Page,
     private val index: Int,
 ) : Command {
+    private var marks: List<Pair<Int, Bookmark>> = emptyList()
+
     override fun redo() {
-        if (document.pages.none { it === page }) {
-            document.pages.add(index.coerceIn(0, document.pages.size), page)
-        }
+        if (document.pages.none { it === page }) document.insertPage(page, index, marks)
     }
 
     override fun undo() {
-        if (page.items.isEmpty()) {
-            val i = document.pages.indexOfFirst { it === page }
-            if (i >= 0) document.pages.removeAt(i)
-        }
+        if (page.items.isEmpty()) marks = document.removePage(page)
     }
 }

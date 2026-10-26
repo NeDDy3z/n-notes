@@ -6268,11 +6268,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val pages = state.document.pages
         if (pages != pagesBefore) {
             state.relayout() // page add/remove/move shifts layout; page-keyed caches survive
-            // Only the order changed: the page in view stays put, and bookmarks moved with their pages.
-            if (pages.size == pagesBefore.size) {
-                viewed?.let { (page, was) -> state.keepPageInPlace(page, was) }
-                bookmarkVersion++
-            }
+            bookmarkVersion++ // bookmarks went with their pages
+            // Only the order changed: the page in view stays put.
+            if (pages.size == pagesBefore.size) viewed?.let { (page, was) -> state.keepPageInPlace(page, was) }
         }
         // The in-place repaint below reads the published flow snapshot: republish it first
         // so an undone/redone flow edit repaints at its post-history layout.
@@ -6345,8 +6343,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val at = index.coerceIn(0, pages.size)
         val page = Page(w, h)
         controller.clearSelection() // inserting shifts later page indices; drop any stale item selection
-        pages.add(at, page)
-        history.push(AddPage(state.document, page, at))
+        history.push(AddPage(state.document, page, at).also { it.redo() })
+        bookmarkVersion++
         state.document.dirty = true
         state.relayout()
         refreshContent()
@@ -6390,8 +6388,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // The cover's design runs to the paper's edge, whatever margins the pages have.
         val page = Page(w, h, style = style, margins = PageMargins(0.0, 0.0, 0.0, 0.0)).also { it.cover = true }
         controller.clearSelection()
-        pages.add(0, page)
-        history.push(AddPage(state.document, page, 0))
+        history.push(AddPage(state.document, page, 0).also { it.redo() })
         afterPageEdit()
         goToPage(0)
     }
@@ -6404,6 +6401,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Common tail for a side-panel page edit: re-layout, refresh the chrome, repaint. */
     private fun afterPageEdit() {
         controller.clearSelection()
+        bookmarkVersion++
         state.document.dirty = true
         state.relayout()
         state.clampScroll()
@@ -6433,8 +6431,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         val index = state.currentPageIndex()
         val page = state.document.pages[index]
-        state.document.pages.removeAt(index)
-        history.push(DeletePage(state.document, page, index))
+        history.push(DeletePage(state.document, page, index).also { it.redo() })
+        bookmarkVersion++
         state.document.dirty = true
         state.invalidatePage(page)
         state.relayout()
@@ -6480,10 +6478,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         rebuildPdfSource()
         val pages = com.xnotes.platform.PdfImporter.pages(joined.sizes, joined.first, doc.dpi, doc.pages.getOrNull(index))
         val at = (index + 1).coerceIn(0, doc.pages.size)
-        val cmds = pages.mapIndexed { i, page ->
-            doc.pages.add(at + i, page)
-            AddPage(doc, page, at + i)
-        }
+        val cmds = pages.mapIndexed { i, page -> AddPage(doc, page, at + i).also { it.redo() } }
         history.push(CompositeCommand(cmds))
         afterPageEdit()
         goToPage(at)
@@ -6557,8 +6552,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         for (src in pageClipboard) {
             val clone = src.deepCopy(textMeasurer) // fresh clone each paste, so repeated pastes are independent
             com.xnotes.core.audio.RecordingIds.adopt(clone.items, pages.flatMap { it.items }, moves = true)
-            pages.add(at, clone)
-            cmds.add(AddPage(state.document, clone, at))
+            cmds.add(AddPage(state.document, clone, at).also { it.redo() })
             at++
         }
         history.push(CompositeCommand(cmds))
@@ -6578,9 +6572,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val cmds = ArrayList<Command>()
         for (i in targets) { // descending, so each removeAt index stays valid and DeletePage stores the original index
             val page = pages[i]
-            pages.removeAt(i)
+            cmds.add(DeletePage(state.document, page, i).also { it.redo() })
             state.invalidatePage(page)
-            cmds.add(DeletePage(state.document, page, i))
         }
         history.push(CompositeCommand(cmds))
         clearPageSelection()
@@ -6605,7 +6598,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         history.push(cmd)
         state.relayout()
         viewed?.let { (page, was) -> state.keepPageInPlace(page, was) }
-        bookmarkVersion++
         afterPageEdit()
         return true
     }
