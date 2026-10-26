@@ -22,6 +22,7 @@ import com.xnotes.core.history.EditText
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.ReorderItems
+import com.xnotes.core.history.Regroup
 import com.xnotes.core.infinite.sameOrder
 import com.xnotes.core.model.Arrange
 import com.xnotes.core.model.arrangeOrder
@@ -1528,7 +1529,10 @@ class InteractionController(
             }
             // Snapshot the page's items on first contact this gesture, before mutating it.
             if (!eraseSnapshots.containsKey(page)) eraseSnapshots[page] = page.items.toList()
-            for (f in frags) f.sync = item.sync // pieces were written when the whole was
+            for (f in frags) {
+                f.sync = item.sync // pieces were written when the whole was
+                f.group = item.group
+            }
             val b = frags.fold(item.paintBounds()) { acc, f -> acc.union(f.paintBounds()) }
             dirty = dirty?.union(b) ?: b
             page.items.removeAt(i)
@@ -3225,7 +3229,11 @@ class InteractionController(
 
     // --- selection management ---
 
-    private fun setSelection(items: List<Selected>) {
+    private fun setSelection(picked: List<Selected>) {
+        // A member picked brings its whole group along, from its own page: a group never spans pages.
+        val onPages = picked.map { it.pageIndex }.distinct().asSequence()
+            .flatMap { i -> state.document.pages.getOrNull(i)?.items.orEmpty().asSequence().map { Selected(i, it) } }
+        val items = com.xnotes.core.model.Groups.withMembers(picked, onPages.asIterable()) { it.item }
         // Items whose lifted state flips: those leaving the old selection (repainted back
         // into the cache) and those entering it (lifted out of it). Update the selection
         // first so the in-place repair below sees the new lifted set.
@@ -3421,6 +3429,35 @@ class InteractionController(
         maybeSwitchBackAfterSelect()
     }
 
+    // --- groups ---
+
+    fun canGroupSelection(): Boolean = com.xnotes.core.model.Groups.canGroup(selection.map { it.item })
+
+    fun canUngroupSelection(): Boolean = com.xnotes.core.model.Groups.hasGroup(selection.map { it.item })
+
+    /** Put the selection in one group, page by page since a group never spans pages, any groups in it merged; one undo step. */
+    fun groupSelection() {
+        if (!canGroupSelection()) return
+        var next = com.xnotes.core.model.Groups.nextId(state.document.pages.flatMap { it.items })
+        val cmds = selection.groupBy { it.pageIndex }.values.filter { it.size >= 2 }
+            .map { sels -> Regroup(sels.map { it.item }, next++).also { it.redo() } }
+        if (cmds.isEmpty()) return
+        history.push(cmds.singleOrNull() ?: CompositeCommand(cmds))
+        state.document.dirty = true
+        onContentChanged()
+        refreshSelectionMenu()
+    }
+
+    /** Free every item of the groups in the selection; it stays selected, now as loose items. */
+    fun ungroupSelection() {
+        val grouped = selection.map { it.item }.filter { it.group != null }
+        if (grouped.isEmpty()) return
+        history.push(Regroup(grouped, null).also { it.redo() })
+        state.document.dirty = true
+        onContentChanged()
+        refreshSelectionMenu()
+    }
+
     /** The styles the selection's drawn items carry, for the restyle popup to open on. */
     fun selectionStyles(): List<DrawStyle> = selection.mapNotNull { DrawStyle.of(it.item) }
 
@@ -3602,10 +3639,12 @@ class InteractionController(
         landClones(pageIndex, clones, moves = clip.cut)
     }
 
-    /** Put [clones] on page [pageIndex] as one undo step and leave them selected. */
+    /** Put [clones] on page [pageIndex] as one undo step, in groups of their own, and leave them selected. */
     private fun landClones(pageIndex: Int, clones: List<CanvasItem>, moves: Boolean) {
         val page = state.document.pages.getOrNull(pageIndex) ?: return
-        com.xnotes.core.audio.RecordingIds.adopt(clones, state.document.pages.flatMap { it.items }, moves = moves)
+        val existing = state.document.pages.flatMap { it.items }
+        com.xnotes.core.model.Groups.refresh(clones, existing)
+        com.xnotes.core.audio.RecordingIds.adopt(clones, existing, moves = moves)
         page.items.addAll(clones)
         history.push(AddItems(page, clones))
         state.document.dirty = true

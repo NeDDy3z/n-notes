@@ -27,6 +27,7 @@ class AudioItem(
     override val resizable = true
     override val mirrorable = false
     override var locked = false
+    override var group: Int? = null
 
     /** Where the open player stands on this recording, in ms, or -1 while none is open on it. Never saved. */
     @Volatile

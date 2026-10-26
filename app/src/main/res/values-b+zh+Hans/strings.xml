@@ -568,6 +568,8 @@
     <string name="err_import_settings">该文件不含 xnotes 设置。</string>
     <string name="replace">替换</string>
     <string name="crop">裁剪</string>
+    <string name="group">组合</string>
+    <string name="ungroup">取消组合</string>
     <string name="err_crop">无法裁剪图片。</string>
     <string name="drag_to_reorder">拖动以调整顺序</string>
     <string name="unlock_zoom">解锁缩放</string>

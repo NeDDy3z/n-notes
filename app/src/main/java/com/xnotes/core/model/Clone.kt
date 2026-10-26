@@ -35,6 +35,7 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
 }.also {
     it.locked = locked
     it.sync = sync
+    it.group = group
 }
 
 /**

@@ -387,6 +387,21 @@ class CompositeCommand(private val commands: List<Command>) : Command {
     override fun reshaped(): List<Page> = commands.flatMap { it.reshaped() }
 }
 
+/** Items put in group [group] together, or taken out of their groups with null. Nothing changes how they look. */
+class Regroup(private val items: List<CanvasItem>, private val group: Int?) : Command {
+    private val before = items.map { it.group }
+
+    override fun redo() {
+        for (item in items) item.group = group
+    }
+
+    override fun undo() {
+        items.forEachIndexed { i, item -> item.group = before[i] }
+    }
+
+    override fun touched(locate: (CanvasItem) -> Page?): List<Pair<Page, CanvasItem>> = emptyList()
+}
+
 /** A picture swapped for another of itself, as a crop does: its file and its box, before and after. */
 class ReplaceImage(
     private val item: ImageItem,

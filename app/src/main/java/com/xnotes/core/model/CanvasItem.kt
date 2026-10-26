@@ -37,6 +37,11 @@ interface CanvasItem {
         get() = null
         set(_) {}
 
+    /** The group it is in, an id shared by its fellow members on its page or canvas, or null for none. */
+    var group: Int?
+        get() = null
+        set(_) {}
+
     /** Draw the item; [r] is already translated to the page origin and scaled. */
     fun paint(r: Renderer)
 

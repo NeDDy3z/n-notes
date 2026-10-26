@@ -6869,6 +6869,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun landPages(pages: List<Page>, index: Int, marks: List<Bookmark>) {
         if (pages.isEmpty()) return
         val doc = state.document
+        var taken = doc.pages.flatMap { it.items }
+        for (page in pages) {
+            com.xnotes.core.model.Groups.refresh(page.items, taken)
+            taken = taken + page.items
+        }
         val firstAt = (index + 1).coerceIn(0, doc.pages.size)
         val cmds = pages.mapIndexed { n, page -> AddPage(doc, page, firstAt + n).also { it.redo() } }
         for (b in marks) doc.bookmarks.add(Bookmark(firstAt + b.page, b.label))
@@ -7084,6 +7089,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val picked = indices.filter { it in pages.indices }.distinct().sorted()
         if (picked.isEmpty()) return
         val clones = picked.map { pages[it].deepCopy(textMeasurer) }
+        var taken = pages.flatMap { it.items }
+        for (clone in clones) {
+            com.xnotes.core.model.Groups.refresh(clone.items, taken)
+            taken = taken + clone.items
+        }
         // Adopted together, so ink tied to a recording on another copied page follows that copy.
         com.xnotes.core.audio.RecordingIds.adopt(clones.flatMap { it.items }, pages.flatMap { it.items }, moves = true)
         val firstAt = picked.last() + 1
@@ -7285,6 +7295,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override fun deleteSelection() = controller.deleteSelection()
     fun selectAll() = controller.selectAll()
     override fun arrange(how: com.xnotes.core.model.Arrange) = controller.arrange(how)
+    override fun canGroupSelection(): Boolean = controller.canGroupSelection()
+    override fun canUngroupSelection(): Boolean = controller.canUngroupSelection()
+    override fun groupSelection() = controller.groupSelection()
+    override fun ungroupSelection() = controller.ungroupSelection()
     override fun selectionStyles() = controller.selectionStyles()
 
     override fun selectionFills() = controller.selectionFills()
@@ -7372,6 +7386,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_X -> controller.cutSelection()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_V -> controller.pasteAtViewCentre()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_D -> controller.duplicateSelection()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_G -> if (shift) ungroupSelection() else groupSelection()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_A -> selectAll()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_B -> toggleSidebar()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_F -> openSearch()

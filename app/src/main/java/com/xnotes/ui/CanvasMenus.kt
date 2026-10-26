@@ -145,6 +145,18 @@ interface SelectionMenuHost : SwatchHost {
     /** That picture as a PNG ready for the share sheet, or null (with a message) when it could not be made. */
     fun selectionImageForShare(): java.io.File?
 
+    /** True when the selection is two or more items not already one group. */
+    fun canGroupSelection(): Boolean
+
+    /** True when the selection holds a group. */
+    fun canUngroupSelection(): Boolean
+
+    /** Put the selection in one group, any groups in it merged, as one undo step. */
+    fun groupSelection()
+
+    /** Free every item of the groups in the selection, as one undo step. */
+    fun ungroupSelection()
+
     /** True when the selection is a lone picture, which the bar offers to crop. */
     fun canCropSelection(): Boolean
 
@@ -280,6 +292,18 @@ fun SelectionMenu(
                         enabled = mirrors,
                         onClick = { overflowOpen = false; host.mirrorSelection(upsideDown = true) },
                     )
+                    if (host.canGroupSelection()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.group)) },
+                            onClick = { overflowOpen = false; host.groupSelection() },
+                        )
+                    }
+                    if (host.canUngroupSelection()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.ungroup)) },
+                            onClick = { overflowOpen = false; host.ungroupSelection() },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.copy_as_image)) },
                         onClick = { overflowOpen = false; host.copySelectionAsImage() },

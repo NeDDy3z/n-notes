@@ -412,6 +412,7 @@ class DocumentCodec(
         if (s.straight) j.name("straight").value(true)
         s.sync?.let { writeSync(j, it) }
         if (s.locked) j.name("locked").value(true)
+        s.group?.let { j.name("group").value(it) }
         j.endObject()
     }
 
@@ -430,6 +431,7 @@ class DocumentCodec(
         if (item.flip != Flip.NONE) j.name("flip").value(item.flip.id)
         item.sync?.let { writeSync(j, it) }
         if (item.locked) j.name("locked").value(true)
+        item.group?.let { j.name("group").value(it) }
         j.endObject()
     }
 
@@ -443,6 +445,7 @@ class DocumentCodec(
         j.name("duration_ms").value(a.audio.durationMs)
         if (a.audio.peaks.isNotEmpty()) j.name("peaks").value(java.util.Base64.getEncoder().encodeToString(a.audio.peaks))
         if (a.locked) j.name("locked").value(true)
+        a.group?.let { j.name("group").value(it) }
         j.endObject()
     }
 
@@ -468,6 +471,7 @@ class DocumentCodec(
         if (t.face != TextItem.DEFAULT_FACE) j.name("font_face").value(t.face.id)
         t.sync?.let { writeSync(j, it) }
         if (t.locked) j.name("locked").value(true)
+        t.group?.let { j.name("group").value(it) }
         j.endObject()
     }
 
@@ -540,6 +544,7 @@ class DocumentCodec(
         }
         s.sync?.let { writeSync(j, it) }
         if (s.locked) j.name("locked").value(true)
+        s.group?.let { j.name("group").value(it) }
         j.endObject()
     }
 
@@ -604,6 +609,7 @@ class DocumentCodec(
         }
         c.sync?.let { writeSync(j, it) }
         if (c.locked) j.name("locked").value(true)
+        c.group?.let { j.name("group").value(it) }
         j.endObject()
     }
 
@@ -879,6 +885,7 @@ class DocumentCodec(
         val locked: Boolean,
         val id: Int?,
         val sync: SyncMark?,
+        val group: Int? = null,
     ) : Pending(index, asset)
 
     private class PendingAudio(
@@ -890,6 +897,7 @@ class DocumentCodec(
         val durationMs: Int,
         val peaks: ByteArray,
         val locked: Boolean,
+        val group: Int? = null,
     ) : Pending(index, asset)
 
     /**
@@ -1052,6 +1060,7 @@ class DocumentCodec(
     /** Union of every kind's fields, so an item parses in one pass whatever its key order. */
     private class ItemScratch {
         var locked = false
+        var group: Int? = null
         var kind: String? = null
         var id: Int? = null
         var connector: ConnectorScratch? = null
@@ -1172,6 +1181,7 @@ class DocumentCodec(
                 "dash_length" -> s.dashLength = doubleOr(p, 10.0)
                 "dash_gap" -> s.dashGap = doubleOr(p, 8.0)
                 "locked" -> s.locked = boolOr(p, false)
+                "group" -> s.group = intOrNull(p)
                 "rid" -> s.rid = intOr(p, 0)
                 "name" -> s.name = stringOr(p, "")
                 "duration_ms" -> s.durationMs = intOr(p, 0)
@@ -1192,7 +1202,7 @@ class DocumentCodec(
                     pending.add(
                         PendingImage(
                             items.size + pending.size, asset, s.rect, s.srcW, s.srcH,
-                            s.orientation, s.angle, Flip.fromId(s.flip), s.locked, s.id, sync,
+                            s.orientation, s.angle, Flip.fromId(s.flip), s.locked, s.id, sync, s.group,
                         ),
                     )
                 }
@@ -1200,7 +1210,7 @@ class DocumentCodec(
             AudioItem.KIND -> {
                 val asset = s.asset
                 if (!asset.isNullOrEmpty()) {
-                    pending.add(PendingAudio(items.size + pending.size, asset, s.rect, s.rid, s.name, s.durationMs, s.peaks ?: ByteArray(0), s.locked))
+                    pending.add(PendingAudio(items.size + pending.size, asset, s.rect, s.rid, s.name, s.durationMs, s.peaks ?: ByteArray(0), s.locked, s.group))
                 }
             }
             TextItem.KIND -> items.add(
@@ -1224,6 +1234,7 @@ class DocumentCodec(
         if (items.size > before) glue.named(items[before], s.id)
         // Absent on every note written before locking existed, which reads back as unlocked.
         if (s.locked && items.size > before) items[before].locked = true
+        if (s.group != null && items.size > before) items[before].group = s.group
         if (sync != null && items.size > before) items[before].sync = sync
     }
 
@@ -1600,6 +1611,7 @@ class DocumentCodec(
             .also {
                 it.locked = spec.locked
                 it.sync = spec.sync
+                it.group = spec.group
             }
     }
 
@@ -1608,7 +1620,10 @@ class DocumentCodec(
         val rect = spec.rect?.takeIf { it.w > 0.0 && it.h > 0.0 } ?: AudioItem.boxAt(Pt.ZERO, dpi).let { it.translate(-it.x, -it.y) }
         val ext = audioExt(spec.asset.substringAfterLast('.', ""))
         return AudioItem(AudioData(file, ext, spec.durationMs, spec.peaks), rect, spec.name, spec.rid, textMeasurer)
-            .also { it.locked = spec.locked }
+            .also {
+                it.locked = spec.locked
+                it.group = spec.group
+            }
     }
 
     // --- streaming value helpers (mirroring org.json's forgiving opt* coercions) ---

@@ -539,6 +539,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun duplicateSelection() {
         if (selection.isEmpty) return
         val clones = selection.items.deepCopyAll(textMeasurer)
+        com.xnotes.core.model.Groups.refresh(clones, document.items)
         for (clone in clones) clone.translate(DUPLICATE_NUDGE, DUPLICATE_NUDGE)
         com.xnotes.core.audio.RecordingIds.adopt(clones, document.items, moves = false)
         document.addAll(clones)
@@ -591,6 +592,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             else -> viewport.centerContent.let { c -> c.x - bounds.center.x to c.y - bounds.center.y }
         }
         for (clone in clones) clone.translate(dx, dy)
+        com.xnotes.core.model.Groups.refresh(clones, document.items)
         com.xnotes.core.audio.RecordingIds.adopt(clones, document.items, moves = clip.cut)
         document.addAll(clones)
         history.push(AddCanvasItems(document, clones))
@@ -716,6 +718,29 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         }
         for (item in items) item.paint(r)
         return surface.bitmap
+    }
+
+    // --- groups ---
+
+    override fun canGroupSelection(): Boolean = com.xnotes.core.model.Groups.canGroup(selection.items)
+
+    override fun canUngroupSelection(): Boolean = com.xnotes.core.model.Groups.hasGroup(selection.items)
+
+    override fun groupSelection() {
+        if (!canGroupSelection()) return
+        history.push(com.xnotes.core.history.Regroup(selection.items, com.xnotes.core.model.Groups.nextId(document.items)).also { it.redo() })
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    override fun ungroupSelection() {
+        val grouped = selection.items.filter { it.group != null }
+        if (grouped.isEmpty()) return
+        history.push(com.xnotes.core.history.Regroup(grouped, null).also { it.redo() })
+        markDirty()
+        refresh()
+        publishOverlay()
     }
 
     /** Restack the selection. On a flat canvas that is purely a reorder of the item list. */
@@ -2093,6 +2118,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_X -> cutSelection()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_V -> pasteClipboard()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_D -> duplicateSelection()
+            ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_G -> if (shift) ungroupSelection() else groupSelection()
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_0 -> zoomToFit()
             ctrl && (e.keyCode == android.view.KeyEvent.KEYCODE_PLUS || e.keyCode == android.view.KeyEvent.KEYCODE_EQUALS) -> zoomBy(ZOOM_STEP)
             ctrl && e.keyCode == android.view.KeyEvent.KEYCODE_MINUS -> zoomBy(1.0 / ZOOM_STEP)

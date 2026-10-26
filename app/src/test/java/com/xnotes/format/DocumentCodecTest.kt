@@ -151,6 +151,18 @@ class DocumentCodecTest {
         assertTrue(back[4].locked)
     }
 
+    @Test fun groupsSurviveARoundTripAndLooseItemsWriteNone() {
+        val doc = Document.blank(count = 1)
+        val grouped = Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(1.0, 2.0, 1.0))).also { it.group = 4 }
+        val loose = Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(3.0, 4.0, 1.0)))
+        doc.pages[0].items.addAll(listOf(grouped, loose))
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        assertEquals(1, Regex("\"group\"").findAll(manifestOf(out.toByteArray())).count())
+        val back = roundTrip(doc).pages[0].items
+        assertEquals(listOf(4, null), back.map { it.group })
+    }
+
     @Test fun aTurnedPdfPageKeepsItsTurnAndAPlainOneWritesNone() {
         val doc = Document.blank(count = 2)
         doc.pages[0].pdfPage = 0

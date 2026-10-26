@@ -56,9 +56,10 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     /** The lone selected connector, whose chrome is its own handles rather than a box. */
     val loneConnector: ConnectorItem? get() = items.singleOrNull() as? ConnectorItem
 
+    /** Select [next], and with it every unlocked fellow member of the groups it touches. */
     fun select(next: List<CanvasItem>) {
-        items = next
-        box = boxOf(next)
+        items = com.xnotes.core.model.Groups.withMembers(next, doc.items) { it }
+        box = boxOf(items)
     }
 
     fun clear() {
