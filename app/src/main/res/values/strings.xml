@@ -678,6 +678,11 @@
     <string name="page_already_empty">That page is already empty.</string>
     <string name="pages_already_empty">Those pages are already empty.</string>
     <string name="erase">Erase</string>
+    <string name="rotate_ellipsis">Rotate…</string>
+    <string name="back_rotate">"‹  Rotate"</string>
+    <string name="rotate_right">Right</string>
+    <string name="rotate_left">Left</string>
+    <string name="rotate_upside_down">Upside down</string>
     <string name="err_helix_theme">Not a usable Helix theme (a self-contained .toml is needed).</string>
     <string name="err_store_theme">Couldn\'t store the theme file.</string>
     <string name="code_theme_imported">Code theme imported.</string>

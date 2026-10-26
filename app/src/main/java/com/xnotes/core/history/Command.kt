@@ -8,6 +8,7 @@ import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.model.GeometrySnapshot
 import com.xnotes.core.model.Labelled
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.PageShape
 import com.xnotes.core.model.Resizable
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
@@ -46,6 +47,9 @@ interface Command {
 
     /** The items this edit put in as new: a finished stroke, a drawn shape, a paste. A recording gives them their moment. */
     fun added(): List<CanvasItem> = emptyList()
+
+    /** The pages whose size, margins or turn this command changes, which the view lays out and repaints afresh. */
+    fun reshaped(): List<Page> = emptyList()
 }
 
 /** Append an item to a page (finishing a stroke, pasting/inserting, new text). */
@@ -376,6 +380,22 @@ class CompositeCommand(private val commands: List<Command>) : Command {
     override fun touchedMarkups(): List<Pair<Page, TextMarkup>> = commands.flatMap { it.touchedMarkups() }
 
     override fun added(): List<CanvasItem> = commands.flatMap { it.added() }
+
+    override fun reshaped(): List<Page> = commands.flatMap { it.reshaped() }
+}
+
+/** Pages turned or resized: each one's [PageShape] before and after. The view repaints them whole. */
+class ReshapePages(
+    private val pages: List<Page>,
+    private val before: List<PageShape>,
+    private val after: List<PageShape>,
+) : Command {
+    override fun redo() = pages.forEachIndexed { i, page -> after[i].restore(page) }
+    override fun undo() = pages.forEachIndexed { i, page -> before[i].restore(page) }
+
+    override fun touched(locate: (CanvasItem) -> Page?): List<Pair<Page, CanvasItem>> = emptyList()
+
+    override fun reshaped(): List<Page> = pages
 }
 
 /** Delete a page and its bookmarks (reversible by re-inserting both at the original index). */

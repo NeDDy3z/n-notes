@@ -515,10 +515,22 @@ private fun PageThumb(
     }
 }
 
-/** Page sub-pages of the three-dot menu (main / share-format / save-format). */
+/** Page sub-pages of the three-dot menu (main / share-format / save-format / rotate). */
 private const val MENU_MAIN = 0
 private const val MENU_SHARE = 1
 private const val MENU_SAVE = 2
+private const val MENU_ROTATE = 3
+
+/** The Rotate sub-page: its back row, then a quarter turn either way and a half turn; [onTurn] gets clockwise quarter turns. */
+@Composable
+private fun RotateRows(onBack: () -> Unit, onTurn: (Int) -> Unit) {
+    val palette = LocalPalette.current
+    fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
+    DropdownMenuItem(text = { Text(stringResource(R.string.back_rotate)) }, onClick = onBack)
+    DropdownMenuItem(text = { Text(stringResource(R.string.rotate_right)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { onTurn(1) })
+    DropdownMenuItem(text = { Text(stringResource(R.string.rotate_left)) }, leadingIcon = menuIcon(XnotesIcons.rotateLeft), onClick = { onTurn(3) })
+    DropdownMenuItem(text = { Text(stringResource(R.string.rotate_upside_down)) }, leadingIcon = menuIcon(XnotesIcons.rotateHalf), onClick = { onTurn(2) })
+}
 
 @Composable
 private fun PageContextMenu(
@@ -540,6 +552,7 @@ private fun PageContextMenu(
     fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         when (sub) {
+            MENU_ROTATE -> RotateRows({ sub = MENU_MAIN }) { turns -> onDismiss(); editor.rotatePages(one, turns) }
             MENU_SHARE, MENU_SAVE -> PageFormatRows(sub == MENU_SHARE, { sub = MENU_MAIN }) { image ->
                 val saving = sub == MENU_SAVE
                 onDismiss()
@@ -567,6 +580,7 @@ private fun PageContextMenu(
                 if (editor.canPastePages) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, leadingIcon = menuIcon(XnotesIcons.paste), onClick = { editor.pastePagesAfter(index); onDismiss() })
                 }
+                DropdownMenuItem(text = { Text(stringResource(R.string.rotate_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { sub = MENU_ROTATE })
                 DropdownMenuItem(text = { Text(stringResource(R.string.erase_page)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { editor.deletePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
@@ -637,6 +651,7 @@ private fun PageSelectionMore(
         BarAction(XnotesIcons.more, stringResource(R.string.more)) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { close() }) {
             when (sub) {
+                MENU_ROTATE -> RotateRows({ sub = MENU_MAIN }) { turns -> close(); editor.rotatePages(editor.selectedPageIndices(), turns) }
                 MENU_SHARE, MENU_SAVE -> PageFormatRows(sub == MENU_SHARE, { sub = MENU_MAIN }) { image ->
                     val picked = editor.selectedPageIndices()
                     val saving = sub == MENU_SAVE
@@ -650,6 +665,7 @@ private fun PageSelectionMore(
                 else -> {
                     DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, leadingIcon = menuIcon(XnotesIcons.cut), onClick = { close(); editor.cutPages(editor.selectedPageIndices()) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.duplicate)) }, leadingIcon = menuIcon(XnotesIcons.duplicate), onClick = { close(); editor.duplicatePages(editor.selectedPageIndices()) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.rotate_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { sub = MENU_ROTATE })
                     DropdownMenuItem(text = { Text(stringResource(R.string.erase)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { close(); editor.erasePages(editor.selectedPageIndices()) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
                     DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })

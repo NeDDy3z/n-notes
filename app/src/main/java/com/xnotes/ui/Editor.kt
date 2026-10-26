@@ -37,6 +37,7 @@ import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
 import com.xnotes.core.history.InsertItem
 import com.xnotes.core.history.MovePages
+import com.xnotes.core.history.ReshapePages
 import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.RestyleItems
 import com.xnotes.core.history.RestyleText
@@ -51,6 +52,8 @@ import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageLayers
 import com.xnotes.core.model.PageMargins
+import com.xnotes.core.model.PageShape
+import com.xnotes.core.model.PageTurn
 import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageSize
@@ -6250,7 +6253,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val was = touchedRegions(command)
         history.undo()
         bakeMarkups(command)
-        afterHistory(pagesBefore, viewed, regions = spanning(was, touchedRegions(command)))
+        afterHistory(pagesBefore, viewed, regions = spanning(was, touchedRegions(command)), reshaped = command?.reshaped().orEmpty())
     }
 
     fun redo() {
@@ -6262,7 +6265,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val was = touchedRegions(command)
         history.redo()
         bakeMarkups(command)
-        afterHistory(pagesBefore, viewed, regions = spanning(was, touchedRegions(command)))
+        afterHistory(pagesBefore, viewed, regions = spanning(was, touchedRegions(command)), reshaped = command?.reshaped().orEmpty())
     }
 
     /** Applies a markup edit (built, not yet applied) as one undo step. */
@@ -6315,9 +6318,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    private fun afterHistory(pagesBefore: List<Page>, viewed: Pair<Page, Rect>?, regions: List<Pair<Page, Rect>>?) {
+    private fun afterHistory(
+        pagesBefore: List<Page>,
+        viewed: Pair<Page, Rect>?,
+        regions: List<Pair<Page, Rect>>?,
+        reshaped: List<Page> = emptyList(),
+    ) {
         controller.clearSelection()
         val pages = state.document.pages
+        if (reshaped.isNotEmpty()) {
+            for (page in reshaped) {
+                state.invalidatePage(page)
+                state.invalidateBackground(page)
+            }
+            state.invalidatePageGeometry()
+            state.relayout()
+            republishFlow(invalidate = true)
+        }
         if (pages != pagesBefore) {
             state.relayout() // page add/remove/move shifts layout; page-keyed caches survive
             bookmarkVersion++ // bookmarks went with their pages
@@ -6634,6 +6651,32 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         clearPageSelection()
         afterPageEdit()
         goToPage(firstAt)
+    }
+
+    /** Turn the pages at [indices] [turns] quarter turns clockwise, content and all, as one undo step. */
+    fun rotatePages(indices: List<Int>, turns: Int) {
+        val pages = indices.distinct().sorted().mapNotNull { pageAt(it) }.filter { it.pdfPage == null }
+        if (pages.isEmpty()) return
+        val before = pages.map { PageShape.of(it) }
+        for (page in pages) PageTurn.turn(page, state.document, turns)
+        history.push(ReshapePages(pages, before, pages.map { PageShape.of(it) }))
+        afterReshape(pages)
+    }
+
+    /** Lay the note out again round [pages], whose shape changed, and repaint them whole. */
+    private fun afterReshape(pages: List<Page>) {
+        controller.clearSelection()
+        for (page in pages) {
+            state.invalidatePage(page)
+            state.invalidateBackground(page)
+        }
+        state.invalidatePageGeometry()
+        state.relayout()
+        republishFlow(invalidate = true)
+        state.clampScroll()
+        state.document.dirty = true
+        refreshContent()
+        view.requestRender()
     }
 
     /** Delete [indices] as one undoable edit, refusing to empty the note. */
