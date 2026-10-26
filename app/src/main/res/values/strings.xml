@@ -679,6 +679,10 @@
     <string name="pages_already_empty">Those pages are already empty.</string>
     <string name="erase">Erase</string>
     <string name="rotate_ellipsis">Rotate…</string>
+    <string name="page_size">Page size</string>
+    <string name="page_size_ellipsis">Page size…</string>
+    <string name="apply">Apply</string>
+    <string name="pdf_pages_keep_size">PDF pages keep their own size.</string>
     <string name="back_rotate">"‹  Rotate"</string>
     <string name="rotate_right">Right</string>
     <string name="rotate_left">Left</string>

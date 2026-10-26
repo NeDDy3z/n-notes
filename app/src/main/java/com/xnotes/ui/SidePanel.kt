@@ -451,6 +451,12 @@ private fun PageThumb(
     val current = index == editor.pageIndex
     val selected = editor.isPageSelected(index)
     var menuOpen by remember { mutableStateOf(false) }
+    var sizing by remember { mutableStateOf(false) }
+    if (sizing) {
+        editor.pageSizeChoice(index)?.let { initial ->
+            PageSizeDialog(initial, onApply = { sizing = false; editor.resizePages(listOf(index), it) }) { sizing = false }
+        } ?: run { sizing = false }
+    }
     val bitmap by key(editor.thumbnailVersion) {
         produceState<ImageBitmap?>(editor.cachedPageThumbnail(page), page, editor.contentVersion, editor.pdfThumbTick, settled) {
             val cached = editor.cachedPageThumbnail(page)
@@ -503,7 +509,7 @@ private fun PageThumb(
                             Icon(XnotesIcons.more, stringResource(R.string.page_options), tint = palette.text.toComposeColor(), modifier = Modifier.size(16.dp))
                         }
                     }
-                    PageContextMenu(editor, index, page.cover, menuOpen, { menuOpen = false }, onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPdf, onPickCover)
+                    PageContextMenu(editor, index, page.cover, page.pdfPage != null, menuOpen, { menuOpen = false }, { sizing = true }, onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPdf, onPickCover)
                 }
             }
         }
@@ -537,8 +543,10 @@ private fun PageContextMenu(
     editor: Editor,
     index: Int,
     isCover: Boolean,
+    isPdf: Boolean,
     expanded: Boolean,
     onDismiss: () -> Unit,
+    onPageSize: () -> Unit,
     onSharePages: (List<Int>, Boolean) -> Unit,
     onSavePagesAsPdf: (List<Int>) -> Unit,
     onSavePagesAsImages: (List<Int>) -> Unit,
@@ -581,6 +589,7 @@ private fun PageContextMenu(
                     DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, leadingIcon = menuIcon(XnotesIcons.paste), onClick = { editor.pastePagesAfter(index); onDismiss() })
                 }
                 DropdownMenuItem(text = { Text(stringResource(R.string.rotate_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { sub = MENU_ROTATE })
+                DropdownMenuItem(text = { Text(stringResource(R.string.page_size_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.pageSize), enabled = !isPdf, onClick = { onDismiss(); onPageSize() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.erase_page)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { editor.deletePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
@@ -644,9 +653,13 @@ private fun PageSelectionMore(
     val palette = LocalPalette.current
     var open by remember { mutableStateOf(false) }
     var sub by remember { mutableStateOf(MENU_MAIN) }
+    var sizing by remember { mutableStateOf<com.xnotes.core.model.PageSizeChoice?>(null) }
     LaunchedEffect(open) { if (!open) sub = MENU_MAIN }
     fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
     fun close() { open = false }
+    sizing?.let { initial ->
+        PageSizeDialog(initial, onApply = { sizing = null; editor.resizePages(editor.selectedPageIndices(), it) }) { sizing = null }
+    }
     Box {
         BarAction(XnotesIcons.more, stringResource(R.string.more)) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { close() }) {
@@ -666,6 +679,16 @@ private fun PageSelectionMore(
                     DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, leadingIcon = menuIcon(XnotesIcons.cut), onClick = { close(); editor.cutPages(editor.selectedPageIndices()) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.duplicate)) }, leadingIcon = menuIcon(XnotesIcons.duplicate), onClick = { close(); editor.duplicatePages(editor.selectedPageIndices()) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.rotate_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { sub = MENU_ROTATE })
+                    val plain = editor.selectedPagesInOrder().firstOrNull { it.pdfPage == null }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.page_size_ellipsis)) },
+                        leadingIcon = menuIcon(XnotesIcons.pageSize),
+                        enabled = plain != null,
+                        onClick = {
+                            close()
+                            sizing = plain?.let { editor.pageSizeChoice(editor.pageIndexOf(it)) }
+                        },
+                    )
                     DropdownMenuItem(text = { Text(stringResource(R.string.erase)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { close(); editor.erasePages(editor.selectedPageIndices()) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
                     DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })

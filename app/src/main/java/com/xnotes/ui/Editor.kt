@@ -6664,6 +6664,33 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         afterReshape(pages)
     }
 
+    /** Where [page] stands in the note, or -1. */
+    fun pageIndexOf(page: Page): Int = state.document.pages.indexOfFirst { it === page }
+
+    /** The size the page at [index] is, as Page size… offers it. */
+    fun pageSizeChoice(index: Int): PageSizeChoice? = pageAt(index)?.let { PageSizeChoice.of(it.width, it.height, state.document.dpi) }
+
+    /**
+     * Give the plain pages at [indices] the size [choice] makes, as one undo step. Nothing on them is
+     * scaled or moved: what a smaller page leaves off stays there out of sight, and comes back if the
+     * page grows again. PDF pages keep theirs.
+     */
+    fun resizePages(indices: List<Int>, choice: PageSizeChoice) {
+        val all = indices.distinct().sorted().mapNotNull { pageAt(it) }
+        val plain = all.filter { it.pdfPage == null }
+        if (plain.size < all.size) message = appContext.getString(R.string.pdf_pages_keep_size)
+        val (w, h) = choice.pixels(state.document.dpi)
+        val pages = plain.filter { it.width != w || it.height != h }
+        if (pages.isEmpty()) return
+        val before = pages.map { PageShape.of(it) }
+        for (page in pages) {
+            page.width = w
+            page.height = h
+        }
+        history.push(ReshapePages(pages, before, pages.map { PageShape.of(it) }))
+        afterReshape(pages)
+    }
+
     /** Lay the note out again round [pages], whose shape changed, and repaint them whole. */
     private fun afterReshape(pages: List<Page>) {
         controller.clearSelection()

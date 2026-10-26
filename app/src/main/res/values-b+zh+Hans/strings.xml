@@ -584,6 +584,15 @@
     <string name="erase_page">清空页面</string>
     <string name="erase">清空</string>
     <string name="share_ellipsis">分享…</string>
+    <string name="rotate_ellipsis">旋转…</string>
+    <string name="back_rotate">"‹  旋转"</string>
+    <string name="rotate_right">向右</string>
+    <string name="rotate_left">向左</string>
+    <string name="rotate_upside_down">上下颠倒</string>
+    <string name="page_size">页面大小</string>
+    <string name="page_size_ellipsis">页面大小…</string>
+    <string name="apply">应用</string>
+    <string name="pdf_pages_keep_size">PDF 页面保持原有大小。</string>
     <string name="save_as_ellipsis">另存为…</string>
     <string name="clear_selection">取消选择</string>
     <string name="save_as">另存为</string>

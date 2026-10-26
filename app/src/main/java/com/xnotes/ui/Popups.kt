@@ -397,7 +397,7 @@ private fun NewPageSizeControls(editor: Editor) {
 
 /** One side of a custom page in millimetres; only a value inside the settable range reaches [onChange]. */
 @Composable
-private fun SideField(label: String, mm: Double, modifier: Modifier, onChange: (Double) -> Unit) {
+internal fun SideField(label: String, mm: Double, modifier: Modifier, onChange: (Double) -> Unit) {
     Column(modifier) {
         StyleCaption(label)
         Spacer(Modifier.size(4.dp))
