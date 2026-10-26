@@ -1489,6 +1489,7 @@ private fun EditorPane(
                             onShareAudio = { actions.onShareAudio(editor, it) },
                             onShareImage = actions.onShareImage,
                         )
+                        com.xnotes.ui.CropOverlay(canvas)
                         com.xnotes.ui.TextStyleBar(canvas)
                         com.xnotes.ui.LongPressMenu(canvas, onInsertImageAt = { c -> actions.onInsertCanvasImage(editor, c) })
                         com.xnotes.ui.CanvasDebugOverlay(canvas)
@@ -1538,6 +1539,7 @@ private fun EditorPane(
                                 onShareAudio = { actions.onShareAudio(editor, it) },
                                 onShareImage = actions.onShareImage,
                             )
+                            com.xnotes.ui.CropOverlay(editor)
                             com.xnotes.ui.ScreenshotMenu(editor, onShare = actions.onShareImage)
                             com.xnotes.ui.TextStyleBar(editor)
                             com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })

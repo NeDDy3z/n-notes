@@ -285,7 +285,7 @@ private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xno
 enum class Pane { PRIMARY, SECONDARY }
 
 @Stable
-class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore, ColorDropHost, AudioHost {
+class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, SwatchStore, ColorDropHost, AudioHost, CropHost {
 
     private val appContext = context.applicationContext
 
@@ -1894,6 +1894,52 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.switchBackAfterScreenshot()
         if (file == null) message = appContext.getString(R.string.err_share_image)
         return file
+    }
+
+    // --- crop: a lone picture cut down to part of itself, for good ---
+
+    override fun canCropSelection(): Boolean = controller.selectedItems().singleOrNull() is ImageItem
+
+    override var cropFrame by mutableStateOf<CropFrame?>(null)
+        private set
+
+    /** The picture in crop mode, or null outside it. */
+    private var cropping: ImageItem? = null
+
+    override fun startCrop() {
+        val item = controller.selectedItems().singleOrNull() as? ImageItem ?: return
+        val index = itemPageLocator()(item)?.let { page -> state.document.pages.indexOfFirst { it === page } }?.takeIf { it >= 0 } ?: return
+        controller.clearSelection()
+        cropping = item
+        val c = state.contentToViewport(state.fromPageSpace(index, item.rect.center))
+        cropFrame = CropFrame(
+            c.x.toFloat(), c.y.toFloat(), (item.rect.w * state.zoom).toFloat(), (item.rect.h * state.zoom).toFloat(),
+            (Math.toDegrees(item.angle) + state.rotationDeg).toFloat(),
+        )
+    }
+
+    override fun finishCrop(part: Rect?) {
+        val item = cropping ?: return
+        cropping = null
+        cropFrame = null
+        if (part == null || com.xnotes.core.model.ImageCrop.isWhole(part)) return
+        val image = item.image
+        val source = com.xnotes.core.model.ImageCrop.sourceRect(item, image.width, image.height, part)
+        autosaveScope.launch {
+            val cut = withContext(Dispatchers.IO) { com.xnotes.platform.ImageCropper.crop(image.file, image.width, image.height, source, imageDir) }
+            if (cut == null || item.image !== image) {
+                if (cut == null) message = appContext.getString(R.string.err_crop)
+                return@launch
+            }
+            val cmd = com.xnotes.core.history.ReplaceImage(item, image to item.rect, cut to com.xnotes.core.model.ImageCrop.croppedRect(item, part))
+            val was = touchedRegions(cmd)
+            cmd.redo()
+            history.push(cmd)
+            state.document.dirty = true
+            spanning(was, touchedRegions(cmd))?.let { state.repairInkRegions(it) } ?: state.refreshAllInk()
+            refreshContent()
+            view.requestRender()
+        }
     }
 
     override fun copySelectionAsImage() {

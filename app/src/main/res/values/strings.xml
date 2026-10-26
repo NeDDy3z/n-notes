@@ -678,6 +678,8 @@
     <string name="err_export_settings">Couldn’t export the settings.</string>
     <string name="err_import_settings">That file holds no xnotes settings.</string>
     <string name="replace">Replace</string>
+    <string name="crop">Crop</string>
+    <string name="err_crop">Couldn’t crop the picture.</string>
     <string name="drag_to_reorder">Drag to reorder</string>
     <string name="err_paste_pages">Couldn’t paste the pages.</string>
     <string name="importing_markdown">Importing Markdown…</string>

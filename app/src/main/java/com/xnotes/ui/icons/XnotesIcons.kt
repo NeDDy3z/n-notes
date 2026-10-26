@@ -233,6 +233,8 @@ object XnotesIcons {
         "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7", "M14 3v4a1 1 0 0 0 1 1h4", "M14 3l5 5v4",
         "M15 18h7", "M19 15l3 3-3 3",
     )
+    /** Two corner brackets crossing: cutting a picture down. */
+    val crop = icon("M6 2v14a2 2 0 0 0 2 2h14", "M18 22V8a2 2 0 0 0-2-2H2")
     /** A sheet standing and the same sheet lying down: a page's size and which way round it is. */
     val pageSize = icon(roundRect(6.0, 2.0, 12.0, 20.0, 2.0), roundRect(2.0, 6.0, 20.0, 12.0, 2.0))
     /** A quarter turn clockwise. */

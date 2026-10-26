@@ -82,7 +82,7 @@ import com.xnotes.ui.theme.Palette
 /** How near ink a finger tap during playback may land to play from it, in dp. */
 private const val INK_TAP_DP = 8.0
 
-class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost, AudioHost {
+class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongPressMenuHost, TextEditHost, ColorDropHost, AudioHost, CropHost {
 
     private val appContext = context.applicationContext
 
@@ -623,6 +623,57 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun pasteClipboardImageAt(content: Pt) {
         val bytes = com.xnotes.platform.SystemClipboard.imageBytes(appContext) ?: return
         insertImage(bytes, content)
+    }
+
+    // --- crop: a lone picture cut down to part of itself, for good ---
+
+    override fun canCropSelection(): Boolean = selection.items.singleOrNull() is ImageItem
+
+    override var cropFrame by mutableStateOf<CropFrame?>(null)
+        private set
+
+    /** The picture in crop mode, or null outside it. */
+    private var cropping: ImageItem? = null
+
+    override fun startCrop() {
+        val item = selection.items.singleOrNull() as? ImageItem ?: return
+        interaction.clearSelection()
+        publishOverlay()
+        cropping = item
+        val c = viewport.contentToViewport(item.rect.center)
+        cropFrame = CropFrame(
+            c.x.toFloat(), c.y.toFloat(), (item.rect.w * viewport.zoom).toFloat(), (item.rect.h * viewport.zoom).toFloat(),
+            Math.toDegrees(item.angle).toFloat(),
+        )
+    }
+
+    override fun finishCrop(part: Rect?) {
+        val item = cropping ?: return
+        cropping = null
+        cropFrame = null
+        if (part == null || com.xnotes.core.model.ImageCrop.isWhole(part)) return
+        val dir = imageDir ?: return
+        val image = item.image
+        val source = com.xnotes.core.model.ImageCrop.sourceRect(item, image.width, image.height, part)
+        decodeExecutor.execute {
+            val cut = com.xnotes.platform.ImageCropper.crop(image.file, image.width, image.height, source, dir)
+            mainHandler.post {
+                if (cut == null || item.image !== image) {
+                    if (cut == null) onMessage?.invoke(appContext.getString(R.string.err_crop), null)
+                    return@post
+                }
+                val cmd = com.xnotes.core.infinite.OnCanvas(
+                    document,
+                    com.xnotes.core.history.ReplaceImage(item, image to item.rect, cut to com.xnotes.core.model.ImageCrop.croppedRect(item, part)),
+                    listOf(item),
+                )
+                cmd.redo()
+                history.push(cmd)
+                markDirty()
+                refresh()
+                publishOverlay()
+            }
+        }
     }
 
     override fun copySelectionAsImage() {

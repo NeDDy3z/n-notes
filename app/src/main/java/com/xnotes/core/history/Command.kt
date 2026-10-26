@@ -1,10 +1,13 @@
 package com.xnotes.core.history
 
+import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.GeoHandle
 import com.xnotes.core.model.GeometrySnapshot
+import com.xnotes.core.model.ImageData
+import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Labelled
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.PageMarks
@@ -382,6 +385,25 @@ class CompositeCommand(private val commands: List<Command>) : Command {
     override fun added(): List<CanvasItem> = commands.flatMap { it.added() }
 
     override fun reshaped(): List<Page> = commands.flatMap { it.reshaped() }
+}
+
+/** A picture swapped for another of itself, as a crop does: its file and its box, before and after. */
+class ReplaceImage(
+    private val item: ImageItem,
+    private val before: Pair<ImageData, Rect>,
+    private val after: Pair<ImageData, Rect>,
+) : Command {
+    override fun redo() {
+        item.image = after.first
+        item.rect = after.second
+    }
+
+    override fun undo() {
+        item.image = before.first
+        item.rect = before.second
+    }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(listOf(item), locate)
 }
 
 /** Pages turned or resized: each one's [PageShape] before and after. The view repaints them whole. */

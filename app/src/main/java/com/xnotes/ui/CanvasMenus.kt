@@ -144,6 +144,12 @@ interface SelectionMenuHost : SwatchHost {
 
     /** That picture as a PNG ready for the share sheet, or null (with a message) when it could not be made. */
     fun selectionImageForShare(): java.io.File?
+
+    /** True when the selection is a lone picture, which the bar offers to crop. */
+    fun canCropSelection(): Boolean
+
+    /** Put that picture in crop mode, the frame standing over it. */
+    fun startCrop()
 }
 
 /**
@@ -168,8 +174,9 @@ fun SelectionMenu(
     var renamingAudio by remember { mutableStateOf<com.xnotes.core.model.AudioItem?>(null) }
 
     val audio = host.selectedAudio()
+    val crops = host.canCropSelection()
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { ((if (audio != null) 7 else 6) * 46).dp.toPx() }
+    val barWidthPx = with(density) { ((6 + (if (audio != null) 1 else 0) + (if (crops) 1 else 0)) * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
@@ -194,6 +201,7 @@ fun SelectionMenu(
                 val playing = AudioPlayback.session?.let { it.item === audio && it.playing } == true
                 ActionIcon(if (playing) XnotesIcons.pause else XnotesIcons.play, stringResource(if (playing) R.string.audio_pause else R.string.audio_play)) { host.playSelectedAudio() }
             }
+            if (crops) ActionIcon(XnotesIcons.crop, stringResource(R.string.crop)) { host.startCrop() }
             ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), shortcut = Keys.DELETE) { host.deleteSelection() }
             ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
             ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { host.copySelection(); host.dismissSelectionMenu() }
