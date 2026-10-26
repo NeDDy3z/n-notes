@@ -151,6 +151,19 @@ class DocumentCodecTest {
         assertTrue(back[4].locked)
     }
 
+    @Test fun aTurnedPdfPageKeepsItsTurnAndAPlainOneWritesNone() {
+        val doc = Document.blank(count = 2)
+        doc.pages[0].pdfPage = 0
+        doc.pages[0].pdfTurn = 3
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        val manifest = manifestOf(out.toByteArray())
+        assertEquals(1, Regex("\"pdf_turn\"").findAll(manifest).count())
+        val back = roundTrip(doc)
+        assertEquals(3, back.pages[0].pdfTurn)
+        assertEquals(0, back.pages[1].pdfTurn)
+    }
+
     @Test fun createdTimeRoundTripsAsIsoUtc() {
         val doc = Document(dpi = 150, created = 1_789_720_071_123L)
         doc.pages.add(Page(100.0, 100.0))

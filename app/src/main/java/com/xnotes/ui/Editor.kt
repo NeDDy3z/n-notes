@@ -1040,7 +1040,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** The PDF text of note pages, read through the open PDF's text cache. */
     private val pdfTexts = object : com.xnotes.canvas.PdfTextSource {
-        private fun pdfPageOf(page: Int): Int? = state.document.pages.getOrNull(page)?.pdfPage
+        private fun pdfPageOf(page: Int): Int? = state.document.pages.getOrNull(page)?.pdfKey
 
         override fun peek(page: Int) = pdfPageOf(page)?.let { pdfSource?.text?.peek(it) }
 
@@ -1155,7 +1155,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Opens the link at ([x], [y]) in points on [page]'s PDF page, an annotation's or an address in its text; null for none known yet. */
     private fun linkOpener(page: Page, x: Float, y: Float, slop: Float): (() -> Unit)? {
         val src = pdfSource ?: return null
-        val pdfIdx = page.pdfPage ?: return null
+        val pdfIdx = page.pdfKey ?: return null
         if (src.hasLinks(pdfIdx)) src.linkAt(pdfIdx, x, y)?.let { return { followLink(it) } }
         val text = src.text.peek(pdfIdx) ?: return null
         val link = com.xnotes.core.pdf.PageLinks.at(text, x, y, slop) ?: return null
@@ -1344,7 +1344,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun withPdfSelectionText(use: (String) -> Unit) {
         val sel = pdfText.selection ?: return
         val src = pdfSource ?: return
-        val pdfPages = (sel.start.page..sel.end.page).associateWith { state.document.pages.getOrNull(it)?.pdfPage }
+        val pdfPages = (sel.start.page..sel.end.page).associateWith { state.document.pages.getOrNull(it)?.pdfKey }
         if (pdfPages.values.all { it == null || src.text.peek(it) != null }) {
             use(sel.text { page -> pdfPages[page]?.let { src.text.peek(it) } })
             return
@@ -1631,7 +1631,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
             val src = pdfSource ?: return@onLinkTap false
             val page = state.document.pages.getOrNull(pageIndex) ?: return@onLinkTap false
-            val pdfIdx = page.pdfPage ?: return@onLinkTap false
+            val pdfIdx = page.pdfKey ?: return@onLinkTap false
             if (page.width <= 0.0 || page.height <= 0.0) return@onLinkTap false
             // Into PDF points, at the same dpi/72 the page renders with.
             val ptPerPx = 72.0 / state.document.dpi
@@ -2057,7 +2057,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The open note's page background over [region] at [res]; [minLine] is the template's thinnest line in content px. */
     private fun paintBackground(page: Page, renderer: Renderer, res: Double, region: Rect, minLine: Double = 0.0) {
         val src = pdfSource
-        val pi = page.pdfPage
+        val pi = page.pdfKey
         val markups = page.markups
         if (src != null && pi != null) {
             // The raster covers the page's content box only; a margin is paper beside it.
@@ -2931,7 +2931,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  page it settles on is parsed, never a backlog. The on-tap parse stays as a fallback. */
     private fun warmVisibleLinks(pageIndex: Int) {
         val src = pdfSource ?: return
-        val pdfIdx = state.document.pages.getOrNull(pageIndex)?.pdfPage ?: return
+        val pdfIdx = state.document.pages.getOrNull(pageIndex)?.pdfKey ?: return
         src.warmLinks(pdfIdx)
     }
 
@@ -3253,7 +3253,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** What a search of this note reads: [src] for the PDF, the live model for the rest. */
     private fun searchCorpus(src: com.xnotes.platform.PdfSource?) = object : SearchCorpus {
-        override fun pdfPages(): IntArray = state.document.pages.let { ps -> IntArray(ps.size) { ps[it].pdfPage ?: -1 } }
+        override fun pdfPages(): IntArray = state.document.pages.let { ps -> IntArray(ps.size) { ps[it].pdfKey ?: -1 } }
 
         override fun typedTexts(): List<TypedText> {
             republishFlowIfStale()
@@ -3350,7 +3350,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun searchStamp(): Long {
         var stamp = flowStamp()
         for (p in state.document.pages) {
-            stamp = stamp * 31 + System.identityHashCode(p) + (p.pdfPage ?: -1)
+            stamp = stamp * 31 + System.identityHashCode(p) + (p.pdfKey ?: -1)
             for (item in p.items) {
                 if (item is com.xnotes.core.model.TextItem) stamp = stamp * 31 + System.identityHashCode(item) + item.text.hashCode()
             }
@@ -3699,7 +3699,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         doc.pdfFile?.let { file ->
             runCatching {
                 com.xnotes.platform.PdfSource.create(file)?.let { src ->
-                    page.pdfPage?.let { pi ->
+                    page.pdfKey?.let { pi ->
                         val pw = (page.width * scale).toInt().coerceAtLeast(1)
                         val ph = (page.height * scale).toInt().coerceAtLeast(1)
                         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
@@ -6655,8 +6655,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Turn the pages at [indices] [turns] quarter turns clockwise, content and all, as one undo step. */
     fun rotatePages(indices: List<Int>, turns: Int) {
-        val pages = indices.distinct().sorted().mapNotNull { pageAt(it) }.filter { it.pdfPage == null }
+        val pages = indices.distinct().sorted().mapNotNull { pageAt(it) }
         if (pages.isEmpty()) return
+        pdfText.clear()
         val before = pages.map { PageShape.of(it) }
         for (page in pages) PageTurn.turn(page, state.document, turns)
         history.push(ReshapePages(pages, before, pages.map { PageShape.of(it) }))

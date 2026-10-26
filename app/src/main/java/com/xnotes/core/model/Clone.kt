@@ -56,7 +56,7 @@ fun List<CanvasItem>.deepCopyAll(measurer: TextMeasurer): List<CanvasItem> {
 
 /** A deep copy of a page — its items cloned ([deepCopyAll]) — keeping the size, PDF link, style, margins and markups. */
 fun Page.deepCopy(measurer: TextMeasurer): Page =
-    Page(width, height, items.deepCopyAll(measurer).toMutableList(), pdfPage, style, margins, markups)
+    Page(width, height, items.deepCopyAll(measurer).toMutableList(), pdfPage, style, margins, markups, pdfTurn)
 
 /**
  * A deep copy of a document: pages cloned, bookmarks copied, the source PDF file and styles shared
@@ -98,7 +98,7 @@ fun Document.deepCopy(measurer: TextMeasurer): Document = Document(
  */
 fun Document.snapshot(): Document = Document(
     pages = pages.mapTo(mutableListOf()) { p ->
-        Page(p.width, p.height, ArrayList(p.items), p.pdfPage, p.style, p.margins, p.markups).also { it.cover = p.cover }
+        Page(p.width, p.height, ArrayList(p.items), p.pdfPage, p.style, p.margins, p.markups, p.pdfTurn).also { it.cover = p.cover }
     },
     dpi = dpi,
     path = path,

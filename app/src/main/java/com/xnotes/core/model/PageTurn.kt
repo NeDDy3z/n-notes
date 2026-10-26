@@ -1,6 +1,8 @@
 package com.xnotes.core.model
 
 import com.xnotes.core.geometry.Affine
+import com.xnotes.core.geometry.Pt
+import com.xnotes.core.pdf.TextQuad
 
 /** Turning a page like a sheet of paper: a quarter turn swaps its sides, and what is on it turns with it. */
 object PageTurn {
@@ -24,15 +26,37 @@ object PageTurn {
         else -> m
     }
 
+    /** [m], a markup on a page of [wPts] by [hPts] points as displayed, turned with that page. */
+    fun markup(m: TextMarkup, wPts: Double, hPts: Double, turns: Int): TextMarkup {
+        val q = normalize(turns)
+        if (q == 0) return m
+        val t = affine(wPts, hPts, q)
+        val quads = m.quads.map { quad ->
+            val a = t.apply(Pt(quad.left.toDouble(), quad.top.toDouble()))
+            val b = t.apply(Pt(quad.right.toDouble(), quad.bottom.toDouble()))
+            TextQuad(
+                minOf(a.x, b.x).toFloat(), minOf(a.y, b.y).toFloat(), maxOf(a.x, b.x).toFloat(), maxOf(a.y, b.y).toFloat(),
+                (quad.quarter + q) % 4,
+            )
+        }
+        return TextMarkup(m.id, m.type, m.color, m.intensity, quads, m.text, m.note, m.created, m.modified)
+    }
+
     /**
      * Turn [page] of [doc] [turns] quarter turns clockwise, in place. Ink, shapes and pictures turn
-     * with it; text boxes and recordings, which always stand upright, keep their place on it.
-     * Margins it inherits are written onto the page when turning would change them.
+     * with it; text boxes and recordings, which always stand upright, keep their place on it. Its PDF
+     * page turns too, and the markups on its text with it. Margins it inherits are written onto the
+     * page when turning would change them.
      */
     fun turn(page: Page, doc: Document, turns: Int) {
         val q = normalize(turns)
         if (q == 0) return
         val t = affine(page.width, page.height, q)
+        if (page.pdfPage != null) {
+            val toPts = 72.0 / doc.dpi
+            page.markups = page.markups.map { markup(it, page.width * toPts, page.height * toPts, q) }
+            page.pdfTurn = normalize(page.pdfTurn + q)
+        }
         for (item in page.items) {
             if (item is TextItem || item is AudioItem) {
                 val c = item.bounds().center
@@ -59,6 +83,7 @@ class PageShape private constructor(
     private val height: Double,
     private val margins: PageMargins,
     private val markups: List<TextMarkup>,
+    private val pdfTurn: Int,
     private val geometry: List<Pair<CanvasItem, GeometrySnapshot>>,
 ) {
     fun restore(page: Page) {
@@ -66,10 +91,13 @@ class PageShape private constructor(
         page.height = height
         page.margins = margins
         page.markups = markups
+        page.pdfTurn = pdfTurn
         for ((item, snap) in geometry) item.restoreGeometry(snap)
     }
 
     companion object {
-        fun of(page: Page) = PageShape(page.width, page.height, page.margins, page.markups, page.items.map { it to it.snapshotGeometry() })
+        fun of(page: Page) = PageShape(
+            page.width, page.height, page.margins, page.markups, page.pdfTurn, page.items.map { it to it.snapshotGeometry() },
+        )
     }
 }

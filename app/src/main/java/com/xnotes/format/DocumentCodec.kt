@@ -20,6 +20,7 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PageStyle
+import com.xnotes.core.model.PageTurn
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Routing
 import com.xnotes.core.model.ShapeItem
@@ -222,7 +223,7 @@ class DocumentCodec(
 
     /** [page]'s map into PDF user space: its source page's, else its own points with y up. */
     private fun geometryOf(doc: Document, page: Page): PdfPageGeometry =
-        page.pdfPage?.let { pdfGeometry(doc, it) } ?: PdfPageGeometry.flipped(page.height * 72.0 / doc.dpi)
+        page.pdfKey?.let { pdfGeometry(doc, it) } ?: PdfPageGeometry.flipped(page.height * 72.0 / doc.dpi)
 
     /** The embedded templates [doc]'s styles name, in key order; built-in rulings need none. */
     internal fun usedTemplates(doc: Document): List<Pair<String, String>> =
@@ -328,6 +329,7 @@ class DocumentCodec(
         j.name("height").value(page.height)
         j.name("pdf_page")
         page.pdfPage?.let { j.value(it) } ?: j.nullValue()
+        if (page.pdfPage != null && page.pdfTurn != 0) j.name("pdf_turn").value(page.pdfTurn)
         if (page.cover) j.name("cover").value(true)
         j.name("items").beginArray()
         // Ids only for what a connector on this page glues to; a page without connectors writes none.
@@ -998,6 +1000,7 @@ class DocumentCodec(
             var width = fallbackW
             var height = fallbackH
             var pdfPage: Int? = null
+            var pdfTurn = 0
             var cover = false
             var style = PageStyle()
             var margins = PageMargins()
@@ -1010,6 +1013,7 @@ class DocumentCodec(
                     "width" -> width = doubleOr(p, fallbackW)
                     "height" -> height = doubleOr(p, fallbackH)
                     "pdf_page" -> pdfPage = intOrNull(p)
+                    "pdf_turn" -> pdfTurn = intOrNull(p) ?: 0
                     "cover" -> cover = boolOr(p, false)
                     "style" -> style = parseStyle(p)
                     "margins" -> margins = parseMargins(p)
@@ -1025,7 +1029,10 @@ class DocumentCodec(
                 height = prev?.height ?: fallbackH
                 pdfPage = null
             }
-            val page = Page(width = width, height = height, items = items, pdfPage = pdfPage, style = style, margins = margins)
+            val page = Page(
+                width = width, height = height, items = items, pdfPage = pdfPage, style = style, margins = margins,
+                pdfTurn = if (pdfPage == null) 0 else PageTurn.normalize(pdfTurn),
+            )
             // Only the first page can be the cover; a flag anywhere else is dropped.
             page.cover = cover && m.pages.isEmpty()
             m.pages.add(page)

@@ -92,6 +92,29 @@ class PageTurnTest {
         assertEquals(PageMargins(top = 0.2), page.margins)
     }
 
+    @Test fun aPdfPageTurnsItsPdfAndItsMarkups() {
+        val doc = Document(dpi = 72)
+        val page = Page(200.0, 100.0, pdfPage = 4)
+        doc.pages.add(page)
+        val quad = com.xnotes.core.pdf.TextQuad(10f, 20f, 50f, 30f, 0)
+        page.markups = listOf(TextMarkup("m", MarkupType.HIGHLIGHT, Rgba(255, 0, 0, 255), 1.0, listOf(quad), "x", null, 0L, 0L))
+        PageTurn.turn(page, doc, 1)
+        assertEquals(1, page.pdfTurn)
+        assertEquals(PdfKey.of(4, 1), page.pdfKey)
+        assertEquals(com.xnotes.core.pdf.TextQuad(70f, 10f, 80f, 50f, 1), page.markups.single().quads.single())
+        PageTurn.turn(page, doc, 3)
+        assertEquals(0, page.pdfTurn)
+        assertEquals(quad, page.markups.single().quads.single())
+    }
+
+    @Test fun aKeyCarriesTheIndexAndTheTurn() {
+        val key = PdfKey.of(123_456, 3)
+        assertEquals(123_456, PdfKey.index(key))
+        assertEquals(3, PdfKey.turn(key))
+        assertEquals(7, PdfKey.of(7, 0))
+        assertEquals(PdfKey.of(7, 1), PdfKey.of(7, 5))
+    }
+
     @Test fun aShapeComesBackExactly() {
         val doc = Document()
         val page = Page(200.0, 100.0, margins = PageMargins(left = 0.25))
