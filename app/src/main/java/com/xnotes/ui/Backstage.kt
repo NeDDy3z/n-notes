@@ -929,6 +929,22 @@ private fun ExplorerSection(
     var fieldError by remember(root) { mutableStateOf<String?>(null) }
     var renaming by remember(root) { mutableStateOf<BrowseEntry?>(null) }
     val selection = remember(root) { mutableStateListOf<BrowseEntry>() }
+    // Notes picked for Merge, in pick order, while its review dialog is up.
+    var merging by remember(root) { mutableStateOf<List<BrowseEntry>?>(null) }
+    merging?.let { picked ->
+        MergeDialog(picked, onDismiss = { merging = null }) { order, name ->
+            merging = null
+            editor.mergeNotes(order.map { it.documentUri }, name) { made ->
+                if (made == null) return@mergeNotes
+                selection.clear()
+                refreshKey++
+                editor.say(
+                    context.getString(R.string.merged_into, com.xnotes.core.util.DocumentKind.stripSuffix(made.name)),
+                    context.getString(R.string.open) to { calls.openFile(made.uri) },
+                )
+            }
+        }
+    }
     var clipboard by remember(root) { mutableStateOf<ClipItem?>(null) }
     var pendingDelete by remember(root) { mutableStateOf<List<BrowseEntry>?>(null) }
     var moving by remember(root) { mutableStateOf<List<BrowseEntry>?>(null) }
@@ -1739,6 +1755,14 @@ private fun ExplorerSection(
                                     selection.clear()
                                     if (uris.size == 1) calls.shareFile(uris[0]) else calls.shareFiles(uris)
                                 })
+                                // Only notes merge: a canvas has no pages, a folder no one order.
+                                val notes = selection.filter { !it.isDir && com.xnotes.core.util.DocumentKind.ofName(it.name) == com.xnotes.core.util.DocumentKind.NOTE }
+                                if (notes.size >= 2 && notes.size == selection.size) {
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.merge_ellipsis)) }, onClick = {
+                                        moreOpen = false
+                                        merging = notes.toList()
+                                    })
+                                }
                             }
                         }
                     }

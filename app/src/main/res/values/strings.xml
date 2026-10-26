@@ -657,6 +657,14 @@
     <string name="extract_name_count">%1$s (%2$d pages)</string>
     <string name="pages_now_in">%1$s is in %2$s</string>
     <string name="err_extract_pages">Couldn’t make the new note.</string>
+    <string name="merge_ellipsis">Merge…</string>
+    <string name="merge_notes">Merge notes</string>
+    <string name="merge_order">In this order: drag a note by its handle to move it.</string>
+    <string name="merge">Merge</string>
+    <string name="merging_notes">Merging notes…</string>
+    <string name="merged_into">Merged into %1$s</string>
+    <string name="err_merge_notes">Couldn’t merge the notes.</string>
+    <string name="drag_to_reorder">Drag to reorder</string>
     <string name="err_paste_pages">Couldn’t paste the pages.</string>
     <string name="importing_markdown">Importing Markdown…</string>
     <string name="import_progress">%1$d of %2$d imported</string>

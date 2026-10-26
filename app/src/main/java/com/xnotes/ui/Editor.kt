@@ -6811,6 +6811,100 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return MadeFile(uri, name)
     }
 
+    /**
+     * Merge the notes at [uris], in that order, into a new note named [rawName] beside the first:
+     * the first note as it is, then each other's pages in their own look, its typed text starting on
+     * its own first page. The notes picked stay as they were. Runs behind the progress dialog, which
+     * can cancel it; [onDone] gets the new note, or null.
+     */
+    fun mergeNotes(uris: List<String>, rawName: String, onDone: (MadeFile?) -> Unit) {
+        val root = browseRoot ?: return onDone(null)
+        val parentId = parentDocIdOf(uris.first()) ?: browseRootDocId(root)
+        autosaveScope.launch {
+            importCancelled.set(false)
+            busyWith = R.string.merging_notes
+            importing = true
+            val made = try {
+                withContext(Dispatchers.IO) {
+                    writeMergedNote(root, parentId, rawName, uris)?.also { made ->
+                        if (importCancelled.get()) {
+                            runCatching { android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, android.net.Uri.parse(made.uri)) }
+                        }
+                    }
+                }
+            } finally {
+                importing = false
+                busyWith = null
+            }
+            if (importCancelled.get()) return@launch onDone(null)
+            if (made == null) message = appContext.getString(R.string.err_merge_notes)
+            else viewStates.get(documentKey(uris.first()))?.let { v -> viewStates.put(documentKey(made.uri), v.zoom, v.scrollX, v.scrollY, v.overrides) }
+            onDone(made)
+        }
+    }
+
+    /** [writeMergedNote]'s work, reading each note afresh and dropping its temp files after. IO. */
+    private fun writeMergedNote(root: String, parentId: String, rawName: String, uris: List<String>): MadeFile? {
+        val docs = ArrayList<Document>()
+        val temps = ArrayList<java.io.File>()
+        try {
+            for (u in uris) {
+                if (importCancelled.get()) return null
+                val doc = runCatching {
+                    appContext.contentResolver.openInputStream(android.net.Uri.parse(u))?.use { codec.read(it, pdfDir, imageDir) }
+                }.getOrNull() ?: return null
+                docs += doc
+                doc.pdfFile?.let { temps += it }
+            }
+            val merged = docs.first()
+            merged.path = null
+            merged.displayName = null
+            merged.created = System.currentTimeMillis()
+            var pdf = merged.pdfFile
+            var pdfPages = pdf?.let { pdfSizesOf(it) ?: return null }?.size?.div(2) ?: 0
+            for (doc in docs.drop(1)) {
+                if (importCancelled.get()) return null
+                val cargo = com.xnotes.core.model.PageCargo.pack(doc, doc.pages.indices.toList(), textMeasurer)
+                var base: Int? = null
+                if (cargo.pdfIndices.isNotEmpty() && doc.pdfFile != null) {
+                    val sub = cargoPdf(cargo, doc.pdfFile) ?: return null
+                    temps += sub
+                    val sizes = pdfSizesOf(sub) ?: return null
+                    val current = pdf
+                    if (current == null) {
+                        pdf = sub
+                    } else {
+                        val out = runCatching { java.io.File.createTempFile("merge", ".pdf", pdfDir) }.getOrNull() ?: return null
+                        temps += out
+                        val baseSizes = pdfSizesOf(current) ?: return null
+                        if (!com.xnotes.platform.PdfJoin.append(appContext, current, sub, out, baseSizes, sizes) { importCancelled.get() }) return null
+                        pdf = out
+                    }
+                    base = pdfPages
+                    pdfPages += sizes.size / 2
+                }
+                val offset = merged.pages.size
+                merged.pages.addAll(cargo.unpack(merged, base, textMeasurer))
+                for (b in cargo.bookmarks) merged.bookmarks.add(Bookmark(offset + b.page, b.label))
+                com.xnotes.core.text.FlowMerge.append(merged.flow, doc.flow, offset + flowStart(doc))
+            }
+            merged.pdfFile = pdf
+            if (importCancelled.get()) return null
+            val name = uniqueDocumentName(root, parentId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+            val uri = createNoteFile(root, parentId, name) { codec.write(merged, it) } ?: return null
+            return MadeFile(uri, name)
+        } finally {
+            for (file in temps) file.delete()
+            for (doc in docs) deleteImageTemps(doc)
+        }
+    }
+
+    /** Every page's size in points of the PDF at [file], or null when it does not read. IO. */
+    private fun pdfSizesOf(file: java.io.File): FloatArray? {
+        val read = com.xnotes.platform.PdfSource.open(file)
+        return try { read.allPageSizePoints() } finally { read.close() }
+    }
+
     /** The name Extract suggests for the pages at [indices]: the note's, then which pages or how many. */
     fun extractName(indices: List<Int>): String {
         val picked = indices.distinct().sorted()
