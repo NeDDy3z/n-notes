@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -2042,7 +2041,6 @@ private val SEARCH_HEIGHT = 40.dp
  * it eases out into a rounded pill of [expandedWidth] holding the field and stops (no overshoot). Tapping
  * outside drops focus, which clears the query and lets it ease back. A trailing ✕ does the same by hand.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ExplorerSearchField(query: String, onQueryChange: (String) -> Unit, expandedWidth: Dp, lift: () -> Float = { 0f }) {
     val palette = LocalPalette.current
@@ -2062,16 +2060,8 @@ internal fun ExplorerSearchField(query: String, onQueryChange: (String) -> Unit,
     val surface = palette.surface.toComposeColor()
     val border = palette.border.toComposeColor()
     LaunchedEffect(active) { if (active) runCatching { focus.requestFocus() } }
-    // Back only hides the keyboard and leaves focus put, so a keyboard that was up going away ends the search too.
-    val imeUp = WindowInsets.isImeVisible
-    var imeSeen by remember { mutableStateOf(false) }
-    LaunchedEffect(imeUp, focused) {
-        when {
-            !focused -> imeSeen = false
-            imeUp -> imeSeen = true
-            imeSeen -> focusManager.clearFocus()
-        }
-    }
+    // Back exits the search
+    BackHandler(enabled = expanded) { focusManager.clearFocus() }
     Row(
         Modifier
             .width(lerp(SEARCH_HEIGHT, expandedWidth, open))
