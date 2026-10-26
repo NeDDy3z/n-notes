@@ -47,7 +47,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -2041,7 +2040,8 @@ private val SEARCH_HEIGHT = 40.dp
 /**
  * The explorer's recursive name filter. Idle it's a bare magnifier like the header's other icons; tapped,
  * it eases out into a rounded pill of [expandedWidth] holding the field and stops (no overshoot). Tapping
- * outside drops focus, which clears the query and lets it ease back. A trailing ✕ does the same by hand.
+ * outside drops focus, which clears the query and lets it ease back. A trailing ✕ does the same by hand,
+ * and so does Back once the keyboard is down; the keyboard's Search key only hides the keyboard.
  */
 @Composable
 internal fun ExplorerSearchField(query: String, onQueryChange: (String) -> Unit, expandedWidth: Dp, lift: () -> Float = { 0f }) {
