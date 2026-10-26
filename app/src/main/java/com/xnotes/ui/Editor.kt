@@ -197,29 +197,61 @@ data class BrowseEntry(
 
 /**
  * How a picked file should be imported: as a PDF-backed note, an image note, a text note (extracted
- * from txt/csv/rtf/html/docx/xlsx/epub), or an existing `.xnote`/`.xcanvas` opened as-is.
+ * from txt/csv/rtf/html/docx/xlsx/epub), a Samsung Notes archive, or an existing `.xnote`/`.xcanvas`
+ * opened as-is.
+ *
+ * Each kind owns its extensions and MIME types: the picker's MIME allowlist, the extension hint and
+ * [classify] all derive from them, so a new import format is one enum entry here plus its branch in
+ * the two import `when`s (buildImportedDocument, createImportedNoteFile).
  */
-enum class ImportKind {
-    PDF, IMAGE, TEXT, OPEN;
+enum class ImportKind(
+    val extensions: List<String>,
+    val mimes: List<String>,
+    /** Whether the "Import file" picker offers this kind; OPEN is reached by opening, not importing. */
+    val pickable: Boolean = true,
+) {
+    PDF(
+        listOf("pdf"),
+        listOf("application/pdf"),
+    ),
+    IMAGE(
+        listOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic", "heif"),
+        listOf("image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/svg+xml", "image/heic", "image/heif"),
+    ),
+    TEXT(
+        listOf("txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx"),
+        listOf("text/plain", "text/markdown", "text/x-markdown", "text/csv", "text/comma-separated-values",
+            "application/csv", "text/html", "text/rtf", "application/rtf", "application/epub+zip",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ),
+    OPEN(
+        listOf("xnote", "xcanvas"),
+        emptyList(),
+        pickable = false,
+    ),
+    SDOCX(
+        listOf("sdocx"),
+        // octet-stream: providers that don't know the extension (the Downloads one does) report it
+        // so — without it the picker hides every .sdocx they serve.
+        listOf("application/x-samsungnotes", "application/zip", "application/octet-stream"),
+    );
 
     companion object {
         /** The document extensions the "Import file" action understands (for the picker + UI hint). */
-        val IMPORT_EXTENSIONS = listOf("pdf", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg",
-            "txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+        val IMPORT_EXTENSIONS: List<String> = entries.filter { it.pickable }.flatMap { it.extensions }
 
-        private val IMAGE_EXT = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic", "heif")
-        private val TEXT_EXT = setOf("txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+        /** The MIME types the "Import file" picker offers, derived from each kind's list. */
+        val PICKER_MIME_TYPES: Array<String> = entries.filter { it.pickable }.flatMap { it.mimes }.toTypedArray()
 
         /** Classify a picked file by extension (then mime) into the importer that should handle it. */
         fun classify(name: String, mime: String?): ImportKind {
             val ext = name.substringAfterLast('.', "").lowercase()
-            return when {
-                ext == "xnote" || ext == "xcanvas" -> OPEN
-                ext == "pdf" || mime == "application/pdf" -> PDF
-                ext in IMAGE_EXT || mime?.startsWith("image/") == true -> IMAGE
-                ext in TEXT_EXT || mime?.startsWith("text/") == true -> TEXT
-                else -> TEXT // best effort for unknown types
-            }
+            return entries.firstOrNull { kind -> ext in kind.extensions || (mime != null && mime in kind.mimes) }
+                ?: when {
+                    mime?.startsWith("image/") == true -> IMAGE
+                    else -> TEXT // best effort for unknown types
+                }
         }
     }
 }
@@ -4887,6 +4919,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 try { com.xnotes.platform.PdfImporter.import(source, state.document.dpi) } finally { source.close() }
             }
             ImportKind.IMAGE -> imageDocument(keep(imageDir, "." + sourceName.substringAfterLast('.', "img")))
+            ImportKind.SDOCX -> com.xnotes.platform.SdocxReader.read(keep(imageDir, ".sdocx"), imageDir, textMeasurer, state.document.dpi)?.also { paginateFlow(it) }
             ImportKind.TEXT -> textDocument(staged, sourceName, mime)
             ImportKind.OPEN -> runCatching { java.io.FileInputStream(staged).use { codec.read(it, pdfDir, imageDir) } }.getOrNull()
         }
@@ -5200,9 +5233,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         when (item.kind) {
             ImportKind.PDF -> createPdfNoteFile(treeUri, parentDocId, rawName, staged)
             ImportKind.IMAGE -> createImageNoteFile(treeUri, parentDocId, rawName, staged)
+            ImportKind.SDOCX -> createSdocxNoteFile(treeUri, parentDocId, rawName, staged)
             ImportKind.TEXT -> createTextNoteFile(treeUri, parentDocId, rawName, staged, item.sourceName, item.mime)
             ImportKind.OPEN -> createNoteFileFromFile(treeUri, parentDocId, rawName, staged)
         }
+
+    /** A new note holding the ink, text and pictures of a Samsung Notes `.sdocx` file. IO. */
+    fun createSdocxNoteFile(treeUri: String, parentDocId: String, rawName: String, file: java.io.File): String? {
+        val doc = com.xnotes.platform.SdocxReader.read(file, imageDir, textMeasurer, state.document.dpi) ?: return null
+        paginateFlow(doc)
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
+    }
 
     /** Commits the pending import off the main thread while driving the "Importing…" dialog via
      *  [importing]. Returns the new note's URI, or null on failure/cancel. On cancel [pendingImport]
