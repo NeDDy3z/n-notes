@@ -1780,18 +1780,43 @@ private fun ExplorerSection(
                             if (colours) {
                                 ColorCodeMenuContent { c -> moreOpen = false; recolor(selection.toList(), c); selection.clear() }
                             } else {
+                                // A lone item gets the rest of its own ⋮ here too, since the gallery, timeline and columns draw none.
+                                val one = selection.singleOrNull()
+                                if (one != null && !one.isDir) {
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.preview)) }, onClick = { moreOpen = false; selection.clear(); previewing = one })
+                                }
                                 DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, onClick = {
                                     moreOpen = false
                                     clipboard = ClipItem(selection.toList(), true)
                                     selection.clear()
                                 })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.colour_code)) }, onClick = { colours = true })
+                                if (one != null) {
+                                    one.color?.let { c ->
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.name_colour_ellipsis)) }, onClick = { moreOpen = false; selection.clear(); namingColor = c })
+                                    }
+                                    val pinLabel = if (one.isDir) {
+                                        if (editor.isPinned(one.documentUri)) R.string.unpin_from_sidebar else R.string.pin_to_sidebar
+                                    } else {
+                                        if (editor.isNotePinned(one.documentUri)) R.string.unpin_from_top else R.string.pin_to_top
+                                    }
+                                    DropdownMenuItem(text = { Text(stringResource(pinLabel)) }, onClick = {
+                                        moreOpen = false
+                                        selection.clear()
+                                        if (one.isDir) host.menu.togglePin(one) else host.menu.toggleNotePin(one)
+                                    })
+                                    if (!one.isDir) HorizontalDivider(color = palette.border.toComposeColor())
+                                }
                                 DropdownMenuItem(text = { Text(stringResource(R.string.share)) }, enabled = files.size == selection.size, onClick = {
                                     moreOpen = false
                                     val uris = files.map { it.documentUri }
                                     selection.clear()
                                     if (uris.size == 1) calls.shareFile(uris[0]) else calls.shareFiles(uris)
                                 })
+                                if (one != null && !one.isDir) {
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.save_copy_ellipsis)) }, onClick = { moreOpen = false; selection.clear(); calls.saveCopyFile(one.documentUri) })
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.export_pdf)) }, onClick = { moreOpen = false; selection.clear(); calls.exportFilePdf(one.documentUri) })
+                                }
                                 // Only notes merge: a canvas has no pages, a folder no one order.
                                 val notes = selection.filter { !it.isDir && com.xnotes.core.util.DocumentKind.ofName(it.name) == com.xnotes.core.util.DocumentKind.NOTE }
                                 if (notes.size >= 2 && notes.size == selection.size) {
