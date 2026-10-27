@@ -298,8 +298,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         view.minimapVisible = minimapVisible
         view.scene = scene
         // Decoding reads a file and can take tens of milliseconds, so it never runs on the render
-        // thread; the finished bitmap is picked up and uploaded at the start of the next frame.
-        scene.decodeOn = { work -> decodeExecutor.execute(work) }
+        // thread; the finished bitmap is uploaded at the start of the next frame, which the decode
+        // asks for itself, since nothing else may be drawing.
+        scene.decodeOn = { work -> decodeExecutor.execute { work.run(); view.requestRender() } }
         scene.onOutOfMemory = { short -> view.post { outOfMemory = short } }
         document.listener = modelListener
         // Whatever is added while this canvas records takes the recording's moment.
