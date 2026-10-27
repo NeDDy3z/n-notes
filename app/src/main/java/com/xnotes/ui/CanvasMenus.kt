@@ -108,6 +108,12 @@ interface SelectionMenuHost : SwatchHost {
     /** The fills of the selected shapes that have one, for the restyle popup to open on. */
     fun selectionFills(): List<Rgba>
 
+    /** The first selected tape's pattern, for the restyle popup to open on; null when no tape is selected. */
+    fun selectionTapePattern(): com.xnotes.core.model.TapePattern?
+
+    /** Print [pattern] on every selected tape, as one undo step. */
+    fun setSelectionTapePattern(pattern: com.xnotes.core.model.TapePattern)
+
     /**
      * Recolour the selected shapes' fills in [color], each keeping its opacity; null fills each in
      * its outline's colour. A [preview] call skips history, and the next call without it records
@@ -410,6 +416,18 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
                         onDismiss = dismiss,
                         onPick = pick,
                     )
+                }
+            }
+            host.selectionTapePattern()?.let { opened ->
+                var pattern by remember { mutableStateOf(opened) }
+                StyleCaption(stringResource(R.string.caption_pattern))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (p in com.xnotes.core.model.TapePattern.entries) {
+                        ModeChip(stringResource(p.labelRes), selected = pattern == p) {
+                            pattern = p
+                            host.setSelectionTapePattern(p)
+                        }
+                    }
                 }
             }
             if (fills.isNotEmpty()) {

@@ -57,8 +57,10 @@ import com.xnotes.core.model.Labelled
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.TapeHandle
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
+import com.xnotes.core.model.TapePattern
 import com.xnotes.core.model.TapeShape
 import com.xnotes.core.tape.TapeGeometry
 import com.xnotes.core.model.TextHandle
@@ -1681,13 +1683,16 @@ class InteractionController(
 
     // --- SELECT / BAND ---
 
-    /** The single selected line/arrow whose two endpoints are its own resize handles, or null.
-     *  Every other selection (single non-line, multi, mixed) uses the generic box handles. */
+    /** The single selected line/arrow or straight tape whose two ends are its own resize handles, or
+     *  null. Every other selection (single non-line, multi, mixed) uses the generic box handles. */
     private fun singleEndpointShape(): Selected? {
         val sel = selection.singleOrNull() ?: return null
         val item = sel.item
-        return if (item is ShapeItem && item.shape.isEndpointShape) sel else null
+        return if ((item is ShapeItem && item.shape.isEndpointShape) || (item is TapeItem && item.mode == TapeMode.STRAIGHT)) sel else null
     }
+
+    /** The lone selected rectangle of tape, whose box is its own turned frame and whose corners move freely. */
+    private fun loneTapeBox(): TapeItem? = (selection.singleOrNull()?.item as? TapeItem)?.takeIf { it.mode == TapeMode.RECTANGLE }
 
     /** Resize handles for the current selection in content space: a single line/arrow's two
      *  endpoint handles, else the handles of the oriented selection box (corners only for a lone
@@ -1699,7 +1704,7 @@ class InteractionController(
         // A pill scales by its corners and lengthens by its sides; nothing stretches it upright.
         if (selection.all { it.item is AudioItem }) return all.filter { it.id != HandleId.T && it.id != HandleId.B }
         val square = (selection.singleOrNull()?.item as? ShapeItem)?.shape?.keepsAspect == true
-        return if (square) all.filter { it.id in CORNER_HANDLES } else all
+        return if (square || loneTapeBox() != null) all.filter { it.id in CORNER_HANDLES } else all
     }
 
     /** The lone selected connector, whose chrome is its own handles rather than a box. */
@@ -1733,20 +1738,24 @@ class InteractionController(
     /** The box the chrome draws and grabs by: [selObb] pushed out by [selectionChromeMargin]. */
     private fun selectionChromeBox(): Obb? = if (loneConnector() != null) null else selObb?.grow(selectionChromeMargin())
 
-    /** A line/arrow's two endpoint handles, mapped from page space into content space. */
+    /** A line/arrow's or a strip of tape's two end handles, mapped from page space into content space. */
     private fun endpointHandles(sel: Selected): List<ResizeHandle> {
-        val item = sel.item as? ShapeItem ?: return emptyList()
+        val (start, end) = when (val item = sel.item) {
+            is ShapeItem -> item.start to item.end
+            is TapeItem -> item.shape.points[0] to item.shape.points[1]
+            else -> return emptyList()
+        }
         if (state.pageRects.getOrNull(sel.pageIndex) == null) return emptyList()
         return listOf(
-            ResizeHandle(HandleId.START, state.fromPageSpace(sel.pageIndex, item.start)),
-            ResizeHandle(HandleId.END, state.fromPageSpace(sel.pageIndex, item.end)),
+            ResizeHandle(HandleId.START, state.fromPageSpace(sel.pageIndex, start)),
+            ResizeHandle(HandleId.END, state.fromPageSpace(sel.pageIndex, end)),
         )
     }
 
     /** Strokes, shapes, connectors and images rotate; text doesn't. A mixed selection rotates only
      *  when every member is rotatable. */
     private fun selectionIsRotatable(): Boolean =
-        selection.isNotEmpty() && selection.all { it.item is Stroke || it.item is ShapeItem || it.item is ConnectorItem || it.item is ImageItem }
+        selection.isNotEmpty() && selection.all { it.item is Stroke || it.item is ShapeItem || it.item is ConnectorItem || it.item is ImageItem || it.item is TapeItem }
 
     /** Rotate-grip centre (content space, no move offset), out past the oriented box's top edge, or
      *  null when the selection can't rotate or is a single line/arrow (reoriented by an endpoint). */
@@ -2047,6 +2056,13 @@ class InteractionController(
                 val (pos, w, h) = ResizeMath.resizeText(item.pos, item.width, item.bounds().h, handle, local)
                 item.setGeometry(TextHandle(pos, w, h))
             }
+            is TapeItem -> {
+                val s = item.shape
+                val (a, b) = ResizeMath.resizeOpenShape(s.points[0], s.points[1], handle, local)
+                // The end being dragged snaps level or upright against the one held still, as when laid.
+                val ends = if (handle == HandleId.START) listOf(TapeGeometry.snap(b, a), b) else listOf(a, TapeGeometry.snap(a, b))
+                item.setGeometry(TapeHandle(s.copy(points = ends)))
+            }
             is ShapeItem -> {
                 val (s, en) = when {
                     item.shape.isEndpointShape -> ResizeMath.resizeOpenShape(item.start, item.end, handle, local)
@@ -2269,7 +2285,11 @@ class InteractionController(
         val world: Affine
         val handle = txHandle
         if (handle != null) {
-            val res = ResizeMath.obbResize(obb0, handle, content, txMargin)
+            val res = if (loneTapeBox() != null && handle in CORNER_HANDLES) {
+                ResizeMath.obbResizeFree(obb0, handle, content)
+            } else {
+                ResizeMath.obbResize(obb0, handle, content, txMargin)
+            }
             selObb = res.obb
             world = res.transform
         } else {
@@ -3542,10 +3562,10 @@ class InteractionController(
         return if (best >= 0) best else nearest.takeIf { it >= 0 }
     }
 
-    /** A lone shape's own turned frame, or else the upright box around everything selected. */
+    /** A lone shape's or rectangle of tape's own turned frame, or else the upright box around everything selected. */
     private fun selectionBox(): Obb? {
         val one = selection.singleOrNull()
-        val frame = (one?.item as? ShapeItem)?.frameObb()
+        val frame = (one?.item as? ShapeItem)?.frameObb() ?: loneTapeBox()?.shape?.frame()
         if (one != null && frame != null && state.pageRects.getOrNull(one.pageIndex) != null) {
             val turn = frame.angle + Math.toRadians(state.rotationDeg.toDouble())
             return Obb(state.fromPageSpace(one.pageIndex, frame.center), frame.halfW, frame.halfH, turn)
@@ -3648,6 +3668,21 @@ class InteractionController(
 
     /** The fills of the selected shapes that have one. */
     fun selectionFills(): List<Rgba> = selection.mapNotNull { (it.item as? ShapeItem)?.fillRgba }
+
+    /** The first selected tape's pattern, or null when no tape is selected. */
+    fun selectionTapePattern(): TapePattern? = selection.firstNotNullOfOrNull { (it.item as? TapeItem)?.pattern }
+
+    /** Print [pattern] on every selected tape, as one undo step. */
+    fun setSelectionTapePattern(pattern: TapePattern) {
+        val entries = com.xnotes.core.history.RepatternTape.of(selection.mapNotNull { it.item as? TapeItem }, pattern)
+        if (entries.isEmpty()) return
+        val command = com.xnotes.core.history.RepatternTape(entries)
+        command.redo()
+        history.push(command)
+        state.document.dirty = true
+        onContentChanged()
+        requestRender()
+    }
 
     /** Recolour the selected shapes' fills in [color], each keeping its opacity; null matches each outline. */
     fun refillSelection(color: Rgba?, preview: Boolean = false) {

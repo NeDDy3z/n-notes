@@ -16,6 +16,8 @@ import com.xnotes.core.model.Resizable
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.ShapeLabel
+import com.xnotes.core.model.TapeItem
+import com.xnotes.core.model.TapePattern
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.model.TextStyle
@@ -280,6 +282,27 @@ class RestyleItems(private val entries: List<Entry>) : Command {
     }
 
     override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(entries.map { it.item }, locate)
+}
+
+/** Print a new pattern on tape: one step for the whole selection. */
+class RepatternTape(private val entries: List<Entry>) : Command {
+    class Entry(val tape: TapeItem, val before: TapePattern, val after: TapePattern)
+
+    override fun redo() {
+        for (e in entries) e.tape.pattern = e.after
+    }
+
+    override fun undo() {
+        for (e in entries) e.tape.pattern = e.before
+    }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(entries.map { it.tape }, locate)
+
+    companion object {
+        /** The entries that print [pattern] on [tapes], those already printed with it left out. */
+        fun of(tapes: List<TapeItem>, pattern: TapePattern): List<Entry> =
+            tapes.filter { it.pattern != pattern }.map { Entry(it, it.pattern, pattern) }
+    }
 }
 
 /** Recolour shapes' fills, each keeping its own opacity: one step for the whole selection. */
