@@ -58,6 +58,9 @@ import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TapeItem
+import com.xnotes.core.model.TapeMode
+import com.xnotes.core.model.TapeShape
+import com.xnotes.core.tape.TapeGeometry
 import com.xnotes.core.model.TextHandle
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextMarkup
@@ -93,7 +96,7 @@ import kotlin.math.sin
 /** The pointer state machine modes (spec 06 §1). */
 enum class PointerMode {
     IDLE, DRAW, ERASE, BAND, LASSO_DRAW, SHOT, SHAPE, MOVE, RESIZE, TRANSFORM, PAN, PINCH, FLOW_TEXT,
-    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, PDF_TEXT, VERTEX, POLYGON, CONNECT, JOINT, SLIDE,
+    TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, PDF_TEXT, VERTEX, POLYGON, CONNECT, JOINT, SLIDE, TAPE,
 }
 
 /**
@@ -431,6 +434,13 @@ class InteractionController(
     private var pendingShape: ShapeItem? = null
     private var shapePageIndex: Int? = null
 
+    // TAPE (laid by a drag; a tap on one peels it back or covers it again)
+    private var pendingTape: TapeItem? = null
+    private var tapePageIndex: Int? = null
+    private var tapeStart: Pt? = null                // the press, page space
+    private val tapePath = ArrayList<Pt>()           // a freehand band's path so far, page space
+    private var tapeReach = 0.0                      // farthest the drag has gone from the press, page px
+
     // RESIZE
     private var resizeItem: CanvasItem? = null
     private var resizeHandle: HandleId? = null
@@ -478,7 +488,7 @@ class InteractionController(
     /** A press zoom lock kept from panning, where it went down: a tap there still ends a PDF text selection. */
     private var lockedPressAt: Pt? = null
 
-    /** A Shape tool press that only put the selection away, where it went down: a tap there picks up the shape under it. */
+    /** A Shape tool press that only put the selection away, where it went down: a tap there is still a Shape tool tap. */
     private var dismissPressAt: Pt? = null
 
     /** Where the markup tool pressed, in the viewport, so a lift there counts as a tap. */
@@ -765,8 +775,8 @@ class InteractionController(
             buttonHeld && penButtonTool != null -> penButtonTool!!
             // While something is selected, the stylus grabs that selection (resize on a handle,
             // move on the body) instead of inking through it, matching the finger. Off the
-            // selection a pen draws and dismisses it (see beginDraw); the Shape tool only dismisses.
-            hasSelection && drawingIsStylus && (tool.isStroke || tool == Tool.SHAPE) &&
+            // selection a pen or tape draws and dismisses it (see beginDraw); the Shape tool only dismisses.
+            hasSelection && drawingIsStylus && (tool.isStroke || tool == Tool.SHAPE || tool == Tool.TAPE) &&
                 drawingGrabsSelection(content) -> Tool.SELECT
             // A finger may grab/resize the ACTIVE selection even when finger-draw is off;
             // off the selection it still pans.
@@ -891,6 +901,7 @@ class InteractionController(
             effectiveTool == Tool.TEXT -> beginTextGesture(content, Pt(vx, vy))
             effectiveTool == Tool.TEXT_BOX -> beginTextBoxGesture(content)
             effectiveTool == Tool.MARKUP -> beginMarkup(content)
+            effectiveTool == Tool.TAPE -> beginTape(content)
             else -> Unit
         }
         // The flow caret owns its own long press (word selection), mid text-drag it is suppressed so
@@ -926,6 +937,8 @@ class InteractionController(
         }
         if (mode == PointerMode.RULER_ROTATE) return // handle-drag rotation ignores extra fingers
         if (mode == PointerMode.DRAW && drawingIsStylus) return
+        // Tape laid with the pen ignores a resting hand as its ink does; laid with a finger, it yields to the pinch.
+        if (mode == PointerMode.TAPE && drawingIsStylus) return
         // A finger erase (finger-draw on) yields to a two-finger pinch: commit what was erased so
         // far as one undo step, then start the zoom. A stylus-eraser erase keeps ignoring incidental
         // finger/palm contact, so a resting hand never starts a zoom mid-erase.
@@ -959,6 +972,7 @@ class InteractionController(
             PointerMode.VERTEX -> extendVertex(content)
             PointerMode.POLYGON -> showPolygonDraft(content)
             PointerMode.SHAPE -> extendShape(content)
+            PointerMode.TAPE -> extendTape(content)
             PointerMode.CONNECT -> extendConnector(content)
             PointerMode.JOINT -> extendJoint(content)
             PointerMode.SLIDE -> extendSlide(content)
@@ -1038,6 +1052,7 @@ class InteractionController(
             PointerMode.VERTEX -> endVertex(e.eventTime)
             PointerMode.POLYGON -> endPolygonTap(content, e.eventTime)
             PointerMode.SHAPE -> endShape()
+            PointerMode.TAPE -> endTape()
             PointerMode.CONNECT -> endConnector()
             PointerMode.JOINT -> endJoint(e.eventTime)
             PointerMode.SLIDE -> endSlide()
@@ -1069,7 +1084,7 @@ class InteractionController(
                 }
                 dismissPressAt?.let { at ->
                     dismissPressAt = null
-                    if (tapCandidate) state.pageIndexAtContent(at)?.let { selectShapeAt(it, state.toPageSpace(it, at)) }
+                    if (tapCandidate) state.pageIndexAtContent(at)?.let { shapeTap(it, state.toPageSpace(it, at)) }
                 }
             }
             PointerMode.RULER_MOVE -> { mode = PointerMode.IDLE; requestRender() }
@@ -1082,6 +1097,8 @@ class InteractionController(
     /** Offer a finger tap at [content] to [onMarkupTap], then as a page + page-space point to [onLinkTap]. */
     private fun tryLinkTap(content: Pt): Boolean {
         state.pageIndexAtContent(content)?.let { i ->
+            // A tape lies over whatever else the tap could reach, so it takes the tap first.
+            if (peelTapeAt(i, state.toPageSpace(i, content))) return true
             if (onAudioTap?.invoke(i, state.toPageSpace(i, content)) == true) return true
         }
         if (onMarkupTap?.invoke(state.contentToViewport(content), true) == true) return true
@@ -1316,6 +1333,8 @@ class InteractionController(
             when {
                 // A bare tap whose only job was to dismiss the selection: drop the dot it would leave.
                 strokeDismissedSelection && tapCandidate -> Unit
+                // A bare tap on tape peels it back or covers it again, and leaves no dot.
+                tapCandidate && e.eventTime - tapDownTime < LONG_PRESS_MS && peelTapeAt(pi, Pt(stroke.xAt(0), stroke.yAt(0))) -> Unit
                 wandMode && stroke.tool.isStroke -> {
                     // Disappearing ink: held ephemerally, never committed to the model/undo/cache/save.
                     // A stroke drawn mid-fade cancels the fade and re-solidifies the whole held batch.
@@ -2353,10 +2372,117 @@ class InteractionController(
             setSelection(listOf(Selected(pi, shape)))
             refreshSelectionMenu()
         } else if (shape != null && pi != null) {
-            // A tap with the shape tool picks up the shape under it.
-            selectShapeAt(pi, shape.start)
+            shapeTap(pi, shape.start)
         }
         requestRender()
+    }
+
+    /** A tap with the shape tool peels a tape lying on top there, or else picks up the shape under it. */
+    private fun shapeTap(pi: Int, local: Pt) {
+        if (tapeOnTopAt(pi, local)) peelTapeAt(pi, local) else selectShapeAt(pi, local)
+    }
+
+    // --- TAPE ---
+
+    private fun beginTape(content: Pt) {
+        val pageIndex = state.pageIndexAtContent(content) ?: return
+        clearSelection()
+        val local = state.toPageSpace(pageIndex, content)
+        tapePageIndex = pageIndex
+        tapeStart = local
+        tapePath.clear()
+        tapePath.add(local)
+        tapeReach = 0.0
+        pendingTape = null
+        mode = PointerMode.TAPE
+    }
+
+    private fun extendTape(content: Pt) {
+        val pi = tapePageIndex ?: return
+        val start = tapeStart ?: return
+        if (state.pageRects.getOrNull(pi) == null) return
+        val at = state.toPageSpace(pi, content)
+        tapeReach = maxOf(tapeReach, start.distanceTo(at))
+        val cfg = configFor(Tool.TAPE)
+        val width = if (cfg.scale) cfg.baseWidth else cfg.baseWidth / state.zoom
+        val shape = when (cfg.tapeMode) {
+            TapeMode.STRAIGHT -> TapeShape(TapeMode.STRAIGHT, listOf(start, TapeGeometry.snap(start, at)), width)
+            TapeMode.RECTANGLE -> {
+                // Corner to corner, never thinner either way than the narrowest tape.
+                val box = Rect.fromPoints(start, at)
+                val w = maxOf(box.w, TapeItem.MIN_WIDTH)
+                val h = maxOf(box.h, TapeItem.MIN_WIDTH)
+                val cx = box.centerX
+                TapeShape(TapeMode.RECTANGLE, listOf(Pt(cx - w / 2.0, box.centerY), Pt(cx + w / 2.0, box.centerY)), h)
+            }
+            TapeMode.FREEHAND -> {
+                if (at.distanceTo(tapePath.last()) * state.zoom >= TAPE_STEP) tapePath.add(at)
+                TapeShape(TapeMode.FREEHAND, tapePath.toList(), width)
+            }
+        }
+        val tape = pendingTape ?: TapeItem(shape, cfg.colorOverride ?: inkColor, cfg.tapePattern).also { pendingTape = it }
+        tape.shape = shape
+        requestRender()
+    }
+
+    private fun endTape() {
+        val tape = pendingTape
+        val pi = tapePageIndex
+        val start = tapeStart
+        pendingTape = null
+        tapePageIndex = null
+        tapeStart = null
+        mode = PointerMode.IDLE
+        // Only a real drag lays tape; a press that stayed within a tap's slop was a tap.
+        val laid = tape != null && tapeReach * state.zoom > TAP_SLOP
+        if (tape != null && pi != null && laid) {
+            if (tape.mode == TapeMode.FREEHAND) {
+                val eps = (TapeItem.FREEHAND_TOLERANCE / state.zoom).coerceAtMost(TapeItem.FREEHAND_TOLERANCE)
+                tape.shape = tape.shape.copy(points = TapeGeometry.simplify(tape.shape.points, eps))
+            }
+            val page = state.document.pages[pi]
+            page.items.add(tape)
+            state.appendToCache(page, tape)
+            history.push(AddItem(page, tape))
+            state.document.dirty = true
+            onContentChanged()
+        } else if (pi != null && start != null) {
+            // A tap with the tape tool peels the tape under it back, or covers it again.
+            peelTapeAt(pi, start)
+        }
+        tapePath.clear()
+        requestRender()
+    }
+
+    private fun dropTapeDraft() {
+        pendingTape = null
+        tapePageIndex = null
+        tapeStart = null
+        tapePath.clear()
+    }
+
+    /** The topmost tape on page [pi] at page point [local], within a fingertip of its edge, or null. */
+    private fun tapeAt(pi: Int, local: Pt): TapeItem? {
+        val reach = TAPE_TAP_REACH * state.devicePxPerDp / state.zoom
+        return state.document.pages.getOrNull(pi)?.items?.lastOrNull { it is TapeItem && it.intersectsCircle(local.x, local.y, reach) } as? TapeItem
+    }
+
+    /** Whether the tape at [local] on page [pi] lies over every shape a shape-tool tap there would pick. */
+    private fun tapeOnTopAt(pi: Int, local: Pt): Boolean {
+        val items = state.document.pages.getOrNull(pi)?.items ?: return false
+        val tape = tapeAt(pi, local) ?: return false
+        val reach = OUTLINE_GRAB / state.zoom
+        val above = items.subList(items.indexOf(tape) + 1, items.size)
+        return above.none { !it.locked && ((it is ShapeItem && it.touches(local, reach)) || (it is ConnectorItem && it.touches(local, reach))) }
+    }
+
+    /** Peel back the tape at page point [local] on page [pi], or cover it again; false when there is none. Never an edit. */
+    private fun peelTapeAt(pi: Int, local: Pt): Boolean {
+        val tape = tapeAt(pi, local) ?: return false
+        tape.peeled = !tape.peeled
+        if (!state.isLiftedItem(tape)) repairRegion(state.document.pages[pi], tape.paintBounds())
+        requestRender()
+        return true
     }
 
     /** Select the topmost shape on page [pi] whose outline or fill is under page point [local], if any. */
@@ -3201,7 +3327,7 @@ class InteractionController(
         // finger; otherwise it draws, so resting it never grabs or pops a menu.
         if (!isFinger && !free) return
         val grabEligible = tool.isStroke || tool == Tool.PAN || tool == Tool.SELECT ||
-            tool == Tool.LASSO || tool == Tool.SHAPE || tool == Tool.TEXT || tool == Tool.TEXT_BOX
+            tool == Tool.LASSO || tool == Tool.SHAPE || tool == Tool.TEXT || tool == Tool.TEXT_BOX || tool == Tool.TAPE
         val pageIndex = state.pageIndexAtContent(content)
         val hit = if (pageIndex != null) {
             val local = state.toPageSpace(pageIndex, content)
@@ -3257,6 +3383,7 @@ class InteractionController(
         strokePageIndex = null
         pendingShape = null
         shapePageIndex = null
+        dropTapeDraft()
         dropConnectorDraft()
         bandRect = null
         lassoPoints.clear()
@@ -4133,6 +4260,7 @@ class InteractionController(
     private fun beginPinch(e: MotionEvent) {
         liveStroke = null
         strokePageIndex = null
+        dropTapeDraft()
         cancelDwell() // a second finger turns the gesture into a zoom; don't snap a shape mid-pinch
         dwellEligible = false
         bandRect = null
@@ -4262,6 +4390,7 @@ class InteractionController(
         snapPenViewport = null
         pendingShape = null
         shapePageIndex = null
+        dropTapeDraft()
         dropConnectorDraft()
         bandRect = null
         lassoPoints.clear()
@@ -4328,6 +4457,7 @@ class InteractionController(
                 liveStroke?.let { stroke -> paintClippedToPage(r, strokePageIndex) { state.paintLiveStroke(r, stroke) } }
             }
             pendingShape?.let { shape -> paintClippedToPage(r, shapePageIndex) { shape.paint(r) } }
+            pendingTape?.let { tape -> paintClippedToPage(r, tapePageIndex) { tape.paint(r) } }
             connectorDraft?.let { d -> paintClippedToPage(r, connectorPage) { d.connector.paint(r) } }
 
             // Disappearing ink (magic wand): ephemeral strokes drawn live at the shared fade alpha,
@@ -4716,6 +4846,12 @@ class InteractionController(
 
         /** Max finger drift (viewport px) from touch-down still counted as a tap (e.g. tap-to-dismiss). */
         const val TAP_SLOP = 12.0
+
+        /** How far outside a tape's edge a tap still peels it, in dp. */
+        const val TAPE_TAP_REACH = 4.0
+
+        /** A freehand band takes a point of the hand's path each time it moves this far on screen, in px. */
+        const val TAPE_STEP = 3.0
 
         /** Padding (content px) added around erased items' bounds when repairing
          *  the cache, to cover stroke anti-aliasing at the dirty-rect edge. */
