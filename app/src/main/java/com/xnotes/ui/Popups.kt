@@ -60,6 +60,8 @@ import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageStyle
+import com.xnotes.core.model.TapeMode
+import com.xnotes.core.model.TapePattern
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.TemplateMemory
 import com.xnotes.core.model.TemplateSettings
@@ -972,6 +974,71 @@ fun SelectConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             // Re-arm the previous pen/highlighter once a selection action (move, resize, delete,
             // cut, copy, duplicate) finishes, so a quick edit doesn't strand you in select.
             ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
+        }
+    }
+}
+
+/**
+ * Tape popup: what a drag lays (a straight strip, a rectangle or a freehand band), its colour and
+ * pattern, the width of a strip or band, and Reveal all / Cover all for every tape in the note or
+ * canvas. Like the pens, tape follows the toolbar's ink colour unless a colour is picked here.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
+    val base = remember { editor.toolConfig(Tool.TAPE) }
+    var mode by remember { mutableStateOf(base.tapeMode) }
+    var pattern by remember { mutableStateOf(base.tapePattern) }
+    var width by remember { mutableStateOf(base.baseWidth.toFloat()) }
+    var scale by remember { mutableStateOf(base.scale) }
+    var colorOverride by remember { mutableStateOf(base.colorOverride) }
+
+    fun emit() = editor.updateToolConfig(
+        Tool.TAPE,
+        base.copy(tapeMode = mode, tapePattern = pattern, baseWidth = width.toDouble(), scale = scale, colorOverride = colorOverride),
+    )
+
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle(stringResource(R.string.tool_tape))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (m in TapeMode.entries) ModeChip(stringResource(m.labelRes), selected = mode == m) { mode = m; emit() }
+            }
+            Spacer(Modifier.size(8.dp))
+            StyleCaption(stringResource(R.string.caption_colour))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.default_choice), colorOverride == null) { colorOverride = null; emit() }
+                ColorPickerDot(
+                    colorOverride,
+                    custom = colorOverride != null,
+                    onPick = { colorOverride = it; emit() },
+                    dismissOnPick = false,
+                ) { d, p ->
+                    ColorPickerPopup(
+                        initial = colorOverride ?: editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex),
+                        recents = editor.hostRecentColors,
+                        onDismiss = d,
+                        onPick = p,
+                    )
+                }
+            }
+            Spacer(Modifier.size(8.dp))
+            StyleCaption(stringResource(R.string.caption_pattern))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (p in TapePattern.entries) ModeChip(stringResource(p.labelRes), selected = pattern == p) { pattern = p; emit() }
+            }
+            // A rectangle is as tall as it is dragged, so only a strip and a band take a width.
+            if (mode != TapeMode.RECTANGLE) {
+                Spacer(Modifier.size(4.dp))
+                val range = ToolConversions.widthRange(Tool.TAPE)
+                SliderRow(stringResource(R.string.caption_width), width, range.start.toFloat()..range.endInclusive.toFloat()) { width = it; emit() }
+                ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
+            }
+            Spacer(Modifier.size(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.tape_reveal_all), selected = false) { editor.setAllTapePeeled(true) }
+                ModeChip(stringResource(R.string.tape_cover_all), selected = false) { editor.setAllTapePeeled(false) }
+            }
         }
     }
 }

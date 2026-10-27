@@ -117,6 +117,7 @@ fun Toolbar(
         Tool.TEXT to XnotesIcons.text,
         Tool.TEXT_BOX to XnotesIcons.textBox,
         Tool.MARKUP to XnotesIcons.markup,
+        Tool.TAPE to XnotesIcons.tape,
     )
     var configForTool by remember { mutableStateOf<Tool?>(null) }
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
@@ -204,7 +205,7 @@ private fun ToolbarItemView(
         ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
         ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER, ToolbarItem.PAN,
         ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.SCREENSHOT, ToolbarItem.SHAPE,
-        ToolbarItem.TEXT, ToolbarItem.TEXT_BOX -> {
+        ToolbarItem.TEXT, ToolbarItem.TEXT_BOX, ToolbarItem.TAPE -> {
             val tool = Tool.fromId(item.id)
             if (tool != null) ToolButton(editor, tool, toolIcons[tool], configForTool, setConfigForTool)
         }
@@ -295,7 +296,7 @@ private fun ToolButton(
 ) {
     if (icon == null) return
     val armed = editor.tool == tool
-    val configurable = tool.isStroke || tool == Tool.SHAPE || tool == Tool.ERASER || tool == Tool.SELECT || tool == Tool.TEXT || tool == Tool.MARKUP
+    val configurable = tool.isStroke || tool == Tool.SHAPE || tool == Tool.ERASER || tool == Tool.SELECT || tool == Tool.TEXT || tool == Tool.MARKUP || tool == Tool.TAPE
     Box {
         ToolbarIcon(
             icon,
@@ -319,6 +320,7 @@ private fun ToolButton(
                 tool == Tool.SELECT -> SelectConfigPopup(editor) { setConfigForTool(null) }
                 tool == Tool.TEXT -> TextToolConfigPopup(editor) { setConfigForTool(null) }
                 tool == Tool.MARKUP -> MarkupToolPopup(editor) { setConfigForTool(null) }
+                tool == Tool.TAPE -> TapeConfigPopup(editor) { setConfigForTool(null) }
                 else -> ToolConfigPopup(editor, tool) { setConfigForTool(null) }
             }
         }

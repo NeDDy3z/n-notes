@@ -57,6 +57,7 @@ import com.xnotes.core.model.Labelled
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TextHandle
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextMarkup
@@ -591,6 +592,20 @@ class InteractionController(
     }
 
     fun wandEnabled(): Boolean = wandMode
+
+    /** Peel back every tape in the note, or cover them all again, repainting only where they lie. */
+    fun setAllTapePeeled(peeled: Boolean) {
+        for (page in state.document.pages) {
+            var dirty: Rect? = null
+            for (item in page.items) {
+                if (item !is TapeItem || item.peeled == peeled) continue
+                item.peeled = peeled
+                dirty = dirty?.union(item.paintBounds()) ?: item.paintBounds()
+            }
+            dirty?.let { repairRegion(page, it) }
+        }
+        requestRender()
+    }
 
     /** Toggle disappearing-ink mode; turning it off vanishes anything currently held or fading. */
     fun toggleWand() {

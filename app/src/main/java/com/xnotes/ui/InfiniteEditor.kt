@@ -53,6 +53,7 @@ import com.xnotes.core.model.Labelled
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextStyle
 import com.xnotes.core.pal.FontFace
@@ -1045,6 +1046,15 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     override val hostShapeConfig: ShapeConfig get() = shapeConfig
+
+    override fun setAllTapePeeled(peeled: Boolean) {
+        val turned = document.items.filter { it is TapeItem && it.peeled != peeled }
+        if (turned.isEmpty()) return
+        for (t in turned) (t as TapeItem).peeled = peeled
+        // Peeling is a look, not an edit: the meshes change, the history and the file do not.
+        document.itemsChanged(turned)
+        requestRender()
+    }
 
     override fun updateShapeConfig(config: ShapeConfig) {
         val marked = interaction.connecting

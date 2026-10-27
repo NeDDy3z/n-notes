@@ -32,6 +32,7 @@ private val CANVAS_TOOL_OF: Map<ToolbarItem, Tool> = mapOf(
     ToolbarItem.SELECT to Tool.SELECT,
     ToolbarItem.LASSO to Tool.LASSO,
     ToolbarItem.SHAPE to Tool.SHAPE,
+    ToolbarItem.TAPE to Tool.TAPE,
 )
 
 /**
@@ -67,6 +68,7 @@ fun InfiniteToolbar(
         Tool.SHAPE to XnotesIcons.shape,
         Tool.SELECT to XnotesIcons.select,
         Tool.LASSO to XnotesIcons.lasso,
+        Tool.TAPE to XnotesIcons.tape,
     )
     var stylesOpen by remember { mutableStateOf(false) }
     var eraserOpen by remember { mutableStateOf(false) }
@@ -74,6 +76,7 @@ fun InfiniteToolbar(
     var waypointsOpen by remember { mutableStateOf(false) }
     var penOpen by remember { mutableStateOf<Tool?>(null) }
     var selectOpen by remember { mutableStateOf(false) }
+    var tapeOpen by remember { mutableStateOf(false) }
     // Which swatch has the colour picker open, as on the paged bar: tapping the armed swatch again
     // opens it, so the five colours are both the ink and the way to change it.
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
@@ -96,7 +99,7 @@ fun InfiniteToolbar(
                             Box {
                                 // Tapping the armed tool again opens its settings, as the paged bar does.
                                 val armed = editor.tool == tool
-                                val configurable = tool.isStroke || tool == Tool.ERASER || tool == Tool.SHAPE || tool == Tool.SELECT
+                                val configurable = tool.isStroke || tool == Tool.ERASER || tool == Tool.SHAPE || tool == Tool.SELECT || tool == Tool.TAPE
                                 ToolbarIcon(
                                     icon,
                                     stringResource(tool.labelRes),
@@ -108,6 +111,7 @@ fun InfiniteToolbar(
                                         tool == Tool.ERASER && editor.tool == tool -> eraserOpen = true
                                         tool == Tool.SHAPE && editor.tool == tool -> shapeOpen = true
                                         tool == Tool.SELECT && editor.tool == tool -> selectOpen = true
+                                        tool == Tool.TAPE && editor.tool == tool -> tapeOpen = true
                                         tool.isStroke && editor.tool == tool -> penOpen = tool
                                         else -> editor.armTool(tool)
                                     }
@@ -117,6 +121,7 @@ fun InfiniteToolbar(
                                 if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
                                 if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
                                 if (tool == Tool.SELECT && selectOpen) SelectConfigPopup(editor) { selectOpen = false }
+                                if (tool == Tool.TAPE && tapeOpen) TapeConfigPopup(editor) { tapeOpen = false }
                                 if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
                             }
                         }

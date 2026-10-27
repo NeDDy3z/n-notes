@@ -103,6 +103,18 @@ class SettingsTest {
         assertTrue(Settings.fromJson(json).configFor(Tool.ERASER).eraseMarkups)
     }
 
+    @Test fun theTapeToolsModeAndPatternRoundTrip() {
+        val d = Settings().configFor(Tool.TAPE)
+        assertEquals(com.xnotes.core.model.TapeItem.DEFAULT_WIDTH, d.baseWidth, 0.0)
+        assertEquals("new tape is striped", com.xnotes.core.model.TapePattern.STRIPES, d.tapePattern)
+        val tape = d.copy(tapeMode = com.xnotes.core.model.TapeMode.FREEHAND, tapePattern = com.xnotes.core.model.TapePattern.DOTS, baseWidth = 64.0)
+        val json = Settings(tools = mapOf(Tool.TAPE to tape)).toJson()
+        val back = Settings.fromJson(json).configFor(Tool.TAPE)
+        assertEquals(com.xnotes.core.model.TapeMode.FREEHAND, back.tapeMode)
+        assertEquals(com.xnotes.core.model.TapePattern.DOTS, back.tapePattern)
+        assertEquals(64.0, back.baseWidth, 0.0)
+    }
+
     @Test fun scribbleToEraseIsOffUnlessSwitchedOn() {
         assertFalse(Settings().configFor(Tool.ERASER).scribbleErase)
         val on = Settings().configFor(Tool.ERASER).copy(scribbleErase = true)

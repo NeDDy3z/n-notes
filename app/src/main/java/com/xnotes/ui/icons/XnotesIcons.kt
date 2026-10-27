@@ -188,6 +188,15 @@ object XnotesIcons {
         "m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z",
         "M14 7 17 10", "M5 6v4", "M19 14v4", "M10 2v2", "M7 8H3", "M21 16h-4", "M11 3H9",
     )
+    // A 3D roll seen at a diagonal (turned 50 degrees, looked down on at 25), its torn tape lying out towards you.
+    val tape = icon(
+        "M13.48 14C13.48 10.31 10.95 6.43 7.84 5.33C4.72 4.22 2.2 6.31 2.2 10C2.2 13.68 4.72 17.56 7.84 18.67C10.95 19.77 13.48 17.68 13.48 14Z",
+        "M9.81 12.7C9.81 11.41 8.93 10.05 7.84 9.66C6.75 9.28 5.87 10.01 5.87 11.3C5.87 12.59 6.75 13.95 7.84 14.33C8.93 14.72 9.81 13.99 9.81 12.7Z",
+        "M16.51 15.87C19.03 14.6 19.59 10.63 17.77 7C15.94 3.37 12.41 1.45 9.89 2.72",
+        "M11.15 18.57L16.51 15.87",
+        "M4.53 5.42L9.89 2.72",
+        "M7.84 18.67L16.3 21.67L18.22 21.58L18.08 20.77L20.01 20.68L19.87 19.87L21.8 19.78L21.66 18.97L15.03 16.62",
+    )
     // Editing a table's structure, drawn as the mode itself looks: a grid with the width rail
     // under it and the height rail beside it, each running the whole side it resizes.
     val tableEdit = icon(rect(4.0, 4.0, 12.0, 12.0), "M4 10h12", "M10 4v12", "M20 4v12", "M4 20h12")

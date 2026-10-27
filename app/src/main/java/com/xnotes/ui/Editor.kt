@@ -6551,6 +6551,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         wandEnabled = controller.wandEnabled()
     }
 
+    override fun setAllTapePeeled(peeled: Boolean) = controller.setAllTapePeeled(peeled)
+
     /** Show (or re-arm) the transient "lock zoom" hint after a pinch snaps to fit-to-width. */
     fun showZoomLockHint() { zoomLockHint += 1 }
 
