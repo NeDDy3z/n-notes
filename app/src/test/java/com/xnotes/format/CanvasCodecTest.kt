@@ -294,7 +294,7 @@ class CanvasCodecTest {
         assertTrue(taper.config.taperEnabled)
         assertEquals(ToolDefaults.DEFAULT_TAPER_TIP, taper.config.taperMinFactor, 1e-9)
         val hl = back.items[5] as Stroke
-        assertEquals(0.50, hl.config.highlighterAlpha, 1e-9)
+        assertEquals(0.90, hl.config.highlighterAlpha, 1e-9)
         val dashed = back.items[1] as Stroke
         assertEquals(10.0, dashed.config.dashLength, 1e-9)
         assertEquals(8.0, dashed.config.dashGap, 1e-9)

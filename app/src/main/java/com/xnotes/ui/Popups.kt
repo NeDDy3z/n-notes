@@ -182,7 +182,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
             // The highlighter's strength (translucency) and an optional straight-segment lock
             // (for ruling/underlining).
             if (tool == Tool.HIGHLIGHTER) {
-                SliderRow(stringResource(R.string.caption_intensity), intensity, 10f..90f) { intensity = it; emit() }
+                SliderRow(stringResource(R.string.caption_intensity), intensity, 10f..100f) { intensity = it; emit() }
                 ToggleRow(stringResource(R.string.caption_straight_line), straight) { straight = it; emit() }
                 // INVERSE swaps the multiply blend for a screen one, so the marker lightens the
                 // page instead of darkening it. A multiply has nothing to darken on a dark page.

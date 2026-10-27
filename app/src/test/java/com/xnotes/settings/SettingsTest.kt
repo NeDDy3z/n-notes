@@ -103,14 +103,14 @@ class SettingsTest {
         assertTrue(Settings.fromJson(json).configFor(Tool.ERASER).eraseMarkups)
     }
 
-    @Test fun scribbleToEraseIsOnUnlessSwitchedOff() {
-        assertTrue(Settings().configFor(Tool.ERASER).scribbleErase)
-        val off = Settings().configFor(Tool.ERASER).copy(scribbleErase = false)
-        val json = Settings(tools = mapOf(Tool.ERASER to off)).toJson()
-        assertFalse(Settings.fromJson(json).configFor(Tool.ERASER).scribbleErase)
-        // Settings saved before the switch existed read as on.
-        json.getJSONObject("tools").getJSONObject("eraser").remove("scribble_erase")
+    @Test fun scribbleToEraseIsOffUnlessSwitchedOn() {
+        assertFalse(Settings().configFor(Tool.ERASER).scribbleErase)
+        val on = Settings().configFor(Tool.ERASER).copy(scribbleErase = true)
+        val json = Settings(tools = mapOf(Tool.ERASER to on)).toJson()
         assertTrue(Settings.fromJson(json).configFor(Tool.ERASER).scribbleErase)
+        // Settings saved before the switch existed read as off.
+        json.getJSONObject("tools").getJSONObject("eraser").remove("scribble_erase")
+        assertFalse(Settings.fromJson(json).configFor(Tool.ERASER).scribbleErase)
     }
 
     @Test fun everyTapGestureMappingRoundTrips() {
