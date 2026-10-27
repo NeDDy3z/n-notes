@@ -477,6 +477,9 @@ class InteractionController(
     /** A press zoom lock kept from panning, where it went down: a tap there still ends a PDF text selection. */
     private var lockedPressAt: Pt? = null
 
+    /** A Shape tool press that only put the selection away, where it went down: a tap there picks up the shape under it. */
+    private var dismissPressAt: Pt? = null
+
     /** Where the markup tool pressed, in the viewport, so a lift there counts as a tap. */
     private var markupPressAt: Pt? = null
 
@@ -728,6 +731,7 @@ class InteractionController(
         stopOverscrollSettle() // ...and lets a re-grab take over the elastic mid-spring
         panMayCommitText = false // a fresh gesture; the editing branch below re-arms it if it applies
         lockedPressAt = null
+        dismissPressAt = null
         markupPressAt = null
         val toolType = e.getToolType(0)
         val vx = e.getX(0).toDouble()
@@ -746,7 +750,7 @@ class InteractionController(
             buttonHeld && penButtonTool != null -> penButtonTool!!
             // While something is selected, the stylus grabs that selection (resize on a handle,
             // move on the body) instead of inking through it, matching the finger. Off the
-            // selection it falls through to draw and dismisses the selection (see beginDraw).
+            // selection a pen draws and dismisses it (see beginDraw); the Shape tool only dismisses.
             hasSelection && drawingIsStylus && (tool.isStroke || tool == Tool.SHAPE) &&
                 drawingGrabsSelection(content) -> Tool.SELECT
             // A finger may grab/resize the ACTIVE selection even when finger-draw is off;
@@ -818,12 +822,15 @@ class InteractionController(
             }
         }
 
-        // With a connector armed, a press on a point it can glue to starts one, whatever is selected.
+        // Taken before a draft is finished below, since that selects its polygon.
+        val selected = hasSelection
+
+        // With a connector armed, a press on a point it can glue to starts one, or only dismisses what is selected.
         val inks = toolType != MotionEvent.TOOL_TYPE_FINGER || fingerDraws
         if (connecting && inks && !buttonHeld && toolType != MotionEvent.TOOL_TYPE_ERASER && glueHitAt(content) != null) {
             cancelLongPress()
             if (polygonDraft != null) finishPolygonDraft()
-            beginConnector(content)
+            if (selected) dismissFirst(content) else beginConnector(content)
             return
         }
 
@@ -862,6 +869,7 @@ class InteractionController(
             effectiveTool == Tool.SELECT -> beginSelect(content)
             effectiveTool == Tool.LASSO -> beginLasso(content)
             effectiveTool == Tool.SCREENSHOT -> beginScreenshot(content)
+            effectiveTool == Tool.SHAPE && selected -> dismissFirst(content)
             effectiveTool == Tool.SHAPE && shapeConfig.placesCorners -> beginPolygonTap(content)
             effectiveTool == Tool.SHAPE && shapeConfig.connector != null -> beginConnector(content)
             effectiveTool == Tool.SHAPE -> beginShape(content)
@@ -1035,12 +1043,18 @@ class InteractionController(
                     onMarkupTap?.invoke(pressAt, false)
                 }
             }
-            PointerMode.IDLE -> lockedPressAt?.let { at ->
-                lockedPressAt = null
-                val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
-                if (up.distanceTo(at) <= TAP_SLOP) {
-                    onTap?.invoke(up)
-                    pdfText?.clear()
+            PointerMode.IDLE -> {
+                lockedPressAt?.let { at ->
+                    lockedPressAt = null
+                    val up = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
+                    if (up.distanceTo(at) <= TAP_SLOP) {
+                        onTap?.invoke(up)
+                        pdfText?.clear()
+                    }
+                }
+                dismissPressAt?.let { at ->
+                    dismissPressAt = null
+                    if (tapCandidate) state.pageIndexAtContent(at)?.let { selectShapeAt(it, state.toPageSpace(it, at)) }
                 }
             }
             PointerMode.RULER_MOVE -> { mode = PointerMode.IDLE; requestRender() }
@@ -1729,8 +1743,8 @@ class InteractionController(
     /**
      * Whether a drawing tool's press at [content] grabs the selection instead of drawing. A lone
      * shape is grabbed only by its handles, its dots, its outline or its fill: inside an unfilled
-     * one, or anywhere else in its box, the pen draws, so a shape can be drawn inside a shape. Any
-     * other selection is grabbed anywhere in its box, as a finger grabs everything.
+     * one, or anywhere else in its box, a pen writes and the Shape tool dismisses. Any other
+     * selection is grabbed anywhere in its box, as a finger grabs everything.
      */
     private fun drawingGrabsSelection(content: Pt): Boolean {
         loneConnector()?.let { return grabsConnector(it, content) }
@@ -2279,10 +2293,17 @@ class InteractionController(
 
     // --- SHAPE ---
 
+    /** A Shape tool press while something is selected only puts it away; the next press draws. */
+    private fun dismissFirst(content: Pt) {
+        clearSelection()
+        mode = PointerMode.IDLE
+        // Free polygon taps place corners, so only the other chips pick up a shape on a tap.
+        if (!shapeConfig.placesCorners) dismissPressAt = content
+    }
+
     private fun beginShape(content: Pt) {
         val pageIndex = state.pageIndexAtContent(content) ?: return
-        // Off-selection press with the shape tool: dismiss first (a tap makes no shape; endShape's
-        // min-drag gate drops it), so dragging out a new shape also clears the old selection.
+        // A draft this press finished left its polygon selected; the new shape takes over from it.
         clearSelection()
         val startLocal = state.toPageSpace(pageIndex, content)
         pendingShape = shapeConfig.startShape(startLocal, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY)
@@ -3214,6 +3235,7 @@ class InteractionController(
         val locked = longPressLocked
         val textPage = longPressTextPage
         longPressTextPage = -1
+        dismissPressAt = null
         // Abort the in-progress gesture (keep eraser removals); commit any text edit.
         commitTextEdit()
         liveStroke = null
@@ -4070,6 +4092,7 @@ class InteractionController(
         crossedSegments.clear() // they belong to the outgoing document, whose history is gone
         dwellEligible = false
         mode = PointerMode.IDLE
+        dismissPressAt = null
         lastPan = Pt.ZERO
         panVel = Pt.ZERO
     }

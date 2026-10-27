@@ -255,6 +255,9 @@ class InfiniteInteraction(
     // This stroke began by dismissing a live selection; a bare tap then leaves no dot.
     private var strokeDismissedSelection = false
 
+    // A Shape tool press that only put the selection away, where it went down: a tap there picks up the shape under it.
+    private var dismissPressAt: Pt? = null
+
     // A finger held still grabs the item under it, or opens the paste menu on empty canvas.
     private var longPressRunnable: Runnable? = null
     private var longPressAt = Pt.ZERO
@@ -431,6 +434,7 @@ class InfiniteInteraction(
         cancelLongPress()
         longPressPrevTool = null
         mode = CanvasPointerMode.IDLE
+        dismissPressAt = null
         panVel = Pt.ZERO
         liveStroke = null
         endLift()
@@ -444,6 +448,7 @@ class InfiniteInteraction(
     private fun handleDown(e: MotionEvent) {
         stopFling() // a new touch halts any in-progress glide
         panMayCommit = false
+        dismissPressAt = null
         // The minimap sits over the canvas, so a press on it navigates rather than draws.
         if (onMinimapPress(e.getX(0).toDouble(), e.getY(0).toDouble())) {
             mode = CanvasPointerMode.IDLE
@@ -473,13 +478,15 @@ class InfiniteInteraction(
         val buttonHeld = stylusButtons.heldFor(e)
         val at = viewport.viewportToContent(Pt(vx, vy))
         val drawing = (tool.isStroke || tool == Tool.SHAPE) && toolType != MotionEvent.TOOL_TYPE_FINGER
-        // With a connector armed, a press on a point it can glue to starts one, whatever is selected.
+        // Taken before a draft is finished below, since that selects its polygon.
+        val selected = hasSelection()
+        // With a connector armed, a press on a point it can glue to starts one, or only dismisses what is selected.
         val inks = toolType != MotionEvent.TOOL_TYPE_FINGER || fingerDraws
         if (connecting && inks && !buttonHeld && toolType != MotionEvent.TOOL_TYPE_ERASER && glueHitAt(at) != null) {
             cancelLongPress()
             clearSelection()
             if (polygonDraft != null) finishPolygonDraft()
-            beginConnector(vx, vy)
+            if (selected) dismissFirst(at) else beginConnector(vx, vy)
             return
         }
         // A drawing tool grabs a lone shape only by the shape itself; a finger grabs the whole box.
@@ -517,6 +524,7 @@ class InfiniteInteraction(
         when {
             effective.isStroke -> beginDraw(vx, vy, effective, e)
             effective == Tool.ERASER -> beginErase(vx, vy)
+            effective == Tool.SHAPE && selected -> dismissFirst(at)
             placing -> beginPolygonTap(vx, vy)
             effective == Tool.SHAPE && shapeConfig().connector != null -> beginConnector(vx, vy)
             effective == Tool.SHAPE -> beginShape(vx, vy)
@@ -571,6 +579,7 @@ class InfiniteInteraction(
         longPressCandidate = null
         val locked = longPressLocked
         longPressLocked = null
+        dismissPressAt = null
         // The gesture underway is only ever a pan or a stroke that has not moved; drop it so what
         // follows is not fighting a drag, and stop the press from also dismissing the selection.
         if (mode == CanvasPointerMode.DRAW) abandonStroke()
@@ -690,6 +699,10 @@ class InfiniteInteraction(
             CanvasPointerMode.JOINT -> endJoint(e.eventTime)
             CanvasPointerMode.SLIDE -> endSlide()
             CanvasPointerMode.POLYGON -> endPolygonTap(viewport.viewportToContent(Pt(e.getX(0).toDouble(), e.getY(0).toDouble())), e.eventTime)
+            CanvasPointerMode.IDLE -> dismissPressAt?.let { at ->
+                dismissPressAt = null
+                if (tapCandidate) selectShapeAt(at)
+            }
             else -> Unit
         }
         mode = CanvasPointerMode.IDLE
@@ -895,7 +908,7 @@ class InfiniteInteraction(
 
     /**
      * Whether a drawing tool's press at [at] grabs the selection instead of drawing: a lone shape
-     * by its handles, dots, outline or fill only, so the pen can draw inside an unfilled one; any
+     * by its handles, dots, outline or fill only, so a pen can write inside an unfilled one; any
      * other selection anywhere in its box. The paged canvas's rule.
      */
     private fun drawingGrabsSelection(at: Pt): Boolean {
@@ -1495,6 +1508,14 @@ class InfiniteInteraction(
     }
 
     // --- shapes ---
+
+    /** A Shape tool press while something is selected only puts it away; the next press draws. */
+    private fun dismissFirst(at: Pt) {
+        clearSelection()
+        mode = CanvasPointerMode.IDLE
+        // Free polygon taps place corners, so only the other chips pick up a shape on a tap.
+        if (!shapeConfig().placesCorners) dismissPressAt = at
+    }
 
     private fun beginShape(vx: Double, vy: Double) {
         val cfg = shapeConfig()
