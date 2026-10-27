@@ -3,6 +3,7 @@ package com.xnotes.core.tape
 import com.xnotes.core.geometry.Geometry
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
 import com.xnotes.core.model.TapePattern
 import com.xnotes.core.model.TapeShape
@@ -73,6 +74,22 @@ object TapeGeometry {
             deg >= 90.0 - SNAP_DEGREES -> Pt(a.x, b.y)
             else -> b
         }
+    }
+
+    /**
+     * What a drag from [start] to [at] lays in [mode], [width] across: a strip snapped level or
+     * upright when nearly so; a rectangle corner to corner, never thinner either way than the
+     * narrowest tape; or a band along [path], the hand's way so far.
+     */
+    fun laid(mode: TapeMode, start: Pt, at: Pt, path: List<Pt>, width: Double): TapeShape = when (mode) {
+        TapeMode.STRAIGHT -> TapeShape(mode, listOf(start, snap(start, at)), width)
+        TapeMode.RECTANGLE -> {
+            val box = Rect.fromPoints(start, at)
+            val w = max(box.w, TapeItem.MIN_WIDTH)
+            val h = max(box.h, TapeItem.MIN_WIDTH)
+            TapeShape(mode, listOf(Pt(box.centerX - w / 2.0, box.centerY), Pt(box.centerX + w / 2.0, box.centerY)), h)
+        }
+        TapeMode.FREEHAND -> TapeShape(mode, path, width)
     }
 
     /** The body as convex pieces, back to front; the union is the tape. */

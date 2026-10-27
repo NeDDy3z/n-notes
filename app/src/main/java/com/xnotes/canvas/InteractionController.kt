@@ -61,7 +61,6 @@ import com.xnotes.core.model.TapeHandle
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
 import com.xnotes.core.model.TapePattern
-import com.xnotes.core.model.TapeShape
 import com.xnotes.core.tape.TapeGeometry
 import com.xnotes.core.model.TextHandle
 import com.xnotes.core.model.TextItem
@@ -2425,21 +2424,8 @@ class InteractionController(
         tapeReach = maxOf(tapeReach, start.distanceTo(at))
         val cfg = configFor(Tool.TAPE)
         val width = if (cfg.scale) cfg.baseWidth else cfg.baseWidth / state.zoom
-        val shape = when (cfg.tapeMode) {
-            TapeMode.STRAIGHT -> TapeShape(TapeMode.STRAIGHT, listOf(start, TapeGeometry.snap(start, at)), width)
-            TapeMode.RECTANGLE -> {
-                // Corner to corner, never thinner either way than the narrowest tape.
-                val box = Rect.fromPoints(start, at)
-                val w = maxOf(box.w, TapeItem.MIN_WIDTH)
-                val h = maxOf(box.h, TapeItem.MIN_WIDTH)
-                val cx = box.centerX
-                TapeShape(TapeMode.RECTANGLE, listOf(Pt(cx - w / 2.0, box.centerY), Pt(cx + w / 2.0, box.centerY)), h)
-            }
-            TapeMode.FREEHAND -> {
-                if (at.distanceTo(tapePath.last()) * state.zoom >= TAPE_STEP) tapePath.add(at)
-                TapeShape(TapeMode.FREEHAND, tapePath.toList(), width)
-            }
-        }
+        if (cfg.tapeMode == TapeMode.FREEHAND && at.distanceTo(tapePath.last()) * state.zoom >= TAPE_STEP) tapePath.add(at)
+        val shape = TapeGeometry.laid(cfg.tapeMode, start, at, tapePath.toList(), width)
         val tape = pendingTape ?: TapeItem(shape, cfg.colorOverride ?: inkColor, cfg.tapePattern).also { pendingTape = it }
         tape.shape = shape
         requestRender()

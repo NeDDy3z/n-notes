@@ -140,6 +140,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         isEditingText = { editingLabel != null },
         onCommitText = { commitText() },
         onAudioTap = { tapAudio(it) },
+        onPeelTape = { peelTape(it) },
         onUserMovedView = { AudioPlayback.userMoved(this) },
     )
 
@@ -1062,6 +1063,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     override val hostShapeConfig: ShapeConfig get() = shapeConfig
+
+    /** Peel [tape] back, or cover it again: the mesh changes, the history and the file do not. */
+    private fun peelTape(tape: TapeItem) {
+        tape.peeled = !tape.peeled
+        document.itemsChanged(listOf(tape))
+        requestRender()
+    }
 
     override fun setAllTapePeeled(peeled: Boolean) {
         val turned = document.items.filter { it is TapeItem && it.peeled != peeled }

@@ -6,6 +6,8 @@ import com.xnotes.core.geometry.Affine
 import com.xnotes.core.geometry.Geometry
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.infinite.InkPass
+import com.xnotes.core.infinite.ItemMesher
 import com.xnotes.core.FakeTextMeasurer
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.tape.TapeGeometry
@@ -173,5 +175,29 @@ class TapeItemTest {
     @Test fun simplifyingKeepsTheEndsAndTheCorners() {
         val path = listOf(Pt(0.0, 0.0), Pt(10.0, 0.1), Pt(20.0, 0.0), Pt(20.0, 10.0), Pt(20.1, 20.0))
         assertEquals(listOf(Pt(0.0, 0.0), Pt(20.0, 0.0), Pt(20.1, 20.0)), TapeGeometry.simplify(path, 0.75))
+    }
+
+    @Test fun aDragLaysWhatTheModeSays() {
+        val strip = TapeGeometry.laid(TapeMode.STRAIGHT, Pt(0.0, 0.0), Pt(100.0, 3.0), emptyList(), 30.0)
+        assertEquals(listOf(Pt(0.0, 0.0), Pt(100.0, 0.0)), strip.points)
+        assertEquals(30.0, strip.width, 0.0)
+        val box = TapeGeometry.laid(TapeMode.RECTANGLE, Pt(10.0, 10.0), Pt(110.0, 12.0), emptyList(), 30.0)
+        assertEquals("never thinner than the narrowest tape", TapeItem.MIN_WIDTH, box.width, 0.0)
+        assertEquals(Rect(10.0, 7.0, 100.0, 8.0), box.bounds)
+        val path = listOf(Pt(0.0, 0.0), Pt(5.0, 5.0), Pt(10.0, 0.0))
+        assertEquals(path, TapeGeometry.laid(TapeMode.FREEHAND, path[0], path[2], path, 12.0).points)
+    }
+
+    @Test fun aCoveredTapeMeshesAsACoverAndAPeeledOneAsItsEdge() {
+        val t = TapeItem(rect(), sky, TapePattern.STRIPES)
+        val covered = ItemMesher.mesh(t)!!.parts
+        assertEquals(2, covered.size)
+        assertTrue(covered.all { it.pass == InkPass.OPAQUE })
+        assertTrue("the body hides highlights beneath it", covered[0].covers)
+        assertEquals(t.printColor, covered[1].color)
+        t.peeled = true
+        val peeled = ItemMesher.mesh(t)!!.parts
+        assertEquals(1, peeled.size)
+        assertFalse(peeled[0].covers)
     }
 }
