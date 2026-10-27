@@ -158,11 +158,19 @@ class TapeItem(
         shape = shape.translated(dx, dy)
     }
 
-    override fun contains(p: Pt): Boolean = TapeGeometry.distance(shape, p) <= 0.0
+    /** Whether [p] lies on the body, within [reach], peeled or not: where a tap peels the tape or covers it again. */
+    fun under(p: Pt, reach: Double = 0.0): Boolean = TapeGeometry.distance(shape, p) <= reach
+
+    /**
+     * Hit where it shows: a covered tape anywhere on its body, a peeled one only along its dashed
+     * edge, so what shows through it can still be selected and erased without taking the tape.
+     */
+    override fun contains(p: Pt): Boolean = if (peeled) TapeGeometry.edgeDistance(shape, p) <= EDGE_REACH else under(p)
 
     override fun centroid(): Pt = shape.bounds.center
 
-    override fun intersectsCircle(cx: Double, cy: Double, radius: Double): Boolean = TapeGeometry.distance(shape, Pt(cx, cy)) <= radius
+    override fun intersectsCircle(cx: Double, cy: Double, radius: Double): Boolean =
+        if (peeled) TapeGeometry.edgeDistance(shape, Pt(cx, cy)) <= radius + TapeGeometry.OUTLINE_WIDTH / 2.0 else under(Pt(cx, cy), radius)
 
     override fun snapshotGeometry(): GeometrySnapshot = TapeSnapshot(shape)
 
@@ -190,6 +198,9 @@ class TapeItem(
 
         /** A drag shorter than this lays nothing; it was a tap. */
         const val MIN_DRAG = 6.0
+
+        /** How near its dashed edge a peeled tape is still hit. */
+        const val EDGE_REACH = 4.0
 
         /** How far a freehand band's path may be simplified at the pen's lift. */
         const val FREEHAND_TOLERANCE = 0.75

@@ -1635,7 +1635,7 @@ class InfiniteInteraction(
     private fun tapeAt(at: Pt): TapeItem? {
         val reach = InteractionController.TAPE_TAP_REACH * devicePxPerDp() / viewport.zoom
         return itemsIn(Rect(at.x - reach, at.y - reach, 2 * reach, 2 * reach))
-            .lastOrNull { it is TapeItem && it.intersectsCircle(at.x, at.y, reach) } as? TapeItem
+            .lastOrNull { it is TapeItem && it.under(at, reach) } as? TapeItem
     }
 
     /** Whether the tape at [at] lies over every shape a shape-tool tap there would pick. */

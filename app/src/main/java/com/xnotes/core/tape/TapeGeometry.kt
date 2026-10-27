@@ -139,6 +139,17 @@ object TapeGeometry {
         else -> max(centrelineDistance(s.points, p) - s.half, 0.0)
     }
 
+    /** Distance from [p] to the edge a peeled tape shows. */
+    fun edgeDistance(s: TapeShape, p: Pt): Double {
+        var best = Double.POSITIVE_INFINITY
+        for (line in s.outline) {
+            val v = line.pts
+            val segments = if (line.closed) v.size else v.size - 1
+            for (k in 0 until segments) best = min(best, Geometry.distancePointToSegment(p, v[k], v[(k + 1) % v.size]))
+        }
+        return best
+    }
+
     /** The body's upright bounds. */
     fun bounds(s: TapeShape): Rect = when (s.mode) {
         TapeMode.RECTANGLE -> Rect.bounding(corners(s))

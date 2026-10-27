@@ -2470,7 +2470,7 @@ class InteractionController(
     /** The topmost tape on page [pi] at page point [local], within a fingertip of its edge, or null. */
     private fun tapeAt(pi: Int, local: Pt): TapeItem? {
         val reach = TAPE_TAP_REACH * state.devicePxPerDp / state.zoom
-        return state.document.pages.getOrNull(pi)?.items?.lastOrNull { it is TapeItem && it.intersectsCircle(local.x, local.y, reach) } as? TapeItem
+        return state.document.pages.getOrNull(pi)?.items?.lastOrNull { it is TapeItem && it.under(local, reach) } as? TapeItem
     }
 
     /** Whether the tape at [local] on page [pi] lies over every shape a shape-tool tap there would pick. */

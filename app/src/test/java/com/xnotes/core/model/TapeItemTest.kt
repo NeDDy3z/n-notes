@@ -200,4 +200,15 @@ class TapeItemTest {
         assertEquals(1, peeled.size)
         assertFalse(peeled[0].covers)
     }
+
+    @Test fun aPeeledTapeIsHitOnlyAlongItsEdgeButStillPeelsFromInside() {
+        val t = tape(rect(40.0))
+        assertTrue(t.contains(Pt(50.0, 0.0)))
+        t.peeled = true
+        assertFalse("what shows through it stays reachable", t.contains(Pt(50.0, 0.0)))
+        assertFalse(EraseRule.takes(t, 50.0, 0.0, 4.0))
+        assertTrue(t.contains(Pt(50.0, 19.0)))
+        assertTrue(EraseRule.takes(t, 50.0, 23.0, 4.0))
+        assertTrue("a tap inside still covers it again", t.under(Pt(50.0, 0.0)))
+    }
 }
