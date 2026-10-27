@@ -30,6 +30,10 @@ import com.xnotes.core.model.TextStyle
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.SyncMark
+import com.xnotes.core.model.TapeItem
+import com.xnotes.core.model.TapeMode
+import com.xnotes.core.model.TapePattern
+import com.xnotes.core.model.TapeShape
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.StrokeSimplify
@@ -1207,5 +1211,31 @@ class DocumentCodecTest {
         assertEquals(1, items.size)
         assertEquals("after", (items[0] as TextItem).text)
     }
-}
 
+    @Test fun tapeRoundTripsInANoteAndOpensCovered() {
+        val doc = Document(dpi = 150)
+        val page = Page(1240.0, 1754.0)
+        val strip = TapeItem(TapeShape(TapeMode.STRAIGHT, listOf(Pt(10.0, 20.0), Pt(300.0, 20.0)), 30.0), Rgba(240, 200, 90, 255), TapePattern.STRIPES)
+        strip.peeled = true
+        strip.locked = true
+        val band = TapeItem(TapeShape(TapeMode.FREEHAND, listOf(Pt(0.0, 0.0), Pt(40.0, 10.0), Pt(80.0, 0.0)), 12.0), Rgba(20, 20, 20, 255))
+        band.group = 3
+        page.items.add(strip)
+        page.items.add(band)
+        doc.pages.add(page)
+        val out = ByteArrayOutputStream()
+        codec.write(doc, out)
+        val manifest = manifestOf(out.toByteArray())
+        assertTrue(manifest.contains("\"kind\":\"tape\""))
+        assertFalse("a solid tape writes no pattern", manifest.contains("\"solid\""))
+        val back = roundTrip(doc).pages[0].items.map { it as TapeItem }
+        assertEquals(strip.shape, back[0].shape)
+        assertEquals(TapePattern.STRIPES, back[0].pattern)
+        assertEquals(Rgba(240, 200, 90, 255), back[0].rgba)
+        assertFalse("peeling is never saved", back[0].peeled)
+        assertTrue(back[0].locked)
+        assertEquals(band.shape, back[1].shape)
+        assertEquals(TapePattern.SOLID, back[1].pattern)
+        assertEquals(3, back[1].group)
+    }
+}

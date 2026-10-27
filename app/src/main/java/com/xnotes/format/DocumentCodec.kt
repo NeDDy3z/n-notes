@@ -27,6 +27,10 @@ import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.ShapeLabel
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.SyncMark
+import com.xnotes.core.model.TapeItem
+import com.xnotes.core.model.TapeMode
+import com.xnotes.core.model.TapePattern
+import com.xnotes.core.model.TapeShape
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextStyle
 import com.xnotes.core.model.keepBorrowedTemplateSettings
@@ -41,6 +45,7 @@ import com.xnotes.core.shapes.Elbow
 import com.xnotes.core.shapes.FreePath
 import com.xnotes.core.shapes.Head
 import com.xnotes.core.shapes.ShapeKind
+import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
@@ -350,6 +355,7 @@ class DocumentCodec(
                 is TextItem -> writeText(j, item, ids[item])
                 is ShapeItem -> writeShape(j, item, ids[item])
                 is ConnectorItem -> writeConnector(j, item, ids)
+                is TapeItem -> writeTape(j, item)
                 else -> {} // unrecognized kind: not written
             }
         }
@@ -553,6 +559,24 @@ class DocumentCodec(
      * then as itself: its routing, its two ends (glued ones naming their item's id and point) and its
      * route. Its style and label are a shape's.
      */
+    /** A tape: its mode, the points it runs along and its width, colour and pattern. Peeling is never saved. */
+    private fun writeTape(j: JsonWrite, t: TapeItem) {
+        val s = t.shape
+        j.beginObject()
+        j.name("kind").value(TapeItem.KIND)
+        j.name("mode").value(s.mode.id)
+        j.name("points").beginArray()
+        for (p in s.points) j.beginArray().value(p.x).value(p.y).endArray()
+        j.endArray()
+        j.name("width").value(s.width)
+        j.name("rgba")
+        writeRgba(j, t.rgba)
+        if (t.pattern != TapePattern.SOLID) j.name("pattern").value(t.pattern.id)
+        if (t.locked) j.name("locked").value(true)
+        t.group?.let { j.name("group").value(it) }
+        j.endObject()
+    }
+
     private fun writeConnector(j: JsonWrite, c: ConnectorItem, ids: Map<CanvasItem, Int>) {
         val line = PathFlattener.flatten(c.body(), STAND_IN_FLATTEN)
         val drawn = Rect.bounding(line)
@@ -1110,6 +1134,9 @@ class DocumentCodec(
         var peaks: ByteArray? = null
         var rec: Int? = null
         var recMs = 0
+        var mode: String? = null
+        var pattern: String? = null
+        var tapeWidth: Double? = null
     }
 
     /** Stroke config fields as written; null = absent, so defaults resolve exactly as before. */
@@ -1153,7 +1180,7 @@ class DocumentCodec(
                 "orientation" -> s.orientation = intOr(p, 0)
                 "angle" -> s.angle = doubleOr(p, 0.0)
                 "pos" -> s.pos = ptOrNull(p)
-                "width" -> s.width = doubleOr(p, TextItem.DEFAULT_WIDTH)
+                "width" -> s.width = doubleOr(p, TextItem.DEFAULT_WIDTH).also { s.tapeWidth = it }
                 "height" -> s.height = doubleOr(p, 0.0)
                 "text" -> s.text = stringOr(p, "")
                 "rgba" -> s.rgba = rgbaOrNull(p)
@@ -1188,6 +1215,8 @@ class DocumentCodec(
                 "peaks" -> s.peaks = stringOrNull(p)?.let { runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }
                 "rec" -> s.rec = intOrNull(p)
                 "rec_ms" -> s.recMs = intOr(p, 0)
+                "mode" -> s.mode = stringOrNull(p)
+                "pattern" -> s.pattern = stringOrNull(p)
                 else -> p.skipValue()
             }
         }
@@ -1229,6 +1258,7 @@ class DocumentCodec(
                 val c = s.connector
                 items.add(if (c != null && s.kind == ShapeItem.KIND) buildConnector(s, c, glue) else buildShape(s))
             }
+            TapeItem.KIND -> buildTape(s)?.let { items.add(it) }
             else -> {} // unrecognized kind: skipped (forgiving)
         }
         if (items.size > before) glue.named(items[before], s.id)
@@ -1236,6 +1266,18 @@ class DocumentCodec(
         if (s.locked && items.size > before) items[before].locked = true
         if (s.group != null && items.size > before) items[before].group = s.group
         if (sync != null && items.size > before) items[before].sync = sync
+    }
+
+    /** A tape, or null without the points it runs along. A strip or a rectangle keeps its axis's two ends. */
+    private fun buildTape(s: ItemScratch): TapeItem? {
+        val mode = TapeMode.fromId(s.mode)
+        val points = s.points ?: return null
+        val width = s.tapeWidth?.takeIf { it.isFinite() && it > 0.0 } ?: TapeItem.DEFAULT_WIDTH
+        return TapeItem(
+            TapeShape(mode, if (mode == TapeMode.FREEHAND) points else points.take(2), width),
+            s.rgba ?: InkPalette.DEFAULT,
+            TapePattern.fromId(s.pattern),
+        )
     }
 
     private fun buildStroke(s: ItemScratch): Stroke {
