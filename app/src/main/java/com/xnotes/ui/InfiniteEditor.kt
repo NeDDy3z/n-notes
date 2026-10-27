@@ -46,7 +46,7 @@ import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.PageLayers
-import com.xnotes.core.model.withoutAudio
+import com.xnotes.core.model.forExport
 import com.xnotes.core.model.deepCopyAll
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Labelled
@@ -698,7 +698,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private fun renderSelectionBitmap(): android.graphics.Bitmap? {
         if (selection.isEmpty) return null
         val picked = HashSet(selection.items)
-        val items = document.items.filter { it in picked }.withoutAudio()
+        val items = document.items.filter { it in picked }.forExport()
         val bounds = items.map { it.paintBounds() }.reduceOrNull { a, b -> a.union(b) } ?: return null
         if (bounds.w <= 0.0 || bounds.h <= 0.0) return null
         val maxDim = 4096.0

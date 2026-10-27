@@ -1,7 +1,7 @@
 package com.xnotes.ui
 
 import com.xnotes.ui.theme.audioLook
-import com.xnotes.core.model.withoutAudio
+import com.xnotes.core.model.forExport
 import android.content.Context
 import android.util.LruCache
 import androidx.compose.runtime.Stable
@@ -2011,7 +2011,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     }
                 }
                 val showFlow = only == null && local.w > 0.0 && local.h > 0.0
-                val items = itemsSnapshot(page).withoutAudio().let { all -> if (only == null) all else all.filter { it in only } }
+                val items = itemsSnapshot(page).forExport().let { all -> if (only == null) all else all.filter { it in only } }
                 PageLayers.paint(items, { if (showFlow) state.paintFlow?.invoke(page, r, local) }) { it.paint(r) }
             }
         }
@@ -3441,7 +3441,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * the side-panel row scrolled out of view — bails out instead of burning CPU the scroll needs.
      * [lineFloor] is the template's thinnest line in output px.
      */
-    fun renderThumbnail(page: Page, widthPx: Int, active: () -> Boolean = { true }, withAudio: Boolean = true, lineFloor: Double = 0.0): android.graphics.Bitmap? {
+    fun renderThumbnail(page: Page, widthPx: Int, active: () -> Boolean = { true }, forExport: Boolean = false, lineFloor: Double = 0.0): android.graphics.Bitmap? {
         val cover = state.footprint(page)
         val scale = widthPx / cover.w
         val w = widthPx.coerceAtLeast(1)
@@ -3456,7 +3456,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
             paintBackground(page, r, scale, cover, lineFloor / scale)
         }
-        val items = itemsSnapshot(page).let { if (withAudio) it else it.withoutAudio() }
+        val items = itemsSnapshot(page).let { if (forExport) it.forExport() else it }
         val under = PageLayers.underText(items)
         for (i in 0 until under) items[i].paint(r)
         state.paintFlow?.invoke(page, r, cover)
@@ -7284,7 +7284,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** PNG bytes for page [index], rendered at full page resolution (paper + background + items), or null. */
     fun pageImagePng(index: Int): ByteArray? {
         val page = pageAt(index) ?: return null
-        val bmp = renderThumbnail(page, state.outerW(page).toInt().coerceAtLeast(1), withAudio = false) ?: return null
+        val bmp = renderThumbnail(page, state.outerW(page).toInt().coerceAtLeast(1), forExport = true) ?: return null
         return java.io.ByteArrayOutputStream().use { out ->
             bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
             out.toByteArray()

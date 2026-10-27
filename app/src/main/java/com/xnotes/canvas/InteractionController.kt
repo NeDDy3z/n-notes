@@ -1545,8 +1545,8 @@ class InteractionController(
             val item = page.items[i]
             val frags: List<CanvasItem>? = if (!EraseRule.erasable(item)) {
                 null
-            } else if (item is ShapeItem && item.isFill) {
-                // A fill is never cut: whatever the eraser touches of it, it takes whole.
+            } else if (EraseRule.whole(item)) {
+                // A fill or a tape is never cut: whatever the eraser touches of it, it takes whole.
                 if (EraseRule.takes(item, cx, cy, radius)) emptyList() else null
             } else {
                 when (item) {
