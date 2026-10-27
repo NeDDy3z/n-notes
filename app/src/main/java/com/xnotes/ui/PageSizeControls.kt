@@ -80,7 +80,7 @@ internal fun PageSizeDialog(initial: PageSizeChoice, onApply: (PageSizeChoice) -
                         SideField(stringResource(R.string.height_mm), c.customHeightMm, Modifier.weight(1f)) { mm -> choice = choice.copy(customHeightMm = mm) }
                     }
                 } else {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         ModeChip(stringResource(R.string.orientation_portrait), c.orientation == Orientation.PORTRAIT) {
                             choice = c.copy(orientation = Orientation.PORTRAIT)
                         }
