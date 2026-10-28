@@ -19,7 +19,7 @@ import com.xnotes.core.tools.Tool
 
 /** What a colour dropped at a point does, as [ColorDrop.decide] finds it. */
 sealed interface DropAction {
-    /** Recolour [item]: ink, a shape's outline, a connector, a text box's words, drawn text or a covered tape. */
+    /** Recolour [item]: ink or a highlighter, a shape's outline, a connector, a text box's words, drawn text or a covered tape. */
     class Recolour(val item: CanvasItem) : DropAction
 
     /** Give [shape] the colour as its own fill, keeping the opacity of any fill it has. */
@@ -33,6 +33,9 @@ sealed interface DropAction {
 
     /** The point is on paper that no lines close off. */
     data object NotClosed : DropAction
+
+    /** Nothing in the drawing to change, but the surface found the point on a PDF text markup of its own. */
+    data object RecolourMarkup : DropAction
 
     /** Nothing the drop may change: lines all round the point. */
     data object None : DropAction
@@ -164,8 +167,10 @@ object ColorDrop {
         return null
     }
 
+    // Highlighters and tapes are lines a drop may recolour, though they never close an area: a
+    // band of either takes the colour like any ink does.
     private fun isLine(item: CanvasItem) = when (item) {
-        is Stroke -> item.tool != Tool.HIGHLIGHTER && !item.isEmpty
+        is Stroke -> !item.isEmpty
         is ShapeItem -> !item.isFill
         is ConnectorItem, is TextItem -> true
         // A peeled tape shows what is under it, so the drop goes through it.

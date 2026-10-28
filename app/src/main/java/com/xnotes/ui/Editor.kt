@@ -7054,9 +7054,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     // --- colour drop ---
 
+    /** The selection as the drag began, by page: a drop on it recolours it whole rather than one item. */
+    private var dropSelection: Map<Int, List<CanvasItem>> = emptyMap()
+
     private val colorDropper = ColorDropper(object : DropSurface {
         override fun beginDrop() {
-            controller.escape()
+            // A selection stays out through the drag: the swatch travels from the bar, the canvas is
+            // never touched, and dropping the colour back on the selection recolours all of it.
+            dropSelection = controller.selectionByPage()
+            if (dropSelection.isEmpty()) controller.escape() else controller.commitTextEdit()
         }
 
         override fun spotAt(view: Pt): DropSpot? {
@@ -7065,14 +7071,30 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             val pi = state.drawablePageRange().firstOrNull { state.pageRects.getOrNull(it)?.contains(content) == true } ?: return null
             val page = state.document.pages[pi]
             val grid = FillGrid.fitting(state.footprint(page), DROP_CELLS_PER_PX, DROP_CELL_BUDGET)
+            val reach = DROP_REACH_DP * state.devicePxPerDp / state.zoom
+            val at = state.toPageSpace(pi, content)
+            // The drop decides over the drawing's ink; a PDF page's text markups paint under it, so
+            // the topmost one under the point is the fallback a drop finds when nothing drawn is
+            // there. Their quads live in points; the test and its reach are folded into that space.
+            val ptPerPx = 72.0 / state.document.dpi
+            val markup = page.markups.takeIf { it.isNotEmpty() }?.let {
+                MarkupPainter.markupAt(it, at.x * ptPerPx, at.y * ptPerPx, reach * ptPerPx)
+            }
             return DropSpot(
                 frame = pi,
                 key = page,
-                at = state.toPageSpace(pi, content),
+                at = at,
                 items = page.items.toList(),
                 grid = grid,
-                reach = DROP_REACH_DP * state.devicePxPerDp / state.zoom,
+                reach = reach,
                 smallHole = (dropSmallHolePx() / state.zoom * grid.scale).toInt(),
+                selection = dropSelection[pi]?.takeIf { it.isNotEmpty() }?.let { items -> items.map { it.bounds() }.reduce { a, b -> a.union(b) } },
+                markup = markup,
+                markupBox = markup?.let { m ->
+                    MarkupPainter.bounds(m)?.let { b ->
+                        Rect.ltrb(b.left / ptPerPx, b.top / ptPerPx, b.right / ptPerPx, b.bottom / ptPerPx)
+                    }
+                },
             )
         }
 
@@ -7118,6 +7140,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun applyColorDrop(spot: DropSpot, action: DropAction, color: Rgba) {
         val page = state.document.pages.getOrNull(spot.frame)?.takeIf { it === spot.key } ?: return
         fun onPage(item: CanvasItem) = page.items.any { it === item }
+        // Nothing drawn to take the colour and the point sits on a PDF text markup: recolour it
+        // the way its menu does — one undo step, the page's background rebaked after.
+        if (action === DropAction.RecolourMarkup) {
+            val m = spot.markup?.takeIf { mark -> page.markups.any { it === mark } } ?: return
+            applyMarkupEdit(ReplaceMarkup(page, m, m.copy(color = color.withAlpha(255), modified = System.currentTimeMillis())))
+            return
+        }
+        // A drop inside the live selection's bounds recolours everything the user had picked, as
+        // one undo step — the selection never left, so its restyle path applies directly.
+        val selected = dropSelection[spot.frame].orEmpty().filter(::onPage)
+        if (selected.isNotEmpty()) {
+            val box = selected.map { it.bounds() }.reduce { a, b -> a.union(b) }
+            if (box.outset(spot.reach).contains(spot.at)) {
+                controller.restyleSelection(color, null)
+                return
+            }
+        }
         val command: Command = when (action) {
             is DropAction.Recolour -> {
                 val item = action.item.takeIf(::onPage) ?: return
@@ -7142,6 +7181,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 say(appContext.getString(R.string.colour_drop_not_closed))
                 return
             }
+            // Ruled earlier, before this when: the point sat on a markup and its colour is done.
+            DropAction.RecolourMarkup -> return
             DropAction.None -> return
         }
         command.redo()

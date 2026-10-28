@@ -9,6 +9,9 @@ import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.TapeItem
+import com.xnotes.core.model.TapeMode
+import com.xnotes.core.model.TapeShape
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.stroke.Sample
@@ -73,10 +76,17 @@ class ColorDropTest {
         assertFalse(add.fill.contains(Pt(80.0, 200.0)))
     }
 
-    @Test fun aHighlighterNeitherClosesNorRecolours() {
+    @Test fun aHighlighterRecoloursButNeverCloses() {
         val marker = loop(100.0, 100.0, 300.0, 300.0, tool = Tool.HIGHLIGHTER)
-        assertSame(DropAction.NotClosed, drop(listOf(marker), Pt(200.0, 100.0)))
+        assertSame(marker, expect<DropAction.Recolour>(drop(listOf(marker), Pt(200.0, 100.0))).item)
+        // Off its band the paper shows through: a highlighter closes no area, so nothing fills.
         assertSame(DropAction.NotClosed, drop(listOf(marker), Pt(200.0, 200.0)))
+    }
+
+    @Test fun aDropOnTapeRecoloursIt() {
+        val tape = TapeItem(TapeShape(TapeMode.STRAIGHT, listOf(Pt(100.0, 200.0), Pt(300.0, 200.0)), 30.0), Rgba(240, 200, 90, 255))
+        assertSame(tape, expect<DropAction.Recolour>(drop(listOf(tape), Pt(200.0, 200.0))).item)
+        assertSame(DropAction.NotClosed, drop(listOf(tape), Pt(200.0, 240.0)))
     }
 
     @Test fun aDropInsideAHollowShapeFillsTheShape() {
