@@ -8854,12 +8854,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowParaOp { it.align = next }
     }
 
-    /** The direction the bar reports: the caret paragraph's, LTR when there is none. */
-    fun flowCaretDir(): ParaDir = flowCaretParagraph()?.dir ?: ParaDir.LTR
+    /** The direction the bar reports: the caret paragraph's, AUTO when there is none. */
+    fun flowCaretDir(): ParaDir = flowCaretParagraph()?.dir ?: ParaDir.AUTO
 
-    /** Flip the paragraph(s) between left-to-right and right-to-left. */
+    /** The direction the caret paragraph's lines actually take, AUTO read from the text. */
+    fun flowEffectiveDir(): ParaDir = flowCaretParagraph()?.effectiveDir() ?: ParaDir.LTR
+
+    /** Cycle the paragraph(s) through automatic, explicit left-to-right and explicit
+     *  right-to-left: auto reads each line's first strong letter, the other two pin it. */
     fun flowToggleDir() {
-        val next = if (flowCaretDir() == ParaDir.RTL) ParaDir.LTR else ParaDir.RTL
+        val next = when (flowCaretDir()) {
+            ParaDir.AUTO -> ParaDir.LTR
+            ParaDir.LTR -> ParaDir.RTL
+            ParaDir.RTL -> ParaDir.AUTO
+        }
         flowParaOp { it.dir = next }
     }
 

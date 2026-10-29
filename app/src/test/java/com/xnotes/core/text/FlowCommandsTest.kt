@@ -37,7 +37,7 @@ class FlowCommandsTest {
     }
 
     @Test
-    fun togglingDirectionThroughSetParaStyleUndoesBackToLtr() {
+    fun togglingDirectionCyclesThroughAutoAndBothPins() {
         val flow = flowOf("dir")
         val para = flow.paragraphs[0]
         val cmd = FlowEditor(flow).setParaStyle(FlowRange.caret(FlowPos(0, 0))) {
@@ -45,7 +45,7 @@ class FlowCommandsTest {
         }!!
         assertEquals(ParaDir.RTL, para.dir)
         cmd.undo()
-        assertEquals(ParaDir.LTR, para.dir)
+        assertEquals(ParaDir.AUTO, para.dir)
         cmd.redo()
         assertEquals(ParaDir.RTL, para.dir)
     }

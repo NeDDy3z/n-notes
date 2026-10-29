@@ -143,6 +143,9 @@ object FlowXml {
         if (p.breakBefore) append(" fo:break-before=\"page\"")
         // ODF's paragraph writing mode: rl-tb is the right-to-left line direction.
         if (p.dir == ParaDir.RTL) append(" style:writing-mode=\"rl-tb\"")
+        // Automatic is this app's own default and ODF has no token for it, so it rides a
+        // foreign attribute; its absence is what older files wrote for a plain LTR paragraph.
+        if (p.dir == ParaDir.AUTO) append(" xnotes:dir=\"auto\"")
         append("/>\n  </style:style>\n")
     }
 
@@ -533,8 +536,13 @@ object FlowXml {
             ?: attr(props, "margin-left")?.removeSuffix("mm")?.toDoubleOrNull()
                 ?.let { (it / INDENT_MM_PER_LEVEL).toInt() }
             ?: 0
-        // ODF writes a right-to-left paragraph as writing-mode rl-tb.
-        val dir = if (attr(props, "writing-mode") == "rl-tb") ParaDir.RTL else ParaDir.LTR
+        // ODF writes a right-to-left paragraph as writing-mode rl-tb; this app's automatic
+        // direction rides xnotes:dir. A file with neither is an older build's plain LTR.
+        val dir = when {
+            attr(props, "dir") == "auto" -> ParaDir.AUTO
+            attr(props, "writing-mode") == "rl-tb" -> ParaDir.RTL
+            else -> ParaDir.LTR
+        }
         return ParaProps(align, indent.coerceIn(0, Paragraph.MAX_INDENT), attr(props, "break-before") == "page", dir)
     }
 

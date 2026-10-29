@@ -840,7 +840,7 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         quoteId: Int = -1,
     ): PlacedLine {
         val n = bl.endChar - bl.startChar
-        val rtl = para.dir == ParaDir.RTL
+        val rtl = para.effectiveDir() == ParaDir.RTL
         // A display equation with nothing beside it sits centred, which is where
         // one belongs. It is centred here rather than by turning the paragraph's
         // alignment on, because that would outlive the equation and leave the
