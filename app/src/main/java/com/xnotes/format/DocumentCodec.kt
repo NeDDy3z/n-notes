@@ -517,6 +517,7 @@ class DocumentCodec(
         if (t.strike) j.name("strike").value(true)
         if (t.align != com.xnotes.core.pal.HAlign.LEFT) j.name("align").value(t.align.name.lowercase())
         if (t.math) j.name("math").value(true)
+        if (t.dir != com.xnotes.core.text.ParaDir.AUTO) j.name("dir").value(t.dir.id)
         t.sync?.let { writeSync(j, it) }
         if (t.locked) j.name("locked").value(true)
         t.link?.let { j.name("link").value(it) }
@@ -1197,6 +1198,7 @@ class DocumentCodec(
         var textUnderline = false
         var textStrike = false
         var textAlign = "left"
+        var textDir = ""
         var shape: String? = null
         var geom: String? = null
         var flipGeom: String? = null
@@ -1293,6 +1295,7 @@ class DocumentCodec(
                 "underline" -> s.textUnderline = boolOr(p, false)
                 "strike" -> s.textStrike = boolOr(p, false)
                 "align" -> s.textAlign = stringOr(p, "left")
+                "dir" -> s.textDir = stringOr(p, "")
                 "shape" -> s.shape = stringOr(p, "")
                 "geom" -> s.geom = stringOrNull(p)
                 "flip_geom" -> s.flipGeom = stringOrNull(p)
@@ -1378,6 +1381,7 @@ class DocumentCodec(
                         else -> com.xnotes.core.pal.HAlign.LEFT
                     },
                     measurer = textMeasurer,
+                    dir = com.xnotes.core.text.ParaDir.fromId(s.textDir.ifEmpty { "auto" }),
                     math = s.textMath,
                 ),
             )

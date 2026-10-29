@@ -34,7 +34,13 @@ data class FontSpec(
 /** Horizontal alignment of a wrapped text block. */
 enum class HAlign { LEFT, CENTER, RIGHT }
 
-/** Text layout flags (spec 01 §1 `draw_text`). Text boxes use the defaults. */
+/**
+ * Text layout flags (spec 01 §1 `draw_text`). Text boxes use the defaults.
+ *
+ * [paraDir] carries a text box's direction choice: null keeps the historical
+ * left-to-right layout, and a [ParaDir] lays each paragraph out by it —
+ * [ParaDir.AUTO] takes each paragraph's side from its first strong letter.
+ */
 data class TextFlags(
     val wordWrap: Boolean = true,
     val alignLeft: Boolean = true,
@@ -42,4 +48,5 @@ data class TextFlags(
     val underline: Boolean = false,
     val strike: Boolean = false,
     val hAlign: HAlign = HAlign.LEFT,
+    val paraDir: com.xnotes.core.text.ParaDir? = null,
 )

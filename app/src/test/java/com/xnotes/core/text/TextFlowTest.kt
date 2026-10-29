@@ -130,4 +130,33 @@ class TextFlowTest {
         assertTrue(Paragraph.HEADING_STYLE.bold)
         assertNull(Paragraph.HEADING_STYLE.sizePt)
     }
+
+    // --- automatic direction ---
+
+    @Test
+    fun autoReadsTheFirstStrongLetterOfTheLine() {
+        fun dirOf(text: String) = Paragraph(mutableListOf(Run(text))).effectiveDir()
+        assertEquals(ParaDir.RTL, dirOf("سلام دوست من"))
+        assertEquals(ParaDir.RTL, dirOf("  — سلام"))
+        assertEquals(ParaDir.LTR, dirOf("hello there"))
+        assertEquals(ParaDir.LTR, dirOf("123 hello"))
+        assertEquals(ParaDir.LTR, dirOf(""))
+        assertEquals(ParaDir.LTR, dirOf(" ... "))
+    }
+
+    @Test
+    fun anExplicitDirectionWinsOverAuto() {
+        val rtl = Paragraph(mutableListOf(Run("hello")), dir = ParaDir.RTL)
+        assertEquals(ParaDir.RTL, rtl.effectiveDir())
+        val ltr = Paragraph(mutableListOf(Run("سلام")), dir = ParaDir.LTR)
+        assertEquals(ParaDir.LTR, ltr.effectiveDir())
+    }
+
+    @Test
+    fun firstStrongSkipsWeakCharactersToTheLetter() {
+        assertEquals(ParaDir.RTL, ParaDir.firstStrongOf("۱۲۳ سلام"))
+        assertEquals(ParaDir.RTL, ParaDir.firstStrongOf("\"سلام\" in quotes"))
+        assertEquals(ParaDir.LTR, ParaDir.firstStrongOf("\"hello\" said the man"))
+        assertEquals(ParaDir.LTR, ParaDir.firstStrongOf("", fallback = ParaDir.LTR))
+    }
 }

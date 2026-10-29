@@ -20,13 +20,40 @@ enum class ParaAlign(val id: String) {
  * A paragraph's text direction: which end its lines start at. Typing order always
  * follows the characters; this is the side the first character of a line sits on.
  * [id] is the stable serialized token.
+ *
+ * [AUTO] is the default and decides nothing by itself: the direction each line takes
+ * is the first strong letter written on it — a Persian first letter lays the line out
+ * right to left, a Latin one left to right (see [Paragraph.effectiveDir]). LTR and
+ * RTL are the user's explicit overrides.
  */
 enum class ParaDir(val id: String) {
+    AUTO("auto"),
     LTR("ltr"),
     RTL("rtl");
 
     companion object {
-        fun fromId(id: String?): ParaDir = entries.firstOrNull { it.id == id } ?: LTR
+        fun fromId(id: String?): ParaDir = entries.firstOrNull { it.id == id } ?: AUTO
+
+        /** The direction [text]'s first strong letter takes; no strong letter, [fallback]. */
+        fun firstStrongOf(text: String, fallback: ParaDir = LTR): ParaDir {
+            for (c in text) {
+                if (c.isWhitespace() || c.isDigit()) continue
+                return when (Character.getDirectionality(c)) {
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE -> RTL
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT,
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING,
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE,
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT_ISOLATE,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_ISOLATE -> LTR
+                    // Punctuation and other neutrals say nothing; keep looking.
+                    else -> continue
+                }
+            }
+            return fallback
+        }
     }
 }
 
@@ -118,6 +145,9 @@ class Paragraph(
     var cellStart: Boolean = false,
     /** 1..[MAX_HEADING] marks a heading, whose text takes its size from the level; 0 is body text. */
     var headingLevel: Int = 0,
+    /** Which end the lines start at: [ParaDir.AUTO] reads the line's first strong letter,
+     *  [ParaDir.RTL] lays the text out right to left, [ParaDir.LTR] left to right. */
+    var dir: ParaDir = ParaDir.AUTO,
     /** A horizontal rule: an empty line drawn as a hairline, which typing into turns back into text. */
     var rule: Boolean = false,
     /** A page break before this paragraph: it starts the next page. */
@@ -131,8 +161,6 @@ class Paragraph(
     var listStart: Int? = null,
     /** The quote or callout this paragraph sits in; code lines, rules and cells never do. */
     var quote: FlowQuote? = null,
-    /** Which end the lines start at: [ParaDir.RTL] lays the text out right to left. */
-    var dir: ParaDir = ParaDir.LTR,
 ) {
     /** Bumped on any content or style mutation; layout caches key on it. */
     var rev: Int = 0
@@ -146,6 +174,11 @@ class Paragraph(
 
     fun plainText(): String = runs.joinToString("") { it.text }
 
+    /** The direction this paragraph's lines actually take: an explicit [dir], or — for
+     *  [ParaDir.AUTO] — the first strong letter of the text, LTR while there is none. */
+    fun effectiveDir(): ParaDir =
+        if (dir == ParaDir.AUTO) ParaDir.firstStrongOf(plainText()) else dir
+
     /** The size text with none of its own sets at here: the flow's base, scaled for a heading. */
     fun textSizePt(flow: TextFlow): Double =
         if (headingLevel > 0) headingSizePt(headingLevel, flow.defaultSizePt) else flow.defaultSizePt
@@ -153,7 +186,7 @@ class Paragraph(
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
         align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
-            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null && quote == null && dir == ParaDir.LTR
+            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null && quote == null && dir == ParaDir.AUTO
 
     /** A copy sharing [table] and [quote]; [TextFlow.deepCopy] remaps tables onto copies. */
     fun deepCopy(): Paragraph =

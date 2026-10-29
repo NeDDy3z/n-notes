@@ -1,9 +1,12 @@
 package com.xnotes.platform
 
+import android.text.Layout
 import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import com.xnotes.core.pal.FontSpec
 import com.xnotes.core.pal.TextFlags
+import com.xnotes.core.text.ParaDir
 
 /**
  * Shared text layout so measuring and drawing produce identical results
@@ -29,12 +32,23 @@ object AndroidText {
             .obtain(text, 0, text.length, paint, widthPx.coerceAtLeast(1))
             .setAlignment(alignmentOf(flags))
             .setIncludePad(false)
+            .apply {
+                // A direction choice turns the builder's first-strong heuristic on, so each
+                // paragraph takes its side from its own first strong letter (AUTO) or from the
+                // pinned choice. NORMAL and OPPOSITE are the leading and trailing edges, so the
+                // alignment follows the paragraph's direction without a mapping here.
+                when (flags.paraDir) {
+                    ParaDir.RTL -> setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_RTL)
+                    ParaDir.AUTO -> setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_LTR)
+                    ParaDir.LTR, null -> Unit // the builder's own default, which is what old boxes drew with
+                }
+            }
             .build()
 
-    private fun alignmentOf(flags: TextFlags): android.text.Layout.Alignment = when {
-        !flags.alignLeft || flags.hAlign == com.xnotes.core.pal.HAlign.CENTER -> android.text.Layout.Alignment.ALIGN_CENTER
-        flags.hAlign == com.xnotes.core.pal.HAlign.RIGHT -> android.text.Layout.Alignment.ALIGN_OPPOSITE
-        else -> android.text.Layout.Alignment.ALIGN_NORMAL
+    private fun alignmentOf(flags: TextFlags): Layout.Alignment = when {
+        !flags.alignLeft || flags.hAlign == com.xnotes.core.pal.HAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+        flags.hAlign == com.xnotes.core.pal.HAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+        else -> Layout.Alignment.ALIGN_NORMAL
     }
 
     /** The height [text] actually occupies laid out at [widthPx]: one line height per wrapped line. */

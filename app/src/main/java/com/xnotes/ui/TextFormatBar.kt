@@ -140,13 +140,14 @@ fun TextFormatBar(editor: Editor) {
             }
             BarDivider()
             BarIcon(
-                if ((para?.dir ?: ParaDir.LTR) == ParaDir.RTL) {
+                if (editor.flowEffectiveDir() == ParaDir.RTL) {
                     Icons.Filled.FormatTextdirectionRToL
                 } else {
                     Icons.Filled.FormatTextdirectionLToR
                 },
                 stringResource(R.string.text_direction),
-                active = para?.dir == ParaDir.RTL,
+                // Lit means automatic: the lines take their side from their first strong letter.
+                active = para?.dir == ParaDir.AUTO,
             ) {
                 editor.flowToggleDir()
             }

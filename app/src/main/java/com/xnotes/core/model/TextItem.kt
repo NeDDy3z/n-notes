@@ -34,6 +34,12 @@ class TextItem(
     var underline: Boolean = false,
     var strike: Boolean = false,
     var align: HAlign = HAlign.LEFT,
+    /**
+     * The box's text direction. [ParaDir.AUTO] (the default) lays each paragraph out by
+     * its first strong letter — a Persian first letter runs the line right to left —
+     * while [ParaDir.LTR] and [ParaDir.RTL] pin every line to one side.
+     */
+    var dir: com.xnotes.core.text.ParaDir = com.xnotes.core.text.ParaDir.AUTO,
     /** [text] is LaTeX, drawn as a formula (the handwritten-maths add-on makes these). */
     var math: Boolean = false,
 ) : CanvasItem, Resizable {
@@ -48,9 +54,9 @@ class TextItem(
 
     val font get() = FontSpec(pointSize, face, bold, italic)
 
-    /** Layout flags carrying this box's decorations and alignment. */
+    /** Layout flags carrying this box's decorations, alignment and direction. */
     private fun flags(): TextFlags =
-        TextFlags(wordWrap = true, alignLeft = true, alignTop = true, underline = underline, strike = strike, hAlign = align)
+        TextFlags(wordWrap = true, alignLeft = true, alignTop = true, underline = underline, strike = strike, hAlign = align, paraDir = dir)
 
     /** A link to a stored document draws a paperclip before its text, this wide. */
     private val inset: Double get() = if (link?.startsWith(DOCUMENT_LINK) == true) docLinkInset(pointSize) else 0.0
@@ -165,6 +171,7 @@ data class TextStyle(
     val underline: Boolean = false,
     val strike: Boolean = false,
     val align: HAlign = HAlign.LEFT,
+    val dir: com.xnotes.core.text.ParaDir = com.xnotes.core.text.ParaDir.AUTO,
 ) {
     fun applyTo(t: TextItem) {
         t.rgba = rgba
@@ -175,10 +182,11 @@ data class TextStyle(
         t.underline = underline
         t.strike = strike
         t.align = align
+        t.dir = dir
     }
 
     companion object {
-        fun of(t: TextItem) = TextStyle(t.rgba, t.pointSize, t.face, t.bold, t.italic, t.underline, t.strike, t.align)
+        fun of(t: TextItem) = TextStyle(t.rgba, t.pointSize, t.face, t.bold, t.italic, t.underline, t.strike, t.align, t.dir)
     }
 }
 
