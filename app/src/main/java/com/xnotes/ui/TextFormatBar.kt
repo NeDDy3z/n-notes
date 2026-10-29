@@ -139,15 +139,15 @@ fun TextFormatBar(editor: Editor) {
                 tableDialog = true
             }
             BarDivider()
+            // The glyph names the mode: two opposing arrows for automatic — the lines take
+            // whichever side their first strong letter chooses — and the pinned side otherwise.
             BarIcon(
-                if (editor.flowEffectiveDir() == ParaDir.RTL) {
-                    Icons.Filled.FormatTextdirectionRToL
-                } else {
-                    Icons.Filled.FormatTextdirectionLToR
+                when (para?.dir) {
+                    ParaDir.AUTO, null -> XnotesIcons.dirAuto
+                    ParaDir.LTR -> Icons.Filled.FormatTextdirectionLToR
+                    ParaDir.RTL -> Icons.Filled.FormatTextdirectionRToL
                 },
                 stringResource(R.string.text_direction),
-                // Lit means automatic: the lines take their side from their first strong letter.
-                active = para?.dir == ParaDir.AUTO,
             ) {
                 editor.flowToggleDir()
             }
