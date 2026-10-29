@@ -143,9 +143,10 @@ object FlowXml {
         if (p.breakBefore) append(" fo:break-before=\"page\"")
         // ODF's paragraph writing mode: rl-tb is the right-to-left line direction.
         if (p.dir == ParaDir.RTL) append(" style:writing-mode=\"rl-tb\"")
-        // Automatic is this app's own default and ODF has no token for it, so it rides a
-        // foreign attribute; its absence is what older files wrote for a plain LTR paragraph.
-        if (p.dir == ParaDir.AUTO) append(" xnotes:dir=\"auto\"")
+        // ODF has no token for this app's own direction modes, so they ride a foreign
+        // attribute. A pinned LTR must still be written (its absence reads automatic);
+        // automatic itself is the default and may stay unwritten.
+        if (p.dir == ParaDir.LTR) append(" xnotes:dir=\"ltr\"")
         append("/>\n  </style:style>\n")
     }
 
@@ -161,10 +162,11 @@ object FlowXml {
         return ids
     }
 
-    /** What a paragraph's automatic style holds. */
-    private data class ParaProps(val align: ParaAlign, val indent: Int, val breakBefore: Boolean, val dir: ParaDir = ParaDir.LTR) {
+    /** What a paragraph's automatic style holds. [PLAIN] is the default paragraph, whose style
+     *  need not be written: an absent style reads back automatic, which is what it holds. */
+    private data class ParaProps(val align: ParaAlign, val indent: Int, val breakBefore: Boolean, val dir: ParaDir) {
         companion object {
-            val PLAIN = ParaProps(ParaAlign.LEFT, 0, false)
+            val PLAIN = ParaProps(ParaAlign.LEFT, 0, false, ParaDir.AUTO)
 
             fun of(p: Paragraph) = ParaProps(p.align, p.indent, p.breakBefore, p.dir)
         }
@@ -536,12 +538,13 @@ object FlowXml {
             ?: attr(props, "margin-left")?.removeSuffix("mm")?.toDoubleOrNull()
                 ?.let { (it / INDENT_MM_PER_LEVEL).toInt() }
             ?: 0
-        // ODF writes a right-to-left paragraph as writing-mode rl-tb; this app's automatic
-        // direction rides xnotes:dir. A file with neither is an older build's plain LTR.
+        // ODF writes a right-to-left paragraph as writing-mode rl-tb; this app's own modes
+        // ride xnotes:dir. Absence is automatic — the default, and all an older build ever
+        // wrote for what it then laid out left to right.
         val dir = when {
-            attr(props, "dir") == "auto" -> ParaDir.AUTO
+            attr(props, "dir") == "ltr" -> ParaDir.LTR
             attr(props, "writing-mode") == "rl-tb" -> ParaDir.RTL
-            else -> ParaDir.LTR
+            else -> ParaDir.AUTO
         }
         return ParaProps(align, indent.coerceIn(0, Paragraph.MAX_INDENT), attr(props, "break-before") == "page", dir)
     }

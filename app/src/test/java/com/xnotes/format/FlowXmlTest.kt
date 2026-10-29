@@ -104,10 +104,9 @@ class FlowXmlTest {
         val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("just words")))) }
         val xml = String(FlowXml.write(flow), Charsets.UTF_8)
         assertFalse(xml.contains("<text:span"))
-        // Automatic direction is the one thing a plain paragraph records: a paragraph style
-        // carrying the token and nothing else, which is what its text:p now names.
-        assertTrue(xml.contains("<style:paragraph-properties xnotes:dir=\"auto\"/>"))
-        assertTrue(xml.contains("<text:p text:style-name=\"P1\">just words</text:p>"))
+        // Automatic is the default and says nothing: no style, no style-name on the paragraph.
+        assertFalse(xml.contains("<style:style"))
+        assertTrue(xml.contains("<text:p>just words</text:p>"))
     }
 
     @Test
@@ -269,21 +268,18 @@ class FlowXmlTest {
     }
 
     @Test
-    fun anAutomaticDirectionRidesItsOwnTokenAndRoundTrips() {
+    fun anAutomaticDirectionIsTheDefaultAndNeedsNoToken() {
         val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("سلام")))) }
         val xml = String(FlowXml.write(flow))
-        assertTrue("xnotes:dir=\"auto\"" in xml)
+        assertFalse("xnotes:dir" in xml)
         assertEquals(ParaDir.AUTO, roundTrip(flow).paragraphs[0].dir)
     }
 
     @Test
-    fun aFileWithoutADirectionTokenReadsAsTheOldExplicitLtr() {
-        // An older build's paragraph says LTR by absence: strip the auto token a current
-        // build writes and the same document reads back exactly as an old one would have.
-        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("سلام")))) }
-        val legacy = FlowXml.write(flow).decodeToString().replace(" xnotes:dir=\"auto\"", "")
-        val back = TextFlow().also { FlowXml.readInto(it, legacy.encodeToByteArray()) }
-        assertEquals(ParaDir.LTR, back.paragraphs[0].dir)
+    fun anExplicitLtrPinIsWrittenSoItSurvivesTheRoundTrip() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("سلام")), dir = ParaDir.LTR)) }
+        assertTrue("xnotes:dir=\"ltr\"" in String(FlowXml.write(flow)))
+        assertEquals(ParaDir.LTR, roundTrip(flow).paragraphs[0].dir)
     }
 
     @Test
