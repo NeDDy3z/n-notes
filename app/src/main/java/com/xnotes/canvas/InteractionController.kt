@@ -23,6 +23,9 @@ import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
 import com.xnotes.core.history.LockItems
 import com.xnotes.core.history.EditLabel
+import com.xnotes.core.text.CharStyle
+import com.xnotes.core.text.restyleRunSpans
+import com.xnotes.core.text.shiftRunSpans
 import com.xnotes.core.history.EditText
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.RefillShapes
@@ -142,6 +145,10 @@ data class EditingField(
     val underline: Boolean = false,
     val strike: Boolean = false,
     val align: com.xnotes.core.pal.HAlign = com.xnotes.core.pal.HAlign.LEFT,
+    /** The box's text direction: automatic, or a pinned side. Shape labels have none. */
+    val dir: com.xnotes.core.text.ParaDir = com.xnotes.core.text.ParaDir.AUTO,
+    /** The box's per-selection style spans, which the field mirrors while typing. */
+    val spans: List<com.xnotes.core.text.RunSpan> = emptyList(),
 ) {
     /** The field's on-screen bounding box, turned corners and all. */
     fun screenBounds(): Rect {
@@ -167,6 +174,15 @@ data class TextBar(
     val underline: Boolean = false,
     val strike: Boolean = false,
     val align: com.xnotes.core.pal.HAlign = com.xnotes.core.pal.HAlign.LEFT,
+    /** The box's text direction: automatic, or a pinned side. Shape labels have none. */
+    val dir: com.xnotes.core.text.ParaDir = com.xnotes.core.text.ParaDir.AUTO,
+    /** True while the field's selection covers text, which the span edits need. */
+    val selActive: Boolean = false,
+    /** The effective character style at the selection start while [selActive]: what the
+     *  highlight and link buttons light against, and what they would change. */
+    val span: com.xnotes.core.text.CharStyle? = null,
+    /** True while a shape label is being typed; labels have no text box to convert. */
+    val label: Boolean = false,
 )
 
 /**
@@ -577,6 +593,7 @@ class InteractionController(
     private var editingText: TextItem? = null
     private var editingIsNew = false
     private var editingOldText = ""
+    private var editingOldSpans: List<com.xnotes.core.text.RunSpan> = emptyList()
     /** The image or shape a new draft captions: on commit the two join one group. */
     private var editingCaptionOf: CanvasItem? = null
     private var editingPageIndex = -1
@@ -3350,6 +3367,7 @@ class InteractionController(
         editingText = item
         editingIsNew = isNew
         editingOldText = item.text
+        editingOldSpans = item.spans
         editingPageIndex = pi
         // The style bar / next new box follow the box being edited.
         textFace = item.face
@@ -3369,8 +3387,79 @@ class InteractionController(
             onTextEditStart(editingField())
             return
         }
-        editingText?.text = text
+        val item = editingText ?: return
+        val old = item.text
+        if (text == old) return
+        // The keystroke's stretch: common prefix and suffix, whatever sits between replaced.
+        // The style spans ride along, growing past a typed word and clipping under a delete.
+        var p = 0
+        val min = minOf(old.length, text.length)
+        while (p < min && old[p] == text[p]) p++
+        var s = 0
+        while (s < min - p && old[old.length - 1 - s] == text[text.length - 1 - s]) s++
+        item.spans = shiftRunSpans(item.spans, p, old.length - p - s, text.length - p - s)
+        item.text = text
     }
+
+    /** The editing field's own selection, reported by the overlay as the caret moves. */
+    var editingSelStart = 0
+        private set
+    var editingSelEnd = 0
+        private set
+
+    /** True while the field's selection covers text, which the span edits need. */
+    val textSelectionActive: Boolean get() = editingSelStart < editingSelEnd
+
+    fun updateEditingSelection(start: Int, end: Int) {
+        editingSelStart = start
+        editingSelEnd = end
+    }
+
+    /**
+     * The effective character style at the field's selection start: the box's own style
+     * with the span covering the caret laid over it — what a style toggle reads its
+     * target from, and what the bar's highlight and link buttons light against.
+     */
+    fun textBoxCaretStyle(): CharStyle {
+        val item = editingText ?: return CharStyle.DEFAULT
+        val st = item.spans.lastOrNull { it.contains(editingSelStart) }?.style
+        return CharStyle(
+            bold = item.bold || (st?.bold ?: false),
+            italic = item.italic || (st?.italic ?: false),
+            underline = item.underline || (st?.underline ?: false),
+            strike = item.strike || (st?.strike ?: false),
+            color = st?.color ?: item.rgba,
+            highlight = st?.highlight,
+            sizePt = st?.sizePt ?: item.pointSize,
+            face = st?.face ?: item.face,
+            link = st?.link,
+        )
+    }
+
+    /**
+     * Rewrite the selection's character styles as one undo step, splitting spans at its
+     * edges and merging what ends up styled alike. A collapsed caret does nothing: there
+     * is nothing the override could hang on.
+     */
+    fun applyTextSpan(mutate: (CharStyle) -> CharStyle) {
+        val item = editingText ?: return
+        if (!textSelectionActive) return
+        val old = TextStyle.of(item)
+        item.spans = restyleRunSpans(item.spans, editingSelStart, editingSelEnd, mutate)
+        if (TextStyle.of(item) != old) {
+            history.push(RestyleText(item, old, TextStyle.of(item)))
+            state.document.dirty = true
+            onContentChanged()
+            onTextEditStart(editingField()) // the field re-styles itself from the model
+        }
+        requestRender()
+    }
+
+    /** Highlight the selection, or clear it with null. */
+    fun setTextHighlight(color: Rgba?) = applyTextSpan { it.copy(highlight = color) }
+
+    /** Link the selection to [url], or strip its link with null. */
+    fun setTextCharLink(url: String?) = applyTextSpan { it.copy(link = url?.trim()?.ifEmpty { null }) }
 
     /**
      * Pan the document while a text edit stays open: a one-finger drag over the editor scrolls the
@@ -3409,6 +3498,8 @@ class InteractionController(
             underline = item.underline,
             strike = item.strike,
             align = item.align,
+            dir = item.dir,
+            spans = item.spans,
         )
     }
 
@@ -3450,7 +3541,7 @@ class InteractionController(
                 val was = follow.items.map { it.paintBounds() }
                 follow.follow(Affine.IDENTITY)
                 val joined = if (follow.isEmpty) null else TransformItems(follow.items, follow.startSnapshots, follow.items.map { it.snapshotGeometry() })
-                val cmds = listOfNotNull(EditText(item, editingOldText, item.text), joined)
+                val cmds = listOfNotNull(EditText(item, editingOldText, item.text, editingOldSpans, item.spans), joined)
                 history.push(cmds.singleOrNull() ?: CompositeCommand(cmds))
                 for ((i, c) in follow.items.withIndex()) repairRegion(page, was[i].union(c.paintBounds()))
                 state.document.dirty = true
@@ -3462,6 +3553,9 @@ class InteractionController(
         editingCaptionOf = null
         editingPageIndex = -1
         editingOldText = ""
+        editingOldSpans = emptyList()
+        editingSelStart = 0
+        editingSelEnd = 0
         // Repaint just the box's region in place (it is now unlifted, so it bakes back in) rather
         // than rebuilding the whole page — the same smart path selection uses, so no ink flicker.
         page?.let { repairTextRegion(it, item) }
@@ -3502,10 +3596,14 @@ class InteractionController(
         val editing = editingText
         if (editing != null) {
             val f = editingField() ?: return null
+            val selActive = textSelectionActive
             return TextBar(
                 Rect(f.x, f.y, f.width * f.zoom, f.height * f.zoom), editing.face, editing.pointSize, editing.rgba,
                 editing = true, bold = editing.bold, italic = editing.italic,
                 underline = editing.underline, strike = editing.strike, align = editing.align,
+                dir = editing.dir,
+                selActive = selActive,
+                span = if (selActive) textBoxCaretStyle() else null,
             )
         }
         if (mode != PointerMode.IDLE) return null
@@ -3514,13 +3612,24 @@ class InteractionController(
         return TextBar(
             rect, sel.face, sel.pointSize, sel.rgba, editing = false,
             bold = sel.bold, italic = sel.italic, underline = sel.underline, strike = sel.strike, align = sel.align,
+            dir = sel.dir,
         )
     }
 
-    fun toggleTextBold() = restyleActive { it.bold = !it.bold }
-    fun toggleTextItalic() = restyleActive { it.italic = !it.italic }
-    fun toggleTextUnderline() = restyleActive { it.underline = !it.underline }
-    fun toggleTextStrike() = restyleActive { it.strike = !it.strike }
+    /** Toggle a character style over the field's selection as a span, or the box's own style when the caret is bare. */
+    private fun toggleTextChar(prop: (CharStyle) -> Boolean, apply: (CharStyle, Boolean) -> CharStyle, restyleBox: () -> Unit) {
+        if (textSelectionActive) {
+            val target = !prop(textBoxCaretStyle())
+            applyTextSpan { apply(it, target) }
+        } else {
+            restyleBox()
+        }
+    }
+
+    fun toggleTextBold() = toggleTextChar({ it.bold }, { s, v -> s.copy(bold = v) }) { restyleActive { it.bold = !it.bold } }
+    fun toggleTextItalic() = toggleTextChar({ it.italic }, { s, v -> s.copy(italic = v) }) { restyleActive { it.italic = !it.italic } }
+    fun toggleTextUnderline() = toggleTextChar({ it.underline }, { s, v -> s.copy(underline = v) }) { restyleActive { it.underline = !it.underline } }
+    fun toggleTextStrike() = toggleTextChar({ it.strike }, { s, v -> s.copy(strike = v) }) { restyleActive { it.strike = !it.strike } }
 
     /** Cycle a box's alignment left -> center -> right -> left. */
     fun cycleTextAlign() = restyleActive {
@@ -3531,24 +3640,34 @@ class InteractionController(
         }
     }
 
+    /** Cycle a box's direction automatic -> left-to-right -> right-to-left -> automatic:
+     *  automatic takes each paragraph's side from its first strong letter, the pins hold it. */
+    fun cycleTextDir() = restyleActive {
+        it.dir = when (it.dir) {
+            com.xnotes.core.text.ParaDir.AUTO -> com.xnotes.core.text.ParaDir.LTR
+            com.xnotes.core.text.ParaDir.LTR -> com.xnotes.core.text.ParaDir.RTL
+            com.xnotes.core.text.ParaDir.RTL -> com.xnotes.core.text.ParaDir.AUTO
+        }
+    }
+
     fun setTextFace(face: FontFace) {
         textFace = face
         if (restyleLabel { it.copy(face = face) }) return
-        restyleActive { it.face = face }
+        if (textSelectionActive) applyTextSpan { it.copy(face = face) } else restyleActive { it.face = face }
     }
 
     fun setTextPointSize(size: Double) {
         val s = size.coerceIn(TEXT_MIN_PT, TEXT_MAX_PT)
         textPointSize = s
         if (restyleLabel { it.copy(pointSize = s) }) return
-        restyleActive { it.pointSize = s }
+        if (textSelectionActive) applyTextSpan { it.copy(sizePt = s) } else restyleActive { it.pointSize = s }
     }
 
     /** Set the ink colour (for new strokes/boxes) and recolour the active text box or label, if any. */
     fun pickInk(c: Rgba) {
         inkColor = c
         if (restyleLabel { it.copy(rgba = c) }) return
-        restyleActive { it.rgba = c }
+        if (textSelectionActive) applyTextSpan { it.copy(color = c) } else restyleActive { it.rgba = c }
     }
 
     /** Restyle the label being typed, false when none is; the whole edit is one undo step, taken at commit. */
@@ -4136,7 +4255,7 @@ class InteractionController(
             return false
         }
         item.mathBox()?.let { item.width = it.width }
-        history.push(EditText(item, old, latex))
+        history.push(EditText(item, old, latex, item.spans, emptyList()))
         state.document.dirty = true
         selObb = selectionBox()
         onContentChanged()

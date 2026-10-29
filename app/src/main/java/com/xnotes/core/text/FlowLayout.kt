@@ -850,11 +850,12 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
             !lastLineOfPara && !bl.hardBroken && bl.spaceCount > 0
         val extraPerSpace = if (justify) ((avail - bl.width) / bl.spaceCount).coerceAtLeast(0.0) else 0.0
         // The offset is measured from the side the line starts at: the left of an LTR
-        // paragraph, the right of an RTL one. LEFT means that start side either way,
-        // RIGHT the end side, so the same offsets mirror with the anchor.
+        // paragraph, the right of an RTL one. LEFT and RIGHT name the page's absolute
+        // edges — the rule the text box and sticky-note text lay out by (AndroidText) —
+        // so an RTL paragraph's anchor takes the opposite offset to land on the named edge.
         val alignOffset = when {
             centreDisplay || para.align == ParaAlign.CENTER -> ((avail - bl.width) / 2.0).coerceAtLeast(0.0)
-            para.align == ParaAlign.RIGHT -> (avail - bl.width).coerceAtLeast(0.0)
+            (para.align == ParaAlign.RIGHT) != rtl -> (avail - bl.width).coerceAtLeast(0.0)
             else -> 0.0
         }
         // Justify's extra space is the same either way: it widens the spaces the

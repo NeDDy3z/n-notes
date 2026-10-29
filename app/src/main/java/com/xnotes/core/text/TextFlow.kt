@@ -380,3 +380,87 @@ data class FlowDefaults(
         private const val MAX_SCREEN_PT = 36.0
     }
 }
+
+/**
+ * A character-style override over one range of a text box's plain text. The box's
+ * own style is the base; every field [style] sets replaces it for that range, the
+ * rest inherit — the same nullable-override rule the flow's runs follow.
+ */
+data class RunSpan(val start: Int, val endExclusive: Int, val style: CharStyle) {
+    init {
+        require(start >= 0 && endExclusive >= start) { "bad span range $start..$endExclusive" }
+    }
+
+    val length: Int get() = endExclusive - start
+
+    fun contains(offset: Int): Boolean = offset in start until endExclusive
+
+    fun intersects(a: Int, b: Int): Boolean = start < b && a < endExclusive
+}
+
+/**
+ * Shift style spans through a text edit that replaced [removed] characters at [at]
+ * with [added] ones. A span's start at or before the edit's start holds; one inside
+ * the replaced stretch pins to it; one after slides by the edit's length difference.
+ * The end holds before the edit, grows past it, or clips when it fell inside. Spans
+ * the edit empties drop.
+ */
+fun shiftRunSpans(spans: List<RunSpan>, at: Int, removed: Int, added: Int): List<RunSpan> {
+    if (spans.isEmpty()) return spans
+    val delta = added - removed
+    val editEnd = at + removed
+    val out = ArrayList<RunSpan>(spans.size)
+    for (s in spans) {
+        val ns = when {
+            s.start <= at -> s.start
+            s.start < editEnd -> at
+            else -> s.start + delta
+        }
+        val ne = when {
+            s.endExclusive <= at -> s.endExclusive
+            s.endExclusive >= editEnd -> s.endExclusive + delta
+            else -> at
+        }
+        if (ne > ns) out += RunSpan(ns, ne, s.style)
+    }
+    return out
+}
+
+/**
+ * Restyle [a] until [b]: every span overlapping the range has [apply] applied to its
+ * covered piece (the rest of it keeps its style), and uncovered stretches of the range
+ * take [apply] on [CharStyle.DEFAULT] — so a highlight over plain text makes a span of
+ * its own. The result is sorted, non-overlapping, and merged where touching pieces end
+ * up styled alike.
+ */
+fun restyleRunSpans(spans: List<RunSpan>, a: Int, b: Int, apply: (CharStyle) -> CharStyle): List<RunSpan> {
+    if (b <= a) return spans
+    val kept = ArrayList<RunSpan>() // untouched stretches outside the range
+    val pieces = ArrayList<RunSpan>() // restyled stretches and uncovered gaps inside it
+    var cursor = a
+    for (s in spans.sortedBy { it.start }) {
+        if (!s.intersects(a, b)) {
+            kept += s
+            continue
+        }
+        val lo = maxOf(s.start, a)
+        val hi = minOf(s.endExclusive, b)
+        if (s.start < a) kept += RunSpan(s.start, a, s.style)
+        if (lo > cursor) pieces += RunSpan(cursor, lo, apply(CharStyle.DEFAULT))
+        pieces += RunSpan(lo, hi, apply(s.style))
+        cursor = hi
+        if (s.endExclusive > b) kept += RunSpan(b, s.endExclusive, s.style)
+    }
+    if (cursor < b) pieces += RunSpan(cursor, b, apply(CharStyle.DEFAULT))
+    val merged = (kept + pieces).sortedBy { it.start }
+    val out = ArrayList<RunSpan>(merged.size)
+    for (s in merged) {
+        val last = out.lastOrNull()
+        if (last != null && last.endExclusive == s.start && last.style == s.style) {
+            out[out.lastIndex] = RunSpan(last.start, s.endExclusive, s.style)
+        } else {
+            out += s
+        }
+    }
+    return out
+}

@@ -6,15 +6,16 @@ import com.xnotes.core.pal.FontSpec
 import com.xnotes.core.pal.LineMetrics
 import com.xnotes.core.pal.TextFlags
 import com.xnotes.core.pal.TextMeasurer
+import com.xnotes.core.text.RunSpan
 import com.xnotes.core.vector.VectorContour
 
 /** Measures text with the same layout pipeline the renderer draws with. */
 class AndroidTextMeasurer : TextMeasurer {
 
-    override fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags): Rect {
+    override fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags, spans: List<RunSpan>): Rect {
         val probe = text.ifEmpty { " " }
         val paint = AndroidText.textPaint(font)
-        val layout = AndroidText.layout(probe, wrapWidth.toInt(), paint, flags)
+        val layout = AndroidText.layout(probe, wrapWidth.toInt(), paint, flags, spans, font)
         // Width is fixed to the wrap width; height follows the text.
         return Rect(0.0, 0.0, wrapWidth, layout.height.toDouble())
     }

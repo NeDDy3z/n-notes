@@ -245,7 +245,12 @@ interface Renderer {
      */
     fun drawImage(image: ImageData, dest: Rect, orientation: Int = 0, angle: Double = 0.0, flip: Flip = Flip.NONE, part: Rect? = null) {}
 
-    fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags = TextFlags())
+    /**
+     * Wrapped text in [rect]; [spans] carry a box's per-selection style overrides
+     * (highlight, colour, link…) laid over [font] and [color], which the backend
+     * draws however its pipeline represents them. Default ignores them.
+     */
+    fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags = TextFlags(), spans: List<com.xnotes.core.text.RunSpan> = emptyList())
 
     /**
      * [drawText] turned [angle] radians clockwise about [rect]'s centre: a shape's label, which
