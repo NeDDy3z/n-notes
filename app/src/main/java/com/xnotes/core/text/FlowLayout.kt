@@ -1055,21 +1055,34 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         }
         // Blocks display right to left, so the reverse order is the visual order; the
         // rightmost block is the logical first.
-        var x = right - (off until contentEnd).sumOf { adv[it - off] }
+        val blockLeft = right - (off until contentEnd).sumOf { adv[it - off] }
+        var x = blockLeft
+        var prevFlag = -1
         for (r in runs.asReversed()) {
             val width = (r[0] until r[1]).sumOf { adv[it - off] }
             if (r[2] == 1) {
-                // Ascending index runs right to left: the block starts at its right edge.
                 xs[r[0] - off] = x + width
-                for (k in r[0] until r[1]) xs[k - off + 1] = xs[k - off] - adv[k - off]
+                // A right-to-left block's far end is the slot the next (rightward) run's
+                // left edge also claims: when that run is left-to-right, its own anchor is
+                // where its words start, and this chain's last step must leave the slot
+                // alone — writing it planted the left-to-right words inside the right-to-
+                // left ones. The trailing-space hang below reads the block's own left edge
+                // from [x], not from the slot, so nothing else needs the stored value.
+                val stopAtEnd = prevFlag == 0
+                if (r[1] - 1 >= r[0]) {
+                    for (k in r[0] until r[1] - if (stopAtEnd) 1 else 0) {
+                        xs[k - off + 1] = xs[k - off] - adv[k - off]
+                    }
+                }
             } else {
                 xs[r[0] - off] = x
                 for (k in r[0] until r[1]) xs[k - off + 1] = xs[k - off] + adv[k - off]
             }
+            prevFlag = r[2]
             x += width
         }
-        // Trailing spaces hang to the left of the last character's end.
-        var cur = xs[contentEnd - off]
+        // Trailing spaces hang to the left of the block's left end.
+        var cur = blockLeft
         var k = contentEnd
         while (k < bl.endChar) {
             cur -= adv[k - off]
