@@ -75,6 +75,9 @@ object XnotesIcons {
         "M3 8V5h3", "M9.5 5h5", "M18 5h3v3", "M21 11v2",
         "M21 16v3h-3", "M14.5 19h-5", "M6 19H3v-3", "M3 13v-2",
     )
+    // Automatic text direction: two opposing arrows. Each line takes the side its first
+    // strong letter chooses, so neither pinning arrow of the explicit pair fits.
+    val dirAuto = icon("M21 7H8", "M11 4 8 7l3 3", "M3 17h13", "M13 14l3 3 3-3")
     // Free selection, drawn as the marquee it leaves behind: a freehand loop in marching ants.
     val lasso = icon(
         "M21.4 8.3Q22.9 10.4 21.7 12.8", "M19.7 14.9Q17.6 16.1 15.5 17.3",
