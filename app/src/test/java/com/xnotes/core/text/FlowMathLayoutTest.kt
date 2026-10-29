@@ -350,7 +350,7 @@ class FlowMathLayoutTest {
 
     /** A measurer whose mono face runs shorter than its body face, as real pairs do. */
     private class TwoFaceMeasurer : TextMeasurer {
-        override fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags): Rect =
+        override fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags, spans: List<com.xnotes.core.text.RunSpan>): Rect =
             Rect(0.0, 0.0, wrapWidth, lineHeight(font))
 
         override fun lineHeight(font: FontSpec): Double = metrics(font).height

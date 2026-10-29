@@ -58,7 +58,7 @@ class MarkupPainterTest {
         override fun strokePolygon(points: List<Pt>, pen: Pen) {}
         override fun strokeEllipse(center: Pt, rx: Double, ry: Double, pen: Pen) {}
         override fun drawRaster(raster: RasterSurface, dest: Rect, src: Rect?) {}
-        override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {}
+        override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags, spans: List<com.xnotes.core.text.RunSpan>) {}
     }
 
     private val green = Rgba(0, 230, 118)

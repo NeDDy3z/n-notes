@@ -1795,6 +1795,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // A canvas item with a hyperlink wins over everything under the same point (it sits on top).
             page.items.lastOrNull { it.link != null && it.contains(pageLocal) }
                 ?.link?.let { openUrl(it); return@onItemLinkTap true }
+            // A per-selection link inside a text box's own words, on the page or on a sheet.
+            (page.items.lastOrNull { it is TextItem && it.spans.isNotEmpty() && it.contains(pageLocal) } as? TextItem)?.let { item ->
+                val off = com.xnotes.platform.AndroidText.offsetAt(
+                    item.text, item.spans, item.font, item.flags(), item.width,
+                    pageLocal.x - item.pos.x, pageLocal.y - item.pos.y,
+                )
+                if (off != null) item.spans.lastOrNull { it.contains(off) }?.style?.link?.let { openUrl(it); return@onItemLinkTap true }
+            }
             false
         }
         controller.onAudioTap = { pageIndex, local -> tapAudio(pageIndex, local) }
@@ -3335,9 +3343,27 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun toggleTextUnderline() { controller.toggleTextUnderline(); refreshTextBar() }
     fun toggleTextStrike() { controller.toggleTextStrike(); refreshTextBar() }
     fun cycleTextAlign() { controller.cycleTextAlign(); refreshTextBar() }
+    fun cycleTextDir() { controller.cycleTextDir(); refreshTextBar() }
 
     override fun updateEditingText(text: String) {
         controller.updateEditingText(text)
+    }
+
+    override fun updateEditingSelection(start: Int, end: Int) {
+        controller.updateEditingSelection(start, end)
+        refreshTextBar() // the span buttons light and enable against the field's selection
+    }
+
+    /** Highlight the field's selection, or clear it with null. */
+    fun setTextHighlight(color: Rgba?) {
+        controller.setTextHighlight(color)
+        refreshTextBar()
+    }
+
+    /** Link the field's selection to [url], or strip its link with null. */
+    fun setTextCharLink(url: String?) {
+        controller.setTextCharLink(url)
+        refreshTextBar()
     }
 
     override fun commitText(text: String?) {

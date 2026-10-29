@@ -220,18 +220,26 @@ class TransformItems(
     override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(items, locate)
 }
 
-/** Change the text of an existing text box. */
+/**
+ * Change the text of an existing text box. The style spans ride along, since a typed or
+ * deleted stretch shifts them: both sides keep their own span list, so undo restores the
+ * text and its styles together.
+ */
 class EditText(
     private val item: TextItem,
     private val oldText: String,
     private val newText: String,
+    private val oldSpans: List<com.xnotes.core.text.RunSpan> = emptyList(),
+    private val newSpans: List<com.xnotes.core.text.RunSpan> = emptyList(),
 ) : Command {
     override fun redo() {
         item.text = newText
+        item.spans = newSpans
     }
 
     override fun undo() {
         item.text = oldText
+        item.spans = oldSpans
     }
 
     override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(listOf(item), locate)

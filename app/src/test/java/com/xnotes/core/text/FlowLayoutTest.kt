@@ -249,17 +249,19 @@ class FlowLayoutTest {
     }
 
     @Test
-    fun aRightToLeftLineStartsAtTheRightEdge() {
-        // "سلام دنیا" is 9 chars, 64.8 wide, so it sits at the right of a 100-wide
-        // column; the first word is the rightmost and the second is to its left.
+    fun aRightToLeftLineHugsTheEdgeItsAlignNames() {
+        // LEFT names the left edge even for a right-to-left paragraph (the same
+        // absolute rule the text box lays out by), so "سلام دنیا" — 9 chars, 64.8
+        // wide — hugs the left of a 100-wide column; the first word is still the
+        // rightmost of the line and the second is to its left.
         val line = rtlLine("سلام دنیا")
-        assertEquals(100.0, line.caretX(0), 1e-9)
-        assertEquals(71.2, line.segs.first { it.text == "سلام" }.x, 1e-9)
-        assertEquals(35.2, line.segs.first { it.text == "دنیا" }.x, 1e-9)
-        assertEquals(35.2, line.caretX(9), 1e-9)
+        assertEquals(64.8, line.caretX(0), 1e-9)
+        assertEquals(36.0, line.segs.first { it.text == "سلام" }.x, 1e-9)
+        assertEquals(0.0, line.segs.first { it.text == "دنیا" }.x, 1e-9)
+        assertEquals(0.0, line.caretX(9), 1e-9)
         // A tap reads off the visual side it landed on, not the offset's own end.
         assertEquals(0, line.offsetAt(99.0))
-        assertEquals(7, line.offsetAt(50.0))
+        assertEquals(2, line.offsetAt(50.0))
     }
 
     @Test
@@ -277,10 +279,11 @@ class FlowLayoutTest {
     }
 
     @Test
-    fun rightAlignmentMovesAnRtlLineToTheLeftEdge() {
+    fun rightAlignmentPinsAnRtlLineToTheRightEdge() {
         val line = rtlLine("سلام دنیا", ParaAlign.RIGHT)
-        // The end side of an RTL paragraph is its left edge, so the last word starts there.
-        assertEquals(0.0, line.segs.first { it.text == "دنیا" }.x, 1e-9)
-        assertEquals(64.8, line.caretX(0), 1e-9)
+        // RIGHT names the right edge either way, so the line sits where an RTL
+        // paragraph's own start side already put it.
+        assertEquals(35.2, line.segs.first { it.text == "دنیا" }.x, 1e-9)
+        assertEquals(100.0, line.caretX(0), 1e-9)
     }
 }

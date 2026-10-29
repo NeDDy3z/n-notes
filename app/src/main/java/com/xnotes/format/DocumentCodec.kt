@@ -518,6 +518,13 @@ class DocumentCodec(
         if (t.align != com.xnotes.core.pal.HAlign.LEFT) j.name("align").value(t.align.name.lowercase())
         if (t.math) j.name("math").value(true)
         if (t.dir != com.xnotes.core.text.ParaDir.AUTO) j.name("dir").value(t.dir.id)
+        // Per-selection character styles, written only when present, so a plain box
+        // serializes exactly as before and older readers skip the array they never knew.
+        if (t.spans.isNotEmpty()) {
+            j.name("spans").beginArray()
+            for (sp in t.spans) writeRunSpan(j, sp)
+            j.endArray()
+        }
         t.sync?.let { writeSync(j, it) }
         if (t.locked) j.name("locked").value(true)
         t.link?.let { j.name("link").value(it) }
@@ -1199,6 +1206,7 @@ class DocumentCodec(
         var textStrike = false
         var textAlign = "left"
         var textDir = ""
+        var textSpans: List<com.xnotes.core.text.RunSpan> = emptyList()
         var shape: String? = null
         var geom: String? = null
         var flipGeom: String? = null
@@ -1296,6 +1304,7 @@ class DocumentCodec(
                 "strike" -> s.textStrike = boolOr(p, false)
                 "align" -> s.textAlign = stringOr(p, "left")
                 "dir" -> s.textDir = stringOr(p, "")
+                "spans" -> s.textSpans = readRunSpans(p)
                 "shape" -> s.shape = stringOr(p, "")
                 "geom" -> s.geom = stringOrNull(p)
                 "flip_geom" -> s.flipGeom = stringOrNull(p)
@@ -1382,6 +1391,7 @@ class DocumentCodec(
                     },
                     measurer = textMeasurer,
                     dir = com.xnotes.core.text.ParaDir.fromId(s.textDir.ifEmpty { "auto" }),
+                    spans = s.textSpans,
                     math = s.textMath,
                 ),
             )
@@ -2019,6 +2029,79 @@ class DocumentCodec(
         while (p.hasNext()) doubleOrNull(p)?.takeIf { it.isFinite() }?.let { out.add(it) }
         p.endArray()
         return out.toDoubleArray()
+    }
+
+    /** One per-selection style span, with only the fields its style actually sets. */
+    private fun writeRunSpan(j: JsonWrite, sp: com.xnotes.core.text.RunSpan) {
+        j.beginObject()
+        j.name("s").value(sp.start)
+        j.name("e").value(sp.endExclusive)
+        val st = sp.style
+        if (st.bold) j.name("b").value(true)
+        if (st.italic) j.name("i").value(true)
+        if (st.underline) j.name("u").value(true)
+        if (st.strike) j.name("x").value(true)
+        st.color?.let { j.name("c"); writeRgba(j, it) }
+        st.highlight?.let { j.name("h"); writeRgba(j, it) }
+        st.sizePt?.let { j.name("pt").value(it) }
+        st.face?.let { j.name("f").value(it.id) }
+        st.link?.let { j.name("url").value(it) }
+        j.endObject()
+    }
+
+    private fun readRunSpans(p: JsonPull): List<com.xnotes.core.text.RunSpan> {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return emptyList()
+        }
+        val out = ArrayList<com.xnotes.core.text.RunSpan>()
+        p.beginArray()
+        while (p.hasNext()) {
+            var a = 0
+            var b = 0
+            var bold = false
+            var italic = false
+            var underline = false
+            var strike = false
+            var color: Rgba? = null
+            var highlight: Rgba? = null
+            var sizePt: Double? = null
+            var face: FontFace? = null
+            var link: String? = null
+            if (p.peek() == JsonPull.Token.BEGIN_OBJECT) {
+                p.beginObject()
+                while (p.hasNext()) {
+                    when (p.nextName()) {
+                        "s" -> a = p.nextInt()
+                        "e" -> b = p.nextInt()
+                        "b" -> bold = p.nextBoolean()
+                        "i" -> italic = p.nextBoolean()
+                        "u" -> underline = p.nextBoolean()
+                        "x" -> strike = p.nextBoolean()
+                        "c" -> color = rgbaOrNull(p)
+                        "h" -> highlight = rgbaOrNull(p)
+                        "pt" -> sizePt = p.nextDouble()
+                        "f" -> face = FontFace.fromId(stringOr(p, ""))
+                        "url" -> link = p.nextString()
+                        else -> p.skipValue()
+                    }
+                }
+                p.endObject()
+            } else {
+                p.skipValue()
+            }
+            if (b > a) {
+                out += com.xnotes.core.text.RunSpan(
+                    a, b,
+                    com.xnotes.core.text.CharStyle(
+                        bold = bold, italic = italic, underline = underline, strike = strike,
+                        color = color, highlight = highlight, sizePt = sizePt, face = face, link = link,
+                    ),
+                )
+            }
+        }
+        p.endArray()
+        return out
     }
 
     private fun pointsOrNull(p: JsonPull): List<Pt>? {
