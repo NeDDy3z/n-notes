@@ -1366,13 +1366,13 @@ private fun EditorScreen(
                 )
             } else null
             androidx.compose.runtime.CompositionLocalProvider(com.xnotes.ui.LocalToolbarTabExtension provides toolbarTabs) {
-            SplitHost(editor, actions, readerSplit) { file, modifier ->
-                Box(modifier) {
-                    androidx.compose.runtime.key(file.uri) {
-                        com.xnotes.ui.ReaderScreen(editor = editor, file = file, onClose = { readerSplit.remove(file) }, onWikiLink = ::followWikiLink)
+                SplitHost(editor, actions, readerSplit) { file, modifier ->
+                    Box(modifier) {
+                        androidx.compose.runtime.key(file.uri) {
+                            com.xnotes.ui.ReaderScreen(editor = editor, file = file, onClose = { readerSplit.remove(file) }, onWikiLink = ::followWikiLink)
+                        }
                     }
                 }
-            }
             }
             if (tabPlacement == com.xnotes.ui.TabBarPlacement.FLOATING_SELECTOR &&
                 noteTabs.tabs.isNotEmpty() && editor.openPanes.isNotEmpty()) {
@@ -1396,6 +1396,7 @@ private fun EditorScreen(
                         onWikiLink = ::followWikiLink,
                     )
                 }
+            }
             }
         }
     }
