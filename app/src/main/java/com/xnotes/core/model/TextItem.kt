@@ -51,8 +51,28 @@ class TextItem(
     private fun flags(): TextFlags =
         TextFlags(wordWrap = true, alignLeft = true, alignTop = true, underline = underline, strike = strike, hAlign = align)
 
+    /** A frame can query bounds many times (selection, hit testing, drawing and dirty regions).
+     * Reflow only when the wrap width or text styling actually changes. The immutable entry is
+     * safe to share with thumbnail rendering on a worker thread. */
+    private data class MeasuredHeight(val text: String, val width: Double, val size: Double, val face: FontFace, val font: FontSpec, val flags: TextFlags, val height: Double)
+    @Volatile private var measuredHeight: MeasuredHeight? = null
+
     /** Height the current text needs at the current width (empty ⇒ one line). */
-    fun contentHeight(): Double = measurer.measure(text.ifEmpty { " " }, font, width, flags()).h
+    fun contentHeight(): Double {
+        val currentText = text
+        val currentWidth = width
+        val currentSize = pointSize
+        val currentFace = face
+        val currentFont = font
+        val currentFlags = flags()
+        measuredHeight?.let {
+            if (it.text == currentText && it.width == currentWidth && it.size == currentSize && it.face == currentFace && it.font == currentFont && it.flags == currentFlags)
+                return it.height
+        }
+        val height = measurer.measure(currentText.ifEmpty { " " }, currentFont, currentWidth, currentFlags).h
+        measuredHeight = MeasuredHeight(currentText, currentWidth, currentSize, currentFace, currentFont, currentFlags, height)
+        return height
+    }
 
     /** The formula's size, or null when this is not maths or the LaTeX cannot be set (then it shows as text). */
     fun mathBox(): MathBox? = if (math && text.isNotEmpty()) mathTypesetter?.measure(text, pointSize, display = true) else null
