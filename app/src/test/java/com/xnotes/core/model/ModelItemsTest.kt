@@ -122,6 +122,15 @@ class ModelItemsTest {
         item.face = com.xnotes.core.pal.FontFace.SANS
         item.bounds()
         assertEquals(5, layouts)
+        item.bold = true
+        item.bounds()
+        assertEquals(6, layouts)
+        item.italic = true
+        item.bounds()
+        assertEquals(7, layouts)
+        item.align = com.xnotes.core.pal.HAlign.RIGHT
+        item.bounds()
+        assertEquals(8, layouts)
     }
 
     @Test fun textItemEmptyPaintsNothing() {
