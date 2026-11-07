@@ -193,22 +193,16 @@ object LocalNoteStore {
     data class SwapFix(val name: String, val to: String?)
 
     /**
-     * A leftover backup means the crash came mid-swap: the original comes back and the new copy goes, so the
-     * next sync simply downloads again. A lone temp becomes the file when that is missing, as a build that
-     * deleted before renaming could leave the only copy there; next to the file it is dropped.
+     * A leftover backup means the crash came mid-swap: the original comes back, so the next sync simply
+     * downloads again. A temp is always dropped, as it may have been cut off mid-write.
      */
     fun swapFixes(names: List<String>): List<SwapFix> {
         val present = names.mapTo(HashSet()) { it.lowercase() }
         val fixes = ArrayList<SwapFix>()
         for (name in names) {
-            val backupOf = name.takeIf { it.endsWith(BACKUP_SUFFIX) }?.removeSuffix(BACKUP_SUFFIX)
-            val tempOf = name.takeIf { it.endsWith(TEMP_SUFFIX) }?.removeSuffix(TEMP_SUFFIX)
             when {
-                backupOf != null -> fixes += SwapFix(name, backupOf.takeIf { it.lowercase() !in present })
-                tempOf != null -> {
-                    val replaced = tempOf.lowercase() in present || (tempOf + BACKUP_SUFFIX).lowercase() in present
-                    fixes += SwapFix(name, tempOf.takeIf { !replaced })
-                }
+                name.endsWith(BACKUP_SUFFIX) -> fixes += SwapFix(name, name.removeSuffix(BACKUP_SUFFIX).takeIf { it.lowercase() !in present })
+                name.endsWith(TEMP_SUFFIX) -> fixes += SwapFix(name, null)
             }
         }
         return fixes

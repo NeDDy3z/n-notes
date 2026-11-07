@@ -27,8 +27,8 @@ class SwapFixesTest {
     }
 
     @Test
-    fun loneTempBecomesTheMissingFile() {
-        assertEquals(setOf(SwapFix("A.xnote.synctmp", "A.xnote")), fixes("A.xnote.synctmp"))
+    fun loneTempIsDroppedAsItMayBeCutOff() {
+        assertEquals(setOf(SwapFix("A.xnote.synctmp", null)), fixes("A.xnote.synctmp"))
     }
 
     @Test
