@@ -1,6 +1,7 @@
 # Additions to the original xnotes
 
-- **Cloud sync**: sync notes and settings to a cloud service picked in Preferences (Filen or Nextcloud) from the sidebar or by pulling down on Home, with a synced trash. A note changed on two devices is merged page by page, with both versions kept of a page changed on both, and the other device's version is also saved as a "Sync Conflict" copy marked with an orange triangle. The sidebar shows when it last synced and counts the files up while a sync runs, and the screen can be kept on while syncing.
+- **Cloud sync**: sync notes and settings to a cloud service picked in Preferences (Filen or Nextcloud) from the sidebar or by pulling down on Home. Trash, colours, pins and recents sync too, the note just closed goes first, and syncs run in the background. Downloads are written safely, so a crash, a cut-off download or a folder without rename support can't damage or lose a note. The sidebar shows a progress bar and when it last synced, a strip inside a note shows a sync in progress, a sync log page lists each run, and the screen can be kept on while syncing.
+- **Sync conflicts**: a note changed on two devices is merged page by page. Only when both changed the same page is the other device's version saved as a "Sync Conflict" copy, marked with an orange triangle, and its 3-dot menu has a "Sync conflict" option that explains what happened, which pages and on which device. A popup on Home lists new conflicts with a link to the sync log.
 - **Handwriting to text**: turn selected handwriting into an editable text box, in a language picked in Preferences whose model is downloaded or deleted there.
 - **Handwriting to math**: an optional on-device add-on turns handwritten formulas into editable LaTeX.
 - **Plain text to equation**: turn typed maths like `int_0^1 x^2 dx` into a formula.
@@ -9,7 +10,7 @@
 - **Import into a note**: import a file into an existing note, and add images or photos as pages.
 - **Read-only reader**: open md, docx, pptx, xlsx, csv and pdf files as they are, with LaTeX and HTML tags rendered in Markdown, or convert them to notes.
 - **Reader mode**: a toolbar button that locks a note for reading, with only navigation, search and zoom left in the bar.
-- **Find**: search text in the reader and Preferences.
+- **Find**: search text in the reader and Preferences, where checkbox options are found too.
 - **Shape snapping**: held strokes also snap to squares, upright triangles, waves, parabolas, cubics, exponentials and logarithms; toggle it in the pen popup.
 - **Tables**: a table shape on the page (not the typed-text table) with row and column bars for selecting, resizing, adding and removing, and a line colour in the table tool popup.
 - **Function curves**: a Functions page in the shape picker with x^n, roots, logs, exponentials, trig and inverse trig graphs and an editable formula and range.
@@ -25,7 +26,7 @@
 - **Home swipes**: pick what a swipe left or right on Home does: open or close the sidebar, go up a folder, or back into the folder just left.
 - **Hide dot files**: hide .obsidian, .git and other dot files from the explorer.
 - **Side-by-side install**: n-notes has its own app id, so it installs next to the original xnotes.
-- **Update check**: check GitHub for a newer release from Preferences.
+- **Update check**: check GitHub for a newer release from Preferences, or let a popup on startup say when one is out (can be turned off).
 - **Port old notes**: rewrite notes that still hold the fork's old axes, number line, curve and function shapes in today's shapes, with a backup of each file.
 - **Smooth curve**: a curve shape next to the arrow that runs smoothly through its points; drag a point to move it, drag a dot on the curve to add one, double-tap a point to remove it.
 - **Hide and reorder shapes**: hide single shapes or whole pages of the shape picker in Preferences > Toolbar, drag pages by their handle or long-press and drag chips to change the order, and reset the order in one tap.
@@ -34,6 +35,13 @@
 - **Preferences categories**: Preferences open on a list of categories, each on its own page, with the categories kept beside it on tablets; turn it off in Appearance for one long list.
 - **Keep screen on**: keep the screen awake while the app is open.
 - **Read-only files side by side**: open a read-only file next to a note, or two read-only files next to each other.
+- **Captions**: add a caption under an image or shape from its Add label/caption/link menu.
+- **Margin snapping**: images and shapes lightly snap to the page margins and centre.
+- **Precise resize**: set the exact size of a selection in px or mm.
+- **Selection toolbar**: mirror and lock sit in the toolbar, and the tools and 3-dot menu are reordered and tidied.
+- **Text toolbar**: the text toolbar is ordered like Google Docs or Word, with a slash button that opens the same menu as typing /.
+- **Automatic text colour**: text colour follows the page background so text stays readable.
+- **General settings**: a General section in Preferences for app-wide options.
 - ~~**Create menu**: the new-note button is now a list to create a note, canvas, folder, or import a file.~~
 - ~~**Sort button**: moved sorting out into its own dedicated button.~~
 - ~~**Find in notes**: search the text of a note.~~
