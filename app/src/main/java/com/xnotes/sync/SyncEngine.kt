@@ -216,16 +216,7 @@ class SyncEngine(
         when {
             loc != null && rem != null -> {
                 if (st == null) {
-                    val identical = Temps(tmpDir).use { t ->
-                        val file = t.file()
-                        if (!LocalNoteStore.copyTo(context, loc.documentUri, file)) return
-                        // Prefer the remote hash; when it's absent (older uploads / other clients), compare
-                        // the actual bytes so byte-identical files don't spawn a spurious conflict copy.
-                        val same = if (rem.hash != null) rem.hash == storage.hash(file)
-                            else t.file().also { storage.download(rem, it) }.let { sameContent(file, it) }
-                        if (same) state.put(path, withFingerprints(path, file, SyncState.Entry(rem.id, rem.lastModified, loc.modified, loc.size)))
-                        same
-                    }
+                    val identical = matchesRemote(path, loc, rem, state) ?: return
                     if (identical) summary.skipped++ else resolveConflict(path, loc, rem, state, summary)
                 } else {
                     val localChanged = loc.modified != st.localModified
@@ -233,7 +224,11 @@ class SyncEngine(
                     when {
                         localChanged && !remoteChanged -> if (up) doUpload(path, loc, rem.id, state, summary) else summary.skipped++
                         remoteChanged && !localChanged -> if (down) doDownload(path, rem, state, summary) else summary.skipped++
-                        localChanged && remoteChanged -> resolveConflict(path, loc, rem, state, summary)
+                        // Both sides holding the same bytes is no conflict, e.g. a run killed after its upload but before its baseline was saved.
+                        localChanged && remoteChanged -> {
+                            val identical = matchesRemote(path, loc, rem, state) ?: return
+                            if (identical) summary.skipped++ else resolveConflict(path, loc, rem, state, summary)
+                        }
                         // A baseline from before fingerprints: the file still is what was synced, so fill them in now.
                         isNote(path) && st.pages == null -> backfillFingerprints(path, loc, st, state)
                         else -> Unit
@@ -267,7 +262,8 @@ class SyncEngine(
                 suppressDeletes -> summary.skipped++
                 // Unchanged remotely and deleted here: trashing it remotely is an upload-side change.
                 up -> {
-                    runCatching { storage.trashFile(rem.id) }
+                    // Not caught: a failed trash (connection lost) keeps the baseline, so the next run trashes it again instead of downloading it back.
+                    storage.trashFile(rem.id)
                     trashedRemote.add(path)
                     state.remove(path)
                     summary.deleted++
@@ -277,6 +273,19 @@ class SyncEngine(
             }
             else -> state.remove(path)
         }
+    }
+
+    /**
+     * Whether the local file already holds the remote bytes; if so the baseline is set to both. Null when the
+     * local file can't be read. Prefers the remote hash; when it's absent (older uploads, other clients) the bytes are compared.
+     */
+    private fun matchesRemote(path: String, loc: LocalNoteStore.LocalEntry, rem: CloudStorage.RemoteFile, state: SyncState): Boolean? = Temps(tmpDir).use { t ->
+        val file = t.file()
+        if (!LocalNoteStore.copyTo(context, loc.documentUri, file)) return null
+        val same = if (rem.hash != null) rem.hash == storage.hash(file)
+            else t.file().also { storage.download(rem, it) }.let { sameContent(file, it) }
+        if (same) state.put(path, withFingerprints(path, file, SyncState.Entry(rem.id, rem.lastModified, loc.modified, loc.size)))
+        same
     }
 
     /** Resolve a two-sided change toward the allowed direction; keep the lossless copy only when both are on. */
