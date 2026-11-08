@@ -9,7 +9,7 @@ class PageMergeTest {
         val l = local.map { it.toString() }
         val r = remote.map { it.toString() }
         val result = PageMerge.merge(base.map { it.toString() }, l, r)!!
-        return result.pages.joinToString("") { if (it.local) l[it.index] else r[it.index] } to result.keptBoth
+        return result.pages.joinToString("") { if (it.local) l[it.index] else r[it.index] } to result.clashed
     }
 
     @Test fun changesOnDifferentPagesBothApply() = assertEquals("XbY" to emptyList<Int>(), merge("abc", "Xbc", "abY"))
@@ -20,7 +20,11 @@ class PageMergeTest {
 
     @Test fun theSameChangeOnBothSidesAppliesOnce() = assertEquals("aXc" to emptyList<Int>(), merge("abc", "aXc", "aXc"))
 
-    @Test fun differentChangesToOnePageKeepBoth() = assertEquals("aXYc" to listOf(1, 2), merge("abc", "aXc", "aYc"))
+    @Test fun differentChangesToOnePageKeepThisSide() = assertEquals("aXc" to listOf(1), merge("abc", "aXc", "aYc"))
+
+    @Test fun aClashKeepsThisSidesWholeRunAndReportsIt() = assertEquals("aXc" to listOf(1, 2), merge("abc", "aXc", "aYZ"))
+
+    @Test fun aClashLeavesChangesElsewhereMerged() = assertEquals("PbXdQ" to listOf(2), merge("abcde", "abXdQ", "PbYde"))
 
     @Test fun anEditBeatsADelete() = assertEquals("aYc" to emptyList<Int>(), merge("abc", "ac", "aYc"))
 

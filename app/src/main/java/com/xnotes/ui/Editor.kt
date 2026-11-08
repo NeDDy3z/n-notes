@@ -6253,6 +6253,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     fun isNotePinned(uri: String): Boolean = browseRoot?.let { pinPath(it, uri) }?.let { it in notePins } == true
 
+    /** What sync recorded about the conflict copy at [uri]; null when it recorded nothing (an older copy). IO. */
+    fun syncConflictRecord(uri: String): com.xnotes.sync.SyncConflict.Record? = runCatching {
+        val root = browseRoot ?: return null
+        val path = pinPath(root, uri) ?: return null
+        val tree = android.net.Uri.parse(root)
+        val sidecarId = sidecarDir(tree, browseRootDocId(root), create = false) ?: return null
+        val name = com.xnotes.sync.SyncConflict.RECORDS_PATH.substringAfterLast('/')
+        val fileId = findChildDocId(tree, sidecarId, name, dir = false) ?: return null
+        val text = appContext.contentResolver.openInputStream(android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, fileId))
+            ?.use { it.readBytes().toString(Charsets.UTF_8) } ?: return null
+        com.xnotes.sync.SyncConflict.recordOf(text, path)
+    }.getOrNull()
+
     /** Pin the note at [uri] to the top of the top folder, or unpin it. IO. */
     fun setNotePinned(uri: String, pin: Boolean): Boolean {
         val root = browseRoot ?: return false

@@ -165,6 +165,8 @@ fun PreferencesPane(
     focusSync: Boolean = false,
     onSyncFocused: () -> Unit = {},
     onBackup: (export: Boolean) -> Unit = {},
+    syncLogOpen: Boolean = false,
+    onSyncLog: (Boolean) -> Unit = {},
 ) {
     val palette = LocalPalette.current
     val focusManager = LocalFocusManager.current
@@ -216,10 +218,9 @@ fun PreferencesPane(
     }
     LaunchedEffect(category) { scrollState.scrollTo(0) }
     BackHandler(enabled = categorized && category != null) { category = null }
-    var syncLogOpen by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = syncLogOpen) { syncLogOpen = false }
+    BackHandler(enabled = syncLogOpen) { onSyncLog(false) }
     if (syncLogOpen) {
-        SyncLogPage(onBack = { syncLogOpen = false })
+        SyncLogPage(onBack = { onSyncLog(false) })
         return
     }
     // Which bar the toolbar section is arranging. The two are separate layouts, so the drag state
@@ -925,7 +926,7 @@ fun PreferencesPane(
             }
             if (shown(PrefCategory.CLOUD_SYNC)) {
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
-                Box(Modifier.onPlaced { syncTop = it.positionInParent().y.roundToInt() }.searchAnchor(stringResource(R.string.search_keywords_sync)).sectionAnchor("Cloud sync")) { CloudSyncSection(editor, onOpenLog = { syncLogOpen = true }) }
+                Box(Modifier.onPlaced { syncTop = it.positionInParent().y.roundToInt() }.searchAnchor(stringResource(R.string.search_keywords_sync)).sectionAnchor("Cloud sync")) { CloudSyncSection(editor, onOpenLog = { onSyncLog(true) }) }
             }
             Spacer(Modifier.size(8.dp))
         }

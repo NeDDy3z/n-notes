@@ -11,6 +11,7 @@ class SyncPathsTest {
         assertTrue(LocalNoteStore.syncsFile(".xnote/colors.json"))
         assertTrue(LocalNoteStore.syncsFile("Uni/.xnote/colors.json"))
         assertTrue(LocalNoteStore.syncsFile(".xnote/pins.json"))
+        assertTrue(LocalNoteStore.syncsFile(".xnote/conflicts.json"))
         assertTrue(LocalNoteStore.syncsFile(".xnote/trash/1700-abc/trash.json"))
         assertTrue(LocalNoteStore.syncsFile(".xnote/trash/1700-abc/Maths.xnote"))
         assertTrue(LocalNoteStore.syncsFile(".xnote/trash/1700-abc/Uni/.xnote/colors.json"))

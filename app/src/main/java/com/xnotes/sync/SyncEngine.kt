@@ -1,6 +1,7 @@
 package com.xnotes.sync
 
 import android.content.Context
+import com.xnotes.sync.SyncConflict.Reason
 import com.xnotes.sync.merge.XnoteBundle
 import java.io.File
 
@@ -8,10 +9,10 @@ import java.io.File
  * Two-way reconciliation between the local note tree and a folder on a [CloudService].
  *
  * Change detection compares each side to the recorded baseline (see [SyncState]).
- * Conflicts (both sides changed) are resolved losslessly: the remote copy is always saved
- * beside the local one under a "(Sync Conflict ...)" name. A note (.xnote) is then merged page
- * by page when it can be (see [XnoteBundle]); otherwise the local file becomes the canonical
- * remote version.
+ * Conflicts (both sides changed) are resolved losslessly. A note (.xnote) is merged page by page
+ * when it can be (see [XnoteBundle]); changes on different pages merge cleanly with no copy. Where
+ * both changed the same page, or nothing could be merged, the local version stays and the remote
+ * one is saved beside it under a "(Sync Conflict ...)" name, with a [SyncConflict.Record] saying why.
  *
  * Deletions DO propagate: a note that was synced before and is now gone on one side is
  * removed on the other, unless that other side changed since the baseline (an edit always
@@ -73,6 +74,15 @@ class SyncEngine(
     /** Every local file's document uri by relative path, kept current through the run (for settings sync's recents). */
     val localUris = HashMap<String, String>()
 
+    /** The conflict copies this run kept, by copy path, written to [SyncConflict.RECORDS_PATH] once the files are done. */
+    private val records = LinkedHashMap<String, SyncConflict.Record>()
+
+    /** How the conflict records name this device, e.g. "Erik's Galaxy S23"; the model when the user gave it no name. */
+    private val deviceName: String by lazy {
+        runCatching { android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME) }
+            .getOrNull()?.takeIf { it.isNotBlank() } ?: android.os.Build.MODEL
+    }
+
     fun sync(state: SyncState): Summary {
         val summary = Summary()
         tmpDir.listFiles()?.forEach { it.delete() } // left behind if a run was killed mid-transfer
@@ -110,6 +120,7 @@ class SyncEngine(
             if (!LocalNoteStore.isHiddenPath(path)) onProgress(++done, total)
         }
         log("Compared and transferred files in ${secondsSince(phase)}")
+        saveRecords()
         phase = System.currentTimeMillis()
         reconcileFolders(localTree.folders, remoteTree, state, summary, suppressDeletes)
         log("Matched folders in ${secondsSince(phase)}")
@@ -315,34 +326,73 @@ class SyncEngine(
         val localFile = localCopy(loc, t)
         val mergedFile = t.file()
         val base = state.get(path)
-        val merged = if (isNote(path) && base?.pages != null && base.doc != null && !OpenNotes.isOpen(loc.documentUri)) {
-            runCatching { XnoteBundle.merge(base.pages, base.doc, localFile, remoteFile, mergedFile) }.getOrNull()
-        } else null
+        val outcome = when {
+            base == null -> XnoteBundle.Refused(Reason.BOTH_NEW)
+            !isNote(path) -> XnoteBundle.Refused(Reason.NOT_A_NOTE)
+            base.pages == null || base.doc == null -> XnoteBundle.Refused(Reason.NO_BASELINE)
+            OpenNotes.isOpen(loc.documentUri) -> XnoteBundle.Refused(Reason.OPEN)
+            else -> runCatching { XnoteBundle.merge(base.pages, base.doc, localFile, remoteFile, mergedFile) }
+                .getOrElse { XnoteBundle.Refused(Reason.UNREADABLE) }
+        }
         // Checked again right before writing: an edit saved since the listing, or a note opened meanwhile, must not be overwritten.
-        if (merged == null || OpenNotes.isOpen(loc.documentUri) || LocalNoteStore.modifiedOf(context, loc.documentUri) != loc.modified) {
+        val refused = when {
+            outcome is XnoteBundle.Refused -> outcome.reason
+            OpenNotes.isOpen(loc.documentUri) -> Reason.OPEN
+            LocalNoteStore.modifiedOf(context, loc.documentUri) != loc.modified -> Reason.SAVED_DURING
+            else -> null
+        }
+        if (refused != null) {
             LocalNoteStore.writeNote(context, treeUri, copyPath, remoteFile)
             val sent = storage.upload(remoteParent(path), name, localFile, loc.modified)
             runCatching { storage.trashFile(rem.id) }
             state.put(path, withFingerprints(path, localFile, SyncState.Entry(sent.id, sent.lastModified, loc.modified, loc.size)))
-            note(summary, path, "was also changed on another device; that version is saved as \"$copyName\"")
+            records[copyPath] = SyncConflict.Record(path, System.currentTimeMillis(), deviceName, refused)
+            val what = when (refused) {
+                Reason.BOTH_NEW -> "was also created on another device, with different content"
+                Reason.NOT_A_NOTE -> "was also changed on another device"
+                else -> "was also changed on another device and could not be merged because ${refused.why.format("this device")}"
+            }
+            note(summary, path, "$what; that version is saved as \"$copyName\"")
             return@use
         }
+        val merged = outcome as XnoteBundle.Merged
         // Uploaded before anything is written here, so a failed upload leaves no trace and the next run starts over.
         val sent = storage.upload(remoteParent(path), name, mergedFile, System.currentTimeMillis())
         runCatching { storage.trashFile(rem.id) }
         val uri = LocalNoteStore.writeNote(context, treeUri, path, mergedFile) ?: throw IllegalStateException("cannot write local file")
         localUris[path] = uri
         val localMod = LocalNoteStore.modifiedOf(context, uri)
-        LocalNoteStore.writeNote(context, treeUri, copyPath, remoteFile)
         val f = merged.fingerprints
         state.put(path, SyncState.Entry(sent.id, sent.lastModified, localMod, mergedFile.length(), f.pages, f.doc))
-        val both = merged.keptBothPages
-        val bothText = when {
-            both.isEmpty() -> ""
-            both.size == 1 -> " Page ${both[0]} holds both devices' versions of the same part."
-            else -> " Pages ${both.joinToString(", ")} hold both devices' versions of the same part."
+        val clashed = merged.clashedPages
+        if (clashed.isEmpty()) {
+            summary.uploaded++
+            summary.downloaded++
+            log("Merged $path: changed here and on another device, on different pages")
+            return@use
         }
-        note(summary, path, "was also changed on another device and the changes were merged.$bothText The other version is also saved as \"$copyName\"")
+        LocalNoteStore.writeNote(context, treeUri, copyPath, remoteFile)
+        records[copyPath] = SyncConflict.Record(path, System.currentTimeMillis(), deviceName, Reason.SAME_PAGES, clashed)
+        val pages = if (clashed.size == 1) "page ${clashed[0]}" else "pages ${clashed.joinToString(", ")}"
+        note(summary, path, "was also changed on another device, on $pages too; the rest was merged and the other version of $pages is in \"$copyName\"")
+    }
+
+    /** Adds this run's conflict records to the sidecar file, read as it is now, so the next run sends them up. */
+    private fun saveRecords() {
+        if (records.isEmpty()) return
+        try {
+            Temps(tmpDir).use { t ->
+                val existing = localUris[SyncConflict.RECORDS_PATH]?.let { uri ->
+                    t.file().takeIf { LocalNoteStore.copyTo(context, uri, it) }?.readText()
+                }
+                val out = t.file().apply { writeText(SyncConflict.withRecords(existing, records)) }
+                val uri = LocalNoteStore.writeNote(context, treeUri, SyncConflict.RECORDS_PATH, out) ?: error("cannot write it")
+                localUris[SyncConflict.RECORDS_PATH] = uri
+            }
+        } catch (e: Exception) {
+            log("Error ${SyncConflict.RECORDS_PATH}: ${e.message}")
+        }
+        records.clear()
     }
 
     private fun doSidecarMerge(path: String, loc: LocalNoteStore.LocalEntry, rem: CloudStorage.RemoteFile, state: SyncState, summary: Summary) = Temps(tmpDir).use { t ->

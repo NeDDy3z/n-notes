@@ -141,6 +141,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableIntStateOf
+import com.xnotes.sync.SyncConflict
 import com.xnotes.sync.SyncManager
 import java.time.YearMonth
 import java.time.ZoneId
@@ -336,6 +337,7 @@ private fun BackstageContent(
     val scope = rememberCoroutineScope()
     var renamingColor by remember { mutableStateOf<Rgba?>(null) }
     var focusSync by remember { mutableStateOf(false) }
+    var syncLogOpen by rememberSaveable { mutableStateOf(false) }
     val pinsOpen = rememberSaveable { mutableStateOf(true) }
     // Colour names live in the notes folder, so pick up another device's edits whenever Home comes back.
     LaunchedEffect(editor.browseRoot, editor.noteOpen) {
@@ -400,13 +402,14 @@ private fun BackstageContent(
             else -> onExitApp()
         }
     }
+    if (view == BackstageView.HOME) SyncConflictDialog(onSeeLog = { syncLogOpen = true; selectView(BackstageView.PREFERENCES) })
 
     if (compact) {
         Box(Modifier.fillMaxSize().background(palette.bg.toComposeColor())) {
             BackstageMain(
                 Modifier.fillMaxSize(), editor, view, compact, drawerOpen, { animateClose = true; drawerOpen = true }, dismissDrawer, { selectView(BackstageView.HOME) },
                 calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, onBackup, link, { selectView(BackstageView.PREFERENCES) },
-                focusSync, { focusSync = false },
+                focusSync, { focusSync = false }, syncLogOpen, { syncLogOpen = it },
             )
             AnimatedVisibility(
                 visible = drawerOpen,
@@ -440,7 +443,7 @@ private fun BackstageContent(
                 },
                 editor, view, compact, true, { setRailed(false) }, { setRailed(true) }, { selectView(BackstageView.HOME) },
                 calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, onBackup, link, { selectView(BackstageView.PREFERENCES) },
-                focusSync, { focusSync = false },
+                focusSync, { focusSync = false }, syncLogOpen, { syncLogOpen = it },
             )
             // Both stay composed so a fold never pays to build one; only the current one is measured and placed.
             Layout(
@@ -624,6 +627,8 @@ private fun BackstageMain(
     onOpenPreferences: () -> Unit,
     focusSync: Boolean,
     onSyncFocused: () -> Unit,
+    syncLogOpen: Boolean,
+    onSyncLog: (Boolean) -> Unit,
 ) {
     val palette = LocalPalette.current
     Column(modifier) {
@@ -652,7 +657,7 @@ private fun BackstageMain(
         Box(Modifier.weight(1f).fillMaxWidth().padding(start = PANE_GUTTER, end = PANE_GUTTER, top = 4.dp, bottom = 12.dp)) {
             when (view) {
                 BackstageView.HOME -> HomePane(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, onHideSidebar, link)
-                BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont, focusSync, onSyncFocused, onBackup)
+                BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont, focusSync, onSyncFocused, onBackup, syncLogOpen, onSyncLog)
                 BackstageView.TRASH -> TrashPane(editor, sidebarOpen, onShowSidebar, onOpenPreferences)
                 BackstageView.ABOUT -> AboutPane()
             }
@@ -951,8 +956,6 @@ private fun HomePane(
             },
     ) {
         Column(Modifier.fillMaxSize()) {
-            // Cloud sync heads-up when a note was changed on two devices; renders nothing otherwise.
-            SyncConflictBanner()
             // Any finished sync (sidebar, app open, note close, background worker) may have changed files, so list again.
             LaunchedEffect(Unit) {
                 var last = SyncManager.status.value.lastSyncMs
@@ -1095,6 +1098,7 @@ private fun ExplorerSection(
     var pendingDelete by remember(root) { mutableStateOf<List<BrowseEntry>?>(null) }
     var moving by remember(root) { mutableStateOf<List<BrowseEntry>?>(null) }
     var previewing by remember(root) { mutableStateOf<BrowseEntry?>(null) }
+    var conflictOf by remember(root) { mutableStateOf<BrowseEntry?>(null) }
     var opError by remember(root) { mutableStateOf<String?>(null) }
     var query by remember(root) { mutableStateOf("") }
     // Set from the sidebar: the whole tree's items carrying this colour, shown in place of the folder.
@@ -1463,6 +1467,7 @@ private fun ExplorerSection(
                 preview = { previewing = it },
                 convertToNote = { convertToNote(it) },
                 importInto = { callsNow.value.importInto(it.documentUri) },
+                syncConflict = { conflictOf = it },
             ),
         )
     }
@@ -2173,6 +2178,7 @@ private fun ExplorerSection(
     }
 
     previewing?.let { e -> FilePreviewDialog(body, e, pathText.takeIf { !flat }, previewActions(e)) { previewing = null } }
+    conflictOf?.let { e -> ConflictCopyDialog(editor, e) { conflictOf = null } }
 
     pendingDelete?.let { targets ->
         AlertDialog(
@@ -2342,6 +2348,7 @@ internal fun EntryMenu(
     onPreview: (() -> Unit)? = null,
     onConvertToNote: (() -> Unit)? = null,
     onImportInto: (() -> Unit)? = null,
+    onSyncConflict: (() -> Unit)? = null,
     deleteLabel: String = stringResource(R.string.delete),
 ) {
     val palette = LocalPalette.current
@@ -2353,6 +2360,7 @@ internal fun EntryMenu(
         if (showColors) {
             ColorCodeMenuContent { c -> onDismiss(); onColor?.invoke(c) }
         } else {
+            if (onSyncConflict != null) DropdownMenuItem(text = { Text(stringResource(R.string.sync_conflict)) }, onClick = { onDismiss(); onSyncConflict() })
             if (onPreview != null) DropdownMenuItem(text = { Text(stringResource(R.string.preview)) }, onClick = { onDismiss(); onPreview() })
             if (onConvertToNote != null) DropdownMenuItem(text = { Text(stringResource(R.string.convert_to_note)) }, onClick = { onDismiss(); onConvertToNote() })
             if (onImportInto != null) DropdownMenuItem(text = { Text(stringResource(R.string.import_into_note)) }, onClick = { onDismiss(); onImportInto() })
@@ -2668,43 +2676,65 @@ private fun SyncSidebarStatus() {
 }
 
 /**
- * A dismissible heads-up shown above the explorer when the last sync found a note that was changed
- * on two devices (merged page by page where possible; the other device's version is always kept
- * beside it as a "Sync Conflict" copy). Lists the affected notes so they can be reviewed; Dismiss clears it.
+ * A popup on Home when the last sync found a note that was changed on two devices (merged page by page
+ * where possible; the other device's version is always kept beside it as a "Sync Conflict" copy).
+ * Lists the affected notes; either button clears them so it shows only once.
  */
 @Composable
-private fun SyncConflictBanner() {
+private fun SyncConflictDialog(onSeeLog: () -> Unit) {
     val palette = LocalPalette.current
     val ctx = LocalContext.current
     LaunchedEffect(Unit) { SyncManager.primeStatus(ctx) }
     val status by SyncManager.status.collectAsState()
     val conflicts = status.conflicts
     if (conflicts.isEmpty()) return
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .background(palette.accentAlpha(28).toComposeColor())
-            .border(1.dp, palette.accentAlpha(90).toComposeColor(), MaterialTheme.shapes.medium)
-            .padding(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(XnotesIcons.warning, null, tint = com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor(), modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
+    AlertDialog(
+        onDismissRequest = { SyncManager.clearConflicts(ctx) },
+        title = {
             Text(
                 if (conflicts.size == 1) "A note was changed on another device too" else "${conflicts.size} notes were changed on another device too",
-                color = palette.text.toComposeColor(), fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f),
+                color = palette.text.toComposeColor(), fontSize = 16.sp,
             )
-            TextButton(onClick = { SyncManager.clearConflicts(ctx) }) { Text("Dismiss") }
-        }
-        Spacer(Modifier.height(4.dp))
-        conflicts.take(6).forEach { line ->
-            Text("- $line", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 26.dp, top = 2.dp))
-        }
-        if (conflicts.size > 6) {
-            Text("and ${conflicts.size - 6} more", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 26.dp, top = 2.dp))
-        }
+        },
+        text = {
+            Column {
+                conflicts.take(6).forEach { line ->
+                    Text("- $line", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                }
+                if (conflicts.size > 6) {
+                    Text("and ${conflicts.size - 6} more", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { SyncManager.clearConflicts(ctx); onSeeLog() }) { Text("See sync log") } },
+        dismissButton = { TextButton(onClick = { SyncManager.clearConflicts(ctx) }) { Text("Close") } },
+    )
+}
+
+/** Why sync kept the conflict copy [e], from the record it saved when it made it. */
+@Composable
+private fun ConflictCopyDialog(editor: Editor, e: BrowseEntry, onDismiss: () -> Unit) {
+    val palette = LocalPalette.current
+    var record by remember(e.documentUri) { mutableStateOf<SyncConflict.Record?>(null) }
+    var loaded by remember(e.documentUri) { mutableStateOf(false) }
+    LaunchedEffect(e.documentUri) {
+        record = withContext(Dispatchers.IO) { editor.syncConflictRecord(e.documentUri) }
+        loaded = true
     }
+    if (!loaded) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.sync_conflict), color = palette.text.toComposeColor(), fontSize = 16.sp) },
+        text = {
+            Column {
+                Text(SyncConflict.explain(e.name, record), color = palette.textDim.toComposeColor(), fontSize = 13.sp)
+                record?.let { r ->
+                    val at = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(r.at))
+                    Text("Found by ${r.device} on $at", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }
 

@@ -13,8 +13,8 @@ import com.xnotes.core.util.ReaderKind
 object LocalNoteStore {
     private val NOTE_EXTENSIONS = listOf(".xnote", ".xcanvas")
     private const val SIDECAR_DIR = ".xnote"
-    /** In a folder's sidecar: its colours, and in the top one the colour names and pins. */
-    private val SIDECAR_FILES = setOf("colors.json", "color-names.json", "pins.json")
+    /** In a folder's sidecar: its colours, and in the top one the colour names, pins and sync conflict records. */
+    private val SIDECAR_FILES = setOf("colors.json", "color-names.json", "pins.json", "conflicts.json")
     /** The top folder's Trash inside its sidecar; each item sits in a folder of its own beside a [TRASH_INFO]. */
     private const val SIDECAR_TRASH = "trash"
     private const val TRASH_INFO = "trash.json"

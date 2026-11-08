@@ -111,6 +111,7 @@ internal class EntryActions(
     val preview: (BrowseEntry) -> Unit,
     val convertToNote: (BrowseEntry) -> Unit,
     val importInto: (BrowseEntry) -> Unit,
+    val syncConflict: (BrowseEntry) -> Unit,
 )
 
 /** Everything an explorer layout draws from: the view, what's in it, and how to describe each item. */
@@ -309,6 +310,7 @@ internal fun EntryMenuFor(b: ExplorerBody, e: BrowseEntry, expanded: Boolean, on
         onPreview = if (e.isDir || readOnly) null else ({ m.preview(e) }),
         onConvertToNote = if (readOnly) ({ m.convertToNote(e) }) else null,
         onImportInto = if (DocumentKind.ofName(e.name) == DocumentKind.NOTE) ({ m.importInto(e) }) else null,
+        onSyncConflict = if (!e.isDir && SyncConflict.isCopy(e.name)) ({ m.syncConflict(e) }) else null,
         deleteLabel = b.deleteLabel,
     )
 }

@@ -56,12 +56,12 @@ class XnoteBundleTest {
 
     private fun fingerprints(bytes: ByteArray) = XnoteBundle.fingerprintsOf(temp(bytes))!!
 
-    private class Merged(val bytes: ByteArray, val fingerprints: XnoteBundle.Fingerprints, val keptBothPages: List<Int>)
+    private class Merged(val bytes: ByteArray, val fingerprints: XnoteBundle.Fingerprints, val clashedPages: List<Int>)
 
     private fun merge(basePages: List<String>, baseDoc: String, local: ByteArray, remote: ByteArray): Merged? {
         val out = File.createTempFile("merged", ".xnote").apply { deleteOnExit() }
-        val m = XnoteBundle.merge(basePages, baseDoc, temp(local), temp(remote), out) ?: return null
-        return Merged(out.readBytes(), m.fingerprints, m.keptBothPages)
+        val m = XnoteBundle.merge(basePages, baseDoc, temp(local), temp(remote), out) as? XnoteBundle.Merged ?: return null
+        return Merged(out.readBytes(), m.fingerprints, m.clashedPages)
     }
 
     @Test fun unchangedPagesKeepTheirFingerprintThroughALoadAndSave() {
@@ -91,7 +91,7 @@ class XnoteBundleTest {
         val remote = decode(base).apply { pages[2].items.add(image(4, 5, 6)) }
         val merged = merge(baseF.pages, baseF.doc, encode(local), encode(remote))
         assertNotNull(merged)
-        assertEquals(emptyList<Int>(), merged!!.keptBothPages)
+        assertEquals(emptyList<Int>(), merged!!.clashedPages)
         assertEquals(fingerprints(merged.bytes).pages, merged.fingerprints.pages)
         assertEquals(fingerprints(merged.bytes).doc, merged.fingerprints.doc)
         val doc = decode(merged.bytes)
@@ -124,17 +124,17 @@ class XnoteBundleTest {
         assertArrayEquals(byteArrayOf(2), doc.pages[1].items.filterIsInstance<ImageItem>().single().image.file.readBytes())
     }
 
-    @Test fun aPageChangedOnBothSidesIsKeptTwice() {
+    @Test fun aPageChangedOnBothSidesKeepsThisSideAndIsReported() {
         val base = encode(note(2))
         val baseF = fingerprints(base)
-        val local = decode(base).apply { pages[0].items.add(stroke(60.0)) }
+        val local = decode(base).apply { pages[0].items.add(stroke(60.0)); pages[1].items.add(stroke(65.0)) }
         val remote = decode(base).apply { pages[0].items.add(stroke(70.0)) }
         val merged = merge(baseF.pages, baseF.doc, encode(local), encode(remote))!!
-        assertEquals(listOf(1, 2), merged.keptBothPages)
+        assertEquals(listOf(1), merged.clashedPages)
         val doc = decode(merged.bytes)
-        assertEquals(3, doc.pages.size)
+        assertEquals(2, doc.pages.size)
         assertEquals(60.0, (doc.pages[0].items[1] as Stroke).samples[0].x, 0.01)
-        assertEquals(70.0, (doc.pages[1].items[1] as Stroke).samples[0].x, 0.01)
+        assertEquals(65.0, (doc.pages[1].items[1] as Stroke).samples[0].x, 0.01)
     }
 
     @Test fun pagesAddedOnBothSidesAreAllKept() {
@@ -161,7 +161,9 @@ class XnoteBundleTest {
         val baseF = fingerprints(base)
         val local = decode(base).apply { pages[0].items.add(stroke(50.0)); bookmarks.add(Bookmark(1, "B")) }
         val remote = decode(base).apply { pages[1].items.add(stroke(60.0)) }
-        assertNull(merge(baseF.pages, baseF.doc, encode(local), encode(remote)))
+        val out = File.createTempFile("merged", ".xnote").apply { deleteOnExit() }
+        val outcome = XnoteBundle.merge(baseF.pages, baseF.doc, temp(encode(local)), temp(encode(remote)), out)
+        assertEquals(com.xnotes.sync.SyncConflict.Reason.BOOKMARKS, (outcome as XnoteBundle.Refused).reason)
     }
 
     @Test fun somethingThatIsNotANoteDoesNotParse() {

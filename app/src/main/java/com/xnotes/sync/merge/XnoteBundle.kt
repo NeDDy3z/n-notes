@@ -1,6 +1,8 @@
 package com.xnotes.sync.merge
 
 import com.xnotes.format.ZipTail
+import com.xnotes.sync.SyncConflict
+import com.xnotes.sync.SyncConflict.Reason
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -27,8 +29,13 @@ class XnoteBundle private constructor(
     /** What sync remembers of a note to merge it later: one hash per page and one for the rest. */
     class Fingerprints(val pages: List<String>, val doc: String)
 
-    /** The fingerprints of a merged note, and the 1-based page numbers that hold both devices' versions of one part. */
-    class Merged(val fingerprints: Fingerprints, val keptBothPages: List<Int>)
+    /** What [merge] did: a merged note, or why it could not make one. */
+    sealed interface Outcome
+
+    /** The fingerprints of a merged note, and the 1-based pages where both devices changed the same page and the local one was kept. */
+    class Merged(val fingerprints: Fingerprints, val clashedPages: List<Int>) : Outcome
+
+    class Refused(val reason: SyncConflict.Reason) : Outcome
 
     private val byName = entries.associateBy { it.name }
 
@@ -113,28 +120,29 @@ class XnoteBundle private constructor(
         }.getOrNull()
 
         /**
-         * Merges [local] and [remote] against what both had at the last sync into [out], or returns null when
-         * it can't be done safely and the caller should keep a conflict copy instead ([out] is then not a note).
+         * Merges [local] and [remote] against what both had at the last sync into [out], or says why it can't be
+         * done safely and the caller should keep a conflict copy instead ([out] is then not a note).
          */
-        fun merge(basePages: List<String>, baseDoc: String, local: File, remote: File, out: File): Merged? =
+        fun merge(basePages: List<String>, baseDoc: String, local: File, remote: File, out: File): Outcome =
             FileInputStream(local).use { lIn ->
                 FileInputStream(remote).use { rIn ->
-                    val l = parse(lIn.channel) ?: return null
-                    val r = parse(rIn.channel) ?: return null
-                    if (l.hasPageIndexes() || r.hasPageIndexes()) return null
-                    if (l.sharedEntries() != r.sharedEntries()) return null
+                    val l = parse(lIn.channel) ?: return Refused(Reason.UNREADABLE)
+                    val r = parse(rIn.channel) ?: return Refused(Reason.UNREADABLE)
+                    if (l.hasPageIndexes() || r.hasPageIndexes()) return Refused(Reason.BOOKMARKS)
+                    if (l.sharedEntries() != r.sharedEntries()) return Refused(Reason.ATTACHMENTS)
                     val lf = l.fingerprints()
                     val rf = r.fingerprints()
                     val docFrom = when {
                         lf.doc == rf.doc || rf.doc == baseDoc -> l
                         lf.doc == baseDoc -> r
-                        else -> return null
+                        else -> return Refused(Reason.NOTE_SETTINGS)
                     }
-                    val result = PageMerge.merge(basePages, lf.pages, rf.pages) ?: return null
+                    if (!PageMerge.fits(basePages, lf.pages, rf.pages)) return Refused(Reason.TOO_LONG)
+                    val result = PageMerge.merge(basePages, lf.pages, rf.pages) ?: return Refused(Reason.MOVED)
                     FileOutputStream(out).use { l.write(result.pages, r, docFrom, it.buffered(64 * 1024)) }
-                    val check = FileInputStream(out).use { parse(it.channel)?.fingerprints() } ?: return null
-                    if (check.pages.size != result.pages.size) return null
-                    Merged(check, result.keptBoth.map { it + 1 })
+                    val check = FileInputStream(out).use { parse(it.channel)?.fingerprints() } ?: return Refused(Reason.CHECK_FAILED)
+                    if (check.pages.size != result.pages.size) return Refused(Reason.CHECK_FAILED)
+                    Merged(check, result.clashed.map { it + 1 })
                 }
             }
 

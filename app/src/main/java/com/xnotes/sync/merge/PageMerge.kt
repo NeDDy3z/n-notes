@@ -2,24 +2,28 @@ package com.xnotes.sync.merge
 
 /**
  * Three-way merge of two edited page lists against the list both started from. Pages are compared
- * by fingerprint only. Where both sides changed the same run of pages differently, both versions are
- * kept, local first, so nothing is lost.
+ * by fingerprint only. Where both sides changed the same page, the local version of that run of pages
+ * is kept and the run is reported, so the caller can save the remote version as a conflict copy.
  */
 object PageMerge {
     /** One page of the result: which side it comes from and its index there. */
     data class Ref(val local: Boolean, val index: Int)
 
-    /** [keptBoth] holds the result indexes of the pages both sides changed the same run of base pages into. */
-    class Result(val pages: List<Ref>, val keptBoth: List<Int>)
+    /** [clashed] holds the result indexes of the local pages kept where both sides changed the same page. */
+    class Result(val pages: List<Ref>, val clashed: List<Int>)
 
     /** Above this many cells per alignment the merge is skipped (the caller keeps a copy instead). */
     private const val MAX_CELLS = 4_000_000L
+
+    /** Whether the page lists are short enough to align; when not, [merge] returns null. */
+    fun fits(base: List<String>, local: List<String>, remote: List<String>): Boolean =
+        base.size.toLong() * local.size <= MAX_CELLS && base.size.toLong() * remote.size <= MAX_CELLS
 
     fun merge(base: List<String>, local: List<String>, remote: List<String>): Result? {
         val toLocal = align(base, local) ?: return null
         val toRemote = align(base, remote) ?: return null
         val out = ArrayList<Ref>()
-        val keptBoth = ArrayList<Int>()
+        val clashed = ArrayList<Int>()
         var b = 0
         var l = 0
         var r = 0
@@ -62,10 +66,18 @@ object PageMerge {
                     // the sides added or changed remain, ordered by where each side put them.
                     val fromLocal = newPages(l, lEnd, localToBase, true, bEnd)
                     val fromRemote = newPages(r, rEnd, remoteToBase, false, bEnd)
-                    val start = out.size
-                    (fromLocal + fromRemote).sortedWith(compareBy({ it.after }, { it.before }, { !it.ref.local })).forEach { out.add(it.ref) }
                     val sameBaseChanged = (b until bEnd).any { toLocal[it] < 0 && toRemote[it] < 0 }
-                    if (sameBaseChanged && fromLocal.isNotEmpty() && fromRemote.isNotEmpty()) keptBoth.addAll(start until out.size)
+                    if (sameBaseChanged && fromLocal.isNotEmpty() && fromRemote.isNotEmpty()) {
+                        // Both changed the same page: this side's run stays whole, the other's is left to the conflict copy.
+                        // Reported are the pages whose other version that drops; page for page when the run kept its length.
+                        val sameShape = lEnd - l == bEnd - b
+                        for ((i, li) in (l until lEnd).withIndex()) {
+                            out.add(Ref(true, li))
+                            if (!sameShape || toRemote[b + i] < 0) clashed.add(out.size - 1)
+                        }
+                    } else {
+                        (fromLocal + fromRemote).sortedWith(compareBy({ it.after }, { it.before }, { !it.ref.local })).forEach { out.add(it.ref) }
+                    }
                 }
             }
         }
@@ -83,7 +95,7 @@ object PageMerge {
             l = toLocal[k] + 1
             r = toRemote[k] + 1
         }
-        return Result(out, keptBoth)
+        return Result(out, clashed)
     }
 
     /** For each index of [a], the index of its partner in [b] on a longest common subsequence, or -1. */
