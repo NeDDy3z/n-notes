@@ -6,14 +6,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,6 +26,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -52,6 +58,7 @@ import com.xnotes.sync.SyncLog
 import com.xnotes.sync.SyncManager
 import com.xnotes.sync.filen.FilenService
 import com.xnotes.sync.nextcloud.NextcloudService
+import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.launch
@@ -77,7 +84,7 @@ private fun syncDirections(service: String) = listOf(
 )
 
 @Composable
-fun CloudSyncSection(editor: Editor) {
+fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
     val palette = LocalPalette.current
     val context = LocalContext.current
     var prefs by remember { mutableStateOf(editor.preferences) }
@@ -113,6 +120,7 @@ fun CloudSyncSection(editor: Editor) {
                 prefs = prefs,
                 status = status,
                 onUpdate = ::update,
+                onOpenLog = onOpenLog,
                 onSignOut = {
                     SyncManager.signOut(context, service)
                     account = null
@@ -209,6 +217,7 @@ private fun SignedIn(
     prefs: Preferences,
     status: SyncManager.Status,
     onUpdate: (Preferences) -> Unit,
+    onOpenLog: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -250,14 +259,13 @@ private fun SignedIn(
         onUpdate(prefs.copy(syncIntervalMinutes = it.toInt()))
     }
 
-    var showLog by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(
             onClick = { scope.launch { SyncManager.syncNow(context) } },
             enabled = !status.running && !folder?.id.isNullOrEmpty() && prefs.syncDirection != "off",
             colors = ButtonDefaults.buttonColors(containerColor = palette.accent.toComposeColor(), contentColor = palette.bg.toComposeColor()),
         ) { Text("Sync now") }
-        TextButton(onClick = { showLog = true }) { Text("Sync log", fontSize = 13.sp) }
+        TextButton(onClick = onOpenLog) { Text("Sync log", fontSize = 13.sp) }
     }
     if (status.running) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -275,7 +283,6 @@ private fun SignedIn(
             }
         }
     }
-    if (showLog) SyncLogDialog(onDismiss = { showLog = false })
     val statusLine = buildString {
         if (status.message.isNotEmpty()) append(status.message)
         if (status.lastSyncMs > 0) {
@@ -297,13 +304,34 @@ private fun SignedIn(
     }
 }
 
-/** The last sync runs, newest at the bottom; each run ends in an OK or FAILED line. */
+private class SyncRun(val header: String, val details: List<String>, val result: String?)
+
+/** Groups the log into runs, newest first: a run starts at an unindented line, its indented lines follow and end in OK or FAILED. */
+private fun syncRuns(lines: List<String>): List<SyncRun> {
+    val runs = mutableListOf<Pair<String, MutableList<String>>>()
+    lines.forEach { line ->
+        if (!line.startsWith(" ") || runs.isEmpty()) runs.add(line to mutableListOf()) else runs.last().second.add(line.trim())
+    }
+    return runs.map { (header, body) ->
+        val result = body.lastOrNull()?.takeIf { it.startsWith("OK") || it.startsWith("FAILED") }
+        SyncRun(header, if (result != null) body.dropLast(1) else body, result)
+    }.asReversed()
+}
+
 @Composable
-private fun SyncLogDialog(onDismiss: () -> Unit) {
+private fun syncLineColor(line: String) = when {
+    line.startsWith("FAILED") || line.startsWith("Error") -> com.xnotes.core.tools.InkPalette.RED.toComposeColor()
+    line.startsWith("Conflict") || line.startsWith("Skipped") -> com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor()
+    line.startsWith("OK") -> LocalPalette.current.accent.toComposeColor()
+    else -> LocalPalette.current.textDim.toComposeColor()
+}
+
+/** The last sync runs as a page, one row per run that opens to show what it changed. */
+@Composable
+fun SyncLogPage(onBack: () -> Unit) {
     val palette = LocalPalette.current
     val context = LocalContext.current
-    var lines by remember { mutableStateOf<List<String>>(emptyList()) }
-    val scroll = rememberScrollState()
+    var lines by remember { mutableStateOf<List<String>?>(null) }
     // Read off the main thread, and again whenever a running sync adds to it.
     LaunchedEffect(Unit) {
         var seen = -1L
@@ -316,33 +344,54 @@ private fun SyncLogDialog(onDismiss: () -> Unit) {
             kotlinx.coroutines.delay(1_000)
         }
     }
-    LaunchedEffect(lines) { scroll.scrollTo(scroll.maxValue) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sync log") },
-        text = {
-            Column(Modifier.heightIn(max = 480.dp).verticalScroll(scroll)) {
-                if (lines.isEmpty()) Text("Nothing synced yet.", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                lines.forEach { line ->
-                    val t = line.trimStart()
-                    val color = when {
-                        t.startsWith("FAILED") || t.startsWith("Error") -> com.xnotes.core.tools.InkPalette.RED.toComposeColor()
-                        t.startsWith("Conflict") || t.startsWith("Skipped") -> com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor()
-                        t.startsWith("OK") -> palette.accent.toComposeColor()
-                        !line.startsWith(" ") -> palette.text.toComposeColor()
-                        else -> palette.textDim.toComposeColor()
+    val runs = remember(lines) { syncRuns(lines.orEmpty()) }
+    var open by remember { mutableStateOf(emptySet<String>()) }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(XnotesIcons.prev, "Back", tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
+            }
+            Spacer(Modifier.width(4.dp))
+            Text("Sync log", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+            if (runs.isNotEmpty()) TextButton(onClick = { SyncLog.clear(context); lines = emptyList() }) { Text("Clear", fontSize = 13.sp) }
+        }
+        if (lines != null && runs.isEmpty()) {
+            Text("Nothing synced yet.", color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+        }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+            items(runs) { run ->
+                val expanded = run.header in open
+                Column(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = run.details.isNotEmpty()) { open = if (expanded) open - run.header else open + run.header }
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(run.header, color = palette.text.toComposeColor(), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(run.result ?: "Running", color = syncLineColor(run.result ?: ""), fontSize = 12.sp)
+                        }
+                        if (run.details.isNotEmpty()) {
+                            Text("${run.details.size}", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                            Icon(
+                                if (expanded) XnotesIcons.chevronUp else XnotesIcons.chevronDown, if (expanded) "Hide details" else "Show details",
+                                tint = palette.textDim.toComposeColor(), modifier = Modifier.padding(start = 4.dp).size(18.dp),
+                            )
+                        }
                     }
-                    Text(
-                        line, color = color, fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontWeight = if (!line.startsWith(" ")) FontWeight.Medium else null,
-                        modifier = Modifier.padding(top = if (!line.startsWith(" ")) 8.dp else 0.dp),
-                    )
+                    if (expanded) {
+                        Column(Modifier.padding(top = 6.dp)) {
+                            run.details.forEach { line ->
+                                Text(line, color = syncLineColor(line), fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                        }
+                    }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-        dismissButton = { TextButton(onClick = { SyncLog.clear(context); lines = emptyList() }) { Text("Clear") } },
-    )
+        }
+    }
 }
 
 @Composable
