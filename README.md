@@ -40,7 +40,7 @@ When reporting bugs, issues or ideas, please split them into multiple smaller is
 
 I use LLMs during development mainly for research, code review and translations. Any and every change an LLM makes, I manually review/test before it goes into a release.
 
-Translations are fully LLM-generated and get fixed over time based on user reports. If you spot a translation issue, please report it [here](https://github.com/NeDDy3z/n-notes/issues/new?title=Incorrect%20Translation&labels=translation&assignees=NeDDy3z&body=Language:%0ALocation%20of%20the%20Issue:%0AWrong:%0AFix:).
+Translations are fully LLM-generated and get fixed over time based on user reports. If you spot a translation issue, please report it [here](https%3A%2F%2Fgithub.com%2FNeDDy3z%2Fn-notes%2Fissues%2Fnew%3Ftitle%3DIncorrect%20Translation%26label%3Dtranslation%26assignees%3DNeDDy3z%26body%3D%0ALanguage%3A%0ALocation%3A%0AIncorrect%3A%0AFix%3A).
 
 ## License
 
