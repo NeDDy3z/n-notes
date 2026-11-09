@@ -134,17 +134,17 @@ private val tapGestureOptions = listOf(
 )
 
 /** The Preferences pages, in the order the category list shows them. */
-private enum class PrefCategory(val title: String, val summary: String) {
-    GENERAL("General", "Screen, Language, Updates"),
-    APPEARANCE("Appearance", "Theme, Code highlighting, Fonts"),
-    INPUT("Input", "Touch, Stylus, Gestures"),
-    OCR("OCR", "Handwriting, Math"),
-    NEW_NOTES("New notes", "File names, Page size, Page colour"),
-    HOME("Home & explorer", "Layouts, Sidebar, Files"),
-    EXPORT_IMPORT("Export & import", "PDF export, Backup"),
-    PERFORMANCE("Performance", "Cache, Rendering"),
-    TOOLBAR("Toolbar", "Style, Position, Colours, Shapes"),
-    CLOUD_SYNC("Cloud sync", "Service, Automatic sync"),
+private enum class PrefCategory(val title: Int, val summary: Int) {
+    GENERAL(R.string.pref_general, R.string.pref_general_summary),
+    APPEARANCE(R.string.pref_appearance, R.string.pref_appearance_summary),
+    INPUT(R.string.pref_input, R.string.pref_input_summary),
+    OCR(R.string.pref_ocr, R.string.pref_ocr_summary),
+    NEW_NOTES(R.string.pref_new_notes, R.string.pref_new_notes_summary),
+    HOME(R.string.pref_home_explorer, R.string.pref_home_summary),
+    EXPORT_IMPORT(R.string.pref_export_import, R.string.pref_export_import_summary),
+    PERFORMANCE(R.string.pref_performance, R.string.pref_performance_summary),
+    TOOLBAR(R.string.pref_toolbar, R.string.pref_toolbar_summary),
+    CLOUD_SYNC(R.string.pref_cloud_sync, R.string.pref_cloud_sync_summary),
 }
 
 /**
@@ -303,7 +303,7 @@ fun PreferencesPane(
                 }
             }
             Spacer(Modifier.width(4.dp))
-            Text(open?.title ?: stringResource(R.string.preferences), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text(open?.let { stringResource(it.title) } ?: stringResource(R.string.preferences), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { search.open = !search.open; if (!search.open) search.query = "" }) {
                 Icon(XnotesIcons.search, stringResource(R.string.search_settings), tint = palette.text.toComposeColor(), modifier = Modifier.size(22.dp))
@@ -331,8 +331,9 @@ fun PreferencesPane(
         }
         val sectionsPanel = @Composable {
             if (categorized) {
-                PrefSectionsPanel(PrefCategory.entries.map { it.title }, category?.title) { title ->
-                    category = PrefCategory.entries.first { it.title == title }
+                val titles = PrefCategory.entries.map { stringResource(it.title) }
+                PrefSectionsPanel(titles, category?.let { titles[it.ordinal] }) { title ->
+                    category = PrefCategory.entries[titles.indexOf(title)]
                     if (compact) sectionsOpen = false
                 }
             } else {
@@ -363,8 +364,8 @@ fun PreferencesPane(
             if (categorized && category == null && !searching) {
                 for (c in PrefCategory.entries) {
                     Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { category = c }.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                        Text(c.title, color = palette.text.toComposeColor(), fontSize = 16.sp)
-                        Text(c.summary, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                        Text(stringResource(c.title), color = palette.text.toComposeColor(), fontSize = 16.sp)
+                        Text(stringResource(c.summary), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                     }
                 }
             }

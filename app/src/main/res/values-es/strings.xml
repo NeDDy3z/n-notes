@@ -1175,6 +1175,18 @@
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">Inicio y explorador</string>
+    <string name="pref_export_import">Exportar e importar</string>
+    <string name="pref_cloud_sync">Sincronización en la nube</string>
+    <string name="pref_general_summary">Pantalla, idioma, actualizaciones</string>
+    <string name="pref_appearance_summary">Tema, resaltado de código, fuentes</string>
+    <string name="pref_input_summary">Táctil, lápiz, gestos</string>
+    <string name="pref_ocr_summary">Escritura a mano, matemáticas</string>
+    <string name="pref_new_notes_summary">Nombres de archivo, tamaño de página, color de página</string>
+    <string name="pref_home_summary">Diseños, barra lateral, archivos</string>
+    <string name="pref_export_import_summary">Exportar PDF, copia de seguridad</string>
+    <string name="pref_performance_summary">Caché, renderizado</string>
+    <string name="pref_toolbar_summary">Estilo, posición, colores, formas</string>
+    <string name="pref_cloud_sync_summary">Servicio, sincronización automática</string>
     <string name="pref_home_explorer_help">Cómo se ven y se comportan la pantalla de inicio y el explorador de archivos. El diseño se puede cambiar por carpeta desde el explorador.</string>
     <string name="pref_default_layout">Diseño predeterminado</string>
     <string name="pref_switcher_layouts">Diseños en el selector</string>

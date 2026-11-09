@@ -1155,6 +1155,19 @@
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">Home &amp; explorer</string>
+    <string name="pref_ocr" translatable="false">OCR</string>
+    <string name="pref_export_import">Export &amp; import</string>
+    <string name="pref_cloud_sync">Cloud sync</string>
+    <string name="pref_general_summary">Screen, Language, Updates</string>
+    <string name="pref_appearance_summary">Theme, Code highlighting, Fonts</string>
+    <string name="pref_input_summary">Touch, Stylus, Gestures</string>
+    <string name="pref_ocr_summary">Handwriting, Math</string>
+    <string name="pref_new_notes_summary">File names, Page size, Page colour</string>
+    <string name="pref_home_summary">Layouts, Sidebar, Files</string>
+    <string name="pref_export_import_summary">PDF export, Backup</string>
+    <string name="pref_performance_summary">Cache, Rendering</string>
+    <string name="pref_toolbar_summary">Style, Position, Colours, Shapes</string>
+    <string name="pref_cloud_sync_summary">Service, Automatic sync</string>
     <string name="pref_home_explorer_help">How the home screen and the file explorer look and behave. Layouts can still be switched per folder from the explorer.</string>
     <string name="pref_default_layout">Default layout</string>
     <string name="pref_switcher_layouts">Layouts in the switcher</string>

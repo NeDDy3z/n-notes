@@ -993,6 +993,18 @@
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">首页与文件浏览器</string>
+    <string name="pref_export_import">导出与导入</string>
+    <string name="pref_cloud_sync">云同步</string>
+    <string name="pref_general_summary">屏幕、语言、更新</string>
+    <string name="pref_appearance_summary">主题、代码高亮、字体</string>
+    <string name="pref_input_summary">触控、手写笔、手势</string>
+    <string name="pref_ocr_summary">手写、数学</string>
+    <string name="pref_new_notes_summary">文件名、页面尺寸、页面颜色</string>
+    <string name="pref_home_summary">布局、侧边栏、文件</string>
+    <string name="pref_export_import_summary">PDF 导出、备份</string>
+    <string name="pref_performance_summary">缓存、渲染</string>
+    <string name="pref_toolbar_summary">样式、位置、颜色、形状</string>
+    <string name="pref_cloud_sync_summary">服务、自动同步</string>
     <string name="pref_home_explorer_help">首页和文件浏览器的外观与行为。仍可在文件浏览器中为每个文件夹单独切换布局。</string>
     <string name="pref_default_layout">默认布局</string>
     <string name="pref_switcher_layouts">切换器中的布局</string>

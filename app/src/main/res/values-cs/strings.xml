@@ -1196,6 +1196,18 @@
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">Domů a průzkumník</string>
+    <string name="pref_export_import">Export a import</string>
+    <string name="pref_cloud_sync">Synchronizace s cloudem</string>
+    <string name="pref_general_summary">Obrazovka, jazyk, aktualizace</string>
+    <string name="pref_appearance_summary">Motiv, zvýrazňování kódu, písma</string>
+    <string name="pref_input_summary">Dotyk, stylus, gesta</string>
+    <string name="pref_ocr_summary">Rukopis, matematika</string>
+    <string name="pref_new_notes_summary">Názvy souborů, velikost stránky, barva stránky</string>
+    <string name="pref_home_summary">Rozvržení, postranní panel, soubory</string>
+    <string name="pref_export_import_summary">Export do PDF, záloha</string>
+    <string name="pref_performance_summary">Mezipaměť, vykreslování</string>
+    <string name="pref_toolbar_summary">Styl, umístění, barvy, tvary</string>
+    <string name="pref_cloud_sync_summary">Služba, automatická synchronizace</string>
     <string name="pref_home_explorer_help">Jak vypadá a funguje domovská obrazovka a průzkumník souborů. Rozložení lze dál přepínat pro každou složku zvlášť v průzkumníku.</string>
     <string name="pref_default_layout">Výchozí rozložení</string>
     <string name="pref_switcher_layouts">Rozložení v přepínači</string>
