@@ -2608,7 +2608,7 @@ private fun SyncNowCommand(onOpenSettings: () -> Unit) {
     if (!SyncManager.isConfigured(ctx)) return
     val status by SyncManager.status.collectAsState()
     val scope = rememberCoroutineScope()
-    Command(Icons.Filled.Sync, if (status.running) "Syncing ${syncProgress(status)}" else "Sync now", onLongClick = onOpenSettings) {
+    Command(Icons.Filled.Sync, if (status.running) stringResource(R.string.sync_syncing_progress, syncProgress(status)) else stringResource(R.string.sync_now), onLongClick = onOpenSettings) {
         if (!status.running) scope.launch { SyncManager.syncNow(ctx) }
     }
 }
@@ -2620,7 +2620,7 @@ private fun SyncRailItem(onOpenSettings: () -> Unit) {
     if (!SyncManager.isConfigured(ctx)) return
     val status by SyncManager.status.collectAsState()
     val scope = rememberCoroutineScope()
-    RailItem(Icons.Filled.Sync, if (status.running) "Syncing ${syncProgress(status)}" else "Sync now", selected = status.running, onLongClick = onOpenSettings) {
+    RailItem(Icons.Filled.Sync, if (status.running) stringResource(R.string.sync_syncing_progress, syncProgress(status)) else stringResource(R.string.sync_now), selected = status.running, onLongClick = onOpenSettings) {
         if (!status.running) scope.launch { SyncManager.syncNow(ctx) }
     }
 }
@@ -2648,13 +2648,13 @@ private fun SyncSidebarStatus() {
         }
     }
     val synced = if (status.lastSyncMs == 0L) {
-        "${SyncManager.activeService(ctx)?.displayName}: not synced yet"
+        stringResource(R.string.sync_not_synced_yet, SyncManager.activeService(ctx)?.displayName.toString())
     } else {
-        "Last synced " + android.text.format.DateUtils.getRelativeTimeSpanString(
+        stringResource(R.string.sync_last_synced, android.text.format.DateUtils.getRelativeTimeSpanString(
             status.lastSyncMs, maxOf(now, status.lastSyncMs), android.text.format.DateUtils.MINUTE_IN_MILLIS,
-        )
+        ))
     }
-    val files = if (status.running) "${syncProgress(status)} files" else "${status.fileCount}/${status.fileCount} files"
+    val files = stringResource(R.string.sync_files_progress, if (status.running) syncProgress(status) else "${status.fileCount}/${status.fileCount}")
     Column(Modifier.padding(start = 18.dp, end = 12.dp, top = 8.dp)) {
         Text(synced, color = palette.textDim.toComposeColor(), fontSize = 11.sp)
         Text(files, color = palette.textDim.toComposeColor(), fontSize = 11.sp)
@@ -2692,7 +2692,7 @@ private fun SyncConflictDialog(onSeeLog: () -> Unit) {
         onDismissRequest = { SyncManager.clearConflicts(ctx) },
         title = {
             Text(
-                if (conflicts.size == 1) "A note was changed on another device too" else "${conflicts.size} notes were changed on another device too",
+                pluralStringResource(R.plurals.sync_conflicts_title, conflicts.size, conflicts.size),
                 color = palette.text.toComposeColor(), fontSize = 16.sp,
             )
         },
@@ -2702,12 +2702,12 @@ private fun SyncConflictDialog(onSeeLog: () -> Unit) {
                     Text("- $line", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                 }
                 if (conflicts.size > 6) {
-                    Text("and ${conflicts.size - 6} more", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    Text(stringResource(R.string.sync_conflicts_more, conflicts.size - 6), color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { SyncManager.clearConflicts(ctx); onSeeLog() }) { Text("See sync log") } },
-        dismissButton = { TextButton(onClick = { SyncManager.clearConflicts(ctx) }) { Text("Close") } },
+        confirmButton = { TextButton(onClick = { SyncManager.clearConflicts(ctx); onSeeLog() }) { Text(stringResource(R.string.sync_see_log)) } },
+        dismissButton = { TextButton(onClick = { SyncManager.clearConflicts(ctx) }) { Text(stringResource(R.string.close)) } },
     )
 }
 
@@ -2730,11 +2730,11 @@ private fun ConflictCopyDialog(editor: Editor, e: BrowseEntry, onDismiss: () -> 
                 Text(SyncConflict.explain(e.name, record), color = palette.textDim.toComposeColor(), fontSize = 13.sp)
                 record?.let { r ->
                     val at = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(r.at))
-                    Text("Found by ${r.device} on $at", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                    Text(stringResource(R.string.sync_found_by, r.device, at), color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 

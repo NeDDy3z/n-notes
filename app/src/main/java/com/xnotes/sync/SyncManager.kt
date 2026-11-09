@@ -1,6 +1,7 @@
 package com.xnotes.sync
 
 import android.content.Context
+import com.xnotes.R
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -147,16 +148,16 @@ object SyncManager {
             SyncLog.trim(context)
             primeStatus(context)
             val service = activeService(context)
-            _status.value = _status.value.copy(running = true, message = "Syncing", done = 0, total = 0)
+            _status.value = _status.value.copy(running = true, message = context.getString(R.string.sync_syncing), done = 0, total = 0)
             val started = System.currentTimeMillis()
             val log = mutableListOf("${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(started))}  Started ($trigger)")
             fun flushLog() = synchronized(log) { SyncLog.append(context, log.toList()); log.clear() }
             val result = runCatching {
                 val prefs = settings(context).prefs
-                require(service != null) { "No cloud service selected" }
-                require(prefs.syncDirection != "off") { "Sync direction is off" }
+                require(service != null) { context.getString(R.string.sync_err_no_service) }
+                require(prefs.syncDirection != "off") { context.getString(R.string.sync_err_direction_off) }
                 val folderId = folderId(context, service)
-                require(folderId.isNotEmpty()) { "No ${service.displayName} folder selected" }
+                require(folderId.isNotEmpty()) { context.getString(R.string.sync_err_no_folder, service.displayName) }
                 val treeUri = effectiveTreeUri(context)
                 val storage = service.storage(context)
                 val state = SyncState.load(context, service.id)
@@ -193,12 +194,12 @@ object SyncManager {
                 fileCount = result.getOrNull()?.second ?: _status.value.fileCount,
                 message = result.fold(
                     { (s, _) ->
-                        "Up ${s.uploaded}, down ${s.downloaded}" +
-                            (if (s.deleted > 0) ", ${s.deleted} deleted" else "") +
-                            (if (s.conflicts > 0) ", ${s.conflicts} conflicts" else "") +
-                            (if (s.errors.isNotEmpty()) ", ${s.errors.size} errors" else "")
+                        context.getString(R.string.sync_status_summary, s.uploaded, s.downloaded) +
+                            (if (s.deleted > 0) context.getString(R.string.sync_status_deleted, s.deleted) else "") +
+                            (if (s.conflicts > 0) context.getString(R.string.sync_status_conflicts, s.conflicts) else "") +
+                            (if (s.errors.isNotEmpty()) context.getString(R.string.sync_status_errors, s.errors.size) else "")
                     },
-                    { e -> "Failed: ${e.message}" },
+                    { e -> context.getString(R.string.failed_reason, e.message) },
                 ),
                 // Accumulate conflicts until the user dismisses the banner, so a background sync's
                 // heads-up is not lost before it is seen.
@@ -265,11 +266,11 @@ object SyncManager {
     fun foregroundInfo(context: Context): androidx.work.ForegroundInfo {
         val nm = context.getSystemService(android.app.NotificationManager::class.java)
         if (nm.getNotificationChannel(NOTIFY_CHANNEL) == null) {
-            nm.createNotificationChannel(android.app.NotificationChannel(NOTIFY_CHANNEL, "Cloud sync", android.app.NotificationManager.IMPORTANCE_LOW))
+            nm.createNotificationChannel(android.app.NotificationChannel(NOTIFY_CHANNEL, context.getString(R.string.pref_cloud_sync), android.app.NotificationManager.IMPORTANCE_LOW))
         }
         val n = androidx.core.app.NotificationCompat.Builder(context, NOTIFY_CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("Syncing notes")
+            .setContentTitle(context.getString(R.string.sync_notification_title))
             .setOngoing(true)
             .setSilent(true)
             .build()

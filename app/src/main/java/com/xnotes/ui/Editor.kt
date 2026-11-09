@@ -792,16 +792,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override fun convertSelectionToText() {
         val sel = controller.inkSelection() ?: return
         val lang = settings.prefs.ocrLanguage
-        android.widget.Toast.makeText(appContext, "Recognizing handwriting...", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_recognizing_handwriting), android.widget.Toast.LENGTH_SHORT).show()
         autosaveScope.launch {
             val text = try {
                 withContext(Dispatchers.IO) { com.xnotes.platform.HandwritingOcr.recognize(sel.strokes, lang) }
             } catch (e: Exception) {
-                android.widget.Toast.makeText(appContext, "Handwriting recognition failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_handwriting_failed, e.message), android.widget.Toast.LENGTH_LONG).show()
                 return@launch
             }
             if (text.isBlank()) {
-                android.widget.Toast.makeText(appContext, "No text recognized", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_no_text), android.widget.Toast.LENGTH_SHORT).show()
                 return@launch
             }
             controller.replaceInkWithText(sel, text)
@@ -812,16 +812,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override fun convertSelectionToMath() {
         val sel = controller.inkSelection() ?: return
-        android.widget.Toast.makeText(appContext, "Recognizing math...", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_recognizing_math), android.widget.Toast.LENGTH_SHORT).show()
         autosaveScope.launch {
             val latex = try {
                 withContext(Dispatchers.Default) { com.xnotes.platform.MathOcr.recognize(appContext, sel.strokes, sel.bounds) }
             } catch (e: Throwable) {
-                android.widget.Toast.makeText(appContext, "Math recognition failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_math_failed, e.message), android.widget.Toast.LENGTH_LONG).show()
                 return@launch
             }
             if (latex.isBlank()) {
-                android.widget.Toast.makeText(appContext, "No math recognized", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_no_math), android.widget.Toast.LENGTH_SHORT).show()
                 return@launch
             }
             controller.replaceInkWithMath(sel, latex)
@@ -2035,11 +2035,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     override val clipboardHasImage: Boolean get() = clipboardImageUri() != null
 
     override fun copySelection() {
-        if (hasSelection) showToast("Copied")
+        if (hasSelection) showToast(appContext.getString(R.string.copied))
         controller.copySelection()
     }
     override fun cutSelection() {
-        if (hasSelection) showToast("Cut")
+        if (hasSelection) showToast(appContext.getString(R.string.toast_cut))
         controller.cutSelection()
     }
     override fun duplicateSelection() = controller.duplicateSelection()
@@ -2191,19 +2191,19 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     override fun pasteItemsAt(content: com.xnotes.core.geometry.Pt) {
-        if (hasClipboardItems) showToast("Inserted")
+        if (hasClipboardItems) showToast(appContext.getString(R.string.toast_inserted))
         controller.pasteItemsAt(content)
     }
 
     override fun pasteClipboardImageAt(content: com.xnotes.core.geometry.Pt) {
         val uri = clipboardImageUri() ?: run {
-            clipboardSvgBytes()?.let { insertImageAt(it, content); showToast("Inserted") }
+            clipboardSvgBytes()?.let { insertImageAt(it, content); showToast(appContext.getString(R.string.toast_inserted)) }
                 ?: run { message = appContext.getString(R.string.err_clipboard_no_image) }
             return
         }
         runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
             .getOrNull()
-            ?.let { insertImageAt(it, content); showToast("Inserted") }
+            ?.let { insertImageAt(it, content); showToast(appContext.getString(R.string.toast_inserted)) }
             ?: run { message = appContext.getString(R.string.err_clipboard_no_image) }
     }
 
@@ -8111,7 +8111,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     // --- selection edits ---
 
     override fun deleteSelection() {
-        if (hasSelection) showToast("Deleted")
+        if (hasSelection) showToast(appContext.getString(R.string.toast_deleted))
         controller.deleteSelection()
     }
     fun selectAll() = controller.selectAll()

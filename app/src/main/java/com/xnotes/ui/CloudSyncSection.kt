@@ -1,5 +1,7 @@
 package com.xnotes.ui
 
+import com.xnotes.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,20 +69,21 @@ import java.util.Date
 import java.util.Locale
 
 private val SYNC_INTERVALS = listOf(
-    15 to "Every 15 minutes",
-    30 to "Every 30 minutes",
-    60 to "Every hour",
-    180 to "Every 3 hours",
-    360 to "Every 6 hours",
-    720 to "Every 12 hours",
-    1440 to "Once a day",
+    15 to R.string.sync_every_15_minutes,
+    30 to R.string.sync_every_30_minutes,
+    60 to R.string.sync_every_hour,
+    180 to R.string.sync_every_3_hours,
+    360 to R.string.sync_every_6_hours,
+    720 to R.string.sync_every_12_hours,
+    1440 to R.string.sync_once_a_day,
 )
 
+@Composable
 private fun syncDirections(service: String) = listOf(
-    "both" to "Both ways",
-    "up" to "N-Notes to $service",
-    "down" to "$service to N-Notes",
-    "off" to "None - off",
+    "both" to stringResource(R.string.sync_both_ways),
+    "up" to stringResource(R.string.sync_direction_up, service),
+    "down" to stringResource(R.string.sync_direction_down, service),
+    "off" to stringResource(R.string.sync_none_off),
 )
 
 @Composable
@@ -101,18 +104,18 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
     var account by remember(service) { mutableStateOf(service?.account(context)) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Cloud sync", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(stringResource(R.string.pref_cloud_sync), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 15.sp)
         Text(
-            "Back up and sync your notes to a cloud service. Only the selected service syncs.",
+            stringResource(R.string.sync_intro),
             color = palette.textDim.toComposeColor(), fontSize = 12.sp,
         )
         Text(
-            "Cloud sync is new and still being tested. Before you set it up, copy your notes folder somewhere safe, so a sync problem can't cost you any notes.",
+            stringResource(R.string.sync_new_warning),
             color = com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor(), fontSize = 12.sp,
         )
-        SyncLabel("Cloud service")
+        SyncLabel(stringResource(R.string.sync_cloud_service))
         OptionDropdown(
-            listOf(CloudServices.NONE to "None - off") + CloudServices.all.map { it.id to it.displayName },
+            listOf(CloudServices.NONE to stringResource(R.string.sync_none_off)) + CloudServices.all.map { it.id to it.displayName },
             prefs.cloudService,
         ) { update(prefs.copy(cloudService = it)) }
         when {
@@ -154,11 +157,11 @@ private fun NextcloudSignIn(onSignedIn: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    SyncField("Server address", server, KeyboardType.Uri) { server = it }
-    SyncField("User name", user, KeyboardType.Text) { user = it }
-    SyncField("App password", password, KeyboardType.Password, mask = true) { password = it }
+    SyncField(stringResource(R.string.sync_server_address), server, KeyboardType.Uri) { server = it }
+    SyncField(stringResource(R.string.sync_user_name), user, KeyboardType.Text) { user = it }
+    SyncField(stringResource(R.string.sync_app_password), password, KeyboardType.Password, mask = true) { password = it }
     Text(
-        "Create an app password in Nextcloud under Settings - Security - Devices & sessions.",
+        stringResource(R.string.sync_nextcloud_app_password_hint),
         color = palette.textDim.toComposeColor(), fontSize = 12.sp,
     )
     error?.let { Text(it, color = palette.accent.toComposeColor(), fontSize = 12.sp) }
@@ -170,12 +173,12 @@ private fun NextcloudSignIn(onSignedIn: () -> Unit) {
                 scope.launch {
                     val result = NextcloudService.signIn(context, server, user, password)
                     busy = false
-                    result.fold({ onSignedIn() }, { error = it.message ?: "Sign-in failed" })
+                    result.fold({ onSignedIn() }, { error = it.message ?: context.getString(R.string.sync_sign_in_failed) })
                 }
             },
             enabled = !busy && server.isNotBlank() && user.isNotBlank() && password.isNotBlank(),
             colors = ButtonDefaults.buttonColors(containerColor = palette.accent.toComposeColor(), contentColor = palette.bg.toComposeColor()),
-        ) { Text("Sign in") }
+        ) { Text(stringResource(R.string.sync_sign_in)) }
         if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = palette.accent.toComposeColor(), strokeWidth = 2.dp)
     }
 }
@@ -191,9 +194,9 @@ private fun FilenSignIn(onSignedIn: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    SyncField("Email", email, KeyboardType.Email) { email = it }
-    SyncField("Password", password, KeyboardType.Password, mask = true) { password = it }
-    SyncField("Two-factor code (optional)", twoFactor, KeyboardType.Number) { twoFactor = it }
+    SyncField(stringResource(R.string.sync_email), email, KeyboardType.Email) { email = it }
+    SyncField(stringResource(R.string.sync_password), password, KeyboardType.Password, mask = true) { password = it }
+    SyncField(stringResource(R.string.sync_two_factor_code), twoFactor, KeyboardType.Number) { twoFactor = it }
     error?.let { Text(it, color = palette.accent.toComposeColor(), fontSize = 12.sp) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(
@@ -203,12 +206,12 @@ private fun FilenSignIn(onSignedIn: () -> Unit) {
                 scope.launch {
                     val result = FilenService.signIn(context, email, password, twoFactor)
                     busy = false
-                    result.fold({ onSignedIn() }, { error = it.message ?: "Sign-in failed" })
+                    result.fold({ onSignedIn() }, { error = it.message ?: context.getString(R.string.sync_sign_in_failed) })
                 }
             },
             enabled = !busy && email.isNotBlank() && password.isNotBlank(),
             colors = ButtonDefaults.buttonColors(containerColor = palette.accent.toComposeColor(), contentColor = palette.bg.toComposeColor()),
-        ) { Text("Sign in") }
+        ) { Text(stringResource(R.string.sync_sign_in)) }
         if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = palette.accent.toComposeColor(), strokeWidth = 2.dp)
     }
 }
@@ -231,35 +234,35 @@ private fun SignedIn(
     val folder = prefs.cloudFolders[service.id]
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Signed in as $account", color = palette.text.toComposeColor(), fontSize = 13.sp, modifier = Modifier.weight(1f))
-        TextButton(onClick = onSignOut) { Text("Sign out", fontSize = 13.sp) }
+        Text(stringResource(R.string.sync_signed_in_as, account), color = palette.text.toComposeColor(), fontSize = 13.sp, modifier = Modifier.weight(1f))
+        TextButton(onClick = onSignOut) { Text(stringResource(R.string.sync_sign_out), fontSize = 13.sp) }
     }
 
-    SyncLabel("Backup folder")
+    SyncLabel(stringResource(R.string.sync_backup_folder))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            folder?.name?.ifEmpty { null } ?: "None selected",
+            folder?.name?.ifEmpty { null } ?: stringResource(R.string.sync_none_selected),
             color = if (folder?.name.isNullOrEmpty()) palette.textDim.toComposeColor() else palette.text.toComposeColor(),
             fontSize = 13.sp, modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = { showPicker = true }) { Text("Choose", fontSize = 13.sp) }
+        TextButton(onClick = { showPicker = true }) { Text(stringResource(R.string.sync_choose), fontSize = 13.sp) }
     }
 
-    SyncCheckRow("Only on Wi-Fi", prefs.syncWifiOnly) { onUpdate(prefs.copy(syncWifiOnly = it)) }
-    SyncCheckRow("Keep screen on while syncing", prefs.syncKeepScreenOn) { onUpdate(prefs.copy(syncKeepScreenOn = it)) }
+    SyncCheckRow(stringResource(R.string.sync_wifi_only), prefs.syncWifiOnly) { onUpdate(prefs.copy(syncWifiOnly = it)) }
+    SyncCheckRow(stringResource(R.string.sync_keep_screen_on), prefs.syncKeepScreenOn) { onUpdate(prefs.copy(syncKeepScreenOn = it)) }
 
-    SyncLabel("When to sync")
+    SyncLabel(stringResource(R.string.sync_when))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CheckChip("Automatically", prefs.syncAuto) { onUpdate(prefs.copy(syncAuto = !prefs.syncAuto)) }
-        CheckChip("On note close", prefs.syncOnNoteExit) { onUpdate(prefs.copy(syncOnNoteExit = !prefs.syncOnNoteExit)) }
-        CheckChip("On app open", prefs.syncOnAppOpen) { onUpdate(prefs.copy(syncOnAppOpen = !prefs.syncOnAppOpen)) }
+        CheckChip(stringResource(R.string.sync_automatically), prefs.syncAuto) { onUpdate(prefs.copy(syncAuto = !prefs.syncAuto)) }
+        CheckChip(stringResource(R.string.sync_on_note_close), prefs.syncOnNoteExit) { onUpdate(prefs.copy(syncOnNoteExit = !prefs.syncOnNoteExit)) }
+        CheckChip(stringResource(R.string.sync_on_app_open), prefs.syncOnAppOpen) { onUpdate(prefs.copy(syncOnAppOpen = !prefs.syncOnAppOpen)) }
     }
 
-    SyncLabel("Sync direction")
+    SyncLabel(stringResource(R.string.sync_direction))
     OptionDropdown(syncDirections(service.displayName), prefs.syncDirection) { onUpdate(prefs.copy(syncDirection = it)) }
 
-    SyncLabel("Sync frequency")
-    OptionDropdown(SYNC_INTERVALS.map { it.first.toString() to it.second }, prefs.syncIntervalMinutes.toString()) {
+    SyncLabel(stringResource(R.string.sync_frequency))
+    OptionDropdown(SYNC_INTERVALS.map { it.first.toString() to stringResource(it.second) }, prefs.syncIntervalMinutes.toString()) {
         onUpdate(prefs.copy(syncIntervalMinutes = it.toInt()))
     }
 
@@ -268,8 +271,8 @@ private fun SignedIn(
             onClick = { scope.launch { SyncManager.syncNow(context) } },
             enabled = !status.running && !folder?.id.isNullOrEmpty() && prefs.syncDirection != "off",
             colors = ButtonDefaults.buttonColors(containerColor = palette.accent.toComposeColor(), contentColor = palette.bg.toComposeColor()),
-        ) { Text("Sync now") }
-        TextButton(onClick = onOpenLog) { Text("Sync log", fontSize = 13.sp) }
+        ) { Text(stringResource(R.string.sync_now)) }
+        TextButton(onClick = onOpenLog) { Text(stringResource(R.string.sync_log), fontSize = 13.sp) }
     }
     if (status.running) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -283,7 +286,7 @@ private fun SignedIn(
             } else {
                 // Both sides are still being listed, so the total is not known yet.
                 LinearProgressIndicator(modifier = Modifier.weight(1f), color = palette.accent.toComposeColor(), trackColor = palette.border.toComposeColor())
-                Text("Listing files", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                Text(stringResource(R.string.sync_listing_files), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
             }
         }
     }
@@ -291,7 +294,7 @@ private fun SignedIn(
         if (status.message.isNotEmpty()) append(status.message)
         if (status.lastSyncMs > 0) {
             if (isNotEmpty()) append("  -  ")
-            append("last ${SimpleDateFormat("MMM d, HH:mm", Locale.US).format(Date(status.lastSyncMs))}")
+            append(stringResource(R.string.sync_last, SimpleDateFormat("MMM d, HH:mm", Locale.US).format(Date(status.lastSyncMs))))
         }
     }
     if (statusLine.isNotEmpty()) Text(statusLine, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
@@ -354,14 +357,14 @@ fun SyncLogPage(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(XnotesIcons.prev, "Back", tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
+                Icon(XnotesIcons.prev, stringResource(R.string.link_back), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
             }
             Spacer(Modifier.width(4.dp))
-            Text("Sync log", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
-            if (runs.isNotEmpty()) TextButton(onClick = { SyncLog.clear(context); lines = emptyList() }) { Text("Clear", fontSize = 13.sp) }
+            Text(stringResource(R.string.sync_log), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+            if (runs.isNotEmpty()) TextButton(onClick = { SyncLog.clear(context); lines = emptyList() }) { Text(stringResource(R.string.clear), fontSize = 13.sp) }
         }
         if (lines != null && runs.isEmpty()) {
-            Text("Nothing synced yet.", color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+            Text(stringResource(R.string.sync_nothing_yet), color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.padding(16.dp))
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
             items(runs) { run ->
@@ -375,12 +378,12 @@ fun SyncLogPage(onBack: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(run.header, color = palette.text.toComposeColor(), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text(run.result ?: "Running", color = syncLineColor(run.result ?: ""), fontSize = 12.sp)
+                            Text(run.result ?: stringResource(R.string.sync_running), color = syncLineColor(run.result ?: ""), fontSize = 12.sp)
                         }
                         if (run.details.isNotEmpty()) {
                             Text("${run.details.size}", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                             Icon(
-                                if (expanded) XnotesIcons.chevronUp else XnotesIcons.chevronDown, if (expanded) "Hide details" else "Show details",
+                                if (expanded) XnotesIcons.chevronUp else XnotesIcons.chevronDown, stringResource(if (expanded) R.string.sync_hide_details else R.string.sync_show_details),
                                 tint = palette.textDim.toComposeColor(), modifier = Modifier.padding(start = 4.dp).size(18.dp),
                             )
                         }
@@ -403,14 +406,15 @@ private fun FolderPicker(service: CloudService, onDismiss: () -> Unit, onSelecte
     val palette = LocalPalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var stack by remember { mutableStateOf(listOf(service.rootFolderId(context) to "Drive root")) }
+    val driveRoot = stringResource(R.string.sync_drive_root)
+    var stack by remember { mutableStateOf(listOf(service.rootFolderId(context) to driveRoot)) }
     var folders by remember { mutableStateOf<List<CloudStorage.RemoteFolder>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var newFolder by remember { mutableStateOf("") }
     var reloadKey by remember { mutableStateOf(0) }
     val current = stack.last()
-    val pathLabel = if (stack.size == 1) "Drive root" else stack.drop(1).joinToString("/") { it.second }
+    val pathLabel = if (stack.size == 1) driveRoot else stack.drop(1).joinToString("/") { it.second }
 
     LaunchedEffect(current.first, reloadKey) {
         loading = true
@@ -423,15 +427,15 @@ private fun FolderPicker(service: CloudService, onDismiss: () -> Unit, onSelecte
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = { onSelected(current.first, pathLabel) }) { Text("Use this folder") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { onSelected(current.first, pathLabel) }) { Text(stringResource(R.string.sync_use_this_folder)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         containerColor = palette.menuBg.toComposeColor(),
-        title = { Text("Choose ${service.displayName} folder", color = palette.text.toComposeColor(), fontSize = 16.sp) },
+        title = { Text(stringResource(R.string.sync_choose_folder, service.displayName), color = palette.text.toComposeColor(), fontSize = 16.sp) },
         text = {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (stack.size > 1) {
-                        TextButton(onClick = { stack = stack.dropLast(1) }) { Text("Up", fontSize = 13.sp) }
+                        TextButton(onClick = { stack = stack.dropLast(1) }) { Text(stringResource(R.string.sync_folder_up), fontSize = 13.sp) }
                     }
                     Text(pathLabel, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                 }
@@ -439,7 +443,7 @@ private fun FolderPicker(service: CloudService, onDismiss: () -> Unit, onSelecte
                     when {
                         loading -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(24.dp), color = palette.accent.toComposeColor(), strokeWidth = 2.dp)
                         error != null -> Text(error!!, color = palette.accent.toComposeColor(), fontSize = 12.sp, modifier = Modifier.align(Alignment.Center))
-                        folders.isEmpty() -> Text("No subfolders", color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.align(Alignment.Center))
+                        folders.isEmpty() -> Text(stringResource(R.string.sync_no_subfolders), color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.align(Alignment.Center))
                         else -> Column(Modifier.verticalScroll(rememberScrollState())) {
                             folders.forEach { folder ->
                                 Text(
@@ -455,7 +459,7 @@ private fun FolderPicker(service: CloudService, onDismiss: () -> Unit, onSelecte
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = newFolder, onValueChange = { newFolder = it }, singleLine = true,
-                        placeholder = { Text("New folder name") }, modifier = Modifier.weight(1f),
+                        placeholder = { Text(stringResource(R.string.sync_new_folder_name)) }, modifier = Modifier.weight(1f),
                     )
                     TextButton(
                         enabled = newFolder.isNotBlank(),
@@ -466,7 +470,7 @@ private fun FolderPicker(service: CloudService, onDismiss: () -> Unit, onSelecte
                                 SyncManager.createFolder(context, service, current.first, name).onSuccess { reloadKey++ }
                             }
                         },
-                    ) { Text("Create") }
+                    ) { Text(stringResource(R.string.create)) }
                 }
             }
         },

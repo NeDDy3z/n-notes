@@ -213,21 +213,21 @@ class MainActivity : ComponentActivity() {
                     update?.let { u ->
                         com.xnotes.ui.AlertDialog(
                             onDismissRequest = { update = null },
-                            title = { androidx.compose.material3.Text("Update available") },
-                            text = { androidx.compose.material3.Text("n-notes ${u.version} is out.") },
+                            title = { androidx.compose.material3.Text(stringResource(R.string.update_available)) },
+                            text = { androidx.compose.material3.Text(stringResource(R.string.update_is_out, u.version)) },
                             confirmButton = {
                                 androidx.compose.material3.TextButton(onClick = {
                                     update = null
                                     runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u.apkUrl ?: u.releaseUrl))) }
-                                }) { androidx.compose.material3.Text("Download") }
+                                }) { androidx.compose.material3.Text(stringResource(R.string.download)) }
                             },
                             dismissButton = {
                                 androidx.compose.foundation.layout.Row {
-                                    androidx.compose.material3.TextButton(onClick = { update = null }) { androidx.compose.material3.Text("Later") }
+                                    androidx.compose.material3.TextButton(onClick = { update = null }) { androidx.compose.material3.Text(stringResource(R.string.update_later)) }
                                     androidx.compose.material3.TextButton(onClick = {
                                         update = null
                                         ed.applyHomePreferences(ed.preferences.copy(checkUpdatesOnStartup = false))
-                                    }) { androidx.compose.material3.Text("Turn off") }
+                                    }) { androidx.compose.material3.Text(stringResource(R.string.update_turn_off)) }
                                 }
                             },
                         )

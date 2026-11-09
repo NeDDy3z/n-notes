@@ -386,38 +386,38 @@ fun SelectionMenu(
                     androidx.compose.material3.HorizontalDivider(color = palette.border.toComposeColor())
                     if (host.selectionFunction != null) {
                         DropdownMenuItem(
-                            text = { Text("Edit function") },
+                            text = { Text(stringResource(R.string.canvas_menu_edit_function)) },
                             onClick = { overflowOpen = false; functionDialogOpen = true },
                         )
                     }
                     if (host.selectionIsText) {
                         DropdownMenuItem(
-                            text = { Text("Edit") },
+                            text = { Text(stringResource(R.string.canvas_menu_edit)) },
                             // A formula is edited as its LaTeX source, not in the text box editor.
                             onClick = { overflowOpen = false; if (host.selectionMath != null) mathDialogOpen = true else host.editSelectionText() },
                         )
                     }
                     if (host.selectionHasInk) {
                         DropdownMenuItem(
-                            text = { Text("Convert to text") },
+                            text = { Text(stringResource(R.string.canvas_menu_convert_to_text)) },
                             onClick = { overflowOpen = false; host.convertSelectionToText() },
                         )
                         if (host.canConvertToMath) {
                             DropdownMenuItem(
-                                text = { Text("Convert to math") },
+                                text = { Text(stringResource(R.string.canvas_menu_convert_to_math)) },
                                 onClick = { overflowOpen = false; host.convertSelectionToMath() },
                             )
                         }
                     }
                     if (host.selectionCanLink) {
                         DropdownMenuItem(
-                            text = { Text(if (host.selectionLink != null) "Edit link" else "Add link") },
+                            text = { Text(stringResource(if (host.selectionLink != null) R.string.canvas_menu_edit_link else R.string.canvas_menu_add_link)) },
                             onClick = { overflowOpen = false; linkDialogOpen = true },
                         )
                     }
                     if (host.selectionCanCaption) {
                         DropdownMenuItem(
-                            text = { Text(if (host.selectionHasCaption) "Edit caption" else "Add caption") },
+                            text = { Text(stringResource(if (host.selectionHasCaption) R.string.canvas_menu_edit_caption else R.string.canvas_menu_add_caption)) },
                             onClick = { overflowOpen = false; host.captionSelection() },
                         )
                     }
@@ -621,7 +621,7 @@ private fun FunctionDialog(initial: FunctionSpec, onConfirm: (FunctionSpec) -> U
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Function") },
+        title = { Text(stringResource(R.string.canvas_menu_function)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -636,24 +636,24 @@ private fun FunctionDialog(initial: FunctionSpec, onConfirm: (FunctionSpec) -> U
                         value = from,
                         onValueChange = { from = it },
                         singleLine = true,
-                        label = { Text("x from") },
+                        label = { Text(stringResource(R.string.canvas_menu_x_from)) },
                         modifier = Modifier.weight(1f),
                     )
                     OutlinedTextField(
                         value = to,
                         onValueChange = { to = it },
                         singleLine = true,
-                        label = { Text("x to") },
+                        label = { Text(stringResource(R.string.canvas_menu_x_to)) },
                         modifier = Modifier.weight(1f),
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(enabled = spec != null, onClick = { spec?.let(onConfirm) }) { Text("Save") }
+            TextButton(enabled = spec != null, onClick = { spec?.let(onConfirm) }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
@@ -697,7 +697,7 @@ private fun LatexDialog(initial: String, onConfirm: (String) -> Unit, onDismiss:
                 .border(1.dp, palette.border.toComposeColor(), shape)
                 .padding(if (wide) 24.dp else 16.dp),
         ) {
-            Text("Formula", style = MaterialTheme.typography.headlineSmall, color = palette.text.toComposeColor())
+            Text(stringResource(R.string.canvas_menu_formula), style = MaterialTheme.typography.headlineSmall, color = palette.text.toComposeColor())
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -756,12 +756,12 @@ private fun LatexDialog(initial: String, onConfirm: (String) -> Unit, onDismiss:
                         ),
                     )
                 } else {
-                    TextButton(onClick = { keyboard?.hide(); mathKeys = true }) { Text("Maths keys") }
+                    TextButton(onClick = { keyboard?.hide(); mathKeys = true }) { Text(stringResource(R.string.canvas_menu_maths_keys)) }
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                TextButton(enabled = value.text.isNotBlank(), onClick = { onConfirm(value.text.trim()) }) { Text("Save") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                TextButton(enabled = value.text.isNotBlank(), onClick = { onConfirm(value.text.trim()) }) { Text(stringResource(R.string.save)) }
             }
         }
     }
@@ -803,7 +803,7 @@ private fun LinkDialog(initial: String, onConfirm: (String) -> Unit, onRemove: (
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Link") },
+        title = { Text(stringResource(R.string.insert_group_link)) },
         text = {
             OutlinedTextField(
                 value = text,
@@ -813,13 +813,13 @@ private fun LinkDialog(initial: String, onConfirm: (String) -> Unit, onRemove: (
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }) { Text("Save") }
+            TextButton(onClick = { onConfirm(text.trim()) }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
             if (initial.isNotEmpty()) {
-                TextButton(onClick = onRemove) { Text("Remove") }
+                TextButton(onClick = onRemove) { Text(stringResource(R.string.remove)) }
             } else {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
         },
     )

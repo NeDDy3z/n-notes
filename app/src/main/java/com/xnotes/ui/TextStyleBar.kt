@@ -164,11 +164,11 @@ fun TextBoxFormatBar(editor: Editor) {
         BarSeparator()
         SizeStepper(size = bar.pointSize, onDelta = { editor.setTextPointSize(bar.pointSize + it) })
         BarSeparator()
-        StyleToggle(Icons.Filled.FormatBold, "Bold", bar.bold) { editor.toggleTextBold() }
-        StyleToggle(Icons.Filled.FormatItalic, "Italic", bar.italic) { editor.toggleTextItalic() }
-        StyleToggle(Icons.Filled.FormatUnderlined, "Underline", bar.underline) { editor.toggleTextUnderline() }
-        StyleToggle(Icons.Filled.FormatStrikethrough, "Strikethrough", bar.strike) { editor.toggleTextStrike() }
-        StyleToggle(alignIcon(bar.align), "Alignment", bar.align != HAlign.LEFT) { editor.cycleTextAlign() }
+        StyleToggle(Icons.Filled.FormatBold, stringResource(R.string.bold), bar.bold) { editor.toggleTextBold() }
+        StyleToggle(Icons.Filled.FormatItalic, stringResource(R.string.italic), bar.italic) { editor.toggleTextItalic() }
+        StyleToggle(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), bar.underline) { editor.toggleTextUnderline() }
+        StyleToggle(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), bar.strike) { editor.toggleTextStrike() }
+        StyleToggle(alignIcon(bar.align), stringResource(R.string.alignment), bar.align != HAlign.LEFT) { editor.cycleTextAlign() }
         BarSeparator()
         Box(
             modifier = Modifier.size(44.dp).clickable { editor.commitText() },

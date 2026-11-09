@@ -363,12 +363,12 @@ private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
 @Composable
 private fun LinkButton(editor: Editor, current: String?) {
     var open by remember { mutableStateOf(false) }
-    BarIcon(Icons.Filled.Link, "Link", active = current != null) { open = true }
+    BarIcon(Icons.Filled.Link, stringResource(R.string.insert_group_link), active = current != null) { open = true }
     if (open) {
         var text by remember { mutableStateOf(current ?: "") }
         AlertDialog(
             onDismissRequest = { open = false },
-            title = { Text("Link") },
+            title = { Text(stringResource(R.string.insert_group_link)) },
             text = {
                 OutlinedTextField(
                     value = text,
@@ -378,13 +378,13 @@ private fun LinkButton(editor: Editor, current: String?) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = { editor.flowSetCharLink(text.trim()); open = false }) { Text("Save") }
+                TextButton(onClick = { editor.flowSetCharLink(text.trim()); open = false }) { Text(stringResource(R.string.save)) }
             },
             dismissButton = {
                 if (current != null) {
-                    TextButton(onClick = { editor.flowSetCharLink(null); open = false }) { Text("Remove") }
+                    TextButton(onClick = { editor.flowSetCharLink(null); open = false }) { Text(stringResource(R.string.remove)) }
                 } else {
-                    TextButton(onClick = { open = false }) { Text("Cancel") }
+                    TextButton(onClick = { open = false }) { Text(stringResource(R.string.cancel)) }
                 }
             },
         )

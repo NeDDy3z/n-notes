@@ -102,7 +102,7 @@ fun AboutPane() {
             Text("n-notes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 24.sp)
             Spacer(Modifier.height(5.dp))
             Text(
-                "A customized fork of xnotes, a handwriting notes and sketching app for Android",
+                stringResource(R.string.about_fork_tagline),
                 color = palette.textDim.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.Center,
             )
             if (version.isNotEmpty()) {
@@ -122,28 +122,28 @@ fun AboutPane() {
 
             Spacer(Modifier.height(28.dp))
             // The fork's own feedback channel: issues land on the n-notes repo.
-            Text("Help make n-notes better", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(stringResource(R.string.help_make_n_notes_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AboutButton(XnotesIcons.bug, "Report a bug") { open(bugReportUrl(N_ISSUES_URL, version)) }
-                AboutButton(XnotesIcons.idea, "Request a feature") { open(featureRequestUrl(N_ISSUES_URL)) }
+                AboutButton(XnotesIcons.bug, stringResource(R.string.report_bug)) { open(bugReportUrl(N_ISSUES_URL, version)) }
+                AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl(N_ISSUES_URL)) }
             }
 
             Spacer(Modifier.height(24.dp))
             // The upstream project: bugs/features/sponsorship for xnotes proper.
-            Text("Help make xnotes better", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(stringResource(R.string.help_make_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
             // Three buttons, side by side; each fills with the selection container while pressed.
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AboutButton(XnotesIcons.bug, "Report a bug") { open(bugReportUrl(ISSUES_URL, version)) }
-                AboutButton(XnotesIcons.idea, "Request a feature") { open(featureRequestUrl(ISSUES_URL)) }
-                AboutButton(XnotesIcons.heart, "Sponsor") { open(SPONSOR_URL) }
+                AboutButton(XnotesIcons.bug, stringResource(R.string.report_bug)) { open(bugReportUrl(ISSUES_URL, version)) }
+                AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl(ISSUES_URL)) }
+                AboutButton(XnotesIcons.heart, stringResource(R.string.sponsor)) { open(SPONSOR_URL) }
             }
 
             Spacer(Modifier.height(26.dp))
@@ -152,8 +152,8 @@ fun AboutPane() {
                 Modifier.clickable { open(N_REPO_URL) },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Enjoying n-notes? ", color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                Text("Star it on GitHub", color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.enjoying_n_notes), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                Text(stringResource(R.string.star_on_github), color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
         }
     }
@@ -216,7 +216,7 @@ private fun copyVersion(ctx: Context, version: String) {
     runCatching {
         val clip = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clip.setPrimaryClip(ClipData.newPlainText("n-notes version", "n-notes $version"))
-        Toast.makeText(ctx, "Version copied", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, ctx.getString(R.string.version_copied), Toast.LENGTH_SHORT).show()
     }
 }
 

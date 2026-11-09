@@ -530,7 +530,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun deleteSelection() {
         val items = selection.items
         if (items.isEmpty()) return
-        if (!suppressToast) showToast("Deleted")
+        if (!suppressToast) showToast(appContext.getString(R.string.toast_deleted))
         val command = EraseCanvasItems.capture(document, items)
         document.removeAll(items)
         history.push(command)
@@ -543,7 +543,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun copySelection() {
         if (selection.isEmpty) return
         copyToClipboard(cut = false)
-        showToast("Copied")
+        showToast(appContext.getString(R.string.copied))
         maybeSwitchBackAfterSelect()
     }
 
@@ -558,7 +558,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         suppressToast = true
         deleteSelection() // also runs the select tool's switch-back, once
         suppressToast = false
-        showToast("Cut")
+        showToast(appContext.getString(R.string.toast_cut))
     }
 
     /** Clone the selection a nudge down and right, and leave the copies selected. */
@@ -658,7 +658,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         com.xnotes.core.audio.RecordingIds.adopt(clones, document.items, moves = clip.cut)
         document.addAll(clones)
         history.push(AddCanvasItems(document, clones))
-        showToast("Inserted")
+        showToast(appContext.getString(R.string.toast_inserted))
         if (clip.cut && ItemClipboard.clip === clip) ItemClipboard.clip = null
         selection.select(clones)
         armTool(Tool.SELECT)
@@ -688,7 +688,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun pasteClipboardImageAt(content: Pt) {
         val bytes = com.xnotes.platform.SystemClipboard.imageBytes(appContext) ?: return
         insertImage(bytes, content)
-        showToast("Inserted")
+        showToast(appContext.getString(R.string.toast_inserted))
     }
 
     // --- crop: a lone picture cut down to part of itself, for good ---
