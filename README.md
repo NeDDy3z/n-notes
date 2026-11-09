@@ -32,9 +32,15 @@ Releases are named `{xnotes version}-{n-notes version}`, for example `0.9.7-0.48
 |---|---|
 | [GitHub Releases](https://github.com/NeDDy3z/n-notes/releases/latest) | Signed APK |
 
+## Reporting issues
+
+When reporting bugs, issues or ideas, please split them into multiple smaller issues instead of one big one. That way they're easier for me to track and I won't miss any bug or requested feature.
+
 ## Disclaimer
 
 I use LLMs during development mainly for research, code review and translations. Any and every change an LLM makes, I manually review/test before it goes into a release.
+
+Translations are fully LLM-generated and get fixed over time based on user reports. If you spot a translation issue, please report it [here](https://github.com/NeDDy3z/n-notes/issues/new?title=Incorrect%20Translation&labels=translation&assignees=NeDDy3z&body=Language:%0ALocation%20of%20the%20Issue:%0AWrong:%0AFix:).
 
 ## License
 
