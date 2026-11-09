@@ -106,6 +106,10 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
             "Back up and sync your notes to a cloud service. Only the selected service syncs.",
             color = palette.textDim.toComposeColor(), fontSize = 12.sp,
         )
+        Text(
+            "Cloud sync is new and still being tested. Before you set it up, copy your notes folder somewhere safe, so a sync problem can't cost you any notes.",
+            color = com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor(), fontSize = 12.sp,
+        )
         SyncLabel("Cloud service")
         OptionDropdown(
             listOf(CloudServices.NONE to "None - off") + CloudServices.all.map { it.id to it.displayName },
