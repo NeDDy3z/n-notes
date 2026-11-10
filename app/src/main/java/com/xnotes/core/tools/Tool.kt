@@ -51,6 +51,12 @@ enum class Tool(val id: String) {
         /** Armed at startup. */
         val DEFAULT = PAN
 
+        /** The pen kinds the one toolbar pen switches between. */
+        val PENS = listOf(PEN, DASHED, CALLIGRAPHY, SPEED, TAPER)
+
+        /** The selection shapes the one toolbar select switches between. */
+        val SELECTIONS = listOf(SELECT, LASSO)
+
         /** Quick-tool-wheel order (spec 06 §11 / 10 §7). */
         val wheelOrder = listOf(PEN, DASHED, CALLIGRAPHY, SPEED, TAPER, HIGHLIGHTER, ERASER, SELECT, LASSO, INSERT_SPACE, SCREENSHOT, TAPE, SHAPE, TEXT, MARKUP, PAN)
     }

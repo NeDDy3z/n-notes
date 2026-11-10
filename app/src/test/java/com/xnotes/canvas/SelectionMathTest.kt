@@ -11,6 +11,7 @@ import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.stroke.Sample
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import org.junit.Assert.assertEquals
@@ -134,6 +135,14 @@ class SelectionMathTest {
     @Test fun aBandInsideAHollowShapeLeavesTheShapeOut() {
         val box = box()
         assertEquals(listOf<CanvasItem>(word), SelectionMath.bandMembers(listOf(box, word), Rect(60.0, 30.0, 80.0, 40.0)))
+    }
+
+    @Test fun theKindFilterLeavesOutWhatItExcludes() {
+        val box = box()
+        val all = Rect(-10.0, -10.0, 300.0, 200.0)
+        assertEquals(listOf<CanvasItem>(box, word), SelectionMath.bandMembers(listOf(box, word), all))
+        assertEquals(listOf<CanvasItem>(word), SelectionMath.bandMembers(listOf(box, word), all, kinds = setOf(SelectKind.INK)))
+        assertEquals(listOf<CanvasItem>(box), SelectionMath.lassoMembers(listOf(box, word), loop(-10.0, -10.0, 210.0, 110.0), kinds = setOf(SelectKind.SHAPES)))
     }
 
     @Test fun aBandCrossingAShapesOutlineTakesIt() {

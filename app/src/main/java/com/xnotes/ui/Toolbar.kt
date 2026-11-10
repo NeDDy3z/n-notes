@@ -238,9 +238,9 @@ private fun ToolbarItemView(
         ToolbarItem.SIDEBAR ->
             ToolbarIcon(XnotesIcons.sidebar, stringResource(R.string.side_panel), active = editor.sidebarVisible, shortcut = Keys.SIDEBAR) { editor.toggleSidebar() }
 
-        ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
-        ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER, ToolbarItem.PAN,
-        ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.SCREENSHOT, ToolbarItem.SHAPE,
+        ToolbarItem.PEN -> shownOf(Tool.PENS, editor.tool).let { ToolButton(editor, it, toolIcons[it], configForTool, setConfigForTool) }
+        ToolbarItem.SELECT -> shownOf(Tool.SELECTIONS, editor.tool).let { ToolButton(editor, it, toolIcons[it], configForTool, setConfigForTool) }
+        ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER, ToolbarItem.PAN, ToolbarItem.SCREENSHOT, ToolbarItem.SHAPE,
         ToolbarItem.TEXT, ToolbarItem.TEXT_BOX, ToolbarItem.TABLE, ToolbarItem.TAPE, ToolbarItem.INSERT_SPACE -> {
             val tool = Tool.fromId(item.id)
             if (tool != null) ToolButton(editor, tool, toolIcons[tool], configForTool, setConfigForTool)
@@ -360,14 +360,23 @@ private fun ToolButton(
                 tool == Tool.SHAPE -> ShapeConfigPopup(editor) { setConfigForTool(null) }
                 tool == Tool.TABLE -> TableConfigPopup(editor) { setConfigForTool(null) }
                 tool == Tool.ERASER -> EraserConfigPopup(editor) { setConfigForTool(null) }
-                tool == Tool.SELECT || tool == Tool.LASSO -> SelectConfigPopup(editor, tool) { setConfigForTool(null) }
+                tool == Tool.SELECT || tool == Tool.LASSO -> SelectConfigPopup(editor, tool, onPick = { editor.selectTool(it); setConfigForTool(it) }) { setConfigForTool(null) }
                 tool == Tool.TEXT -> TextToolConfigPopup(editor) { setConfigForTool(null) }
                 tool == Tool.MARKUP -> MarkupToolPopup(editor) { setConfigForTool(null) }
                 tool == Tool.TAPE -> TapeConfigPopup(editor) { setConfigForTool(null) }
-                else -> ToolConfigPopup(editor, tool) { setConfigForTool(null) }
+                else -> ToolConfigPopup(editor, tool, onPick = { editor.selectTool(it); setConfigForTool(it) }) { setConfigForTool(null) }
             }
         }
     }
+}
+
+/** Which of [family] a merged toolbar button shows: the armed one, else the last one armed there. */
+// shortcut: the last kind lives only while the bar is composed, so a restart shows the first; persist it if that bothers.
+@Composable
+internal fun shownOf(family: List<Tool>, armed: Tool): Tool {
+    var last by remember { mutableStateOf(family[0]) }
+    LaunchedEffect(armed) { if (armed in family) last = armed }
+    return if (armed in family) armed else last
 }
 
 /** The single keys that arm a tool in a note (see [Editor.handleKeyDown]). */

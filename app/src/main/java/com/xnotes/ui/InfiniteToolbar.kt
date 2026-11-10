@@ -22,15 +22,10 @@ import com.xnotes.ui.theme.toComposeColor
 /** Which tool a toolbar item arms, for the items that are simply a tool button. */
 private val CANVAS_TOOL_OF: Map<ToolbarItem, Tool> = mapOf(
     ToolbarItem.PEN to Tool.PEN,
-    ToolbarItem.DASHED to Tool.DASHED,
-    ToolbarItem.CALLIGRAPHY to Tool.CALLIGRAPHY,
-    ToolbarItem.SPEED to Tool.SPEED,
-    ToolbarItem.TAPER to Tool.TAPER,
     ToolbarItem.HIGHLIGHTER to Tool.HIGHLIGHTER,
     ToolbarItem.ERASER to Tool.ERASER,
     ToolbarItem.PAN to Tool.PAN,
     ToolbarItem.SELECT to Tool.SELECT,
-    ToolbarItem.LASSO to Tool.LASSO,
     ToolbarItem.SHAPE to Tool.SHAPE,
     ToolbarItem.TAPE to Tool.TAPE,
 )
@@ -93,13 +88,17 @@ fun InfiniteToolbar(
                     ToolbarItem.TITLE -> if (!LocalBar.current.vertical) Label(if (editor.document.displayName == null && editor.document.path == null) stringResource(R.string.untitled) else editor.title, Modifier.padding(end = 4.dp))
 
                     in CANVAS_TOOL_OF -> {
-                        val tool = CANVAS_TOOL_OF.getValue(item)
+                        val tool = when (item) {
+                            ToolbarItem.PEN -> shownOf(Tool.PENS, editor.tool)
+                            ToolbarItem.SELECT -> shownOf(Tool.SELECTIONS, editor.tool)
+                            else -> CANVAS_TOOL_OF.getValue(item)
+                        }
                         val icon = toolIcons[tool]
                         if (icon != null) {
                             Box {
                                 // Tapping the armed tool again opens its settings, as the paged bar does.
                                 val armed = editor.tool == tool
-                                val configurable = tool.isStroke || tool == Tool.ERASER || tool == Tool.SHAPE || tool == Tool.SELECT || tool == Tool.TAPE
+                                val configurable = tool.isStroke || tool == Tool.ERASER || tool == Tool.SHAPE || tool == Tool.SELECT || tool == Tool.LASSO || tool == Tool.TAPE
                                 ToolbarIcon(
                                     icon,
                                     stringResource(tool.labelRes),
@@ -120,9 +119,9 @@ fun InfiniteToolbar(
                                 // controls, same wording, same ranges, and they cannot drift apart.
                                 if (tool == Tool.ERASER && eraserOpen) EraserConfigPopup(editor) { eraserOpen = false }
                                 if (tool == Tool.SHAPE && shapeOpen) ShapeConfigPopup(editor) { shapeOpen = false }
-                                if (selectOpen == tool) SelectConfigPopup(editor, tool) { selectOpen = null }
+                                if (selectOpen == tool) SelectConfigPopup(editor, tool, onPick = { editor.armTool(it); selectOpen = it }) { selectOpen = null }
                                 if (tool == Tool.TAPE && tapeOpen) TapeConfigPopup(editor) { tapeOpen = false }
-                                if (penOpen == tool) ToolConfigPopup(editor, tool) { penOpen = null }
+                                if (penOpen == tool) ToolConfigPopup(editor, tool, onPick = { editor.armTool(it); penOpen = it }) { penOpen = null }
                             }
                         }
                     }

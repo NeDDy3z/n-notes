@@ -1179,4 +1179,12 @@
     <string name="sync_status_conflicts">"，冲突 %1$d"</string>
     <string name="sync_status_errors">"，错误 %1$d"</string>
     <string name="sync_notification_title">正在同步笔记</string>
+    <string name="caption_select_kinds">选择内容</string>
+    <string name="select_kind_lines">线条</string>
+    <string name="select_kind_shapes">形状</string>
+    <string name="select_kind_text_boxes">文本框</string>
+    <string name="select_kind_images">图片</string>
+    <string name="select_kind_tables">表格</string>
+    <string name="select_kind_tape">胶带</string>
+    <string name="select_kind_audio">音频</string>
 </resources>

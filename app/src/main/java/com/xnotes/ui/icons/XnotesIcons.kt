@@ -70,7 +70,11 @@ object XnotesIcons {
         "M22 21H7",
     )
     val pan = icon("M5 9 2 12l3 3", "M9 5l3-3 3 3", "M15 19l-3 3-3-3", "M19 9l3 3-3 3", "M2 12h20", "M12 2v20")
-    val select = icon("M3 3l7.07 16.97 2.51-7.39 7.39-2.51Z", "M13 13l6 6")
+    // Rectangle selection, drawn like the lasso: a box in marching ants.
+    val select = icon(
+        "M3 8V5h3", "M9.5 5h5", "M18 5h3v3", "M21 11v2",
+        "M21 16v3h-3", "M14.5 19h-5", "M6 19H3v-3", "M3 13v-2",
+    )
     // Free selection, drawn as the marquee it leaves behind: a freehand loop in marching ants.
     val lasso = icon(
         "M21.4 8.3Q22.9 10.4 21.7 12.8", "M19.7 14.9Q17.6 16.1 15.5 17.3",

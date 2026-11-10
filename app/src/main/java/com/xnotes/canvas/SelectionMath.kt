@@ -12,6 +12,7 @@ import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.shapes.ShapePath
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.vector.PathFlattener
 
 /** A selected item plus the index of the page it lives on. */
@@ -37,16 +38,16 @@ object SelectionMath {
      * are the same test with a page-space translation in front of it; sharing the rule is the
      * point, so the two canvases select alike.
      */
-    fun bandMembers(items: List<CanvasItem>, band: Rect, whole: Boolean = false): List<CanvasItem> {
+    fun bandMembers(items: List<CanvasItem>, band: Rect, whole: Boolean = false, kinds: Set<SelectKind> = SelectKind.ALL): List<CanvasItem> {
         val ring = Ring(corners(band))
-        return items.filter { !it.locked && ring.takes(it, whole) }
+        return items.filter { !it.locked && SelectKind.of(it) in kinds && ring.takes(it, whole) }
     }
 
     /** Lasso selection over a flat item list: the band's rule, with the loop as the ring. */
-    fun lassoMembers(items: List<CanvasItem>, polygon: List<Pt>, whole: Boolean = false): List<CanvasItem> {
+    fun lassoMembers(items: List<CanvasItem>, polygon: List<Pt>, whole: Boolean = false, kinds: Set<SelectKind> = SelectKind.ALL): List<CanvasItem> {
         if (polygon.size < 3) return emptyList()
         val ring = Ring(polygon)
-        return items.filter { !it.locked && ring.takes(it, whole) }
+        return items.filter { !it.locked && SelectKind.of(it) in kinds && ring.takes(it, whole) }
     }
 
     /**
@@ -59,8 +60,9 @@ object SelectionMath {
         pageRects: List<Rect>,
         band: Rect,
         whole: Boolean = false,
+        kinds: Set<SelectKind> = SelectKind.ALL,
         toPage: (Int, Pt) -> Pt = { i, p -> Pt(p.x - pageRects[i].left, p.y - pageRects[i].top) },
-    ): List<Selected> = members(pages, pageRects, corners(band), whole, toPage)
+    ): List<Selected> = members(pages, pageRects, corners(band), whole, kinds, toPage)
 
     /** Lasso selection across pages: the band's rule, with the loop as the ring. */
     fun lassoMembers(
@@ -68,13 +70,14 @@ object SelectionMath {
         pageRects: List<Rect>,
         polygon: List<Pt>,
         whole: Boolean = false,
+        kinds: Set<SelectKind> = SelectKind.ALL,
         toPage: (Int, Pt) -> Pt = { i, p -> Pt(p.x - pageRects[i].left, p.y - pageRects[i].top) },
     ): List<Selected> {
         if (polygon.size < 3) return emptyList()
-        return members(pages, pageRects, polygon, whole, toPage)
+        return members(pages, pageRects, polygon, whole, kinds, toPage)
     }
 
-    private fun members(pages: List<Page>, pageRects: List<Rect>, ring: List<Pt>, whole: Boolean, toPage: (Int, Pt) -> Pt): List<Selected> {
+    private fun members(pages: List<Page>, pageRects: List<Rect>, ring: List<Pt>, whole: Boolean, kinds: Set<SelectKind>, toPage: (Int, Pt) -> Pt): List<Selected> {
         val reach = Rect.bounding(ring)
         val out = ArrayList<Selected>()
         for (i in pages.indices) {
@@ -83,7 +86,7 @@ object SelectionMath {
             if (!pr.outset(OFF_PAGE_SLACK).intersects(reach)) continue
             val local = Ring(ring.map { toPage(i, it) })
             for (item in pages[i].items) {
-                if (!item.locked && local.takes(item, whole)) out.add(Selected(i, item))
+                if (!item.locked && SelectKind.of(item) in kinds && local.takes(item, whole)) out.add(Selected(i, item))
             }
         }
         return out

@@ -18,13 +18,12 @@ class ToolbarLayoutTest {
         assertEquals(listOf(ToolbarItem.HOME, ToolbarItem.TITLE), d.sections[0].entries.map { it.item })
         assertEquals(
             listOf(
-                ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
-                ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
+                ToolbarItem.PEN, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
             ),
             d.sections[2].entries.map { it.item },
         )
         assertEquals(
-            listOf(ToolbarItem.PAN, ToolbarItem.READER, ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.INSERT_SPACE, ToolbarItem.SCREENSHOT),
+            listOf(ToolbarItem.PAN, ToolbarItem.READER, ToolbarItem.SELECT, ToolbarItem.INSERT_SPACE, ToolbarItem.SCREENSHOT),
             d.sections[3].entries.map { it.item },
         )
         assertEquals(
@@ -256,13 +255,13 @@ class ToolbarLayoutTest {
         assertTrue(ToolbarItem.TAPE in ToolbarLayout.CANVAS_ITEMS)
     }
 
-    @Test fun insertSpaceSlotsInRightAfterTheLassoOnTheNoteBarOnly() {
-        val note = ToolbarLayout.fromRaw(listOf(listOf("pan" to true, "lasso" to true, "screenshot" to true)))
+    @Test fun insertSpaceSlotsInRightAfterSelectOnTheNoteBarOnly() {
+        val note = ToolbarLayout.fromRaw(listOf(listOf("pan" to true, "select" to true, "screenshot" to true)))
         val items = note.items()
-        assertEquals(items.indexOf(ToolbarItem.LASSO) + 1, items.indexOf(ToolbarItem.INSERT_SPACE))
+        assertEquals(items.indexOf(ToolbarItem.SELECT) + 1, items.indexOf(ToolbarItem.INSERT_SPACE))
         assertTrue(ToolbarItem.INSERT_SPACE !in ToolbarLayout.CANVAS_ITEMS)
         assertTrue(ToolbarItem.INSERT_SPACE !in ToolbarLayout.CANVAS_DEFAULT.items())
-        val canvas = ToolbarLayout.fromRaw(listOf(listOf("lasso" to true, "insert_space" to true)), ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
+        val canvas = ToolbarLayout.fromRaw(listOf(listOf("select" to true, "insert_space" to true)), ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
         assertTrue(ToolbarItem.INSERT_SPACE !in canvas.items())
     }
 }

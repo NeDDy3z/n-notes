@@ -13,19 +13,16 @@ enum class ToolbarItem(val id: String) {
     HOME("home"),
     TITLE("title"),
     SIDEBAR("sidebar"),
+    /** Every pen kind ([Tool.PENS]) behind one button that shows the one in use. */
     PEN("pen"),
-    DASHED("dashed"),
-    CALLIGRAPHY("calligraphy"),
-    SPEED("speed"),
-    TAPER("taper"),
     HIGHLIGHTER("highlighter"),
     ERASER("eraser"),
     PAN("pan"),
 
     /** Switches a paged note to reading: the bar shrinks to reading controls and nothing edits. */
     READER("reader"),
+    /** Rectangle select and lasso ([Tool.SELECTIONS]) behind one button. */
     SELECT("select"),
-    LASSO("lasso"),
     SCREENSHOT("screenshot"),
     WAND("wand"),
     TAPE("tape"),
@@ -57,7 +54,7 @@ enum class ToolbarItem(val id: String) {
     /** Canvas only: the overview map in the corner. */
     MINIMAP("minimap"),
 
-    /** Notes only: opens and closes room on a page. Last, so a stored bar missing older items too still gets it right after the lasso. */
+    /** Notes only: opens and closes room on a page. Last, so a stored bar missing older items too still gets it right after select. */
     INSERT_SPACE("insert_space");
 
     companion object {
@@ -160,11 +157,11 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.TEXT_BOX to ToolbarItem.TEXT,
             ToolbarItem.VIEW to ToolbarItem.STYLES,
             ToolbarItem.MARGINS to ToolbarItem.STYLES,
-            ToolbarItem.WAND to ToolbarItem.LASSO,
+            ToolbarItem.WAND to ToolbarItem.SELECT,
             ToolbarItem.TABLE to ToolbarItem.IMAGE,
             ToolbarItem.SEARCH to ToolbarItem.PAGE_NAV,
             ToolbarItem.TAPE to ToolbarItem.WAND,
-            ToolbarItem.INSERT_SPACE to ToolbarItem.LASSO,
+            ToolbarItem.INSERT_SPACE to ToolbarItem.SELECT,
             ToolbarItem.MARKUP to ToolbarItem.TEXT_BOX,
             ToolbarItem.READER to ToolbarItem.PAN,
         )
@@ -177,9 +174,8 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
          */
         val CANVAS_ITEMS: Set<ToolbarItem> = setOf(
             ToolbarItem.HOME, ToolbarItem.TITLE,
-            ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
-            ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
-            ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.WAND,
+            ToolbarItem.PEN, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
+            ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.WAND,
             ToolbarItem.TAPE, ToolbarItem.SHAPE,
             ToolbarItem.IMAGE, ToolbarItem.COLORS, ToolbarItem.UNDO, ToolbarItem.REDO,
             ToolbarItem.STYLES, ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP,
@@ -194,11 +190,8 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
         val DEFAULT: ToolbarLayout = of(
             listOf(ToolbarItem.HOME, ToolbarItem.TITLE),
             listOf(ToolbarItem.SIDEBAR),
-            listOf(
-                ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
-                ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
-            ),
-            listOf(ToolbarItem.PAN, ToolbarItem.READER, ToolbarItem.SELECT, ToolbarItem.LASSO, ToolbarItem.INSERT_SPACE, ToolbarItem.SCREENSHOT),
+            listOf(ToolbarItem.PEN, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER),
+            listOf(ToolbarItem.PAN, ToolbarItem.READER, ToolbarItem.SELECT, ToolbarItem.INSERT_SPACE, ToolbarItem.SCREENSHOT),
             listOf(ToolbarItem.WAND, ToolbarItem.TAPE, ToolbarItem.SHAPE, ToolbarItem.RULER, ToolbarItem.TEXT, ToolbarItem.TEXT_BOX, ToolbarItem.MARKUP),
             listOf(ToolbarItem.IMAGE, ToolbarItem.TABLE),
             listOf(ToolbarItem.COLORS),
@@ -211,11 +204,8 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
         /** Mirrors the hardcoded canvas bar (see InfiniteToolbar.kt). */
         val CANVAS_DEFAULT: ToolbarLayout = of(
             listOf(ToolbarItem.HOME, ToolbarItem.TITLE),
-            listOf(
-                ToolbarItem.PEN, ToolbarItem.DASHED, ToolbarItem.CALLIGRAPHY, ToolbarItem.SPEED,
-                ToolbarItem.TAPER, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
-            ),
-            listOf(ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.LASSO),
+            listOf(ToolbarItem.PEN, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER),
+            listOf(ToolbarItem.PAN, ToolbarItem.SELECT),
             listOf(ToolbarItem.WAND, ToolbarItem.TAPE, ToolbarItem.SHAPE),
             listOf(ToolbarItem.IMAGE),
             listOf(ToolbarItem.COLORS),

@@ -1440,4 +1440,12 @@
     <string name="sync_status_conflicts">", konflikty: %1$d"</string>
     <string name="sync_status_errors">", chyby: %1$d"</string>
     <string name="sync_notification_title">Synchronizace poznámek</string>
+    <string name="caption_select_kinds">Co vybrat</string>
+    <string name="select_kind_lines">Čáry</string>
+    <string name="select_kind_shapes">Tvary</string>
+    <string name="select_kind_text_boxes">Textová pole</string>
+    <string name="select_kind_images">Obrázky</string>
+    <string name="select_kind_tables">Tabulky</string>
+    <string name="select_kind_tape">Páska</string>
+    <string name="select_kind_audio">Zvuk</string>
 </resources>

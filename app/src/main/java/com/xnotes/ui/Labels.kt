@@ -15,6 +15,7 @@ import com.xnotes.core.model.TapePattern
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.TableBorders
 import com.xnotes.core.tools.MarkupMode
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.platform.FontCatalog
@@ -25,6 +26,18 @@ import java.time.DayOfWeek
 import java.time.Month
 
 // Display names for core enums, which stay free of Android resources.
+
+@get:StringRes
+val SelectKind.labelRes: Int
+    get() = when (this) {
+        SelectKind.INK -> R.string.select_kind_lines
+        SelectKind.SHAPES -> R.string.select_kind_shapes
+        SelectKind.TEXT -> R.string.select_kind_text_boxes
+        SelectKind.IMAGES -> R.string.select_kind_images
+        SelectKind.TABLES -> R.string.select_kind_tables
+        SelectKind.TAPE -> R.string.select_kind_tape
+        SelectKind.AUDIO -> R.string.select_kind_audio
+    }
 
 @get:StringRes
 val Tool.labelRes: Int
@@ -85,16 +98,11 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.TITLE -> R.string.toolbar_title
         ToolbarItem.SIDEBAR -> R.string.toolbar_sidebar
         ToolbarItem.PEN -> R.string.tool_pen
-        ToolbarItem.DASHED -> R.string.tool_dashed
-        ToolbarItem.CALLIGRAPHY -> R.string.tool_calligraphy
-        ToolbarItem.SPEED -> R.string.tool_speed
-        ToolbarItem.TAPER -> R.string.tool_taper
         ToolbarItem.HIGHLIGHTER -> R.string.tool_highlighter
         ToolbarItem.ERASER -> R.string.tool_eraser
         ToolbarItem.PAN -> R.string.tool_pan
         ToolbarItem.READER -> R.string.tool_reader
         ToolbarItem.SELECT -> R.string.tool_select
-        ToolbarItem.LASSO -> R.string.tool_lasso
         ToolbarItem.SCREENSHOT -> R.string.tool_screenshot
         ToolbarItem.WAND -> R.string.tool_wand
         ToolbarItem.TAPE -> R.string.tool_tape

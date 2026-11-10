@@ -12,6 +12,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +60,7 @@ import androidx.compose.ui.layout.MeasurePolicy
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -92,6 +95,7 @@ import com.xnotes.core.model.TemplateSettings
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.MarkupMode
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.tools.Tool
@@ -110,28 +114,29 @@ import kotlin.math.roundToInt
  * Stroke-tool configuration popup (spec 10 §3): PRESSURE / SENSITIVITY, then the
  * tool's signature control: MULTIPLIER (calligraphy), SPEED (speed pen) or
  * TIP WIDTH PERCENTAGE (taper pen), then WIDTH, and a NEON toggle (with INTENSITY) on
- * any stroke tool but the highlighter.
+ * any stroke tool but the highlighter. With [onPick], a pen also gets a scrolling row of every
+ * pen kind under its title, which re-arms the toolbar pen as that kind.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
-    val base = remember { editor.toolConfig(tool) }
-    var pressure by remember { mutableStateOf(base.pressureEnabled) }
-    var sensitivity by remember { mutableStateOf(ToolConversions.minFactorToSensitivity(base.pressureMinFactor).toFloat()) }
-    var multiplier by remember { mutableStateOf(ToolConversions.directionStrengthToMultiplier(base.directionStrength).toFloat()) }
-    var speed by remember { mutableStateOf(ToolConversions.strengthToSpeed(base.speedStrength).toFloat()) }
-    var taperTip by remember { mutableStateOf((base.taperMinFactor * 100).toFloat()) }
-    var width by remember { mutableStateOf(base.baseWidth.toFloat()) }
-    var glow by remember { mutableStateOf(base.neon) }
-    var glowIntensity by remember { mutableStateOf(ToolConversions.neonStrengthToIntensity(base.neonStrength).toFloat()) }
-    var dashLen by remember { mutableStateOf(base.dashLength.toFloat()) }
-    var gapLen by remember { mutableStateOf(base.dashGap.toFloat()) }
-    var straight by remember { mutableStateOf(base.straightLine) }
-    var scale by remember { mutableStateOf(base.scale) }
-    var intensity by remember { mutableStateOf(ToolConversions.highlighterAlphaToIntensity(base.highlighterAlpha).toFloat()) }
-    var inverse by remember { mutableStateOf(base.highlighterInverse) }
-    var colorOverride by remember { mutableStateOf(base.colorOverride) }
-    var snapShapes by remember { mutableStateOf(editor.snapHeldToShapes) }
+fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onPick: ((Tool) -> Unit)? = null, onDismiss: () -> Unit) {
+    val base = remember(tool) { editor.toolConfig(tool) }
+    var pressure by remember(tool) { mutableStateOf(base.pressureEnabled) }
+    var sensitivity by remember(tool) { mutableStateOf(ToolConversions.minFactorToSensitivity(base.pressureMinFactor).toFloat()) }
+    var multiplier by remember(tool) { mutableStateOf(ToolConversions.directionStrengthToMultiplier(base.directionStrength).toFloat()) }
+    var speed by remember(tool) { mutableStateOf(ToolConversions.strengthToSpeed(base.speedStrength).toFloat()) }
+    var taperTip by remember(tool) { mutableStateOf((base.taperMinFactor * 100).toFloat()) }
+    var width by remember(tool) { mutableStateOf(base.baseWidth.toFloat()) }
+    var glow by remember(tool) { mutableStateOf(base.neon) }
+    var glowIntensity by remember(tool) { mutableStateOf(ToolConversions.neonStrengthToIntensity(base.neonStrength).toFloat()) }
+    var dashLen by remember(tool) { mutableStateOf(base.dashLength.toFloat()) }
+    var gapLen by remember(tool) { mutableStateOf(base.dashGap.toFloat()) }
+    var straight by remember(tool) { mutableStateOf(base.straightLine) }
+    var scale by remember(tool) { mutableStateOf(base.scale) }
+    var intensity by remember(tool) { mutableStateOf(ToolConversions.highlighterAlphaToIntensity(base.highlighterAlpha).toFloat()) }
+    var inverse by remember(tool) { mutableStateOf(base.highlighterInverse) }
+    var colorOverride by remember(tool) { mutableStateOf(base.colorOverride) }
+    var snapShapes by remember(tool) { mutableStateOf(editor.snapHeldToShapes) }
 
     fun emit() {
         val m = ToolConversions.sensitivityToMinFactor(sensitivity.toDouble())
@@ -164,6 +169,11 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(tool.labelRes))
+            if (onPick != null && tool in Tool.PENS) {
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (pen in Tool.PENS) KindChip(penIcon(pen), stringResource(pen.labelRes), pen == tool) { if (pen != tool) onPick(pen) }
+                }
+            }
             // COLOUR override: "Default" follows the toolbar's active ink colour; pick a hue to pin
             // this tool to it regardless of the toolbar selection.
             StyleCaption(stringResource(R.string.caption_colour))
@@ -1014,19 +1024,64 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     }
 }
 
-/** Select/lasso configuration popup: whether a selection needs items fully inside it, plus the select tool's SWITCH BACK. */
 @Composable
-fun SelectConfigPopup(editor: ToolPopupHost, tool: Tool = Tool.SELECT, onDismiss: () -> Unit) {
-    val base = remember { editor.toolConfig(tool) }
-    var switchBack by remember { mutableStateOf(base.switchBackAfterSelect) }
-    var whole by remember { mutableStateOf(base.selectWholeItems) }
-    var snap by remember { mutableStateOf(base.snapToMargins) }
+private fun penIcon(pen: Tool): ImageVector = ImageVector.vectorResource(
+    when (pen) {
+        Tool.DASHED -> R.drawable.ic_stroke_dashed
+        Tool.CALLIGRAPHY -> R.drawable.ic_stroke_calligraphy
+        Tool.SPEED -> R.drawable.ic_stroke_speed
+        Tool.TAPER -> R.drawable.ic_stroke_taper
+        else -> R.drawable.ic_stroke_regular
+    },
+)
 
-    fun emit() = editor.updateToolConfig(tool, base.copy(switchBackAfterSelect = switchBack, selectWholeItems = whole, snapToMargins = snap))
+@Composable
+private fun selectKindIcon(k: SelectKind): ImageVector = when (k) {
+    SelectKind.INK -> ImageVector.vectorResource(R.drawable.ic_stroke_regular)
+    SelectKind.SHAPES -> XnotesIcons.shape
+    SelectKind.TEXT -> XnotesIcons.textBox
+    SelectKind.IMAGES -> XnotesIcons.image
+    SelectKind.TABLES -> XnotesIcons.table
+    SelectKind.TAPE -> XnotesIcons.tape
+    SelectKind.AUDIO -> XnotesIcons.mic
+}
+
+/**
+ * Select/lasso configuration popup: rectangle or lasso ([onPick] re-arms the toolbar select as the
+ * other), which kinds of item a selection picks up (shared by both), whether it needs items fully
+ * inside it, plus the select tool's SWITCH BACK.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SelectConfigPopup(editor: ToolPopupHost, tool: Tool = Tool.SELECT, onPick: (Tool) -> Unit = {}, onDismiss: () -> Unit) {
+    val base = remember(tool) { editor.toolConfig(tool) }
+    var switchBack by remember(tool) { mutableStateOf(base.switchBackAfterSelect) }
+    var whole by remember(tool) { mutableStateOf(base.selectWholeItems) }
+    var snap by remember(tool) { mutableStateOf(base.snapToMargins) }
+    var kinds by remember { mutableStateOf(editor.toolConfig(Tool.SELECT).selectKinds) }
+
+    fun emit() {
+        editor.updateToolConfig(tool, base.copy(switchBackAfterSelect = switchBack, selectWholeItems = whole, snapToMargins = snap))
+        editor.updateToolConfig(Tool.SELECT, editor.toolConfig(Tool.SELECT).copy(selectKinds = kinds))
+    }
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(if (tool == Tool.LASSO) R.string.tool_lasso else R.string.title_select))
+            Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                KindChip(XnotesIcons.select, stringResource(R.string.shape_rectangle), tool == Tool.SELECT) { if (tool != Tool.SELECT) onPick(Tool.SELECT) }
+                KindChip(XnotesIcons.lasso, stringResource(R.string.tool_lasso), tool == Tool.LASSO) { if (tool != Tool.LASSO) onPick(Tool.LASSO) }
+            }
+            StyleCaption(stringResource(R.string.caption_select_kinds))
+            FlowRow(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (k in SelectKind.entries) {
+                    val on = k in kinds
+                    // The last kind stays on: a selection that can pick up nothing looks broken.
+                    KindChip(selectKindIcon(k), stringResource(k.labelRes), on) {
+                        if (!(on && kinds.size == 1)) { kinds = if (on) kinds - k else kinds + k; emit() }
+                    }
+                }
+            }
             ToggleRow(stringResource(R.string.caption_select_whole_items), whole) { whole = it; emit() }
             // Re-arm the previous pen/highlighter once a selection action (move, resize, delete,
             // cut, copy, duplicate) finishes, so a quick edit doesn't strand you in select.

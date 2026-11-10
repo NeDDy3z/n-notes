@@ -2034,7 +2034,7 @@ class InteractionController(
         bandRect?.let { band ->
             val drawable = state.drawablePageRange()
             setSelection(
-                SelectionMath.bandMembers(state.document.pages, state.pageRects, band, configFor(Tool.SELECT).selectWholeItems) { i, p ->
+                SelectionMath.bandMembers(state.document.pages, state.pageRects, band, configFor(Tool.SELECT).selectWholeItems, configFor(Tool.SELECT).selectKinds) { i, p ->
                     state.toPageSpace(i, p)
                 }.filter { it.pageIndex in drawable }, // hidden paginated neighbours don't select
             )
@@ -2071,7 +2071,7 @@ class InteractionController(
     private fun endLasso() {
         if (lassoPoints.size >= 3) {
             val drawable = state.drawablePageRange()
-            val members = SelectionMath.lassoMembers(state.document.pages, state.pageRects, lassoPoints, configFor(Tool.LASSO).selectWholeItems) { i, p ->
+            val members = SelectionMath.lassoMembers(state.document.pages, state.pageRects, lassoPoints, configFor(Tool.LASSO).selectWholeItems, configFor(Tool.SELECT).selectKinds) { i, p ->
                 state.toPageSpace(i, p)
             }.filter { it.pageIndex in drawable } // hidden paginated neighbours don't select
             if (members.isEmpty()) {

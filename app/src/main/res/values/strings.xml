@@ -1398,4 +1398,12 @@
     <string name="sync_status_conflicts">", %1$d conflicts"</string>
     <string name="sync_status_errors">", %1$d errors"</string>
     <string name="sync_notification_title">Syncing notes</string>
+    <string name="caption_select_kinds">What to select</string>
+    <string name="select_kind_lines">Lines</string>
+    <string name="select_kind_shapes">Shapes</string>
+    <string name="select_kind_text_boxes">Text boxes</string>
+    <string name="select_kind_images">Images</string>
+    <string name="select_kind_tables">Tables</string>
+    <string name="select_kind_tape">Tape</string>
+    <string name="select_kind_audio">Audio</string>
 </resources>
