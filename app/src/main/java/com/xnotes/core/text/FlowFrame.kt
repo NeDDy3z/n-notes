@@ -233,7 +233,22 @@ class FlowFrame(
     val cells: CellIndex = CellIndex(emptyList()),
     /** The page the flow starts on: past a note's cover. */
     val firstPage: Int = 0,
+    /** The page each paragraph ends on, virtual pages past the real ones included; -1 when not laid out. */
+    private val paraEndPage: IntArray = IntArray(0),
+    /** The page the last paragraph with anything visible ends on. */
+    private val contentEndPage: Int = 0,
+    /** Where the run of blank paragraphs past the last real page starts; the paragraph count when there is none. */
+    val hiddenTailStart: Int? = null,
 ) {
+    /**
+     * Pages to add so the content and the caret paragraph [caretPara] both land on real pages.
+     * Empty lines and breaks trailing past both need none, e.g. ones left behind by deleted pages.
+     */
+    fun extraPagesFor(caretPara: Int): Int {
+        val end = maxOf(contentEndPage, paraEndPage.getOrElse(caretPara) { -1 })
+        return (end - pages.lastIndex).coerceIn(0, extraPagesNeeded)
+    }
+
     private val byPara = HashMap<Int, MutableList<Pair<Int, PlacedLine>>>()
 
     /** Every page slice of each table (by [TableBlock.ordinal]), page index attached. */

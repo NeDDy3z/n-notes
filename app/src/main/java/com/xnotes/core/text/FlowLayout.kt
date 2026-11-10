@@ -512,6 +512,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         // and below it there.
         val counters = IntArray(Paragraph.MAX_INDENT + 1)
         var skipTo = 0
+        val paraEndPage = IntArray(flow.paragraphs.size) { -1 }
+        var contentEndPage = page
         for ((paraIndex, para) in flow.paragraphs.withIndex()) {
             if (page > throughPage) break
             if (paraIndex < skipTo) continue
@@ -524,6 +526,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 ordinal = 0
                 counters.fill(0)
                 skipTo = block.last + 1
+                paraEndPage.fill(page, paraIndex, skipTo)
+                contentEndPage = page
                 continue
             }
             if (para.breakBefore) {
@@ -615,13 +619,20 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 firstLine = false
                 li++
             }
+            paraEndPage[paraIndex] = page
+            if (!para.isBlank()) contentEndPage = page
         }
         val extra = (page - (pageBoxes.size - 1)).coerceAtLeast(0)
+        var hiddenTail = flow.paragraphs.size
+        while (hiddenTail > 0 && paraEndPage[hiddenTail - 1] > pageBoxes.lastIndex && flow.paragraphs[hiddenTail - 1].isBlank()) hiddenTail--
         val pages = pageBoxes.indices.map {
             PageFlow(contentRects[it], pageLines[it], pageTables[it], pageBreaks[it], pageCallouts[it], colorOn(it))
         }
-        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells, firstPage.coerceIn(0, pageBoxes.lastIndex))
+        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells, firstPage.coerceIn(0, pageBoxes.lastIndex), paraEndPage, contentEndPage, hiddenTail)
     }
+
+    private fun Paragraph.isBlank() =
+        length == 0 && list == ListKind.NONE && table == null && !rule && quote == null
 
     /** How far [para]'s text stands in from the column: its quote's bar, its indent and its marker. */
     private fun indentOf(para: Paragraph): Double =

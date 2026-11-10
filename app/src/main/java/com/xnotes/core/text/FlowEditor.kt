@@ -177,9 +177,11 @@ class FlowEditor(private val flow: TextFlow) {
     }
 
     /** Append [count] empty default paragraphs (the tap-below-the-text fill). */
-    fun appendEmptyLines(count: Int): Pair<Command, FlowPos> {
+    /** Appends [count] empty lines, replacing the paragraphs from [from] on (a blank tail no page shows). */
+    fun appendEmptyLines(count: Int, from: Int = flow.paragraphs.size): Pair<Command, FlowPos> {
         val paras = List(count.coerceAtLeast(1)) { Paragraph() }
-        val cmd = FlowSplice(flow, flow.paragraphs.size, emptyList(), paras).also { it.redo() }
+        val at = from.coerceIn(0, flow.paragraphs.size)
+        val cmd = FlowSplice(flow, at, flow.paragraphs.subList(at, flow.paragraphs.size).toList(), paras).also { it.redo() }
         return cmd to FlowPos(flow.paragraphs.size - 1, 0)
     }
 

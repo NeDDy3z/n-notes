@@ -391,7 +391,7 @@ class FlowTextController(
             return
         }
         flushBurst()
-        val (cmd, caret) = FlowEditor(flow()).appendEmptyLines(count)
+        val (cmd, caret) = FlowEditor(flow()).appendEmptyLines(count, frame()?.hiddenTailStart ?: flow().paragraphs.size)
         commitEdit(cmd, caret)
     }
 
@@ -454,7 +454,7 @@ class FlowTextController(
             }
             val (_, caret) = FlowEditor(flow()).replaceRange(r, text, effStyle)
             onChanged(active)
-            burstExtras += autoAppendPages()
+            burstExtras += autoAppendPages(caret.para)
             selection = FlowRange.caret(caret)
             onTyped()
             if (markdownInput) InputRules.forTyped(flow(), caret, text)?.let { return applyRule(it, caret) }
@@ -535,7 +535,7 @@ class FlowTextController(
             return
         }
         onChanged(active)
-        val extras = autoAppendPages()
+        val extras = autoAppendPages(caretTo?.para ?: selection.end.para)
         history.push(if (extras.isEmpty()) head else CompositeCommand(listOf(head) + extras))
         caretTo?.let { selection = FlowRange.caret(it) }
         onEdited()
@@ -567,9 +567,9 @@ class FlowTextController(
         onFlushed()
     }
 
-    /** Append pages, each the size the note gives an added page, until the published layout stops overflowing. */
-    private fun autoAppendPages(): List<Command> {
-        val need = frame()?.extraPagesNeeded ?: 0
+    /** Append pages, each the size the note gives an added page, until the content and the caret at [caretPara] fit. */
+    private fun autoAppendPages(caretPara: Int): List<Command> {
+        val need = frame()?.extraPagesFor(caretPara) ?: 0
         if (need <= 0) return emptyList()
         val doc = state.document
         val out = mutableListOf<Command>()
