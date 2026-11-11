@@ -14,9 +14,11 @@ import com.xnotes.core.model.TextStyle
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.stroke.Sample
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -129,6 +131,38 @@ class EraseSessionTest {
         val session = EraseSession(doc)
         assertNull(session.erase(5.0, 5.0, 20.0, area = false))
         assertNull(session.erase(5.0, 5.0, 20.0, area = true))
+        assertEquals(listOf<CanvasItem>(img), doc.items)
+    }
+
+    /**
+     * The eraser's own filter narrows what a drag takes, in both modes. A switched-off kind is
+     * skipped even though the circle is right over it; no filter means everything it would
+     * otherwise take.
+     */
+    @Test fun theFilterNarrowsBothModes() {
+        for (area in listOf(false, true)) {
+            val ink = line(100.0)
+            val doc = docOf(ink)
+            val session = EraseSession(doc)
+            assertNull(
+                "area=$area: ink was taken while its kind was off",
+                session.erase(50.0, 0.0, 8.0, area, setOf(SelectKind.SHAPES)),
+            )
+            assertEquals(1, doc.itemCount)
+
+            assertNotNull(session.erase(50.0, 0.0, 8.0, area, setOf(SelectKind.INK)))
+            // Whole mode takes the stroke outright; area mode cuts a hole in it and leaves
+            // fragments, so what is pinned is that the eraser reached it at all once its kind was on.
+            assertFalse(doc.items.any { it === ink })
+        }
+    }
+
+    /** An image under the eraser is still not the eraser's to take, whatever the filter names. */
+    @Test fun theFilterCannotOpenAnImageToTheEraser() {
+        val img = image(0.0, 0.0)
+        val doc = docOf(img)
+        val session = EraseSession(doc)
+        assertNull(session.erase(5.0, 5.0, 20.0, area = false, kinds = SelectKind.entries.toSet()))
         assertEquals(listOf<CanvasItem>(img), doc.items)
     }
 

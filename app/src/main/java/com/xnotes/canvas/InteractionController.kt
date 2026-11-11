@@ -91,6 +91,7 @@ import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.shapes.ShapeKind
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.MarkupMode
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
@@ -1670,7 +1671,7 @@ class InteractionController(
         val radius = stroke.config.baseWidth / 2.0 + Scribble.TOUCH_DP / dpPerUnit
         val reach = Rect.bounding(path).outset(radius)
         val candidates = ArrayList<Any>()
-        page.items.filterTo(candidates) { EraseRule.erasable(it) && it.paintBounds().intersects(reach) }
+        page.items.filterTo(candidates) { EraseRule.erasable(it, eraser.erasableKinds) && it.paintBounds().intersects(reach) }
         if (eraser.eraseMarkups) candidates.addAll(page.markups)
         val ptPerPx = 72.0 / state.document.dpi
         // A scribble is ink, so it takes only lines, never a fill.
@@ -1741,8 +1742,9 @@ class InteractionController(
             val local = state.toPageSpace(pi, content)
             val cx = local.x
             val cy = local.y
-            val dirty = if (area) eraseAreaFromPage(page, cx, cy, radius)
-            else eraseStrokesFromPage(page, cx, cy, radius)
+            val kinds = configFor(Tool.ERASER).erasableKinds
+            val dirty = if (area) eraseAreaFromPage(page, cx, cy, radius, kinds)
+            else eraseStrokesFromPage(page, cx, cy, radius, kinds)
             if (dirty != null) {
                 // Repaint only the erased area in place; fall back to a full
                 // rebuild only when the page has no live cache yet.
@@ -1772,9 +1774,9 @@ class InteractionController(
     /** STROKE mode: remove every stroke/shape the eraser circle touches, and every fill it touches at
      *  all. Images and text boxes are deliberately-placed and protected (delete those via select +
      *  delete). Returns the repaint region, or null if nothing changed. */
-    private fun eraseStrokesFromPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
-        var dirty = unfillOnPage(page, cx, cy, radius)
-        val toRemove = page.items.filter { EraseRule.takes(it, cx, cy, radius) }
+    private fun eraseStrokesFromPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>?): Rect? {
+        var dirty = unfillOnPage(page, cx, cy, radius, kinds)
+        val toRemove = page.items.filter { EraseRule.takes(it, cx, cy, radius, kinds) }
         if (toRemove.isEmpty()) return dirty
         for (item in toRemove) {
             page.items.remove(item)
@@ -1788,16 +1790,16 @@ class InteractionController(
     /** AREA mode: replace each touched stroke or shape with the fragments that survive the eraser
      *  circle, spliced in at the original's z-position. Text and images are left untouched. Returns
      *  the repaint region, or null if nothing changed. */
-    private fun eraseAreaFromPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
-        var dirty = unfillOnPage(page, cx, cy, radius)
+    private fun eraseAreaFromPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>?): Rect? {
+        var dirty = unfillOnPage(page, cx, cy, radius, kinds)
         var i = 0
         while (i < page.items.size) {
             val item = page.items[i]
-            val frags: List<CanvasItem>? = if (!EraseRule.erasable(item)) {
+            val frags: List<CanvasItem>? = if (!EraseRule.erasable(item, kinds)) {
                 null
             } else if (EraseRule.whole(item)) {
                 // A fill or a tape is never cut: whatever the eraser touches of it, it takes whole.
-                if (EraseRule.takes(item, cx, cy, radius)) emptyList() else null
+                if (EraseRule.takes(item, cx, cy, radius, kinds)) emptyList() else null
             } else {
                 when (item) {
                     is Stroke -> item.erasedBy(cx, cy, radius)
@@ -1828,10 +1830,10 @@ class InteractionController(
     }
 
     /** Take the fill alone off the filled shapes the eraser touches inside but not on their outline; the repaint region, or null. */
-    private fun unfillOnPage(page: Page, cx: Double, cy: Double, radius: Double): Rect? {
+    private fun unfillOnPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>?): Rect? {
         var dirty: Rect? = null
         for (item in page.items) {
-            if (!EraseRule.takesFill(item, cx, cy, radius)) continue
+            if (!EraseRule.takesFill(item, cx, cy, radius, kinds)) continue
             val shape = item as ShapeItem
             eraseUnfilled += RefillShapes.Entry(shape, shape.fillRgba, null)
             shape.fillRgba = null

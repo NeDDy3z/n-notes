@@ -390,6 +390,7 @@ data class Settings(
             .put("switch_back_after_erase", c.switchBackAfterErase)
             .put("erase_markups", c.eraseMarkups)
             .put("scribble_erase", c.scribbleErase)
+            .put("erasable_kinds", JSONArray(c.erasableKinds?.map { it.id } ?: emptyList<String>()))
             .put("switch_back_after_select", c.switchBackAfterSelect)
             .put("select_whole_items", c.selectWholeItems)
             .put("select_kinds", JSONArray(c.selectKinds.map { it.id }))
@@ -429,6 +430,11 @@ data class Settings(
                 switchBackAfterErase = o.optBoolean("switch_back_after_erase", d.switchBackAfterErase),
                 eraseMarkups = o.optBoolean("erase_markups", d.eraseMarkups),
                 scribbleErase = o.optBoolean("scribble_erase", d.scribbleErase),
+                erasableKinds = o.optJSONArray("erasable_kinds")?.let { a ->
+                    (0 until a.length()).mapNotNull { SelectKind.fromId(a.optString(it)) }
+                        .filterTo(LinkedHashSet()) { k -> k in SelectKind.ERASER_TAKES }
+                        .takeIf { it.size < SelectKind.ERASER_TAKES.size }
+                } ?: d.erasableKinds,
                 switchBackAfterSelect = o.optBoolean("switch_back_after_select", d.switchBackAfterSelect),
                 selectWholeItems = o.optBoolean("select_whole_items", d.selectWholeItems),
                 selectKinds = o.optJSONArray("select_kinds")?.let { a -> (0 until a.length()).mapNotNull { SelectKind.fromId(a.optString(it)) }.toSet() } ?: d.selectKinds,

@@ -147,6 +147,7 @@
     <string name="caption_switch_back">Switch back</string>
     <string name="caption_erase_markups">Erase PDF text markups</string>
     <string name="caption_scribble_erase">Scribble to erase</string>
+    <string name="caption_erasable_kinds">The eraser takes</string>
     <string name="title_select">Select</string>
     <string name="title_shape">Shape</string>
     <string name="shape_line">Line</string>

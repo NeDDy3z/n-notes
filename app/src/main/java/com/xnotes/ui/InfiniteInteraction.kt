@@ -939,7 +939,7 @@ class InfiniteInteraction(
         val passes = Scribble.passes(path, dpPerUnit) ?: return false
         val radius = stroke.config.baseWidth / 2.0 + Scribble.TOUCH_DP / dpPerUnit
         // Images, text and anything locked are spared, as the eraser spares them; a scribble is ink, so it takes only lines.
-        val candidates = itemsIn(Rect.bounding(path).outset(radius)).filter { EraseRule.erasable(it) }
+        val candidates = itemsIn(Rect.bounding(path).outset(radius)).filter { EraseRule.erasable(it, configFor(Tool.ERASER).erasableKinds) }
         val taken = Scribble.taken(passes, radius, candidates) { c, x, y, r -> EraseRule.touchesLine(c, x, y, r) }
         if (taken.isEmpty()) return false
         onWetStroke(null)
@@ -1919,7 +1919,7 @@ class InfiniteInteraction(
         val session = eraseSession ?: return
         onEraserCursor(Pt(vx, vy), eraserRadius() * viewport.zoom)
         val content = viewport.viewportToContent(Pt(vx, vy))
-        session.erase(content.x, content.y, eraserRadius(), areaErase())
+        session.erase(content.x, content.y, eraserRadius(), areaErase(), configFor(Tool.ERASER).erasableKinds)
         requestRender()
     }
 

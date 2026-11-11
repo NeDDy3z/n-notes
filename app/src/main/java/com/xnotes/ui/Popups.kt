@@ -1013,6 +1013,7 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     var scale by remember { mutableStateOf(base.scale) }
     var markups by remember { mutableStateOf(base.eraseMarkups) }
     var scribble by remember { mutableStateOf(base.scribbleErase) }
+    var kinds by remember { mutableStateOf(base.erasableKinds ?: SelectKind.ERASER_TAKES.toSet()) }
 
     fun emit() = editor.updateToolConfig(
         Tool.ERASER,
@@ -1023,6 +1024,9 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             scale = scale,
             eraseMarkups = markups,
             scribbleErase = scribble,
+            // Every kind on is stored as no filter at all, for the reason the lasso's is: a kind
+            // added later is erasable by default rather than spared by a filter nobody set.
+            erasableKinds = kinds.takeIf { it.size < SelectKind.ERASER_TAKES.size },
         ),
     )
 
@@ -1043,6 +1047,22 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             if (editor.hostHasPdf) ToggleRow(stringResource(R.string.caption_erase_markups), markups) { markups = it; emit() }
             // A pen scribbled over ink erases it without picking up the eraser.
             ToggleRow(stringResource(R.string.caption_scribble_erase), scribble) { scribble = it; emit() }
+            Spacer(Modifier.size(12.dp))
+            // What the eraser takes off the page: the item kinds it can actually reach. One row of
+            // chips, because these are one decision — whether the eraser reaches this thing or not.
+            StyleCaption(stringResource(R.string.caption_erasable_kinds))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                for (k in SelectKind.ERASER_TAKES) {
+                    val on = k in kinds
+                    // The last kind stays on: an eraser that can take nothing looks broken.
+                    KindChip(selectKindIcon(k), stringResource(k.labelRes), on) {
+                        if (!(on && kinds.size == 1)) { kinds = if (on) kinds - k else kinds + k; emit() }
+                    }
+                }
+            }
         }
     }
 }
