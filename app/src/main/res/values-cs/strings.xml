@@ -67,7 +67,12 @@
     <string name="caption_pressure">Přítlak</string>
     <string name="caption_sensitivity">Citlivost</string>
     <string name="caption_multiplier">Násobitel</string>
-    <string name="caption_speed">Rychlost</string>
+    <string name="caption_thinning">Ztenčení</string>
+    <string name="caption_smoothing">Vyhlazení</string>
+    <string name="caption_top_speed">Nejvyšší rychlost</string>
+    <string name="caption_stabilization">Stabilizace</string>
+    <string name="caption_strength">Síla</string>
+    <string name="caption_crossover">Přechod</string>
     <string name="caption_tip_width">Šířka hrotu v procentech</string>
     <string name="caption_width">Šířka</string>
     <string name="caption_scale">Měřítko</string>
@@ -448,6 +453,7 @@
     <string name="pref_toolbar_help">Klepnutím nástroj zobrazíš nebo skryješ. Dlouhým stisknutím ho přetáhneš v rámci sekce nebo mezi sekcemi. Dlouhým stisknutím horní části sekce přesuneš celou sekci.</string>
     <string name="toggle_pan">Přepnout posun</string>
     <string name="toggle_eraser">Přepnout gumu</string>
+    <string name="toggle_lasso">Přepnout laso</string>
     <string name="toggle_previous">Přepnout na předchozí nástroj</string>
     <string name="pref_filename_template_help">YYYY YY MM DD HH mm ss se nahradí datem a časem vytvoření. # se nahradí číslem, díky kterému je název ve složce volný.</string>
     <string name="pref_next_note_named">Další poznámka by se jmenovala %1$s</string>
@@ -1243,6 +1249,10 @@
     <string name="material_surface_colour">Barva povrchu</string>
     <string name="material_colour_presets">Přednastavené barvy</string>
     <string name="material_custom">Vlastní</string>
+    <string name="material_bubblegum">Žvýkačka</string>
+    <string name="material_rose">Růže</string>
+    <string name="material_lime">Limetka</string>
+    <string name="material_aqua">Akva</string>
     <string name="material_indigo">Indigo</string>
     <string name="material_amber">Jantar</string>
     <string name="material_morning">Ráno</string>

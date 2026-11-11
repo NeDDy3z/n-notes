@@ -268,7 +268,7 @@ internal fun ConflictMarked(e: BrowseEntry, name: @Composable () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             XnotesIcons.warning, stringResource(R.string.sync_conflict_copy),
-            tint = com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor(), modifier = Modifier.size(14.dp),
+            tint = com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor(), modifier = Modifier.size(14.dp),
         )
         Spacer(Modifier.width(4.dp))
         Box(Modifier.weight(1f, fill = false)) { name() }

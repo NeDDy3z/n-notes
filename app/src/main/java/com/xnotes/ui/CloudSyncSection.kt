@@ -111,7 +111,7 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
         )
         Text(
             stringResource(R.string.sync_new_warning),
-            color = com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor(), fontSize = 12.sp,
+            color = com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor(), fontSize = 12.sp,
         )
         SyncLabel(stringResource(R.string.sync_cloud_service))
         OptionDropdown(
@@ -327,8 +327,8 @@ private fun syncRuns(lines: List<String>): List<SyncRun> {
 
 @Composable
 private fun syncLineColor(line: String) = when {
-    line.startsWith("FAILED") || line.startsWith("Error") -> com.xnotes.core.tools.InkPalette.RED.toComposeColor()
-    line.startsWith("Conflict") || line.startsWith("Skipped") -> com.xnotes.core.tools.InkPalette.ORANGE.toComposeColor()
+    line.startsWith("FAILED") || line.startsWith("Error") -> com.xnotes.core.model.Rgba(255, 92, 92, 255).toComposeColor()
+    line.startsWith("Conflict") || line.startsWith("Skipped") -> com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor()
     line.startsWith("OK") -> LocalPalette.current.accent.toComposeColor()
     else -> LocalPalette.current.textDim.toComposeColor()
 }

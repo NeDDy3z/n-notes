@@ -67,7 +67,12 @@
     <string name="caption_pressure">Presión</string>
     <string name="caption_sensitivity">Sensibilidad</string>
     <string name="caption_multiplier">Multiplicador</string>
-    <string name="caption_speed">Velocidad</string>
+    <string name="caption_thinning">Adelgazamiento</string>
+    <string name="caption_smoothing">Suavizado</string>
+    <string name="caption_top_speed">Velocidad máxima</string>
+    <string name="caption_stabilization">Estabilización</string>
+    <string name="caption_strength">Intensidad</string>
+    <string name="caption_crossover">Transición</string>
     <string name="caption_tip_width">Porcentaje del ancho de la punta</string>
     <string name="caption_width">Grosor</string>
     <string name="caption_scale">Escala</string>
@@ -448,6 +453,7 @@
     <string name="pref_toolbar_help">Toca una herramienta para mostrarla u ocultarla. Mantén pulsado para arrastrarla dentro de una sección o entre secciones. Mantén pulsada la parte superior de una sección para moverla entera.</string>
     <string name="toggle_pan">Alternar desplazamiento</string>
     <string name="toggle_eraser">Alternar borrador</string>
+    <string name="toggle_lasso">Alternar lazo</string>
     <string name="toggle_previous">Alternar herramienta anterior</string>
     <string name="pref_filename_template_help">YYYY YY MM DD HH mm ss se sustituyen por la fecha y hora de creación. # se convierte en el número que mantiene el nombre libre en su carpeta.</string>
     <string name="pref_next_note_named">La siguiente nota se llamaría %1$s</string>
@@ -1222,6 +1228,10 @@
     <string name="material_surface_colour">Color de superficie</string>
     <string name="material_colour_presets">Colores predefinidos</string>
     <string name="material_custom">Personalizado</string>
+    <string name="material_bubblegum">Chicle</string>
+    <string name="material_rose">Rosa</string>
+    <string name="material_lime">Lima</string>
+    <string name="material_aqua">Aguamarina</string>
     <string name="material_indigo">Índigo</string>
     <string name="material_amber">Ámbar</string>
     <string name="material_morning">Mañana</string>
