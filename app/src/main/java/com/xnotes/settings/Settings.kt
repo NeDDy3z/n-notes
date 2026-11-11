@@ -25,6 +25,16 @@ import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.core.tools.ToolbarLayout
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.abs
+
+/** The zooms the bar stars until the user stars their own. */
+val DEFAULT_FAVORITE_ZOOMS = listOf(2f, 4f, 6f)
+
+/** How far apart two zooms may sit and still count as the same jump to the user. */
+const val ZOOM_MATCH_TOLERANCE = 0.005f
+
+/** How many starred zooms the bar holds; the oldest is dropped past this. */
+const val MAX_FAVORITE_ZOOMS = 12
 
 /**
  * How the in-app explorer orders entries. The chosen key sorts within each group (folders first,
@@ -92,6 +102,11 @@ data class Settings(
     val prefs: Preferences = Preferences(),
     /** One-shot flag: the first-run stylus check (which may auto-enable finger-draw) has run. */
     val fingerDrawAutoChecked: Boolean = false,
+    /**
+     * The zoom levels the zoom bar has starred, ascending. They outlive the note so the same
+     * set of jumps is offered the next time any note or canvas is opened.
+     */
+    val favoriteZooms: List<Float> = DEFAULT_FAVORITE_ZOOMS,
 ) {
     fun configFor(tool: Tool): ToolConfig = tools[tool] ?: ToolDefaults.configFor(tool)
 
@@ -107,6 +122,19 @@ data class Settings(
         val current = swatchesFor(role)
         if (index !in current.indices) return this
         return copy(swatches = swatches + (role to current.toMutableList().also { it[index] = color }))
+    }
+
+    /**
+     * [zoom] starred if it was not, unstarred if it was, keeping the list ascending and within
+     * [ZOOM_MATCH_TOLERANCE] de-duped, since two nearly equal zooms are one entry to the user.
+     */
+    fun toggleFavoriteZoom(zoom: Float): Settings {
+        val held = favoriteZooms.any { abs(it - zoom) <= ZOOM_MATCH_TOLERANCE }
+        val kept = favoriteZooms.filterNot { abs(it - zoom) <= ZOOM_MATCH_TOLERANCE }
+        if (held) return copy(favoriteZooms = kept)
+        // Past the cap the most zoomed-in jump goes, as the least useful of a long menu.
+        val capped = (kept + zoom).sorted().dropLast((kept.size + 1 - MAX_FAVORITE_ZOOMS).coerceAtLeast(0))
+        return copy(favoriteZooms = capped)
     }
 
     fun toJson(): JSONObject {
@@ -147,6 +175,7 @@ data class Settings(
             .put("prefs", prefs.toJson())
             .put("view_defaults", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaults))
             .put("finger_draw_auto_checked", fingerDrawAutoChecked)
+            .put("favorite_zooms", JSONArray().apply { favoriteZooms.forEach { put(it.toDouble()) } })
     }
 
     companion object {
@@ -203,6 +232,7 @@ data class Settings(
                 newTable = tableDefaults(o.optJSONObject("new_table")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
                 fingerDrawAutoChecked = o.optBoolean("finger_draw_auto_checked", false),
+                favoriteZooms = favoriteZooms(o.optJSONArray("favorite_zooms")),
             )
         }
 
@@ -213,6 +243,18 @@ data class Settings(
                 val saved = rgbaList(o.optJSONArray(role.id))
                 if (saved.isEmpty()) null else role to List(SwatchRole.COUNT) { saved.getOrNull(it) ?: role.defaults[it] }
             }.toMap()
+        }
+
+        /**
+         * The starred zooms, in the order written. A settings file that never had the key falls
+         * back to the defaults; an empty list is the user's own doing and is left empty.
+         */
+        private fun favoriteZooms(a: JSONArray?): List<Float> {
+            if (a == null) return DEFAULT_FAVORITE_ZOOMS
+            // A list the user emptied stays empty; only a file that never had the key gets defaults.
+            return (0 until a.length()).mapNotNull { i ->
+                a.optDouble(i, Double.NaN).takeIf { it.isFinite() }?.toFloat()
+            }.take(MAX_FAVORITE_ZOOMS)
         }
 
         private fun recentDocs(a: JSONArray?): List<RecentDoc> {

@@ -143,6 +143,7 @@ import com.xnotes.ui.theme.Palette
 import com.xnotes.ui.theme.dynamicMaterialColors
 import java.io.InputStream
 import java.io.OutputStream
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -332,6 +333,12 @@ private val searchWorker: java.util.concurrent.Executor by lazy {
 
 /** Recent as last set here, read only so both panes of a split recompose on a change; the list itself lives in settings. */
 private val sharedRecents = androidx.compose.runtime.mutableStateOf<List<com.xnotes.settings.RecentDoc>?>(null)
+
+/**
+ * Starred zoom levels, shared by both panes for the same reason Recent is: they are one list for
+ * the whole app, not one per open note. Null until first read from settings.
+ */
+private val sharedFavoriteZooms = androidx.compose.runtime.mutableStateOf<List<Float>?>(null)
 
 /**
  * Which pane of a split view an editor drives. [PRIMARY] is the app's one editor in the ordinary
@@ -7324,6 +7331,37 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun toggleZoomLock() {
         zoomLocked = !zoomLocked
         state.zoomLocked = zoomLocked
+    }
+
+    fun setZoom(scale: Float) {
+        if (zoomLocked) return
+        state.setZoomAnchored(state.clearCenter(), scale.toDouble())
+        afterView()
+    }
+
+    /**
+     * The zoom levels the zoom bar has starred, ascending. They are settings rather than note state:
+     * a zoom worth jumping to is worth jumping to in the next note too.
+     */
+    val favoriteZooms: List<Float>
+        get() = sharedFavoriteZooms.value
+            ?: settings.favoriteZooms.also { sharedFavoriteZooms.value = it }
+
+    /** Star [zoom] if it is not starred already, unstar it if it is. Saved for the next session. */
+    fun toggleFavoriteZoom(zoom: Float) {
+        val next = settings.toggleFavoriteZoom(zoom).favoriteZooms
+        settings = settings.copy(favoriteZooms = next)
+        sharedFavoriteZooms.value = next
+        saveSettingsSoon()
+    }
+
+    /** Drop [zoom] from the starred list. Saved for the next session. */
+    fun removeFavoriteZoom(zoom: Float) {
+        val kept = favoriteZooms.filterNot { abs(it - zoom) <= com.xnotes.settings.ZOOM_MATCH_TOLERANCE }
+        if (kept.size == favoriteZooms.size) return
+        settings = settings.copy(favoriteZooms = kept)
+        sharedFavoriteZooms.value = kept
+        saveSettingsSoon()
     }
 
     fun toggleRuler() {
