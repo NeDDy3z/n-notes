@@ -31,6 +31,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:largeHeap="true"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Xnotes">
         <activity
@@ -70,89 +71,10 @@
             </intent-filter>
         </activity>
 
-        <!-- The launcher entry: an alias, so the icon can switch; the old name keeps shortcuts working. -->
+        <!-- The launcher entry under the old name, so shortcuts keep working. -->
         <activity-alias
             android:name=".MainActivity"
             android:exported="true"
-            android:targetActivity=".EditorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <!-- The other icons, off until one is picked in About. -->
-        <activity-alias
-            android:name=".IconCreamRose"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_cream_rose"
-            android:targetActivity=".EditorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".IconLime"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_lime"
-            android:targetActivity=".EditorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".IconAqua"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_aqua"
-            android:targetActivity=".EditorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".IconInkTile"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_ink_tile"
-            android:targetActivity=".EditorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".IconClassic"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_classic"
-            android:targetActivity=".EditorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".IconGraphite"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_graphite"
-            android:targetActivity=".EditorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".IconCreamTile"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_cream_tile"
             android:targetActivity=".EditorActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
