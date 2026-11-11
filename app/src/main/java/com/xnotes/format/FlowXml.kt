@@ -516,6 +516,7 @@ object FlowXml {
         highlight = parseHex(attr(props, "background-color")),
         sizePt = attr(props, "font-size")?.removeSuffix("pt")?.toDoubleOrNull(),
         face = attr(props, "font-name")?.takeIf { it.isNotEmpty() }?.let { FontFace(it) },
+        link = attr(props, "link")?.takeIf { it.isNotEmpty() },
     )
 
     private fun parseParaProps(props: Element): ParaProps {
@@ -574,7 +575,8 @@ object FlowXml {
                 child is Element -> when (child.localName ?: child.nodeName) {
                     "span" -> collectRuns(
                         child,
-                        charStyles[attr(child, "style-name")]?.copy(link = style.link) ?: style,
+                        // n-notes before 0.9.6 kept a link in the text style as xnotes:link.
+                        charStyles[attr(child, "style-name")]?.let { it.copy(link = style.link ?: it.link) } ?: style,
                         charStyles,
                         out,
                     )

@@ -58,8 +58,11 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
     /** The active code theme's block background, read at layout time (null = neutral grey). */
     var codeBackground: () -> Rgba? = { null }
 
-    /** Theme-derived colour for text when the flow sets no explicit default, read at layout time. */
-    var autoColor: () -> Rgba? = { null }
+    /** Theme-derived colour for text on page [pageIndex] (-1: no page) when the flow sets no explicit default. */
+    var autoColor: (pageIndex: Int) -> Rgba? = { null }
+
+    /** Page [pageIndex]'s own text colour, which wins over the flow's default. */
+    var pageTextColor: (pageIndex: Int) -> Rgba? = { null }
 
     /** The theme accent, which tints a table's header and bands unless the table picks a colour. */
     var accentColor: () -> Rgba? = { null }
@@ -487,7 +490,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         firstPage: Int = 0,
         addedPage: PageBox? = null,
     ): FlowFrame {
-        val defColor = flow.defaultColor ?: autoColor() ?: TextFlow.DEFAULT_COLOR
+        fun colorOn(page: Int) = pageTextColor(page) ?: flow.defaultColor ?: autoColor(page) ?: TextFlow.DEFAULT_COLOR
+        val defColor = colorOn(-1)
         val cells = CellIndex(flow.paragraphs)
         if (pageBoxes.isEmpty()) return FlowFrame(emptyList(), flow.rev, 0, defColor, codeBackground(), cells)
         pass++
@@ -508,6 +512,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         // and below it there.
         val counters = IntArray(Paragraph.MAX_INDENT + 1)
         var skipTo = 0
+        val paraEndPage = IntArray(flow.paragraphs.size) { -1 }
+        var contentEndPage = page
         for ((paraIndex, para) in flow.paragraphs.withIndex()) {
             if (page > throughPage) break
             if (paraIndex < skipTo) continue
@@ -520,6 +526,8 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 ordinal = 0
                 counters.fill(0)
                 skipTo = block.last + 1
+                paraEndPage.fill(page, paraIndex, skipTo)
+                contentEndPage = page
                 continue
             }
             if (para.breakBefore) {
@@ -611,13 +619,20 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
                 firstLine = false
                 li++
             }
+            paraEndPage[paraIndex] = page
+            if (!para.isBlank()) contentEndPage = page
         }
         val extra = (page - (pageBoxes.size - 1)).coerceAtLeast(0)
+        var hiddenTail = flow.paragraphs.size
+        while (hiddenTail > 0 && paraEndPage[hiddenTail - 1] > pageBoxes.lastIndex && flow.paragraphs[hiddenTail - 1].isBlank()) hiddenTail--
         val pages = pageBoxes.indices.map {
-            PageFlow(contentRects[it], pageLines[it], pageTables[it], pageBreaks[it], pageCallouts[it])
+            PageFlow(contentRects[it], pageLines[it], pageTables[it], pageBreaks[it], pageCallouts[it], colorOn(it))
         }
-        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells, firstPage.coerceIn(0, pageBoxes.lastIndex))
+        return FlowFrame(pages, flow.rev, extra, defColor, codeBackground(), cells, firstPage.coerceIn(0, pageBoxes.lastIndex), paraEndPage, contentEndPage, hiddenTail)
     }
+
+    private fun Paragraph.isBlank() =
+        length == 0 && list == ListKind.NONE && table == null && !rule && quote == null
 
     /** How far [para]'s text stands in from the column: its quote's bar, its indent and its marker. */
     private fun indentOf(para: Paragraph): Double =
@@ -985,27 +1000,28 @@ class FlowLayout(private val measurer: TextMeasurer, private val math: MathTypes
         }
     }
 
-    private fun contentRectOf(box: PageBox, m: FlowMargins, dpi: Int): Rect {
-        val l = PageSize.mmToPx(m.leftMm, dpi)
-        val t = PageSize.mmToPx(m.topMm, dpi)
-        val r = PageSize.mmToPx(m.rightMm, dpi)
-        val b = PageSize.mmToPx(m.bottomMm, dpi)
-        var left = l
-        var w = box.width - l - r
-        if (w < MIN_LINE_WIDTH) {
-            w = minOf(MIN_LINE_WIDTH, box.width)
-            left = ((box.width - w) / 2.0).coerceAtLeast(0.0)
-        }
-        var top = t
-        var h = box.height - t - b
-        if (h < MIN_CONTENT_HEIGHT) {
-            h = minOf(MIN_CONTENT_HEIGHT, box.height)
-            top = ((box.height - h) / 2.0).coerceAtLeast(0.0)
-        }
-        return Rect(left, top, w, h)
-    }
-
     companion object {
+        /** The box flow text is held to on a page of [box]: the page less the flow margins. */
+        fun contentRectOf(box: PageBox, m: FlowMargins, dpi: Int): Rect {
+            val l = PageSize.mmToPx(m.leftMm, dpi)
+            val t = PageSize.mmToPx(m.topMm, dpi)
+            val r = PageSize.mmToPx(m.rightMm, dpi)
+            val b = PageSize.mmToPx(m.bottomMm, dpi)
+            var left = l
+            var w = box.width - l - r
+            if (w < MIN_LINE_WIDTH) {
+                w = minOf(MIN_LINE_WIDTH, box.width)
+                left = ((box.width - w) / 2.0).coerceAtLeast(0.0)
+            }
+            var top = t
+            var h = box.height - t - b
+            if (h < MIN_CONTENT_HEIGHT) {
+                h = minOf(MIN_CONTENT_HEIGHT, box.height)
+                top = ((box.height - h) / 2.0).coerceAtLeast(0.0)
+            }
+            return Rect(left, top, w, h)
+        }
+
         /** Indent step per level, content px at 150 dpi (~8 mm). */
         const val INDENT_STEP_PX = 48.0
 

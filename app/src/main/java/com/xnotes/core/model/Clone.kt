@@ -14,7 +14,7 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
     is AudioItem -> AudioItem(audio, rect, name, rid, measurer)
     // The shape is immutable, so the copy can share it; a copy starts covered.
     is TapeItem -> TapeItem(shape, rgba, pattern)
-    is TextItem -> TextItem(pos, width, height, text, rgba, pointSize, face, measurer)
+    is TextItem -> TextItem(pos, width, height, text, rgba, pointSize, face, measurer, bold, italic, underline, strike, align, math)
     is ShapeItem ->
         ShapeItem(
             shape, start, end, strokeRgba, strokeWidth, fillRgba, neon, neonStrength, path,
@@ -23,6 +23,7 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
             it.flip = flip
             it.label = label
             it.labelAt = labelAt
+            it.function = function
         }
     is ConnectorItem ->
         ConnectorItem(routing, start, end, strokeRgba, strokeWidth, headStart, headEnd, dashed, dashLength, dashGap, neon, neonStrength).also {
@@ -31,11 +32,14 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
             it.label = label
             it.labelAt = labelAt
         }
+    is TableItem ->
+        TableItem(rect, colFractions.toList(), rowFractions.toList(), strokeRgba, strokeWidth)
     else -> this
     // Carried, not reset: autosave snapshots the document through this, so dropping the lock here
     // would quietly unlock everything on the next save.
 }.also {
     it.locked = locked
+    it.link = link
     it.sync = sync
     it.group = group
 }

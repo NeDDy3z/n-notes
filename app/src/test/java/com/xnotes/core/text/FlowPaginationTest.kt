@@ -55,6 +55,24 @@ class FlowPaginationTest {
     }
 
     @Test
+    fun trailingBlankLinesNeedNoPagesUnlessTheCaretIsOnThem() {
+        // Text on page 0, a break, then 8 empty lines: what deleting the later pages leaves behind.
+        val flow = flowOf("text", *Array(9) { "" })
+        flow.paragraphs[1].breakBefore = true
+        val frame = layout.layout(flow, pages(1), 150)
+        assertEquals(3, frame.extraPagesNeeded)
+        assertEquals(0, frame.extraPagesFor(0))
+        assertEquals(1, frame.extraPagesFor(1))
+        assertEquals(3, frame.extraPagesFor(9))
+    }
+
+    @Test
+    fun textOverflowStillNeedsPagesWhereverTheCaretIs() {
+        val flow = flowOf("a", "b", "c", "d", "e")
+        assertEquals(1, layout.layout(flow, pages(1), 150).extraPagesFor(0))
+    }
+
+    @Test
     fun continuationRebreaksAtTheNextPageWidth() {
         val flow = flowOf("aaaa bbbb cccc dddd eeee")
         val boxes = listOf(PageBox(100.0, 16.0), PageBox(60.0, 100.0))
@@ -140,6 +158,25 @@ class FlowPaginationTest {
         assertEquals(0, after.extraPagesNeeded)
 
         assertEquals(0, frame.emptyLinesToReach(0, 5.0, slot))
+    }
+
+    @Test
+    fun emptyLineFillReplacesTheBlankTailNoPageShows() {
+        // "x", then a break and 8 empty lines that only overflow pages show; one real page.
+        val flow = flowOf("x", *Array(9) { "" })
+        flow.paragraphs[1].breakBefore = true
+        val frame = layout.layout(flow, pages(1), 150)
+        assertEquals(1, frame.hiddenTailStart)
+
+        val count = frame.emptyLinesToReach(0, 40.0, layout.defaultSlotHeight(flow))
+        val (cmd, caret) = FlowEditor(flow).appendEmptyLines(count, frame.hiddenTailStart!!)
+        val after = layout.layout(flow, pages(1), 150)
+        assertEquals(0, after.caretRect(caret)!!.first)
+        assertEquals(0, after.extraPagesFor(caret.para))
+
+        cmd.undo()
+        assertEquals(10, flow.paragraphs.size)
+        assertTrue(flow.paragraphs[1].breakBefore)
     }
 
     @Test

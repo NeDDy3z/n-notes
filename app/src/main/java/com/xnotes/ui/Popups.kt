@@ -1,9 +1,19 @@
 package com.xnotes.ui
 
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.hrm.latex.renderer.Latex
+import com.hrm.latex.renderer.model.LatexConfig
+import com.hrm.latex.renderer.model.LatexTheme
+import com.xnotes.core.shapes.ShapePreset
+import com.xnotes.core.shapes.ShapePresets
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +23,11 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,11 +52,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.IntrinsicMeasurable
+import androidx.compose.ui.layout.IntrinsicMeasureScope
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -52,6 +78,7 @@ import com.xnotes.canvas.PdfColorFilter
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
+import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.PageEdge
 import com.xnotes.core.model.PageMargins
@@ -68,6 +95,7 @@ import com.xnotes.core.model.TemplateSettings
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.MarkupMode
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.tools.Tool
@@ -86,32 +114,35 @@ import kotlin.math.roundToInt
  * Stroke-tool configuration popup (spec 10 §3): PRESSURE / SENSITIVITY, then the
  * tool's signature control: MULTIPLIER (calligraphy), THINNING / SMOOTHING / TOP SPEED (speed pen) or
  * TIP WIDTH PERCENTAGE (taper pen), then WIDTH, a STABILIZATION toggle (with STRENGTH and
- * CROSSOVER), and a NEON toggle (with INTENSITY) on any stroke tool but the highlighter.
+ * CROSSOVER), and a NEON toggle (with INTENSITY) on any stroke tool but the highlighter. With
+ * [onPick], a pen also gets a scrolling row of every pen kind under its title, which re-arms the
+ * toolbar pen as that kind.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
-    val base = remember { editor.toolConfig(tool) }
-    var pressure by remember { mutableStateOf(base.pressureEnabled) }
-    var sensitivity by remember { mutableStateOf(ToolConversions.minFactorToSensitivity(base.pressureMinFactor).toFloat()) }
-    var multiplier by remember { mutableStateOf(ToolConversions.directionStrengthToMultiplier(base.directionStrength).toFloat()) }
-    var speed by remember { mutableStateOf(ToolConversions.strengthToSpeed(base.speedStrength).toFloat()) }
-    var smoothing by remember { mutableStateOf(ToolConversions.blurToSmoothing(base.speedSmoothing).toFloat()) }
-    var topSpeed by remember { mutableStateOf(ToolConversions.dpPerMsToTopSpeed(base.speedTop).toFloat()) }
-    var taperTip by remember { mutableStateOf((base.taperMinFactor * 100).toFloat()) }
-    var width by remember { mutableStateOf(base.baseWidth.toFloat()) }
-    var glow by remember { mutableStateOf(base.neon) }
-    var glowIntensity by remember { mutableStateOf(ToolConversions.neonStrengthToIntensity(base.neonStrength).toFloat()) }
-    var dashLen by remember { mutableStateOf(base.dashLength.toFloat()) }
-    var gapLen by remember { mutableStateOf(base.dashGap.toFloat()) }
-    var straight by remember { mutableStateOf(base.straightLine) }
-    var scale by remember { mutableStateOf(base.scale) }
-    var intensity by remember { mutableStateOf(ToolConversions.highlighterAlphaToIntensity(base.highlighterAlpha).toFloat()) }
-    var inverse by remember { mutableStateOf(base.highlighterInverse) }
-    var colorOverride by remember { mutableStateOf(base.colorOverride) }
-    var steady by remember { mutableStateOf(base.stabilize) }
-    var steadyStrength by remember { mutableStateOf(ToolConversions.trailToStrength(base.stabilizeTrail).toFloat()) }
-    var crossover by remember { mutableStateOf(ToolConversions.dpPerSToCrossover(base.stabilizeCrossover).toFloat()) }
+fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onPick: ((Tool) -> Unit)? = null, onDismiss: () -> Unit) {
+    val base = remember(tool) { editor.toolConfig(tool) }
+    var pressure by remember(tool) { mutableStateOf(base.pressureEnabled) }
+    var sensitivity by remember(tool) { mutableStateOf(ToolConversions.minFactorToSensitivity(base.pressureMinFactor).toFloat()) }
+    var multiplier by remember(tool) { mutableStateOf(ToolConversions.directionStrengthToMultiplier(base.directionStrength).toFloat()) }
+    var speed by remember(tool) { mutableStateOf(ToolConversions.strengthToSpeed(base.speedStrength).toFloat()) }
+    var smoothing by remember(tool) { mutableStateOf(ToolConversions.blurToSmoothing(base.speedSmoothing).toFloat()) }
+    var topSpeed by remember(tool) { mutableStateOf(ToolConversions.dpPerMsToTopSpeed(base.speedTop).toFloat()) }
+    var taperTip by remember(tool) { mutableStateOf((base.taperMinFactor * 100).toFloat()) }
+    var width by remember(tool) { mutableStateOf(base.baseWidth.toFloat()) }
+    var glow by remember(tool) { mutableStateOf(base.neon) }
+    var glowIntensity by remember(tool) { mutableStateOf(ToolConversions.neonStrengthToIntensity(base.neonStrength).toFloat()) }
+    var dashLen by remember(tool) { mutableStateOf(base.dashLength.toFloat()) }
+    var gapLen by remember(tool) { mutableStateOf(base.dashGap.toFloat()) }
+    var straight by remember(tool) { mutableStateOf(base.straightLine) }
+    var scale by remember(tool) { mutableStateOf(base.scale) }
+    var intensity by remember(tool) { mutableStateOf(ToolConversions.highlighterAlphaToIntensity(base.highlighterAlpha).toFloat()) }
+    var inverse by remember(tool) { mutableStateOf(base.highlighterInverse) }
+    var colorOverride by remember(tool) { mutableStateOf(base.colorOverride) }
+    var steady by remember(tool) { mutableStateOf(base.stabilize) }
+    var steadyStrength by remember(tool) { mutableStateOf(ToolConversions.trailToStrength(base.stabilizeTrail).toFloat()) }
+    var crossover by remember(tool) { mutableStateOf(ToolConversions.dpPerSToCrossover(base.stabilizeCrossover).toFloat()) }
+    var snapShapes by remember(tool) { mutableStateOf(editor.snapHeldToShapes) }
 
     fun emit() {
         val m = ToolConversions.sensitivityToMinFactor(sensitivity.toDouble())
@@ -151,6 +182,11 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(tool.labelRes))
+            if (onPick != null && tool in Tool.PENS) {
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (pen in Tool.PENS) KindChip(penIcon(pen), stringResource(pen.labelRes), pen == tool) { if (pen != tool) onPick(pen) }
+                }
+            }
             // COLOUR override: "Default" follows the toolbar's active ink colour; pick a hue to pin
             // this tool to it regardless of the toolbar selection.
             StyleCaption(stringResource(R.string.caption_colour))
@@ -191,6 +227,10 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
             SliderRow(stringResource(R.string.caption_width), width, range.start.toFloat()..range.endInclusive.toFloat()) { width = it; emit() }
             // SCALE off: ink keeps a constant on-screen thickness whatever zoom you draw at.
             ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
+            // Global dwell shape detection (holding the pen still). Off for the highlighter, which never dwells.
+            if (tool.isStroke && tool != Tool.HIGHLIGHTER) {
+                ToggleRow(stringResource(R.string.caption_snap_to_shapes), snapShapes) { snapShapes = it; editor.snapHeldToShapes = it }
+            }
             if (tool == Tool.DASHED) {
                 SliderRow(stringResource(R.string.caption_dash), dashLen, 2f..40f) { dashLen = it; emit() }
                 SliderRow(stringResource(R.string.caption_gap), gapLen, 2f..40f) { gapLen = it; emit() }
@@ -245,6 +285,7 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
     var customizing by remember { mutableStateOf(false) }
     var docStyle by remember { mutableStateOf(editor.documentStyle) }
     var pageStyle by remember { mutableStateOf(editor.currentPageStyle) }
+    var textColor by remember { mutableStateOf(editor.flowConfigValue().color) }
     val style = if (tab == 0) docStyle else pageStyle
     // "Default for new notes" shows once the All Pages style differs from the saved new-note
     // default, and stays for the rest of the popup session (so it doesn't vanish when checked).
@@ -298,6 +339,30 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
             ) {
                 ModeChip(stringResource(R.string.default_choice), style.pageColor == null) { apply(style.copy(pageColor = null)) }
                 SwatchCircles(editor, SwatchRole.PAPER, style.pageColor) { apply(style.copy(pageColor = it)) }
+            }
+
+            Spacer(Modifier.size(12.dp))
+            StyleCaption(stringResource(R.string.text_colour))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // The page tab's null follows All Pages, like its page colour.
+                val own = if (tab == 0) textColor else pageStyle.textColor
+                val shown = own ?: if (tab == 0) editor.flowDefaultColor() else editor.currentPageTextColor()
+                fun setText(c: Rgba?) {
+                    if (tab == 0) {
+                        editor.setFlowConfig(editor.flowConfigValue().copy(color = c))
+                        textColor = c
+                    } else {
+                        apply(pageStyle.copy(textColor = c))
+                    }
+                }
+                // Auto picks light or dark text against the paper; turning it off keeps the colour it showed.
+                ModeChip(stringResource(if (tab == 0) R.string.auto else R.string.default_choice), own == null) {
+                    setText(if (own == null) shown else null)
+                }
+                Spacer(Modifier.width(8.dp))
+                ColorPickerDot(own, custom = own != null, onPick = { setText(it) }, dismissOnPick = false) { d, p ->
+                    ColorPickerPopup(shown, editor.recentColors, d, p)
+                }
             }
 
             Spacer(Modifier.size(12.dp))
@@ -982,20 +1047,112 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     }
 }
 
-/** Select-tool configuration popup: just a SWITCH BACK toggle, mirroring the eraser's. */
 @Composable
-fun SelectConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
-    val base = remember { editor.toolConfig(Tool.SELECT) }
-    var switchBack by remember { mutableStateOf(base.switchBackAfterSelect) }
+private fun penIcon(pen: Tool): ImageVector = ImageVector.vectorResource(
+    when (pen) {
+        Tool.DASHED -> R.drawable.ic_stroke_dashed
+        Tool.CALLIGRAPHY -> R.drawable.ic_stroke_calligraphy
+        Tool.SPEED -> R.drawable.ic_stroke_speed
+        Tool.TAPER -> R.drawable.ic_stroke_taper
+        else -> R.drawable.ic_stroke_regular
+    },
+)
 
-    fun emit() = editor.updateToolConfig(Tool.SELECT, base.copy(switchBackAfterSelect = switchBack))
+@Composable
+private fun selectKindIcon(k: SelectKind): ImageVector = when (k) {
+    SelectKind.INK -> ImageVector.vectorResource(R.drawable.ic_stroke_regular)
+    SelectKind.SHAPES -> XnotesIcons.shape
+    SelectKind.TEXT -> XnotesIcons.textBox
+    SelectKind.IMAGES -> XnotesIcons.image
+    SelectKind.TABLES -> XnotesIcons.table
+    SelectKind.TAPE -> XnotesIcons.tape
+    SelectKind.AUDIO -> XnotesIcons.mic
+}
+
+/**
+ * Select/lasso configuration popup: rectangle or lasso ([onPick] re-arms the toolbar select as the
+ * other), which kinds of item a selection picks up (shared by both), whether it needs items fully
+ * inside it, plus the select tool's SWITCH BACK.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SelectConfigPopup(editor: ToolPopupHost, tool: Tool = Tool.SELECT, onPick: (Tool) -> Unit = {}, onDismiss: () -> Unit) {
+    val base = remember(tool) { editor.toolConfig(tool) }
+    var switchBack by remember(tool) { mutableStateOf(base.switchBackAfterSelect) }
+    var whole by remember(tool) { mutableStateOf(base.selectWholeItems) }
+    var snap by remember(tool) { mutableStateOf(base.snapToMargins) }
+    var kinds by remember { mutableStateOf(editor.toolConfig(Tool.SELECT).selectKinds) }
+
+    fun emit() {
+        editor.updateToolConfig(tool, base.copy(switchBackAfterSelect = switchBack, selectWholeItems = whole, snapToMargins = snap))
+        editor.updateToolConfig(Tool.SELECT, editor.toolConfig(Tool.SELECT).copy(selectKinds = kinds))
+    }
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_select))
+            PopupTitle(stringResource(if (tool == Tool.LASSO) R.string.tool_lasso else R.string.title_select))
+            Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                KindChip(XnotesIcons.select, stringResource(R.string.shape_rectangle), tool == Tool.SELECT) { if (tool != Tool.SELECT) onPick(Tool.SELECT) }
+                KindChip(XnotesIcons.lasso, stringResource(R.string.tool_lasso), tool == Tool.LASSO) { if (tool != Tool.LASSO) onPick(Tool.LASSO) }
+            }
+            StyleCaption(stringResource(R.string.caption_select_kinds))
+            FlowRow(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (k in SelectKind.entries) {
+                    val on = k in kinds
+                    // The last kind stays on: a selection that can pick up nothing looks broken.
+                    KindChip(selectKindIcon(k), stringResource(k.labelRes), on) {
+                        if (!(on && kinds.size == 1)) { kinds = if (on) kinds - k else kinds + k; emit() }
+                    }
+                }
+            }
+            ToggleRow(stringResource(R.string.caption_select_whole_items), whole) { whole = it; emit() }
             // Re-arm the previous pen/highlighter once a selection action (move, resize, delete,
             // cut, copy, duplicate) finishes, so a quick edit doesn't strand you in select.
-            ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
+            if (tool == Tool.SELECT) {
+                ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
+                if (editor.hostIsPaged) ToggleRow(stringResource(R.string.caption_snap_to_margins), snap) { snap = it; emit() }
+            }
+        }
+    }
+}
+
+/**
+ * Table-tool configuration popup: the line colour, column/row counts and line thickness for the next table.
+ * The table itself is drawn on the page by dragging, like the shape tool; these are just its
+ * defaults. An existing table's columns/rows are edited in table edit mode, its width via the
+ * selection's Change-style slider.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TableConfigPopup(editor: Editor, onDismiss: () -> Unit) {
+    var cols by remember { mutableStateOf(editor.tableToolCols) }
+    var rows by remember { mutableStateOf(editor.tableToolRows) }
+    var width by remember { mutableStateOf(editor.tableToolWidth.toFloat()) }
+    var color by remember { mutableStateOf(editor.tableToolColor) }
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            PopupTitle(stringResource(R.string.title_table))
+            StyleCaption(stringResource(R.string.caption_colour))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.default_choice), color == null) { color = null; editor.tableToolColor = null }
+                ColorPickerDot(
+                    color,
+                    custom = color != null,
+                    onPick = { color = it; editor.tableToolColor = it },
+                    dismissOnPick = false,
+                ) { d, p ->
+                    ColorPickerPopup(
+                        initial = color ?: editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex),
+                        recents = editor.hostRecentColors,
+                        onDismiss = d,
+                        onPick = p,
+                    )
+                }
+            }
+            Spacer(Modifier.size(12.dp))
+            TableStepperRow(stringResource(R.string.caption_columns), cols, 1, 20) { cols = it; editor.tableToolCols = it }
+            TableStepperRow(stringResource(R.string.caption_rows), rows, 1, 20) { rows = it; editor.tableToolRows = it }
+            SliderRow(stringResource(R.string.caption_width), width, 1f..12f) { width = it; editor.tableToolWidth = it.toDouble() }
         }
     }
 }
@@ -1093,6 +1250,33 @@ fun MarkupToolPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     }
 }
 
+/** A −/value/+ integer stepper row, used by [TableConfigPopup]. */
+@Composable
+private fun TableStepperRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
+    val palette = LocalPalette.current
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(
+            "$label  $value",
+            color = palette.text.toComposeColor(),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            modifier = Modifier.weight(1f),
+        )
+        TableStepButton("−") { onChange((value - 1).coerceAtLeast(min)) }
+        Spacer(Modifier.size(8.dp))
+        TableStepButton("+") { onChange((value + 1).coerceAtMost(max)) }
+    }
+}
+
+@Composable
+private fun TableStepButton(label: String, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        Modifier.size(32.dp).clip(MaterialTheme.shapes.extraSmall).background(palette.surface.toComposeColor()).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = palette.text.toComposeColor(), fontSize = 16.sp) }
+}
+
 private fun markupIcon(mode: MarkupMode): ImageVector = when (mode) {
     MarkupMode.SELECT -> XnotesIcons.textSelect
     MarkupMode.HIGHLIGHT -> XnotesIcons.highlight
@@ -1127,7 +1311,7 @@ internal fun PopupTitle(text: String) {
 
 @Composable
 internal fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.width(220.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.widthIn(min = 220.dp).fillMaxWidth()) {
         Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 12.sp)
         Switch(checked = checked, onCheckedChange = onChange)
     }
@@ -1158,10 +1342,37 @@ internal fun SliderRow(
     }
 }
 
+/** A chip's LaTeX: what a function chip plots, null for every other chip. */
+internal fun chipLatex(p: ShapePreset): String? =
+    if (!p.key.startsWith(ShapePresets.FUNCTION_PREFIX)) null
+    else when (val expr = p.key.removePrefix(ShapePresets.FUNCTION_PREFIX)) {
+        "x^(1/2)" -> "\\sqrt{x}"
+        "ln(x)", "sin(x)", "cos(x)", "tan(x)", "cot(x)", "arcsin(x)", "arccos(x)", "arctan(x)" -> "\\" + expr.removeSuffix("(x)") + " x"
+        else -> expr
+    }
+
+/** How a function chip names what it plots. */
+internal fun functionLabel(expr: String): String = when (expr) {
+    "x^2" -> "x\u00B2"
+    "x^3" -> "x\u00B3"
+    "x^(1/2)" -> "\u221Ax"
+    "ln(x)" -> "ln x"
+    "e^x" -> "e\u02E3"
+    "sin(x)" -> "sin x"
+    "cos(x)" -> "cos x"
+    "tan(x)" -> "tan x"
+    "cot(x)" -> "cot x"
+    "arcsin(x)" -> "arcsin x"
+    "arccos(x)" -> "arccos x"
+    "arctan(x)" -> "arctan x"
+    else -> expr
+}
+
 
 @Composable
-internal fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun KindChip(icon: ImageVector, label: String, selected: Boolean, latex: String? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
+    val tint = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor()
     Tooltip(label) {
         Box(
             Modifier
@@ -1169,15 +1380,26 @@ internal fun KindChip(icon: ImageVector, label: String, selected: Boolean, onCli
                 .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
                 .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
                 .clickable(onClick = onClick)
-                .padding(8.dp),
+                // A LaTeX chip trades side padding for width so it stays as wide as an icon chip.
+                .padding(horizontal = if (latex == null) 8.dp else 1.dp, vertical = 8.dp),
         ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
-                modifier = Modifier.size(20.dp),
-            )
+            if (latex == null) {
+                Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+            } else {
+                Box(Modifier.size(34.dp, 20.dp).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+                    Latex(latex, Modifier.scaleDownToFit(), LatexConfig(fontSize = 13.sp, theme = LatexTheme.light(tint, Color.Transparent)))
+                }
+            }
         }
+    }
+}
+
+/** Measures the content at its natural size and shrinks it, centred, until it fits the space given. */
+private fun Modifier.scaleDownToFit() = layout { measurable, constraints ->
+    val p = measurable.measure(Constraints())
+    val s = minOf(1f, constraints.maxWidth.toFloat() / p.width.coerceAtLeast(1), constraints.maxHeight.toFloat() / p.height.coerceAtLeast(1))
+    layout(constraints.maxWidth, constraints.maxHeight) {
+        p.placeWithLayer((constraints.maxWidth - p.width) / 2, (constraints.maxHeight - p.height) / 2) { scaleX = s; scaleY = s }
     }
 }
 
@@ -1196,8 +1418,9 @@ internal fun DropdownMenu(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val palette = LocalPalette.current
+    // An armed eyedropper hides the whole stack so the screen is free to touch; it comes back after the pick.
     androidx.compose.material3.DropdownMenu(
-        expanded = expanded,
+        expanded = expanded && Eyedropper.target == null,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         offset = LocalMenuOffset.current,
@@ -1227,6 +1450,8 @@ internal fun AlertDialog(
     shape: Shape = MaterialTheme.shapes.large,
     containerColor: Color = LocalPalette.current.menuBg.toComposeColor(),
 ) {
+    // Hidden, not dismissed, while an eyedropper armed from inside it picks off the screen.
+    if (Eyedropper.target != null) return
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = confirmButton,

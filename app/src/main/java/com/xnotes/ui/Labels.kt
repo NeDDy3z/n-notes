@@ -15,6 +15,7 @@ import com.xnotes.core.model.TapePattern
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.TableBorders
 import com.xnotes.core.tools.MarkupMode
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.platform.FontCatalog
@@ -25,6 +26,18 @@ import java.time.DayOfWeek
 import java.time.Month
 
 // Display names for core enums, which stay free of Android resources.
+
+@get:StringRes
+val SelectKind.labelRes: Int
+    get() = when (this) {
+        SelectKind.INK -> R.string.select_kind_lines
+        SelectKind.SHAPES -> R.string.select_kind_shapes
+        SelectKind.TEXT -> R.string.select_kind_text_boxes
+        SelectKind.IMAGES -> R.string.select_kind_images
+        SelectKind.TABLES -> R.string.select_kind_tables
+        SelectKind.TAPE -> R.string.select_kind_tape
+        SelectKind.AUDIO -> R.string.select_kind_audio
+    }
 
 @get:StringRes
 val Tool.labelRes: Int
@@ -44,6 +57,7 @@ val Tool.labelRes: Int
         Tool.TEXT -> R.string.tool_text
         Tool.TEXT_BOX -> R.string.tool_text_box
         Tool.IMAGE -> R.string.tool_image
+        Tool.TABLE -> R.string.tool_table
         Tool.MARKUP -> R.string.tool_markup
         Tool.TAPE -> R.string.tool_tape
         Tool.INSERT_SPACE -> R.string.tool_insert_space
@@ -84,15 +98,11 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.TITLE -> R.string.toolbar_title
         ToolbarItem.SIDEBAR -> R.string.toolbar_sidebar
         ToolbarItem.PEN -> R.string.tool_pen
-        ToolbarItem.DASHED -> R.string.tool_dashed
-        ToolbarItem.CALLIGRAPHY -> R.string.tool_calligraphy
-        ToolbarItem.SPEED -> R.string.tool_speed
-        ToolbarItem.TAPER -> R.string.tool_taper
         ToolbarItem.HIGHLIGHTER -> R.string.tool_highlighter
         ToolbarItem.ERASER -> R.string.tool_eraser
         ToolbarItem.PAN -> R.string.tool_pan
+        ToolbarItem.READER -> R.string.tool_reader
         ToolbarItem.SELECT -> R.string.tool_select
-        ToolbarItem.LASSO -> R.string.tool_lasso
         ToolbarItem.SCREENSHOT -> R.string.tool_screenshot
         ToolbarItem.WAND -> R.string.tool_wand
         ToolbarItem.TAPE -> R.string.tool_tape
@@ -103,9 +113,11 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.TEXT_BOX -> R.string.tool_text_box
         ToolbarItem.MARKUP -> R.string.tool_markup
         ToolbarItem.IMAGE -> R.string.insert
+        ToolbarItem.TABLE -> R.string.tool_table
         ToolbarItem.UNDO -> R.string.undo
         ToolbarItem.REDO -> R.string.redo
         ToolbarItem.PAGE_NAV -> R.string.toolbar_page_nav
+        ToolbarItem.SEARCH -> R.string.search
         ToolbarItem.STYLES -> R.string.toolbar_styles
         ToolbarItem.MARGINS -> R.string.toolbar_margins
         ToolbarItem.VIEW -> R.string.toolbar_view
@@ -225,6 +237,7 @@ internal class ResourceWords(private val res: Resources) : ExplorerWords {
             EntryKind.NOTE -> R.string.kind_notes
             EntryKind.PDF -> R.string.kind_pdf_notes
             EntryKind.CANVAS -> R.string.kind_canvases
+            EntryKind.FILE -> R.string.kind_read_only_files
         },
     )
     override fun hue(h: Hue): String = res.getString(

@@ -22,6 +22,33 @@ enum class EraseMode(val id: String) {
     }
 }
 
+/** What kinds of item a band or lasso picks up. Persisted as [id]. */
+enum class SelectKind(val id: String) {
+    INK("ink"),
+    SHAPES("shapes"),
+    TEXT("text"),
+    IMAGES("images"),
+    TABLES("tables"),
+    TAPE("tape"),
+    AUDIO("audio");
+
+    companion object {
+        val ALL: Set<SelectKind> = entries.toSet()
+
+        fun fromId(id: String?): SelectKind? = entries.firstOrNull { it.id == id }
+
+        fun of(item: com.xnotes.core.model.CanvasItem): SelectKind = when (item) {
+            is com.xnotes.core.model.Stroke -> INK
+            is com.xnotes.core.model.TextItem -> TEXT
+            is com.xnotes.core.model.ImageItem -> IMAGES
+            is com.xnotes.core.model.TableItem -> TABLES
+            is TapeItem -> TAPE
+            is com.xnotes.core.model.AudioItem -> AUDIO
+            else -> SHAPES
+        }
+    }
+}
+
 /** What the text markup tool does with a drag over PDF text: select it, or mark it as [type]. */
 enum class MarkupMode(val id: String, val type: com.xnotes.core.model.MarkupType?) {
     SELECT("select", null),
@@ -70,6 +97,12 @@ data class ToolConfig(
     val switchBackAfterErase: Boolean = false,
     /** Select: re-arm the pen/highlighter used before the select tool once a selection action completes. Only [Tool.SELECT]. */
     val switchBackAfterSelect: Boolean = false,
+    /** Select/lasso: take only items lying fully inside the band or loop, not ones it merely touches. */
+    val selectWholeItems: Boolean = false,
+    /** Select/lasso: the kinds of item a band or loop picks up. Kept on [Tool.SELECT] for both. */
+    val selectKinds: Set<SelectKind> = SelectKind.ALL,
+    /** Select: a moved selection snaps to the page's text margins and centre lines. Only [Tool.SELECT]. */
+    val snapToMargins: Boolean = true,
     /** Highlighter: commit each drag as a single straight segment (start → release). Only [Tool.HIGHLIGHTER]. */
     val straightLine: Boolean = false,
     /** When false, the pen draws at a constant on-screen size: at pen-down the width (and the
@@ -138,7 +171,7 @@ object ToolDefaults {
         Tool.TAPER -> ToolConfig(baseWidth = 4.0, pressureEnabled = true, pressureMinFactor = 0.45, directionStrength = 0.0, taperEnabled = true, taperMinFactor = DEFAULT_TAPER_TIP)
         Tool.HIGHLIGHTER -> ToolConfig(baseWidth = 16.0, pressureEnabled = false, pressureMinFactor = 1.0, directionStrength = 0.0, highlighterAlpha = 0.90)
         Tool.ERASER -> ToolConfig(baseWidth = 24.0, pressureEnabled = false, pressureMinFactor = 1.0, directionStrength = 0.0)
-        Tool.LASSO -> ToolConfig(baseWidth = 2.0, pressureEnabled = false, pressureMinFactor = 1.0, directionStrength = 0.0)
+        Tool.LASSO -> ToolConfig(baseWidth = 2.0, pressureEnabled = false, pressureMinFactor = 1.0, directionStrength = 0.0, selectWholeItems = true)
         Tool.TAPE -> ToolConfig(
             baseWidth = TapeItem.DEFAULT_WIDTH, pressureEnabled = false, pressureMinFactor = 1.0, directionStrength = 0.0,
             tapePattern = TapePattern.STRIPES,

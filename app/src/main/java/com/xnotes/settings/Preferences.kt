@@ -5,7 +5,12 @@ import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageSizeChoice
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.util.NameTemplate
+import com.xnotes.sync.CloudService
+import com.xnotes.sync.CloudServices
 import org.json.JSONObject
+
+/** What a swipe on Home can do: show or hide the sidebar, step up a folder, or back into the one just left. */
+val HOME_SWIPES = listOf("sidebar_open", "sidebar_close", "folder_up", "folder_deeper", "none")
 
 /**
  * Global, document-independent preferences (spec 09 §4). Forgiving load: every
@@ -40,6 +45,10 @@ data class Preferences(
     val zoomLockPan: String = "single",
     /** Whether holding a freehand ink stroke still snaps it to a recognized shape. */
     val detectShapes: Boolean = true,
+    /** Whether rotating a selection snaps to the nearest 90 degrees. */
+    val snapRotation90: Boolean = false,
+    /** Language for handwriting-to-text (Convert to text): BCP-47 tag, "cs" (Czech) | "en" (English). */
+    val ocrLanguage: String = "cs",
     /** Tool the stylus side button activates while held; "none" disables it. */
     val penButtonTool: String = "eraser",
     /** Whether the side-button tool also activates during hover (no contact needed); eraser/pan only. */
@@ -61,6 +70,12 @@ data class Preferences(
     val stylusButton2Tap: String = "none",
     /** Whether the volume keys turn pages in a note (up for the previous page, down for the next). */
     val volumeKeysTurnPages: Boolean = false,
+    /** Keep the screen from sleeping while the app is open. */
+    val keepScreenOn: Boolean = false,
+    /** Look for a newer release on GitHub each time the app starts. */
+    val checkUpdatesOnStartup: Boolean = true,
+    /** Preferences open on a list of categories; off shows every setting in one long list. */
+    val prefsCategories: Boolean = true,
     /** Horizontal margin (px) on each side of the page column; 0 ⇒ fit-width fills the screen. */
     val sideMargin: Double = 16.0,
     /** Whether the hairline outline around every page is left undrawn. */
@@ -89,18 +104,40 @@ data class Preferences(
     val defaultCodeLanguage: String = "cpp",
     /** Language the format bar's code toggle last applied; "" until a language is picked. */
     val lastCodeLanguage: String = "",
+    // Cloud sync (opt-in). Credentials live in each service's own encrypted store, not here.
+    /** Id of the one [CloudService] that syncs, or [CloudServices.NONE]. */
+    val cloudService: String = "none",
+    /** The chosen sync folder per service id, so switching services keeps each one's folder. */
+    val cloudFolders: Map<String, CloudFolder> = emptyMap(),
+    val syncAuto: Boolean = true,
+    val syncWifiOnly: Boolean = false,
+    val syncIntervalMinutes: Int = 60,
+    val syncOnNoteExit: Boolean = false,
+    val syncOnAppOpen: Boolean = false,
+    /** Which way notes flow: "both", "up" (local to cloud), "down" (cloud to local), "off". */
+    val syncDirection: String = "both",
+    /** Keep the screen from sleeping while a sync runs with the app open. */
+    val syncKeepScreenOn: Boolean = false,
     /** Whether typed markdown markers (# - ** `) convert the text as you write. */
     val markdownInput: Boolean = true,
     /** Whether typing "/" at a word start opens the command menu. */
     val slashCommands: Boolean = true,
+    /** Whether callout titles follow the app language; off keeps them in English. */
+    val translateCallouts: Boolean = true,
     /** Layouts the explorer header's switcher offers, in switcher order. */
     val switcherLayouts: List<ExplorerLayout> = ExplorerLayout.entries,
     val sidebarRecent: Boolean = true,
     val sidebarPinned: Boolean = true,
     val sidebarColours: Boolean = true,
     val sidebarTrash: Boolean = true,
+    val sidebarFiles: Boolean = true,
+    val sidebarSync: Boolean = true,
+    val sidebarAbout: Boolean = true,
     /** Where Home opens: "top" (the notes folder), "last" (the folder last shown) or "shelves" (the notes folder under Recent and Pinned). */
     val homeOpensTo: String = "top",
+    /** What a swipe right / left on Home does: one of [HOME_SWIPES]. */
+    val homeSwipeRight: String = "sidebar_open",
+    val homeSwipeLeft: String = "sidebar_close",
     /** How the explorer writes dates: "relative" (2 days ago), "day" (Wed 17:30) or "date" (16 Sep 2026). */
     val dateStyle: String = "day",
     /** Tapping a file previews it instead of opening it. */
@@ -111,12 +148,20 @@ data class Preferences(
     val perFolderViews: Boolean = false,
     val showFolderCounts: Boolean = true,
     val showExtensions: Boolean = false,
+    /** Hides files and folders whose name starts with a dot (.obsidian, .git) from the explorer. */
+    val hideDotItems: Boolean = true,
+    /** The reader's light/dark choice; null follows the app theme. Never written to the file. */
+    val readerDark: Boolean? = null,
     /** Whether an exported PDF gets a bookmark for each heading of the note's text. */
     val pdfHeadingBookmarks: Boolean = true,
+    /** Shape chips and picker pages, by key, left out of the shape popup. */
+    val hiddenShapes: Set<String> = emptySet(),
+    /** Shape and connector pages and chips, by key, in the order the shape popup shows them; empty keeps the built-in order. */
+    val shapeOrder: List<String> = emptyList(),
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
-     * [defaultPageOrientation]; a custom one is taken as typed, since the two fields already say
+     * [orientation]; a custom one is taken as typed, since the two fields already say
      * which way round the page goes.
      */
     fun newPagePixels(dpi: Int = PageSize.DEFAULT_DPI): Pair<Double, Double> = defaultPageChoice.pixels(dpi)
@@ -139,6 +184,8 @@ data class Preferences(
         .put("finger_draws", fingerDraws)
         .put("zoom_lock_pan", zoomLockPan)
         .put("detect_shapes", detectShapes)
+        .put("snap_rotation_90", snapRotation90)
+        .put("ocr_language", ocrLanguage)
         .put("pen_button_tool", penButtonTool)
         .put("pen_button_hover", penButtonHover)
         .put("two_finger_tap", twoFingerTap)
@@ -148,6 +195,9 @@ data class Preferences(
         .put("stylus_button_1_tap", stylusButton1Tap)
         .put("stylus_button_2_tap", stylusButton2Tap)
         .put("volume_keys_turn_pages", volumeKeysTurnPages)
+        .put("keep_screen_on", keepScreenOn)
+        .put("check_updates_on_startup", checkUpdatesOnStartup)
+        .put("prefs_categories", prefsCategories)
         .put("side_margin", sideMargin)
         .put("hide_page_borders", hidePageBorders)
         .put("min_zoom_enabled", minZoomEnabled)
@@ -182,22 +232,43 @@ data class Preferences(
             codeThemeName?.let { put("code_theme_name", it) }
             put("default_code_language", defaultCodeLanguage)
             lastCodeLanguage.takeIf { it.isNotEmpty() }?.let { put("last_code_language", it) }
+            put("cloud_service", cloudService)
+            put("cloud_folders", JSONObject().apply {
+                cloudFolders.forEach { (service, f) -> put(service, JSONObject().put("id", f.id).put("name", f.name)) }
+            })
+            put("sync_auto", syncAuto)
+            put("sync_wifi_only", syncWifiOnly)
+            put("sync_interval_minutes", syncIntervalMinutes)
+            put("sync_on_note_exit", syncOnNoteExit)
+            put("sync_on_app_open", syncOnAppOpen)
+            put("sync_direction", syncDirection)
+            put("sync_keep_screen_on", syncKeepScreenOn)
             put("markdown_input", markdownInput)
             put("slash_commands", slashCommands)
+            put("translate_callouts", translateCallouts)
         }
         .put("switcher_layouts", org.json.JSONArray().apply { switcherLayouts.forEach { put(it.id) } })
         .put("sidebar_recent", sidebarRecent)
         .put("sidebar_pinned", sidebarPinned)
         .put("sidebar_colours", sidebarColours)
         .put("sidebar_trash", sidebarTrash)
+        .put("sidebar_files", sidebarFiles)
+        .put("sidebar_sync", sidebarSync)
+        .put("sidebar_about", sidebarAbout)
         .put("home_opens_to", homeOpensTo)
+        .put("home_swipe_right", homeSwipeRight)
+        .put("home_swipe_left", homeSwipeLeft)
         .put("date_style", dateStyle)
         .put("tap_previews", tapPreviews)
         .put("trash_days", trashDays)
         .put("per_folder_views", perFolderViews)
         .put("show_folder_counts", showFolderCounts)
         .put("show_extensions", showExtensions)
+        .put("hide_dot_items", hideDotItems)
+        .apply { readerDark?.let { put("reader_dark", it) } }
         .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
+        .apply { if (hiddenShapes.isNotEmpty()) put("hidden_shapes", org.json.JSONArray(hiddenShapes.sorted())) }
+        .apply { if (shapeOrder.isNotEmpty()) put("shape_order", org.json.JSONArray(shapeOrder)) }
 
     companion object {
         /** The accent a two-tone setting saved without a seed of its own has always loaded as. */
@@ -273,6 +344,8 @@ data class Preferences(
                 fingerDraws = o.optBoolean("finger_draws", false),
                 zoomLockPan = zoomLockPan,
                 detectShapes = o.optBoolean("detect_shapes", true),
+                snapRotation90 = o.optBoolean("snap_rotation_90", false),
+                ocrLanguage = o.optString("ocr_language", "cs").ifEmpty { "cs" },
                 penButtonTool = o.optString("pen_button_tool", "eraser").ifEmpty { "eraser" },
                 penButtonHover = o.optBoolean("pen_button_hover", false),
                 twoFingerTap = tapAction("two_finger_tap"),
@@ -282,6 +355,9 @@ data class Preferences(
                 stylusButton1Tap = tapAction("stylus_button_1_tap"),
                 stylusButton2Tap = tapAction("stylus_button_2_tap"),
                 volumeKeysTurnPages = o.optBoolean("volume_keys_turn_pages", false),
+                keepScreenOn = o.optBoolean("keep_screen_on", false),
+                checkUpdatesOnStartup = o.optBoolean("check_updates_on_startup", true),
+                prefsCategories = o.optBoolean("prefs_categories", true),
                 sideMargin = o.optDouble("side_margin", 16.0).coerceIn(0.0, 80.0),
                 hidePageBorders = o.optBoolean("hide_page_borders", false),
                 minZoomEnabled = o.optBoolean("min_zoom_enabled", false),
@@ -298,8 +374,23 @@ data class Preferences(
                 defaultCodeLanguage = o.optString("default_code_language", "cpp")
                     .lowercase().trim().ifEmpty { "cpp" },
                 lastCodeLanguage = o.optString("last_code_language").lowercase().trim(),
+                // The filen_* fallbacks read settings saved before sync supported more than one service.
+                cloudService = o.optString("cloud_service", if (o.optBoolean("filen_sync_enabled", false)) "filen" else "none"),
+                cloudFolders = o.optJSONObject("cloud_folders")?.let { f ->
+                    f.keys().asSequence().mapNotNull { k -> f.optJSONObject(k)?.let { k to CloudFolder(it.optString("id"), it.optString("name")) } }.toMap()
+                } ?: o.optString("filen_folder_uuid").takeIf { it.isNotEmpty() }
+                    ?.let { mapOf("filen" to CloudFolder(it, o.optString("filen_folder_name"))) }.orEmpty(),
+                syncAuto = o.optBoolean("sync_auto", o.optBoolean("filen_auto_sync", true)),
+                syncWifiOnly = o.optBoolean("sync_wifi_only", o.optBoolean("filen_wifi_only", false)),
+                syncIntervalMinutes = o.optInt("sync_interval_minutes", o.optInt("filen_sync_interval_minutes", 60)).coerceIn(15, 1440),
+                syncOnNoteExit = o.optBoolean("sync_on_note_exit", o.optBoolean("filen_sync_on_note_exit", false)),
+                syncOnAppOpen = o.optBoolean("sync_on_app_open", o.optBoolean("filen_sync_on_app_open", false)),
+                syncDirection = o.optString("sync_direction", o.optString("filen_sync_direction", "both"))
+                    .let { if (it == "up" || it == "down" || it == "off") it else "both" },
+                syncKeepScreenOn = o.optBoolean("sync_keep_screen_on", false),
                 markdownInput = o.optBoolean("markdown_input", true),
                 slashCommands = o.optBoolean("slash_commands", true),
+                translateCallouts = o.optBoolean("translate_callouts", true),
                 switcherLayouts = o.optJSONArray("switcher_layouts")?.let { a ->
                     (0 until a.length()).mapNotNull { ExplorerLayout.fromId(a.optString(it)) }.distinct()
                 } ?: ExplorerLayout.entries,
@@ -307,15 +398,27 @@ data class Preferences(
                 sidebarPinned = o.optBoolean("sidebar_pinned", true),
                 sidebarColours = o.optBoolean("sidebar_colours", true),
                 sidebarTrash = o.optBoolean("sidebar_trash", true),
+                sidebarFiles = o.optBoolean("sidebar_files", true),
+                sidebarSync = o.optBoolean("sidebar_sync", true),
+                sidebarAbout = o.optBoolean("sidebar_about", true),
                 homeOpensTo = o.optString("home_opens_to", "top").let { if (it == "last" || it == "shelves") it else "top" },
+                homeSwipeRight = o.optString("home_swipe_right", "sidebar_open").takeIf { it in HOME_SWIPES } ?: "sidebar_open",
+                homeSwipeLeft = o.optString("home_swipe_left", "sidebar_close").takeIf { it in HOME_SWIPES } ?: "sidebar_close",
                 dateStyle = o.optString("date_style", "day").let { if (it == "relative" || it == "date") it else "day" },
                 tapPreviews = o.optBoolean("tap_previews", false),
                 trashDays = o.optInt("trash_days", 30).let { if (it == TRASH_FOREVER || it in 0..365) it else 30 },
                 perFolderViews = o.optBoolean("per_folder_views", false),
                 showFolderCounts = o.optBoolean("show_folder_counts", true),
                 showExtensions = o.optBoolean("show_extensions", false),
+                hideDotItems = o.optBoolean("hide_dot_items", true),
+                readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
                 pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),
+                hiddenShapes = o.optJSONArray("hidden_shapes")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
+                shapeOrder = o.optJSONArray("shape_order")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } } }.orEmpty(),
             )
         }
     }
 }
+
+/** A cloud folder picked for sync: the service's folder id and the path shown in preferences. */
+data class CloudFolder(val id: String, val name: String)

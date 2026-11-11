@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,6 +76,7 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -106,7 +108,7 @@ fun SidePanel(
     onSharePages: (indices: List<Int>, asPdf: Boolean) -> Unit = { _, _ -> },
     onSavePagesAsPdf: (indices: List<Int>) -> Unit = {},
     onSavePagesAsImages: (indices: List<Int>) -> Unit = {},
-    onInsertPdf: (after: Int) -> Unit = {},
+    onInsertPages: (PageInsert, Int) -> Unit = { _, _ -> },
     onImportTemplate: () -> Unit = {},
     onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit = {},
 ) {
@@ -144,7 +146,7 @@ fun SidePanel(
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (tab) {
-                SidePanelTab.PAGES -> PagesTab(editor, onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPdf) { pickingCover = true }
+                SidePanelTab.PAGES -> PagesTab(editor, onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPages) { pickingCover = true }
                 SidePanelTab.CONTENTS -> ContentsTab(editor)
                 SidePanelTab.BOOKMARKS -> BookmarksTab(editor)
                 SidePanelTab.SEARCH -> SearchTab(editor)
@@ -177,7 +179,7 @@ private fun PagesTab(
     onSharePages: (List<Int>, Boolean) -> Unit,
     onSavePagesAsPdf: (List<Int>) -> Unit,
     onSavePagesAsImages: (List<Int>) -> Unit,
-    onInsertPdf: (Int) -> Unit,
+    onInsertPages: (PageInsert, Int) -> Unit,
     onPickCover: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -335,8 +337,9 @@ private fun PagesTab(
         ) {
             itemsIndexed(pages, key = { _, page -> page.uid }) { index, page ->
                 val carried = drag?.pages?.any { it === page } == true
-                PageThumb(editor, index, page, selecting, settled, carried, Modifier.animateItem(), onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPdf, onPickCover)
+                PageThumb(editor, index, page, selecting, settled, carried, Modifier.animateItem(), onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPages, onPickCover)
             }
+            if (!selecting && pages.isNotEmpty()) item(key = "add") { AddPageButton(editor, pages.lastIndex, onInsertPages) }
         }
         drag?.let { d ->
             DropLine(listState, gap, pad)
@@ -445,7 +448,7 @@ private fun PageThumb(
     onSharePages: (List<Int>, Boolean) -> Unit,
     onSavePagesAsPdf: (List<Int>) -> Unit,
     onSavePagesAsImages: (List<Int>) -> Unit,
-    onInsertPdf: (Int) -> Unit,
+    onInsertPages: (PageInsert, Int) -> Unit,
     onPickCover: () -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -453,8 +456,6 @@ private fun PageThumb(
     val selected = editor.isPageSelected(index)
     var menuOpen by remember { mutableStateOf(false) }
     var sizing by remember { mutableStateOf(false) }
-    var extracting by remember { mutableStateOf<Boolean?>(null) }
-    extracting?.let { move -> ExtractDialog(editor, listOf(index), move) { extracting = null } }
     if (sizing) {
         editor.pageSizeChoice(index)?.let { initial ->
             PageSizeDialog(initial, onApply = { sizing = false; editor.resizePages(listOf(index), it) }) { sizing = false }
@@ -513,8 +514,8 @@ private fun PageThumb(
                         }
                     }
                     PageContextMenu(
-                        editor, index, page.cover, page.pdfPage != null, menuOpen, { menuOpen = false }, { sizing = true }, { extracting = it },
-                        onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPdf, onPickCover,
+                        editor, index, page.cover, page.pdfPage != null, menuOpen, { menuOpen = false }, { sizing = true },
+                        onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPages, onPickCover,
                     )
                 }
             }
@@ -544,6 +545,9 @@ private fun RotateRows(onBack: () -> Unit, onTurn: (Int) -> Unit) {
     DropdownMenuItem(text = { Text(stringResource(R.string.rotate_upside_down)) }, leadingIcon = menuIcon(XnotesIcons.rotateHalf), onClick = { onTurn(2) })
 }
 
+/** What a page's menu can put in after it: another file's pages, a picked image or a photo as a page. */
+enum class PageInsert { FILE, IMAGE, PHOTO }
+
 @Composable
 private fun PageContextMenu(
     editor: Editor,
@@ -553,21 +557,20 @@ private fun PageContextMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onPageSize: () -> Unit,
-    onExtract: (move: Boolean) -> Unit,
     onSharePages: (List<Int>, Boolean) -> Unit,
     onSavePagesAsPdf: (List<Int>) -> Unit,
     onSavePagesAsImages: (List<Int>) -> Unit,
-    onInsertPdf: (Int) -> Unit,
+    onInsertPages: (PageInsert, Int) -> Unit,
     onPickCover: () -> Unit,
 ) {
     val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
     var sub by remember { mutableStateOf(MENU_MAIN) }
     LaunchedEffect(expanded) { if (!expanded) sub = MENU_MAIN } // always reopen on the main page
     val one = listOf(index)
     fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         when (sub) {
-            MENU_ROTATE -> RotateRows({ sub = MENU_MAIN }) { turns -> onDismiss(); editor.rotatePages(one, turns) }
             MENU_SHARE, MENU_SAVE -> PageFormatRows(sub == MENU_SHARE, { sub = MENU_MAIN }) { image ->
                 val saving = sub == MENU_SAVE
                 onDismiss()
@@ -587,23 +590,70 @@ private fun PageContextMenu(
                     DropdownMenuItem(text = { Text(stringResource(R.string.add_cover_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.palette), onClick = { onDismiss(); onPickCover() })
                     HorizontalDivider(color = palette.border.toComposeColor())
                 }
-                DropdownMenuItem(text = { Text(stringResource(R.string.add_page)) }, leadingIcon = menuIcon(XnotesIcons.plus), onClick = { editor.insertPageAfter(index); onDismiss() })
-                DropdownMenuItem(text = { Text(stringResource(R.string.insert_pdf)) }, leadingIcon = menuIcon(XnotesIcons.importDoc), onClick = { onInsertPdf(index); onDismiss() })
+                // The ways to add a page open beside this row, so the menu stays short.
+                var addOpen by remember { mutableStateOf(false) }
+                var row by remember { mutableStateOf(IntSize.Zero) }
+                Box(Modifier.onSizeChanged { row = it }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_ellipsis)) },
+                        leadingIcon = menuIcon(XnotesIcons.plus),
+                        trailingIcon = menuIcon(XnotesIcons.next),
+                        onClick = { addOpen = true },
+                    )
+                    val side = with(LocalDensity.current) { DpOffset(row.width.toDp(), -row.height.toDp()) }
+                    CompositionLocalProvider(LocalMenuOffset provides side) {
+                        DropdownMenu(expanded = addOpen, onDismissRequest = { addOpen = false }) {
+                            AddPageItems(editor, index, onInsertPages) { addOpen = false; onDismiss() }
+                        }
+                    }
+                }
                 DropdownMenuItem(text = { Text(stringResource(R.string.duplicate)) }, leadingIcon = menuIcon(XnotesIcons.duplicate), onClick = { onDismiss(); editor.duplicatePages(one) })
                 DropdownMenuItem(text = { Text(stringResource(R.string.copy)) }, leadingIcon = menuIcon(XnotesIcons.copy), onClick = { editor.copyPages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, leadingIcon = menuIcon(XnotesIcons.cut), onClick = { editor.cutPages(one); onDismiss() })
                 if (editor.canPastePages) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, leadingIcon = menuIcon(XnotesIcons.paste), onClick = { editor.pastePagesAfter(index); onDismiss() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, leadingIcon = menuIcon(XnotesIcons.paste), onClick = { scope.launch { editor.pastePagesAfter(index) }; onDismiss() })
                 }
-                DropdownMenuItem(text = { Text(stringResource(R.string.rotate_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { sub = MENU_ROTATE })
+                DropdownMenuItem(text = { Text(stringResource(R.string.rotate_clockwise)) }, leadingIcon = menuIcon(XnotesIcons.rotateRight), onClick = { onDismiss(); editor.rotatePages(one, 1) })
                 DropdownMenuItem(text = { Text(stringResource(R.string.page_size_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.pageSize), enabled = !isPdf, onClick = { onDismiss(); onPageSize() })
-                DropdownMenuItem(text = { Text(stringResource(R.string.extract_to_new_note)) }, leadingIcon = menuIcon(XnotesIcons.extract), onClick = { onDismiss(); onExtract(false) })
-                DropdownMenuItem(text = { Text(stringResource(R.string.move_to_new_note)) }, leadingIcon = menuIcon(XnotesIcons.moveToFolder), onClick = { onDismiss(); onExtract(true) })
                 DropdownMenuItem(text = { Text(stringResource(R.string.erase_page)) }, leadingIcon = menuIcon(XnotesIcons.eraser), onClick = { editor.erasePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = menuIcon(XnotesIcons.trash), onClick = { editor.deletePages(one); onDismiss() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
                 DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
             }
+        }
+    }
+}
+
+/** The ways to put a page in after [index]: blank, from a file, from an image or from a photo. */
+@Composable
+private fun AddPageItems(editor: Editor, index: Int, onInsertPages: (PageInsert, Int) -> Unit, onDone: () -> Unit) {
+    val palette = LocalPalette.current
+    fun menuIcon(icon: ImageVector) = @Composable { Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp)) }
+    DropdownMenuItem(text = { Text(stringResource(R.string.add_page)) }, leadingIcon = menuIcon(XnotesIcons.plus), onClick = { editor.insertPageAfter(index); onDone() })
+    DropdownMenuItem(text = { Text(stringResource(R.string.insert_from_file)) }, leadingIcon = menuIcon(XnotesIcons.exportDoc), onClick = { onInsertPages(PageInsert.FILE, index + 1); onDone() })
+    DropdownMenuItem(text = { Text(stringResource(R.string.add_image_page)) }, leadingIcon = menuIcon(XnotesIcons.image), onClick = { onInsertPages(PageInsert.IMAGE, index + 1); onDone() })
+    DropdownMenuItem(text = { Text(stringResource(R.string.add_photo_page)) }, leadingIcon = menuIcon(XnotesIcons.camera), onClick = { onInsertPages(PageInsert.PHOTO, index + 1); onDone() })
+}
+
+/** The + under the last page: the same ways to add a page, at the end of the note. */
+@Composable
+private fun AddPageButton(editor: Editor, last: Int, onInsertPages: (PageInsert, Int) -> Unit) {
+    val palette = LocalPalette.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            Modifier
+                .width(150.dp)
+                .height(44.dp)
+                .clip(MaterialTheme.shapes.extraSmall)
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
+                .clickable { open = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(XnotesIcons.plus, stringResource(R.string.add_page), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            AddPageItems(editor, last, onInsertPages) { open = false }
         }
     }
 }
@@ -671,7 +721,8 @@ private fun PageSelectionBar(
             }
             Text("${editor.pageSelectionCount}", color = palette.text.toComposeColor(), fontSize = 13.sp)
             Spacer(Modifier.weight(1f))
-            BarAction(XnotesIcons.selectAll, stringResource(R.string.select_all)) { editor.selectAllPages() }
+            if (!editor.allPagesSelected) BarAction(XnotesIcons.selectAll, stringResource(R.string.select_all)) { editor.selectAllPages() }
+            else BarAction(XnotesIcons.deselectAll, stringResource(R.string.deselect_all)) { editor.clearPageSelection() }
             BarAction(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyPages(editor.selectedPageIndices()) }
             BarAction(XnotesIcons.trash, stringResource(R.string.delete)) { editor.deletePages(editor.selectedPageIndices()) }
             PageSelectionMore(editor, onSharePages, onSavePagesAsPdf, onSavePagesAsImages)
@@ -737,8 +788,8 @@ private fun PageSelectionMore(
                         close()
                         extracting = editor.selectedPageIndices() to true
                     })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
                     DropdownMenuItem(text = { Text(stringResource(R.string.share_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.share), onClick = { sub = MENU_SHARE })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.save_as_ellipsis)) }, leadingIcon = menuIcon(XnotesIcons.download), onClick = { sub = MENU_SAVE })
                 }
             }
         }

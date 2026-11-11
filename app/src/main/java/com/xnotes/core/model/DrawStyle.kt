@@ -43,6 +43,11 @@ data class DrawStyle(val color: Rgba, val width: Double) {
                 item.strokeRgba = color
                 item.strokeWidth = width
             }
+            is TableItem -> {
+                item.strokeRgba = color
+                item.strokeWidth = width
+            }
+            is TextItem -> item.rgba = color
             else -> Unit
         }
     }
@@ -53,12 +58,17 @@ data class DrawStyle(val color: Rgba, val width: Double) {
             is Stroke -> DrawStyle(item.config.rgba, item.config.baseWidth)
             is ShapeItem -> if (item.isFill) null else DrawStyle(item.strokeRgba, item.strokeWidth)
             is ConnectorItem -> DrawStyle(item.strokeRgba, item.strokeWidth)
+            is TableItem -> DrawStyle(item.strokeRgba, item.strokeWidth)
             is TapeItem -> DrawStyle(item.rgba, item.shape.width)
+            is TextItem -> DrawStyle(item.rgba, NO_WIDTH)
             else -> null
         }
 
         /** Settable width range for a restyle, wide enough to span every drawing tool's own range. */
         const val MIN_WIDTH = 1.0
         const val MAX_WIDTH = 80.0
+
+        /** The width of an item that only has a colour, like a text box; the thickness slider skips it. */
+        const val NO_WIDTH = 0.0
     }
 }

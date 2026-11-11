@@ -32,6 +32,11 @@ interface CanvasItem {
      */
     var locked: Boolean
 
+    /** An optional hyperlink (http/https/mailto); tapping the item with the pan tool opens it. None by default. */
+    var link: String?
+        get() = null
+        set(_) {}
+
     /** The moment of a recording this item was added at, or null. Kinds that never sync keep the default. */
     var sync: SyncMark?
         get() = null
