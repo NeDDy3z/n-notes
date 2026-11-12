@@ -1,5 +1,7 @@
 package com.xnotes.ui
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -1013,7 +1015,7 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     var scale by remember { mutableStateOf(base.scale) }
     var markups by remember { mutableStateOf(base.eraseMarkups) }
     var scribble by remember { mutableStateOf(base.scribbleErase) }
-    var kinds by remember { mutableStateOf(base.erasableKinds ?: SelectKind.ERASER_TAKES.toSet()) }
+    var kinds by remember { mutableStateOf(base.erasableKinds) }
 
     fun emit() = editor.updateToolConfig(
         Tool.ERASER,
@@ -1024,9 +1026,7 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             scale = scale,
             eraseMarkups = markups,
             scribbleErase = scribble,
-            // Every kind on is stored as no filter at all, for the reason the lasso's is: a kind
-            // added later is erasable by default rather than spared by a filter nobody set.
-            erasableKinds = kinds.takeIf { it.size < SelectKind.ERASER_TAKES.size },
+            erasableKinds = kinds,
         ),
     )
 
@@ -1037,6 +1037,9 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
                 ModeChip(stringResource(R.string.eraser_stroke), selected = !area) { area = false; emit() }
                 ModeChip(stringResource(R.string.eraser_area), selected = area) { area = true; emit() }
             }
+            Spacer(Modifier.size(8.dp))
+            StyleCaption(stringResource(R.string.caption_erasable_kinds))
+            KindChips(kinds) { kinds = it; emit() }
             val r = ToolConversions.widthRange(Tool.ERASER)
             SliderRow(stringResource(R.string.caption_size), size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
             // SCALE off: the eraser holds a constant on-screen size whatever zoom you are at.
@@ -1047,22 +1050,6 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             if (editor.hostHasPdf) ToggleRow(stringResource(R.string.caption_erase_markups), markups) { markups = it; emit() }
             // A pen scribbled over ink erases it without picking up the eraser.
             ToggleRow(stringResource(R.string.caption_scribble_erase), scribble) { scribble = it; emit() }
-            Spacer(Modifier.size(12.dp))
-            // What the eraser takes off the page: the item kinds it can actually reach. One row of
-            // chips, because these are one decision — whether the eraser reaches this thing or not.
-            StyleCaption(stringResource(R.string.caption_erasable_kinds))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                for (k in SelectKind.ERASER_TAKES) {
-                    val on = k in kinds
-                    // The last kind stays on: an eraser that can take nothing looks broken.
-                    KindChip(selectKindIcon(k), stringResource(k.labelRes), on) {
-                        if (!(on && kinds.size == 1)) { kinds = if (on) kinds - k else kinds + k; emit() }
-                    }
-                }
-            }
         }
     }
 }
@@ -1078,9 +1065,26 @@ private fun penIcon(pen: Tool): ImageVector = ImageVector.vectorResource(
     },
 )
 
+/** One chip per item kind; the last chip that is on stays on, since a filter of nothing looks broken. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun KindChips(kinds: Set<SelectKind>, modifier: Modifier = Modifier, onChange: (Set<SelectKind>) -> Unit) {
+    val context = LocalContext.current
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (k in SelectKind.entries) {
+            val on = k in kinds
+            KindChip(selectKindIcon(k), stringResource(k.labelRes), on) {
+                if (on && kinds.size == 1) Toast.makeText(context, R.string.toast_filter_needs_one, Toast.LENGTH_SHORT).show()
+                else onChange(if (on) kinds - k else kinds + k)
+            }
+        }
+    }
+}
+
 @Composable
 private fun selectKindIcon(k: SelectKind): ImageVector = when (k) {
     SelectKind.INK -> ImageVector.vectorResource(R.drawable.ic_stroke_regular)
+    SelectKind.HIGHLIGHTER -> ImageVector.vectorResource(R.drawable.ic_stroke_highlighter)
     SelectKind.SHAPES -> XnotesIcons.shape
     SelectKind.TEXT -> XnotesIcons.textBox
     SelectKind.IMAGES -> XnotesIcons.image
@@ -1116,15 +1120,7 @@ fun SelectConfigPopup(editor: ToolPopupHost, tool: Tool = Tool.SELECT, onPick: (
                 KindChip(XnotesIcons.lasso, stringResource(R.string.tool_lasso), tool == Tool.LASSO) { if (tool != Tool.LASSO) onPick(Tool.LASSO) }
             }
             StyleCaption(stringResource(R.string.caption_select_kinds))
-            FlowRow(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (k in SelectKind.entries) {
-                    val on = k in kinds
-                    // The last kind stays on: a selection that can pick up nothing looks broken.
-                    KindChip(selectKindIcon(k), stringResource(k.labelRes), on) {
-                        if (!(on && kinds.size == 1)) { kinds = if (on) kinds - k else kinds + k; emit() }
-                    }
-                }
-            }
+            KindChips(kinds, Modifier.padding(bottom = 8.dp)) { kinds = it; emit() }
             ToggleRow(stringResource(R.string.caption_select_whole_items), whole) { whole = it; emit() }
             // Re-arm the previous pen/highlighter once a selection action (move, resize, delete,
             // cut, copy, duplicate) finishes, so a quick edit doesn't strand you in select.

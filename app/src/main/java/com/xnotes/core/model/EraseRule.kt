@@ -7,7 +7,7 @@ import com.xnotes.core.tools.SelectKind
  * How both erasers, on both canvases, treat fills and tape: one the eraser touches at all goes whole,
  * whatever else it touches with it. Lines are ink, shape outlines, connectors and drawn text, and go
  * whole or are cut as the eraser's mode says; a filled shape touched inside but not on its outline
- * loses just its fill. Pictures, text boxes and locked items are never the eraser's.
+ * loses just its fill. Text boxes, images, tables and audio go whole too. Locked items are never the eraser's.
  */
 object EraseRule {
 
@@ -26,32 +26,27 @@ object EraseRule {
     fun touchesFill(item: CanvasItem, cx: Double, cy: Double, r: Double): Boolean =
         item is ShapeItem && item.shape != ShapeKind.GLYPHS && item.fillMeets(cx, cy, r)
 
-    /** True when the eraser takes [item] whole rather than cutting it, in either mode: a dropped colour or a tape. */
-    fun whole(item: CanvasItem): Boolean = (item is ShapeItem && item.isFill) || item is TapeItem
+    /** True when the eraser takes [item] whole rather than cutting it, in either mode: anything that is not a line. */
+    fun whole(item: CanvasItem): Boolean = (item is ShapeItem && item.isFill) ||
+        item is TapeItem || item is TextItem || item is ImageItem || item is TableItem || item is AudioItem
 
     /**
-     * True when an eraser whose filter is [kinds] may take [item] at all; [kinds] of null (the
-     * default) means everything. Every erase path goes through this, so both canvases answer the
-     * question the same way. A filter only narrows — it can never reach what [erasable] already
-     * refuses — and it governs a shape's fill with its lines, since they are one kind.
+     * True when an eraser whose filter is [kinds] may take [item] at all. Every erase path goes
+     * through this, so both canvases answer the same way. A shape's fill follows its shape's kind.
      */
-    fun erasable(item: CanvasItem, kinds: Set<SelectKind>?): Boolean =
-        erasable(item) && (kinds == null || SelectKind.of(item) in kinds)
+    fun erasable(item: CanvasItem, kinds: Set<SelectKind>): Boolean =
+        !item.locked && SelectKind.of(item) in kinds
 
-    /** True when a whole-item eraser takes [item] at the circle: a line it touches, or a dropped colour or tape it touches anywhere. */
-    fun takes(item: CanvasItem, cx: Double, cy: Double, r: Double, kinds: Set<SelectKind>? = null): Boolean =
+    /** True when a whole-item eraser takes [item] at the circle: a line it touches, or a whole item it touches anywhere. */
+    fun takes(item: CanvasItem, cx: Double, cy: Double, r: Double, kinds: Set<SelectKind>): Boolean =
         erasable(item, kinds) && (touchesLine(item, cx, cy, r) || wholeTouched(item, cx, cy, r))
 
     private fun wholeTouched(item: CanvasItem, cx: Double, cy: Double, r: Double): Boolean = when (item) {
-        is TapeItem -> item.intersectsCircle(cx, cy, r)
         is ShapeItem -> item.isFill && touchesFill(item, cx, cy, r)
-        else -> false
+        else -> whole(item) && item.intersectsCircle(cx, cy, r)
     }
 
     /** True when the circle takes only [item]'s fill, leaving its outline: a filled shape touched inside but not on its outline. */
-    fun takesFill(item: CanvasItem, cx: Double, cy: Double, r: Double, kinds: Set<SelectKind>? = null): Boolean =
+    fun takesFill(item: CanvasItem, cx: Double, cy: Double, r: Double, kinds: Set<SelectKind>): Boolean =
         item is ShapeItem && !item.isFill && erasable(item, kinds) && touchesFill(item, cx, cy, r) && !touchesLine(item, cx, cy, r)
-
-    /** Whether an eraser may touch [item] at all. */
-    fun erasable(item: CanvasItem): Boolean = !item.locked && item !is ImageItem && item !is TextItem && item !is AudioItem
 }

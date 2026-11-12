@@ -50,15 +50,11 @@ class EraseSession(private val doc: InfiniteDocument) {
      * Pass the eraser over ([cx], [cy]) with [radius], in content space. Returns the region that
      * changed, or null when nothing was under it.
      *
-     * Images and text are left alone in both modes, matching the paged canvas: they are placed
-     * deliberately and are deleted through a selection instead. So is anything locked, which is
-     * what a lock is for. A fill it touches at all goes whole, in both modes; a filled shape it
+     * Only the [kinds] the eraser tool is set to take are touched, and nothing locked. A fill, tape,
+     * text box, image, table or audio it touches at all goes whole, in both modes; a filled shape it
      * touches inside but not on its outline loses just its fill (see [EraseRule]).
-     *
-     * [kinds] is the eraser tool's own filter (null = none), applied through [EraseRule] so both
-     * canvases answer the same question the same way.
      */
-    fun erase(cx: Double, cy: Double, radius: Double, area: Boolean, kinds: Set<SelectKind>? = null): Rect? {
+    fun erase(cx: Double, cy: Double, radius: Double, area: Boolean, kinds: Set<SelectKind>): Rect? {
         val box = Rect(cx - radius, cy - radius, radius * 2, radius * 2)
         var dirty: Rect? = null
         for (item in doc.itemsIn(box)) {

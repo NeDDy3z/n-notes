@@ -24,66 +24,57 @@ class EraseRuleTest {
     private fun box(fill: Rgba? = sky) = ShapeItem(ShapeKind.RECTANGLE, Pt(0.0, 0.0), Pt(200.0, 200.0), Rgba(1, 1, 1, 255), 3.0, fill)
 
     @Test fun aFillTheEraserTouchesAtAllGoesWhole() {
-        assertTrue(EraseRule.takes(fill(), 50.0, 30.0, 6.0))
-        assertTrue("even over ink", EraseRule.takes(fill(), 50.0, 100.0, 6.0))
-        assertTrue("even just at its edge", EraseRule.takes(fill(), -4.0, 100.0, 6.0))
-        assertFalse(EraseRule.takes(fill(), -10.0, 100.0, 6.0))
+        assertTrue(EraseRule.takes(fill(), 50.0, 30.0, 6.0, SelectKind.ALL))
+        assertTrue("even over ink", EraseRule.takes(fill(), 50.0, 100.0, 6.0, SelectKind.ALL))
+        assertTrue("even just at its edge", EraseRule.takes(fill(), -4.0, 100.0, 6.0, SelectKind.ALL))
+        assertFalse(EraseRule.takes(fill(), -10.0, 100.0, 6.0, SelectKind.ALL))
     }
 
     @Test fun linesGoAsEver() {
-        assertTrue(EraseRule.takes(ink(), 50.0, 100.0, 6.0))
-        assertFalse(EraseRule.takes(ink(), 50.0, 30.0, 6.0))
-        assertTrue("an outline takes its shape", EraseRule.takes(box(), 100.0, 0.0, 6.0))
+        assertTrue(EraseRule.takes(ink(), 50.0, 100.0, 6.0, SelectKind.ALL))
+        assertFalse(EraseRule.takes(ink(), 50.0, 30.0, 6.0, SelectKind.ALL))
+        assertTrue("an outline takes its shape", EraseRule.takes(box(), 100.0, 0.0, 6.0, SelectKind.ALL))
     }
 
     @Test fun aFilledShapeTouchedInsideLosesOnlyItsFill() {
-        assertTrue(EraseRule.takesFill(box(), 100.0, 100.0, 6.0))
-        assertFalse(EraseRule.takes(box(), 100.0, 100.0, 6.0))
-        assertFalse("on its outline it goes whole instead", EraseRule.takesFill(box(), 100.0, 0.0, 6.0))
-        assertFalse("a hollow one has nothing to lose inside", EraseRule.takesFill(box(null), 100.0, 100.0, 6.0))
+        assertTrue(EraseRule.takesFill(box(), 100.0, 100.0, 6.0, SelectKind.ALL))
+        assertFalse(EraseRule.takes(box(), 100.0, 100.0, 6.0, SelectKind.ALL))
+        assertFalse("on its outline it goes whole instead", EraseRule.takesFill(box(), 100.0, 0.0, 6.0, SelectKind.ALL))
+        assertFalse("a hollow one has nothing to lose inside", EraseRule.takesFill(box(null), 100.0, 100.0, 6.0, SelectKind.ALL))
     }
 
     @Test fun lockedItemsAreNeverTaken() {
         val locked = fill().also { it.locked = true }
-        assertFalse(EraseRule.takes(locked, 50.0, 30.0, 6.0))
+        assertFalse(EraseRule.takes(locked, 50.0, 30.0, 6.0, SelectKind.ALL))
     }
 
-    /**
-     * The eraser's filter only narrows: a switched-off kind survives the circle, a switched-on one
-     * goes as ever, and no filter at all is today's behaviour. A shape's fill follows its kind, so
-     * a SHAPES filter governs a dropped colour too.
-     */
+    /** A switched-off kind survives the circle, a switched-on one goes. A shape's fill follows its kind. */
     @Test fun theFilterNarrowsWhatTheEraserTakes() {
         assertFalse(EraseRule.takes(ink(), 50.0, 100.0, 6.0, setOf(SelectKind.SHAPES, SelectKind.TAPE)))
-        assertTrue(EraseRule.takes(ink(), 50.0, 100.0, 6.0, null))
+        assertTrue(EraseRule.takes(ink(), 50.0, 100.0, 6.0, SelectKind.ALL))
         assertFalse(EraseRule.takes(ink(), 50.0, 100.0, 6.0, setOf(SelectKind.SHAPES)))
         assertTrue(EraseRule.takes(fill(), 50.0, 30.0, 6.0, setOf(SelectKind.SHAPES)))
         assertFalse(EraseRule.takesFill(box(), 100.0, 100.0, 6.0, setOf(SelectKind.INK)))
         assertTrue(EraseRule.takesFill(box(), 100.0, 100.0, 6.0, setOf(SelectKind.SHAPES)))
     }
 
-    /** The filter cannot open what the eraser never takes anyway: the protected kinds stay out. */
-    @Test fun theFilterNeverWidensWhatTheEraserTakes() {
+    @Test fun highlighterIsItsOwnKind() {
+        val hl = Stroke(Tool.HIGHLIGHTER, ToolConfig(), (0..20).map { Sample(it * 5.0, 100.0, 1.0) })
+        assertEquals(SelectKind.HIGHLIGHTER, SelectKind.of(hl))
+        assertFalse(EraseRule.takes(hl, 50.0, 100.0, 6.0, setOf(SelectKind.INK)))
+        assertTrue(EraseRule.takes(hl, 50.0, 100.0, 6.0, setOf(SelectKind.HIGHLIGHTER)))
+    }
+
+    /** Text and audio go whole once their kind is on; audio is off by default, text is on. */
+    @Test fun textAndAudioGoWholeWhenTheirKindIsOn() {
         val text = TextItem(Pt(10.0, 10.0), width = 60.0, text = "x", measurer = FakeTextMeasurer())
         val audio = AudioItem(AudioData(java.io.File("unused"), "m4a", 60_000, ByteArray(8) { 40 }), Rect(10.0, 10.0, 60.0, 16.0), "n", 1, FakeTextMeasurer())
         for (item in listOf(text, audio)) {
-            assertFalse("$item is protected without a filter", EraseRule.erasable(item))
-            assertFalse("$item must stay protected under any filter", EraseRule.erasable(item, SelectKind.entries.toSet()))
+            assertTrue(EraseRule.whole(item))
+            assertTrue("$item under the circle", EraseRule.takes(item, 20.0, 15.0, 4.0, SelectKind.ALL))
+            assertFalse("$item away from the circle", EraseRule.takes(item, 200.0, 200.0, 4.0, SelectKind.ALL))
         }
-    }
-
-    /** Only the kinds the eraser can reach are offered as its filter; a tape among them, erasably. */
-    @Test fun theEraserTakesListNamesWhatItCanReach() {
-        assertEquals(listOf(SelectKind.INK, SelectKind.SHAPES, SelectKind.TAPE), SelectKind.ERASER_TAKES)
-        val sample: Map<SelectKind, CanvasItem> = mapOf(
-            SelectKind.INK to ink(),
-            SelectKind.SHAPES to box(),
-            SelectKind.TAPE to TapeItem(TapeShape(TapeMode.RECTANGLE, listOf(Pt(0.0, 0.0), Pt(100.0, 0.0), Pt(100.0, 30.0), Pt(0.0, 30.0)), 30.0), sky),
-        )
-        for (kind in SelectKind.ERASER_TAKES) {
-            val item = sample.getValue(kind)
-            assertTrue("$kind is offered but claims no item here", SelectKind.of(item) == kind)
-            assertTrue("$kind is offered but not erasable", EraseRule.erasable(item))
-        }
+        assertTrue(EraseRule.erasable(text, SelectKind.ERASER_DEFAULT))
+        assertFalse(EraseRule.erasable(audio, SelectKind.ERASER_DEFAULT))
     }
 }

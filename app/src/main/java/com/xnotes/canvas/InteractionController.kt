@@ -1771,10 +1771,9 @@ class InteractionController(
         return true
     }
 
-    /** STROKE mode: remove every stroke/shape the eraser circle touches, and every fill it touches at
-     *  all. Images and text boxes are deliberately-placed and protected (delete those via select +
-     *  delete). Returns the repaint region, or null if nothing changed. */
-    private fun eraseStrokesFromPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>?): Rect? {
+    /** STROKE mode: remove every item of [kinds] the eraser circle touches, and every fill it touches
+     *  at all. Returns the repaint region, or null if nothing changed. */
+    private fun eraseStrokesFromPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>): Rect? {
         var dirty = unfillOnPage(page, cx, cy, radius, kinds)
         val toRemove = page.items.filter { EraseRule.takes(it, cx, cy, radius, kinds) }
         if (toRemove.isEmpty()) return dirty
@@ -1788,9 +1787,9 @@ class InteractionController(
     }
 
     /** AREA mode: replace each touched stroke or shape with the fragments that survive the eraser
-     *  circle, spliced in at the original's z-position. Text and images are left untouched. Returns
+     *  circle, spliced in at the original's z-position. Anything else of [kinds] goes whole. Returns
      *  the repaint region, or null if nothing changed. */
-    private fun eraseAreaFromPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>?): Rect? {
+    private fun eraseAreaFromPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>): Rect? {
         var dirty = unfillOnPage(page, cx, cy, radius, kinds)
         var i = 0
         while (i < page.items.size) {
@@ -1798,7 +1797,7 @@ class InteractionController(
             val frags: List<CanvasItem>? = if (!EraseRule.erasable(item, kinds)) {
                 null
             } else if (EraseRule.whole(item)) {
-                // A fill or a tape is never cut: whatever the eraser touches of it, it takes whole.
+                // Only lines are cut: whatever the eraser touches of anything else, it takes whole.
                 if (EraseRule.takes(item, cx, cy, radius, kinds)) emptyList() else null
             } else {
                 when (item) {
@@ -1830,7 +1829,7 @@ class InteractionController(
     }
 
     /** Take the fill alone off the filled shapes the eraser touches inside but not on their outline; the repaint region, or null. */
-    private fun unfillOnPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>?): Rect? {
+    private fun unfillOnPage(page: Page, cx: Double, cy: Double, radius: Double, kinds: Set<SelectKind>): Rect? {
         var dirty: Rect? = null
         for (item in page.items) {
             if (!EraseRule.takesFill(item, cx, cy, radius, kinds)) continue

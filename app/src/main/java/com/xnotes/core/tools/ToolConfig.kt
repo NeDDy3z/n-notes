@@ -25,6 +25,7 @@ enum class EraseMode(val id: String) {
 /** What kinds of item a band or lasso picks up. Persisted as [id]. */
 enum class SelectKind(val id: String) {
     INK("ink"),
+    HIGHLIGHTER("highlighter"),
     SHAPES("shapes"),
     TEXT("text"),
     IMAGES("images"),
@@ -35,20 +36,13 @@ enum class SelectKind(val id: String) {
     companion object {
         val ALL: Set<SelectKind> = entries.toSet()
 
-        /**
-         * The kinds the eraser offers as a filter, in the order its chips are laid out.
-         *
-         * Text, images and audio are absent because the eraser never takes them: they are placed
-         * deliberately and are deleted through a selection, so a chip for them could only ever be
-         * off. A tape has a chip because the eraser really does take one. A filled shape rides
-         * under SHAPES with every other shape, and the ink it covers with INK.
-         */
-        val ERASER_TAKES: List<SelectKind> = listOf(INK, SHAPES, TAPE)
+        /** What a fresh eraser takes: everything but the pieces that are costly to lose by a slip. */
+        val ERASER_DEFAULT: Set<SelectKind> = ALL - setOf(IMAGES, TABLES, AUDIO)
 
         fun fromId(id: String?): SelectKind? = entries.firstOrNull { it.id == id }
 
         fun of(item: com.xnotes.core.model.CanvasItem): SelectKind = when (item) {
-            is com.xnotes.core.model.Stroke -> INK
+            is com.xnotes.core.model.Stroke -> if (item.tool == Tool.HIGHLIGHTER) HIGHLIGHTER else INK
             is com.xnotes.core.model.TextItem -> TEXT
             is com.xnotes.core.model.ImageItem -> IMAGES
             is com.xnotes.core.model.TableItem -> TABLES
@@ -142,13 +136,8 @@ data class ToolConfig(
     val eraseMarkups: Boolean = true,
     /** Eraser: a pen scribbled over ink erases what it touches. Only used by [Tool.ERASER]. */
     val scribbleErase: Boolean = false,
-    /**
-     * The kinds of item the eraser may take off the page, or null for all of them; see
-     * [SelectKind.ERASER_TAKES] for the ones its menu is offered. Same contract as [selectKinds]:
-     * null means no filter, so a kind added later is erasable by default rather than silently
-     * spared by a setting nobody chose. Only used by [Tool.ERASER].
-     */
-    val erasableKinds: Set<SelectKind>? = null,
+    /** Eraser: the kinds of item it may take off the page. Only used by [Tool.ERASER]. */
+    val erasableKinds: Set<SelectKind> = SelectKind.ERASER_DEFAULT,
     /** Tape: what a drag lays, a straight strip, a rectangle or a freehand band. Only used by [Tool.TAPE]. */
     val tapeMode: TapeMode = TapeMode.STRAIGHT,
     /** Tape: what is printed on it. Only used by [Tool.TAPE]. */

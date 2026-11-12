@@ -938,7 +938,7 @@ class InfiniteInteraction(
         val path = List(stroke.sampleCount) { Pt(stroke.xAt(it), stroke.yAt(it)) }
         val passes = Scribble.passes(path, dpPerUnit) ?: return false
         val radius = stroke.config.baseWidth / 2.0 + Scribble.TOUCH_DP / dpPerUnit
-        // Images, text and anything locked are spared, as the eraser spares them; a scribble is ink, so it takes only lines.
+        // Only what the eraser may take; a scribble is ink, so it takes only lines.
         val candidates = itemsIn(Rect.bounding(path).outset(radius)).filter { EraseRule.erasable(it, configFor(Tool.ERASER).erasableKinds) }
         val taken = Scribble.taken(passes, radius, candidates) { c, x, y, r -> EraseRule.touchesLine(c, x, y, r) }
         if (taken.isEmpty()) return false

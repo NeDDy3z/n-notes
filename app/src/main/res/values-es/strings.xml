@@ -146,6 +146,7 @@
     <string name="caption_switch_back">Volver a la herramienta anterior</string>
     <string name="caption_erase_markups">Borrar marcado de texto PDF</string>
     <string name="caption_scribble_erase">Garabatear para borrar</string>
+    <string name="caption_erasable_kinds">Qué borrar</string>
     <string name="title_select">Seleccionar</string>
     <string name="title_shape">Forma</string>
     <string name="shape_line">Línea</string>
@@ -1419,6 +1420,7 @@
     <string name="toast_cut">Cortado</string>
     <string name="toast_inserted">Insertado</string>
     <string name="toast_deleted">Eliminado</string>
+    <string name="toast_filter_needs_one">El filtro necesita al menos un elemento</string>
     <string name="sync_syncing">Sincronizando</string>
     <string name="sync_err_no_service">No hay ningún servicio en la nube seleccionado</string>
     <string name="sync_err_direction_off">La dirección de sincronización está desactivada</string>
@@ -1430,6 +1432,7 @@
     <string name="sync_notification_title">Sincronizando notas</string>
     <string name="caption_select_kinds">Qué seleccionar</string>
     <string name="select_kind_lines">Líneas</string>
+    <string name="select_kind_highlighter">Resaltador</string>
     <string name="select_kind_shapes">Formas</string>
     <string name="select_kind_text_boxes">Cuadros de texto</string>
     <string name="select_kind_images">Imágenes</string>
