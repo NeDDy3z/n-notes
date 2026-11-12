@@ -1195,4 +1195,19 @@
     <string name="select_kind_tables">表格</string>
     <string name="select_kind_tape">胶带</string>
     <string name="select_kind_audio">音频</string>
+    <string name="add_link_to_document">添加文档链接</string>
+    <string name="caption_select_whole_items">仅完全框选的项目</string>
+    <string name="caption_snap_to_margins">吸附到边距和中心</string>
+    <string name="caption_snap_to_shapes">吸附到形状</string>
+    <string name="deselect_all">取消全选</string>
+    <string name="import_file">导入文件</string>
+    <string name="insert_group_link">链接</string>
+    <string name="link_back">返回</string>
+    <string name="link_label">标签</string>
+    <string name="no_files_here">这里没有文件。</string>
+    <string name="reset_order">重置顺序</string>
+    <string name="show_link_label">显示标签</string>
+    <string name="sidebar_files">文件</string>
+    <string name="tool_table">表格</string>
+    <string name="translate_callouts">翻译提示框标题</string>
 </resources>
