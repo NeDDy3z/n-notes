@@ -2,6 +2,8 @@ package com.xnotes.platform
 
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.AudioData
+import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.Document
 import com.xnotes.core.model.ImageData
 import com.xnotes.core.model.ImageItem
@@ -36,11 +38,16 @@ import java.util.zip.ZipFile
  *
  * What maps into the note: pen strokes (points, colour, width; compressed
  * points are accumulated at f32 precision exactly as Samsung's writer does),
- * text boxes (whole-box colour/size/bold/italic/underline), placed images
- * (resolving bind ids through the media manifest, falling back to filename
- * prefixes) and flowing text: when pages carry no objects, slices of the
- * `note.note` body flow onto the empty pages. Shapes, lines, formulas, tables
- * and recordings are skipped in this version.
+ * text boxes (whole-box colour/size/bold/italic/underline plus per-character
+ * colour/highlight/decoration spans), placed images (resolving bind ids
+ * through the media manifest, falling back to filename prefixes), voice
+ * recordings (note metadata field 13 + the page voice object, written beside
+ * the note and played from its audio pill) and flowing text: when pages carry
+ * no objects, slices of the `note.note` body flow onto the empty pages, with
+ * its spans (colour/highlight/bold/italic/underline/strike) and paragraph
+ * attributes (alignment/indent/list/heading). Shapes, lines, formulas and
+ * tables are skipped — an unported item is dropped on its own, so the rest of
+ * the note still imports.
  */
 object SdocxReader {
 
@@ -50,6 +57,7 @@ object SdocxReader {
     private const val TYPE_TEXT_BOX = 2
     private const val TYPE_IMAGE = 3
     private const val TYPE_CONTAINER = 4
+    private const val TYPE_VOICE = 10
 
     // --- decoding ---------------------------------------------------------
 
@@ -376,10 +384,13 @@ object SdocxReader {
         } else null
     }
 
+    private class ParagraphRecord(val kind: Long, val start: Long, val end: Long, val payload: ByteArray)
+
     /** The shared rich-text record behind page text boxes and note.note's title/body. */
     private class TextCommon(
         val text: String,
         val spans: List<TextSpan>,
+        val paragraphs: List<ParagraphRecord>,
         val sections: List<Pair<Int, Int>>,
         val objectSpans: List<ObjectSpan>,
     )
@@ -392,6 +403,8 @@ object SdocxReader {
     private const val SPAN_BOLD = 5L
     private const val SPAN_ITALIC = 6L
     private const val SPAN_UNDERLINE = 7L
+    private const val SPAN_HIGHLIGHT = 17L
+    private const val SPAN_STRIKE = 20L
 
     private fun parseTextCommon(r: R): TextCommon {
         val common = R(r.bytes(r.u32().toInt()))
@@ -409,7 +422,14 @@ object SdocxReader {
         }
         val paragraphCount = common.u32().toInt()
         require(paragraphCount <= MAX_TEXT_PARAGRAPHS) { "too many text paragraphs" }
-        repeat(paragraphCount) { common.skip(common.u16()) }
+        val paragraphs = ArrayList<ParagraphRecord>(paragraphCount)
+        repeat(paragraphCount) {
+            val record = R(common.bytes(common.u16()))
+            val kind = record.u32()
+            val start = record.u32()
+            val end = record.u32()
+            paragraphs.add(ParagraphRecord(kind, start, end, record.bytes(record.remaining)))
+        }
         repeat(4) { require(common.f32().isFinite()) { "non-finite text margin" } }
         common.u8() // gravity
         val sections = ArrayList<Pair<Int, Int>>()
@@ -437,7 +457,7 @@ object SdocxReader {
                 }
             }
         }
-        return TextCommon(text, spans, sections, objectSpans)
+        return TextCommon(text, spans, paragraphs, sections, objectSpans)
     }
 
     private const val MAX_TEXT_SPANS = 10_000
@@ -455,7 +475,7 @@ object SdocxReader {
         val common = if (shapeText.fields.contains(0)) {
             parseTextCommon(R(shapeText.flexible))
         } else {
-            TextCommon("", emptyList(), emptyList(), emptyList())
+            TextCommon("", emptyList(), emptyList(), emptyList(), emptyList())
         }
         return DecodedText(meta, common)
     }
@@ -470,6 +490,8 @@ object SdocxReader {
         val underline: Boolean,
         /** Images embedded in the text's object spans, decoded with their own bounding boxes. */
         val embedded: List<SdocxImage>,
+        /** Per-character colour/highlight/decoration overrides, merged into non-overlapping ranges. */
+        val spans: List<com.xnotes.core.text.RunSpan>,
     )
 
     private fun decodeTextBox(data: ByteArray): SdocxTextBox? {
@@ -496,7 +518,58 @@ object SdocxReader {
         val bold = wholeSpan(SPAN_BOLD)?.booleanValue() == true
         val italic = wholeSpan(SPAN_ITALIC)?.booleanValue() == true
         val underline = wholeSpan(SPAN_UNDERLINE)?.booleanValue() == true
-        return SdocxTextBox(decoded.meta.bbox, decoded.common.text, color, fontSize, bold, italic, underline, embedded)
+        return SdocxTextBox(decoded.meta.bbox, decoded.common.text, color, fontSize, bold, italic, underline, embedded, textRunSpans(decoded.common))
+    }
+
+    /**
+     * The per-character styles of a rich-text record as non-overlapping [RunSpan]s over its text,
+     * the same rule [com.xnotes.core.model.TextItem.spans] follows: each span replaces the box's own
+     * style on its range. Overlapping Samsung spans (colour + bold + highlight) are flattened into
+     * one style per character range.
+     */
+    private fun textRunSpans(common: TextCommon): List<com.xnotes.core.text.RunSpan> {
+        val text = common.text
+        if (text.isEmpty() || common.spans.isEmpty()) return emptyList()
+        val n = text.length
+        val bold = BooleanArray(n)
+        val italic = BooleanArray(n)
+        val underline = BooleanArray(n)
+        val strike = BooleanArray(n)
+        val color = arrayOfNulls<Rgba>(n)
+        val highlight = arrayOfNulls<Rgba>(n)
+        for (span in common.spans) {
+            val start = span.start.toInt().coerceIn(0, n)
+            val end = span.end.toInt().coerceIn(0, n)
+            if (end <= start) continue
+            when (span.kind) {
+                SPAN_BOLD -> for (i in start until end) bold[i] = span.booleanValue() == true
+                SPAN_ITALIC -> for (i in start until end) italic[i] = span.booleanValue() == true
+                SPAN_UNDERLINE -> for (i in start until end) underline[i] = span.booleanValue() == true
+                SPAN_STRIKE -> for (i in start until end) strike[i] = span.booleanValue() == true
+                SPAN_FOREGROUND -> span.argbValue()?.toRgba()?.let { c -> for (i in start until end) color[i] = c }
+                SPAN_HIGHLIGHT -> span.argbValue()?.toRgba()?.let { c -> for (i in start until end) highlight[i] = c }
+            }
+        }
+        val out = ArrayList<com.xnotes.core.text.RunSpan>()
+        var at = 0
+        while (at < n) {
+            var end = at + 1
+            while (end < n &&
+                bold[end] == bold[at] && italic[end] == italic[at] && underline[end] == underline[at] &&
+                strike[end] == strike[at] && color[end] == color[at] && highlight[end] == highlight[at]
+            ) end++
+            val style = com.xnotes.core.text.CharStyle(
+                bold = bold[at],
+                italic = italic[at],
+                underline = underline[at],
+                strike = strike[at],
+                color = color[at],
+                highlight = highlight[at],
+            )
+            if (style != com.xnotes.core.text.CharStyle.DEFAULT) out.add(com.xnotes.core.text.RunSpan(at, end, style))
+            at = end
+        }
+        return out
     }
 
     private fun Int.toRgba(): Rgba? = Rgba((this shr 16) and 0xFF, (this shr 8) and 0xFF, this and 0xFF)
@@ -504,6 +577,9 @@ object SdocxReader {
     // --- image (image.rs) ---------------------------------------------------
 
     internal class SdocxImage(val bbox: DoubleArray, val mediaId: Long, val visible: Boolean)
+
+    /** A voice recording's placement: the audio is resolved from the note's voice metadata by [mediaId]. */
+    internal class SdocxVoice(val bbox: DoubleArray, val mediaId: Long, val visible: Boolean)
 
     private fun decodeImage(data: ByteArray): SdocxImage? {
         val r = R(data)
@@ -534,8 +610,14 @@ object SdocxReader {
         }
         if (shape.fields.contains(4)) fields.i32() // pen settings id
         if (shape.fields.contains(5)) {
-            val fill = R(fields.bytes(fields.u32().toInt()))
-            if (fill.u8() == 2) { // image fill
+            // Fill record: u32 payload size, u8 kind (2 = image), then the fill payload whose first
+            // byte is the fill mode and whose next i32 is the media bind id. Reading the size and
+            // then `size` bytes (instead of reading the kind first) shifted every id left a byte.
+            val size = fields.u32().toInt()
+            val kind = fields.u8()
+            val fill = R(fields.bytes(size))
+            if (kind == 2) { // image fill
+                fill.u8() // fill mode
                 // Bind id 0 is valid: the manifest, not positivity, decides the binding.
                 val id = fill.i32()
                 if (id >= 0) mediaId = id.toLong() and 0xFFFFFFFFL
@@ -545,10 +627,45 @@ object SdocxReader {
         return SdocxImage(base.bbox, mediaId, base.visible)
     }
 
+    /**
+     * A voice object (type 10): the base frame's box, and — when present — the own frame's
+     * flexible bit 0 audio media id. The id is matched against the note's voice metadata; a voice
+     * whose own frame carries no id falls back to the note voice at the same position.
+     */
+    private fun decodeVoice(data: ByteArray): SdocxVoice {
+        val r = R(data)
+        val base = readObjectMeta(r)
+        var mediaId = -1L
+        if (r.remaining > 0) {
+            runCatching {
+                val own = readFrame(r)
+                if (own.kind == TYPE_VOICE) {
+                    val fields = R(own.flexible)
+                    for (bit in 0 until own.fields.byteCount() * 8) {
+                        if (!own.fields.contains(bit)) continue
+                        when (bit) {
+                            0 -> mediaId = fields.i32().toLong() and 0xFFFFFFFFL
+                            6 -> fields.i32() // thumbnail media id
+                            else -> break
+                        }
+                    }
+                }
+            }
+        }
+        return SdocxVoice(base.bbox, mediaId, base.visible)
+    }
+
     // --- media (media.rs) ---------------------------------------------------
 
-    /** Media assets by bind id; [inferred] is true when ids came from filename prefixes. */
-    internal class MediaIndex(internal val byId: Map<Long, ByteArray>, internal val inferred: Boolean)
+    /**
+     * Media assets by bind id; [inferred] is true when ids came from filename prefixes.
+     * [byIdExt] keeps each asset's file extension so imported audio keeps a sensible sidecar name.
+     */
+    internal class MediaIndex(
+        internal val byId: Map<Long, ByteArray>,
+        internal val byIdExt: Map<Long, String>,
+        internal val inferred: Boolean,
+    )
 
     /**
      * Modern `media/mediaInfo.dat` (format versions newer than 3001) binds ids to filenames;
@@ -559,7 +676,9 @@ object SdocxReader {
         val prefixIds = HashMap<Long, String>()
         for (e in zip.entries()) {
             if (e.isDirectory || !e.name.startsWith("media/") || e.name.endsWith(".dat")) continue
-            assets[e.name] = zip.getInputStream(e).use { it.readBytes() }
+            // One unreadable asset (a corrupt or unsupported audio payload, for instance) must not
+            // sink the import: skip it and let the remaining assets resolve.
+            runCatching { zip.getInputStream(e).use { it.readBytes() } }.getOrNull()?.let { assets[e.name] = it }
             e.name.substringAfterLast('/').substringBefore('@').toLongOrNull()?.let { prefixIds.putIfAbsent(it, e.name) }
         }
         fun lookup(name: String): ByteArray? = assets[name]
@@ -585,12 +704,26 @@ object SdocxReader {
                 bindings
             }.getOrNull()
         }
+        fun extOf(name: String): String =
+            name.substringAfterLast('.', "").lowercase().takeIf { it.isNotEmpty() && it.length <= 5 } ?: "m4a"
         if (manifest != null) {
-            val byId = manifest.mapNotNull { (id, name) -> lookup(name)?.let { id to it } }.toMap()
-            return MediaIndex(byId, inferred = false)
+            val byId = HashMap<Long, ByteArray>()
+            val byIdExt = HashMap<Long, String>()
+            for ((id, name) in manifest) {
+                val bytes = lookup(name) ?: continue
+                byId[id] = bytes
+                byIdExt[id] = extOf(name)
+            }
+            return MediaIndex(byId, byIdExt, inferred = false)
         }
-        val byId = prefixIds.mapNotNull { (id, name) -> lookup(name)?.let { id to it } }.toMap()
-        return MediaIndex(byId, inferred = true)
+        val byId = HashMap<Long, ByteArray>()
+        val byIdExt = HashMap<Long, String>()
+        for ((id, name) in prefixIds) {
+            val bytes = lookup(name) ?: continue
+            byId[id] = bytes
+            byIdExt[id] = extOf(name)
+        }
+        return MediaIndex(byId, byIdExt, inferred = true)
     }
 
     // --- note.note ----------------------------------------------------------
@@ -604,6 +737,17 @@ object SdocxReader {
         val height: Long,
         val paddingX: Long,
         val paddingY: Long,
+        /** Voice recordings named by the note metadata (field 13), resolved against the media index. */
+        val voices: List<SdocxNoteVoice>,
+    )
+
+    /** One note-level voice record: its media id, display name and length. */
+    internal class SdocxNoteVoice(
+        val mediaId: Long,
+        val name: String,
+        val playTime: String,
+        val createdTime: Long,
+        val recordingTime: Long?,
     )
 
     internal fun readNoteForProbe(data: ByteArray) = runCatching { parseNoteImpl(data) }
@@ -616,7 +760,7 @@ object SdocxReader {
         require(fixedEnd in 4..data.size) { "note flexible-data offset is outside the record" }
         val fixed = R(data.copyOf(fixedEnd), 4)
         fixed.mask() // header properties
-        fixed.mask() // note field mask
+        val fields = fixed.mask() // note field mask
         fixed.u32() // format version
         fixed.utf16U16() // note id
         fixed.u32() // file revision
@@ -629,6 +773,15 @@ object SdocxReader {
         fixed.u32() // minimum format version
         val title = parseTextFrames(R(fixed.bytes(fixed.u32().toInt())))
         val body = parseTextFrames(R(fixed.bytes(fixed.u32().toInt())))
+        // The flexible data follows the fixed record and ends before the 32-byte hash trailer.
+        val flexibleEnd = (data.size - 32).coerceAtMost(data.size)
+        val voices = runCatching {
+            if (fixedEnd in 4..flexibleEnd) {
+                parseNoteVoices(R(data.copyOfRange(fixedEnd, flexibleEnd)), fields)
+            } else {
+                emptyList()
+            }
+        }.getOrDefault(emptyList())
         return SdocxNote(
             title.common.text,
             flowParagraphs(body.common),
@@ -636,7 +789,79 @@ object SdocxReader {
             height,
             paddingX,
             paddingY,
+            voices,
         )
+    }
+
+    private const val MAX_VOICES = 4096
+    private const val MAX_VOICE_EVENTS = 65536
+
+    /**
+     * The note metadata's flexible fields, up to and including the voice list (field bit 13).
+     * Fields before it are skipped exactly as Samsung writes them; an unknown bit stops the walk,
+     * matching the reference parser's `first_unparsed_field`.
+     */
+    private fun parseNoteVoices(r: R, fields: Mask): List<SdocxNoteVoice> {
+        val voices = ArrayList<SdocxNoteVoice>()
+        for (bit in 0 until fields.byteCount() * 8) {
+            if (!fields.contains(bit)) continue
+            when (bit) {
+                0 -> r.utf16U16() // application name
+                1 -> { r.i32(); r.i32(); r.utf16U16() } // application version
+                2 -> { r.nullableUtf16(); r.nullableUtf16(); r.nullableUtf16(); r.u32() } // author
+                3 -> { r.f64(); r.f64() } // location
+                6 -> r.utf16U16() // template URI
+                7 -> r.i32() // last-edited page index
+                9 -> { r.u32(); r.i64() } // last-edited page
+                10 -> r.skip(r.u32().toInt()) // string table
+                11 -> r.i32() // body font size delta
+                12 -> skipPen(r, modern = false)
+                13 -> voices.addAll(parseVoiceList(r))
+                else -> break
+            }
+        }
+        return voices
+    }
+
+    /** A u16 unit count, or null when the count is the 0xFFFF sentinel. */
+    private fun R.nullableUtf16(): String? {
+        val units = u16()
+        if (units == 0xFFFF) return null
+        return String(bytes(units * 2), Charsets.UTF_16LE)
+    }
+
+    private fun skipPen(r: R, modern: Boolean) {
+        r.utf16U16() // name
+        r.f32() // size
+        r.u32() // colour
+        r.u32() // curvable
+        r.utf16U16() // advanced setting
+        r.u32() // eraser enabled
+        r.i32() // size level
+        r.i32() // particle density
+        if (modern) { r.f32(); r.u32() } // particle size, fixed width
+        r.f32(); r.f32(); r.f32() // hue, saturation, value
+        r.u32() // colour UI info
+    }
+
+    private fun parseVoiceList(r: R): List<SdocxNoteVoice> {
+        val count = r.u32().toInt()
+        require(count <= MAX_VOICES) { "too many voices" }
+        val out = ArrayList<SdocxNoteVoice>(count)
+        repeat(count) {
+            val size = r.u32().toInt()
+            val voice = R(r.bytes(size))
+            val mediaId = voice.u32()
+            val name = voice.utf16U16()
+            val playTime = voice.utf16U16()
+            val created = voice.i64()
+            val eventCount = voice.u32().toInt()
+            require(eventCount <= MAX_VOICE_EVENTS) { "too many voice events" }
+            repeat(eventCount) { voice.i32(); voice.i64() } // action, time
+            val recordingTime = if (voice.remaining > 0) voice.i64() else null
+            out.add(SdocxNoteVoice(mediaId, name, playTime, created, recordingTime))
+        }
+        return out
     }
 
     /**
@@ -650,6 +875,7 @@ object SdocxReader {
         val bold = BooleanArray(text.length)
         val italic = BooleanArray(text.length)
         val underline = BooleanArray(text.length)
+        val strike = BooleanArray(text.length)
         val color = arrayOfNulls<Rgba>(text.length)
         val highlight = arrayOfNulls<Rgba>(text.length)
         for (span in common.spans) {
@@ -660,8 +886,9 @@ object SdocxReader {
                 SPAN_BOLD -> for (i in start until end) bold[i] = span.booleanValue() == true
                 SPAN_ITALIC -> for (i in start until end) italic[i] = span.booleanValue() == true
                 SPAN_UNDERLINE -> for (i in start until end) underline[i] = span.booleanValue() == true
+                SPAN_STRIKE -> for (i in start until end) strike[i] = span.booleanValue() == true
                 SPAN_FOREGROUND -> span.argbValue()?.toRgba()?.let { c -> for (i in start until end) color[i] = c }
-                17L -> span.argbValue()?.toRgba()?.let { c -> for (i in start until end) highlight[i] = c }
+                SPAN_HIGHLIGHT -> span.argbValue()?.toRgba()?.let { c -> for (i in start until end) highlight[i] = c }
             }
         }
         val paragraphs = ArrayList<com.xnotes.core.text.Paragraph>()
@@ -674,12 +901,14 @@ object SdocxReader {
                 var end = at + 1
                 while (end < lineEnd &&
                     bold[end] == bold[at] && italic[end] == italic[at] && underline[end] == underline[at] &&
+                    strike[end] == strike[at] &&
                     color[end] == color[at] && highlight[end] == highlight[at]
                 ) end++
                 val style = com.xnotes.core.text.CharStyle(
                     bold = bold[at],
                     italic = italic[at],
                     underline = underline[at],
+                    strike = strike[at],
                     color = color[at],
                     highlight = highlight[at],
                 )
@@ -689,6 +918,56 @@ object SdocxReader {
             paragraphs.add(com.xnotes.core.text.Paragraph(runs))
             if (lineEnd == text.length) break
             lineStart = lineEnd + 1
+        }
+        // Paragraph attribute records: alignment, indent/direction, list/checkbox and heading.
+        // Their start/end are paragraph ordinals, matching the line-split paragraphs above.
+        for (record in common.paragraphs) {
+            val endIdx = record.end.toInt().coerceAtMost(paragraphs.size)
+            if (record.start.toInt() >= endIdx) continue
+            val values = when (record.kind) {
+                2L -> R(record.payload).let { listOf(it.u32(), it.u32()) }
+                3L -> R(record.payload).let { listOf(it.u32()) }
+                5L -> R(record.payload).let { listOf(it.u32(), it.u32(), it.u32(), it.u32()) }
+                10L -> R(record.payload).let { listOf(it.u32(), it.u32()) }
+                else -> emptyList()
+            }
+            for (idx in record.start.toInt() until endIdx) {
+                val p = paragraphs.getOrNull(idx) ?: continue
+                when (record.kind) {
+                    2L -> { // indent level + writing direction
+                        p.indent = values[0].toInt()
+                        p.dir = when (values[1]) {
+                            1L -> com.xnotes.core.text.ParaDir.LTR
+                            2L -> com.xnotes.core.text.ParaDir.RTL
+                            else -> com.xnotes.core.text.ParaDir.AUTO
+                        }
+                    }
+                    3L -> p.align = when (values[0]) {
+                        0L -> com.xnotes.core.text.ParaAlign.LEFT
+                        1L -> com.xnotes.core.text.ParaAlign.RIGHT
+                        2L -> com.xnotes.core.text.ParaAlign.CENTER
+                        3L -> com.xnotes.core.text.ParaAlign.JUSTIFY
+                        else -> com.xnotes.core.text.ParaAlign.LEFT
+                    }
+                    5L -> { // bullet, numbered list or checkbox
+                        val bullet = values[0]
+                        p.checked = values[2] != 0L
+                        p.list = when (bullet) {
+                            0L -> com.xnotes.core.text.ListKind.NONE
+                            2L -> com.xnotes.core.text.ListKind.CHECK
+                            4L, 5L, 6L, 7L, 10L -> com.xnotes.core.text.ListKind.ORDERED
+                            else -> com.xnotes.core.text.ListKind.BULLET
+                        }
+                        if (values[3] > 0L) p.listStart = values[3].toInt()
+                    }
+                    10L -> p.headingLevel = when (values[0]) {
+                        0L -> 1
+                        1L -> 2
+                        2L -> 3
+                        else -> 0
+                    }
+                }
+            }
         }
         return paragraphs
     }
@@ -803,6 +1082,12 @@ object SdocxReader {
         return StoredObject(type, payload, children)
     }
 
+    /**
+     * Decodes the objects of one layer into [out]. Every object is isolated: an item this port
+     * does not decode — a voice recording / audio clip (type 10), shape (7), line (8), formula
+     * (11), container (4), or any future/unknown type — is skipped instead of aborting the page.
+     * Only the unsupported item is omitted; the rest of the note still imports.
+     */
     private fun decodeLayerObjects(objects: List<StoredObject>, out: MutableList<Any>) {
         for (obj in objects) {
             runCatching {
@@ -813,9 +1098,13 @@ object SdocxReader {
                         out.addAll(textBox.embedded)
                     }
                     TYPE_IMAGE -> decodeImage(obj.payload)?.takeIf { it.visible }?.let(out::add)
+                    TYPE_VOICE -> out.add(decodeVoice(obj.payload))
+                    // Unported item types (shape 7, line 8, formula 11, …) and
+                    // unknown future types are intentionally ignored.
+                    else -> Unit
                 }
             }
-            decodeLayerObjects(obj.children, out)
+            runCatching { decodeLayerObjects(obj.children, out) }
         }
     }
 
@@ -846,14 +1135,21 @@ object SdocxReader {
 
     private fun readImpl(file: File, imageDir: File, measurer: TextMeasurer, dpi: Int): Document? {
         ZipFile(file).use { zip ->
-            fun entryBytes(name: String): ByteArray =
+            fun entryBytes(name: String): ByteArray = runCatching {
                 zip.getEntry(name)?.let { zip.getInputStream(it).use { s -> s.readBytes() } } ?: ByteArray(0)
+            }.getOrDefault(ByteArray(0))
 
-            val media = readMediaIndex(zip)
+            // A broken media manifest or an unreadable asset (Samsung's audio/video payloads, for
+            // instance) must not abort the import: fall back to an empty index so those media are
+            // simply absent and the rest of the note still lands.
+            val media = runCatching { readMediaIndex(zip) }
+                .getOrDefault(MediaIndex(emptyMap(), emptyMap(), inferred = true))
             val note = entryBytes("note.note").takeIf { it.isNotEmpty() }?.let { parseNote(it) }
             val manifest = entryBytes("pageIdInfo.dat").takeIf { it.isNotEmpty() }?.let { pageOrder(it) }
 
-            val allPages = zip.entries().asSequence().map { it.name }.filter { it.endsWith(".page") }.sorted().toList()
+            val allPages = runCatching {
+                zip.entries().asSequence().map { it.name }.filter { it.endsWith(".page") }.sorted().toList()
+            }.getOrDefault(emptyList())
             // Listed pages keep manifest order; unlisted ones follow in name order.
             val listed = manifest?.map { "$it.page" }?.filter { it in allPages.toSet() } ?: emptyList()
             val pageNames = (listed + allPages.filter { it !in listed.toSet() }).distinct()
@@ -865,12 +1161,20 @@ object SdocxReader {
                 doc.flow.paragraphs.clear()
                 doc.flow.paragraphs.addAll(note.bodyParagraphs)
             }
+            val noteVoices = note?.voices ?: emptyList()
+            val voiceCursor = IntArray(1)
+            val audioRid = intArrayOf(1)
             for (name in pageNames) {
-                doc.pages.add(pageToPage(readPage(entryBytes(name)), media, imageDir, measurer))
+                // One unreadable page must not sink the whole import: a page that only holds an
+                // unsupported item (or is otherwise malformed) is skipped, and the pages that do
+                // decode still land.
+                val page = runCatching { readPage(entryBytes(name)) }.getOrNull() ?: continue
+                runCatching { doc.pages.add(pageToPage(page, media, imageDir, measurer, noteVoices, voiceCursor, audioRid)) }
             }
             if (doc.pages.isEmpty() && note != null) {
-                // A text-only archive: one base page at the note's own dimensions, which the
-                // importer's flow layout then grows into as many pages as the body needs.
+                // A text-only archive (or one whose every page held only unsupported items): one
+                // base page at the note's own dimensions, which the importer's flow layout then
+                // grows into as many pages as the body needs.
                 doc.pages.add(Page(note.width.toDouble().coerceAtLeast(100.0), note.height.toDouble().coerceAtLeast(100.0)))
             }
             if (doc.pages.isEmpty()) return null
@@ -879,21 +1183,79 @@ object SdocxReader {
     }
 
     /** Maps one decoded page into a note page; public to the module so JVM tests can run the parser. */
-    internal fun pageToPage(page: SdocxPage, media: MediaIndex, imageDir: File, measurer: TextMeasurer? = null): Page {
+    internal fun pageToPage(
+        page: SdocxPage,
+        media: MediaIndex,
+        imageDir: File,
+        measurer: TextMeasurer? = null,
+        noteVoices: List<SdocxNoteVoice> = emptyList(),
+        voiceCursor: IntArray = IntArray(1),
+        audioRid: IntArray = IntArray(1),
+    ): Page {
         val p = Page(page.width.toDouble(), page.height.toDouble())
         page.colorArgb?.let { argb ->
             p.style = PageStyle(pageColor = Rgba((argb shr 16) and 0xFF, (argb shr 8) and 0xFF, argb and 0xFF))
         }
         for (element in page.elements) {
-            when (element) {
-                is SdocxStroke -> p.items.add(strokeItem(element))
-                is SdocxTextBox -> p.items.add(textItem(element, measurer ?: StubTextMeasurer))
-                is SdocxImage -> media.byId[element.mediaId]?.let { bytes ->
-                    imageItem(bytes, element, imageDir)?.let { p.items.add(it) }
+            // Isolate each element: a single unmappable item is dropped, not the whole page.
+            runCatching {
+                when (element) {
+                    is SdocxStroke -> p.items.add(strokeItem(element))
+                    is SdocxTextBox -> p.items.add(textItem(element, measurer ?: StubTextMeasurer))
+                    is SdocxImage -> media.byId[element.mediaId]?.let { bytes ->
+                        imageItem(bytes, element, imageDir)?.let { p.items.add(it) }
+                    }
+                    is SdocxVoice -> {
+                        val index = voiceCursor[0]++
+                        val noteVoice = noteVoices.getOrNull(index)
+                        audioItem(element, noteVoice, media, imageDir, measurer ?: StubTextMeasurer, audioRid[0]++)
+                            ?.let { p.items.add(it) }
+                    }
                 }
             }
         }
         return p
+    }
+
+    /**
+     * An imported voice as an [AudioItem]: the media bytes written beside the note, the container's
+     * duration probed, and the pill placed at the page voice's box (falling back to the metadata's
+     * "mm:ss" play time when the platform cannot probe, e.g. in JVM tests).
+     */
+    private fun audioItem(
+        voice: SdocxVoice,
+        noteVoice: SdocxNoteVoice?,
+        media: MediaIndex,
+        imageDir: File,
+        measurer: TextMeasurer,
+        rid: Int,
+    ): AudioItem? {
+        val mediaId = if (voice.mediaId >= 0) voice.mediaId else noteVoice?.mediaId ?: -1L
+        if (mediaId < 0) return null
+        val bytes = media.byId[mediaId] ?: return null
+        val ext = media.byIdExt[mediaId] ?: "m4a"
+        val file = runCatching { File.createTempFile("sdocx-audio", ".$ext", imageDir) }.getOrNull() ?: return null
+        if (!runCatching { file.writeBytes(bytes) }.isSuccess) { file.delete(); return null }
+        val duration = runCatching { AudioFiles.durationOf(file) }.getOrNull()
+            ?: playTimeMs(noteVoice?.playTime)?.takeIf { it > 0 }
+            ?: 0
+        if (duration <= 0) { file.delete(); return null }
+        val b = voice.bbox
+        val w = (b[2] - b[0]).coerceAtLeast(AudioItem.MIN_HEIGHT * AudioItem.MIN_ASPECT)
+        val h = (b[3] - b[1]).coerceAtLeast(AudioItem.MIN_HEIGHT)
+        val rect = Rect(b[0], b[1], w, h)
+        val name = noteVoice?.name?.ifBlank { null } ?: "Recording"
+        return AudioItem(AudioData(file, ext, duration, ByteArray(0)), rect, name, rid, measurer)
+    }
+
+    /** Samsung's voice "mm:ss" (or "hh:mm:ss") play time as milliseconds, or null. */
+    private fun playTimeMs(playTime: String?): Int? {
+        val parts = playTime?.split(':') ?: return null
+        if (parts.size < 2) return null
+        val seconds = parts.takeLast(2).mapNotNull { it.trim().toIntOrNull() }
+        if (seconds.size < 2) return null
+        val total = seconds[0] * 60 + seconds[1]
+        return total * 1000
     }
 
     private fun strokeItem(s: SdocxStroke): Stroke {
@@ -925,6 +1287,7 @@ object SdocxReader {
             bold = t.bold,
             italic = t.italic,
             underline = t.underline,
+            spans = t.spans,
         )
     }
 
@@ -940,7 +1303,7 @@ object SdocxReader {
 
     // --- JVM test hooks -----------------------------------------------------
 
-    internal fun emptyMediaIndexForProbe() = MediaIndex(emptyMap(), inferred = true)
+    internal fun emptyMediaIndexForProbe() = MediaIndex(emptyMap(), emptyMap(), inferred = true)
 
     /**
      * A rough measurer for JVM tests that import notes without a real text host: fixed-metric
