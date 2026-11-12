@@ -85,7 +85,7 @@ internal fun TemplateStrip(
     pageMm: Pair<Double, Double>,
     drawing: (TemplateLibrary.Entry) -> TemplateDrawing,
     onSelect: (String) -> Unit,
-    onImport: () -> Unit,
+    onImport: (() -> Unit)?,
     onRemove: (String) -> Unit,
     onKeep: (String) -> Unit,
 ) {
@@ -138,7 +138,7 @@ internal fun TemplateStrip(
                 }
             }
         }
-        Column(
+        if (onImport != null) Column(
             Modifier
                 .width(TILE_W)
                 .clip(MaterialTheme.shapes.extraSmall)

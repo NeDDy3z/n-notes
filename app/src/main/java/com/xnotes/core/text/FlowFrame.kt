@@ -204,6 +204,8 @@ class PageFlow(
     val tables: List<TableFrag> = emptyList(),
     val breaks: List<BreakMark> = emptyList(),
     val callouts: List<CalloutTitle> = emptyList(),
+    /** Base text colour on this page: the flow's own, else the auto one for this page's paper. */
+    val defaultColor: Rgba = TextFlow.DEFAULT_COLOR,
 )
 
 /** What a text-tool tap landed on. */
@@ -231,7 +233,22 @@ class FlowFrame(
     val cells: CellIndex = CellIndex(emptyList()),
     /** The page the flow starts on: past a note's cover. */
     val firstPage: Int = 0,
+    /** The page each paragraph ends on, virtual pages past the real ones included; -1 when not laid out. */
+    private val paraEndPage: IntArray = IntArray(0),
+    /** The page the last paragraph with anything visible ends on. */
+    private val contentEndPage: Int = 0,
+    /** Where the run of blank paragraphs past the last real page starts; the paragraph count when there is none. */
+    val hiddenTailStart: Int? = null,
 ) {
+    /**
+     * Pages to add so the content and the caret paragraph [caretPara] both land on real pages.
+     * Empty lines and breaks trailing past both need none, e.g. ones left behind by deleted pages.
+     */
+    fun extraPagesFor(caretPara: Int): Int {
+        val end = maxOf(contentEndPage, paraEndPage.getOrElse(caretPara) { -1 })
+        return (end - pages.lastIndex).coerceIn(0, extraPagesNeeded)
+    }
+
     private val byPara = HashMap<Int, MutableList<Pair<Int, PlacedLine>>>()
 
     /** Every page slice of each table (by [TableBlock.ordinal]), page index attached. */
@@ -434,6 +451,21 @@ class FlowFrame(
         val pool = body.ifEmpty { page.lines }
         val line = pool.firstOrNull { local.y < it.bottom } ?: pool.last()
         return FlowHit.Caret(FlowPos(line.paraIndex, line.offsetAt(local.x)))
+    }
+
+    /** The hyperlink under a finger tap at page-local [local], or null. Bounded to the line's
+     *  actual text extent so a tap in the empty margin past a link never opens it. */
+    fun linkAt(pageIndex: Int, local: Pt): String? {
+        val page = pages.getOrNull(pageIndex) ?: return null
+        val line = page.lines.firstOrNull { local.y >= it.top && local.y < it.bottom } ?: return null
+        val leftX = line.xs.firstOrNull() ?: return null
+        val rightX = line.xs.lastOrNull() ?: return null
+        if (local.x < leftX || local.x > rightX) return null
+        for ((i, seg) in line.segs.withIndex()) {
+            val segRight = line.segs.getOrNull(i + 1)?.x ?: rightX
+            if (local.x >= seg.x && local.x <= segRight) return seg.style.link
+        }
+        return null
     }
 
     /** The caret nearest [local] inside the cell of [frag] under it (x picks the column). */
