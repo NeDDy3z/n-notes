@@ -146,6 +146,7 @@
     <string name="caption_switch_back">Přepnout zpět</string>
     <string name="caption_erase_markups">Mazat značení textu v PDF</string>
     <string name="caption_scribble_erase">Mazat čmáráním</string>
+    <string name="caption_erasable_kinds">Co mazat</string>
     <string name="title_select">Výběr</string>
     <string name="title_shape">Tvar</string>
     <string name="shape_line">Čára</string>
@@ -1441,6 +1442,7 @@
     <string name="toast_cut">Vyjmuto</string>
     <string name="toast_inserted">Vloženo</string>
     <string name="toast_deleted">Smazáno</string>
+    <string name="toast_filter_needs_one">Filtr musí mít aspoň jednu položku</string>
     <string name="sync_syncing">Synchronizace</string>
     <string name="sync_err_no_service">Není vybraná žádná cloudová služba</string>
     <string name="sync_err_direction_off">Směr synchronizace je vypnutý</string>
@@ -1452,6 +1454,7 @@
     <string name="sync_notification_title">Synchronizace poznámek</string>
     <string name="caption_select_kinds">Co vybrat</string>
     <string name="select_kind_lines">Čáry</string>
+    <string name="select_kind_highlighter">Zvýrazňovač</string>
     <string name="select_kind_shapes">Tvary</string>
     <string name="select_kind_text_boxes">Textová pole</string>
     <string name="select_kind_images">Obrázky</string>

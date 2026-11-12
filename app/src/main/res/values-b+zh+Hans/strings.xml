@@ -133,6 +133,7 @@
     <string name="caption_switch_back">切换回去</string>
     <string name="caption_erase_markups">擦除 PDF 文本标注</string>
     <string name="caption_scribble_erase">涂抹擦除</string>
+    <string name="caption_erasable_kinds">擦除内容</string>
     <string name="title_select">选择</string>
     <string name="title_shape">形状</string>
     <string name="shape_line">直线</string>
@@ -1175,6 +1176,7 @@
     <string name="toast_cut">已剪切</string>
     <string name="toast_inserted">已插入</string>
     <string name="toast_deleted">已删除</string>
+    <string name="toast_filter_needs_one">筛选至少需要一项</string>
     <string name="sync_syncing">正在同步</string>
     <string name="sync_err_no_service">未选择云服务</string>
     <string name="sync_err_direction_off">同步方向已关闭</string>
@@ -1186,6 +1188,7 @@
     <string name="sync_notification_title">正在同步笔记</string>
     <string name="caption_select_kinds">选择内容</string>
     <string name="select_kind_lines">线条</string>
+    <string name="select_kind_highlighter">荧光笔</string>
     <string name="select_kind_shapes">形状</string>
     <string name="select_kind_text_boxes">文本框</string>
     <string name="select_kind_images">图片</string>

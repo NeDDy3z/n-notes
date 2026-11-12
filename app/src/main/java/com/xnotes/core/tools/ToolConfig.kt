@@ -25,6 +25,7 @@ enum class EraseMode(val id: String) {
 /** What kinds of item a band or lasso picks up. Persisted as [id]. */
 enum class SelectKind(val id: String) {
     INK("ink"),
+    HIGHLIGHTER("highlighter"),
     SHAPES("shapes"),
     TEXT("text"),
     IMAGES("images"),
@@ -35,10 +36,13 @@ enum class SelectKind(val id: String) {
     companion object {
         val ALL: Set<SelectKind> = entries.toSet()
 
+        /** What a fresh eraser takes: everything but the pieces that are costly to lose by a slip. */
+        val ERASER_DEFAULT: Set<SelectKind> = ALL - setOf(IMAGES, TABLES, AUDIO)
+
         fun fromId(id: String?): SelectKind? = entries.firstOrNull { it.id == id }
 
         fun of(item: com.xnotes.core.model.CanvasItem): SelectKind = when (item) {
-            is com.xnotes.core.model.Stroke -> INK
+            is com.xnotes.core.model.Stroke -> if (item.tool == Tool.HIGHLIGHTER) HIGHLIGHTER else INK
             is com.xnotes.core.model.TextItem -> TEXT
             is com.xnotes.core.model.ImageItem -> IMAGES
             is com.xnotes.core.model.TableItem -> TABLES
@@ -132,6 +136,8 @@ data class ToolConfig(
     val eraseMarkups: Boolean = true,
     /** Eraser: a pen scribbled over ink erases what it touches. Only used by [Tool.ERASER]. */
     val scribbleErase: Boolean = false,
+    /** Eraser: the kinds of item it may take off the page. Only used by [Tool.ERASER]. */
+    val erasableKinds: Set<SelectKind> = SelectKind.ERASER_DEFAULT,
     /** Tape: what a drag lays, a straight strip, a rectangle or a freehand band. Only used by [Tool.TAPE]. */
     val tapeMode: TapeMode = TapeMode.STRAIGHT,
     /** Tape: what is printed on it. Only used by [Tool.TAPE]. */
