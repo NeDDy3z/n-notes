@@ -276,10 +276,14 @@ class EditorActivity : ComponentActivity() {
         importUri(intent)?.let { pendingImport = it }
     }
 
-    // The PDF or markdown uri carried by an inbound VIEW ("Open with") or SEND ("Share") intent, else null.
+    // The PDF, markdown or Samsung Notes uri carried by an inbound VIEW ("Open with") or SEND ("Share") intent, else null.
     private fun importUri(intent: Intent?): Uri? = when (intent?.action) {
-        // Only the import filters take VIEW, but a task started by another build's filters keeps its intent.
-        Intent.ACTION_VIEW -> intent.data?.takeIf { (intent.type ?: runCatching { contentResolver.getType(it) }.getOrNull()) in IMPORT_TYPES }
+        // Only the import filters take VIEW, but a task started by another build's filters keeps its
+        // intent; the .sdocx extension covers providers that report a generic zip MIME for it.
+        Intent.ACTION_VIEW -> intent.data?.takeIf {
+            (intent.type ?: runCatching { contentResolver.getType(it) }.getOrNull()) in IMPORT_TYPES ||
+                (displayNameOf(contentResolver, it) ?: "").endsWith(".sdocx")
+        }
         Intent.ACTION_SEND ->
             if (intent.type in IMPORT_TYPES)
                 IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
@@ -435,21 +439,8 @@ private fun EditorScreen(
     }
     // Exact MIME types the "Import file" picker offers, so it only shows files we can actually
     // import (an explicit allowlist rather than image/* + text/* wildcards, which some pickers
-    // expand to unrelated files).
-    val importMimeTypes = arrayOf(
-        "application/pdf",
-        // images
-        "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp",
-        "image/svg+xml", "image/heic", "image/heif",
-        // plain text / markdown / csv / html / rtf
-        "text/plain", "text/markdown", "text/x-markdown",
-        "text/csv", "text/comma-separated-values", "application/csv",
-        "text/html", "text/rtf", "application/rtf",
-        // ebook / office
-        "application/epub+zip",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    // expand to unrelated files). Owned by ImportKind, one list per import format.
+    val importMimeTypes = com.xnotes.ui.ImportKind.PICKER_MIME_TYPES
     // A PDF "Save as" destination. The note is already rendered into [pendingExportTemp]
     // (off-thread, behind the progress dialog), so the picker just chooses where to copy it —
     // shared by the open-note export, the explorer-file export, and side-panel page saves.
@@ -1077,20 +1068,22 @@ private fun EditorScreen(
         }
     }
 
-    // A PDF or markdown file opened from another app ("Open with"/Share): set up a pending import
-    // and land on the backstage so its name dialog appears, exactly like the in-app "Import PDF"
-    // button. With no folder chosen yet, fall back to App storage so the explorer renders and the
-    // note autosaves. A markdown file becomes a new note whose text it is.
+    // A PDF, markdown or Samsung Notes file opened from another app ("Open with"/Share): set up a
+    // pending import and land on the backstage so its name dialog appears, exactly like the in-app
+    // "Import PDF" button. With no folder chosen yet, fall back to App storage so the explorer
+    // renders and the note autosaves. A markdown file becomes a new note whose text it is.
     LaunchedEffect(importUri) {
         val src = importUri ?: return@LaunchedEffect
         onImportConsumed() // consume once; the body has no suspend point so it runs to completion
         val name = displayNameOf(resolver, src)
-        val markdown = runCatching { resolver.getType(src) }.getOrNull() in MARKDOWN_TYPES ||
+        val mime = runCatching { resolver.getType(src) }.getOrNull()
+        val markdown = mime in MARKDOWN_TYPES ||
             name?.substringAfterLast('.', "")?.lowercase() in MARKDOWN_EXTENSIONS
+        val kind = com.xnotes.ui.ImportKind.classify(name ?: "Document", mime)
         val stem = com.xnotes.core.util.Paths.stem(name ?: "Document")
         guardedAll {
             if (editor.browseRoot == null) editor.useInternalStorage()
-            editor.requestImport(com.xnotes.ui.ImportKind.PDF, stem, src.toString(), markdown = markdown)
+            editor.requestImport(kind, stem, src.toString(), markdown = markdown)
             backstageView = com.xnotes.ui.BackstageView.HOME
             editor.goHomeAll()
         }
@@ -1123,7 +1116,13 @@ private fun EditorScreen(
                 onImportPdf = { importPdfLauncher.launch(importMimeTypes) },
                 onOpenFile = { uri ->
                     val name = displayNameOf(resolver, Uri.parse(uri)).orEmpty()
-                    if (com.xnotes.core.util.ReaderKind.isReadable(name)) readerStack.add(com.xnotes.ui.ReaderFile(uri, name))
+                    // A Samsung Notes archive can't render in the reader: open it as a "Convert
+                    // to note" import, like the explorer's own convert action would.
+                    if (com.xnotes.core.util.ReaderKind.ofName(name) == com.xnotes.core.util.ReaderKind.SDOCX)
+                        editor.requestImport(com.xnotes.ui.ImportKind.SDOCX, stemOf(uri), uri, name,
+                            runCatching { resolver.getType(Uri.parse(uri)) }.getOrNull().orEmpty(),
+                            title = context.getString(R.string.convert_to_note))
+                    else if (com.xnotes.core.util.ReaderKind.isReadable(name)) readerStack.add(com.xnotes.ui.ReaderFile(uri, name))
                     else guarded(editor) { openTreeFile(uri) }
                 },
                 onPickRoot = { pickRootLauncher.launch(null) },
@@ -2272,8 +2271,8 @@ private fun BoxScope.ZoomLockHint(editor: Editor) {
 private val MARKDOWN_TYPES = setOf("text/markdown", "text/x-markdown")
 private val MARKDOWN_EXTENSIONS = setOf("md", "markdown")
 
-/** What the import filters take: a PDF becomes a note on its pages, markdown a note of its text. */
-private val IMPORT_TYPES = MARKDOWN_TYPES + "application/pdf"
+/** What the import filters take: a PDF becomes a note on its pages, markdown a note of its text, a Samsung Notes archive a note of its ink/text. */
+private val IMPORT_TYPES = MARKDOWN_TYPES + "application/pdf" + "application/x-samsungnotes"
 
 private fun displayNameOf(resolver: android.content.ContentResolver, uri: Uri): String? = runCatching {
     resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->

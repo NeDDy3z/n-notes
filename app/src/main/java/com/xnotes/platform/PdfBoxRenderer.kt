@@ -336,18 +336,36 @@ internal class PdfBoxRenderer(
      * each position, rather than summing advances, keeps tab stops and right-to-left lines where
      * the screen has them.
      */
-    override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {
+    override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags, spans: List<com.xnotes.core.text.RunSpan>) {
         if (text.isEmpty()) return
-        val layout = AndroidText.layout(text, rect.w.toInt(), AndroidText.textPaint(font), flags)
+        val layout = AndroidText.layout(text, rect.w.toInt(), AndroidText.textPaint(font), flags, spans, font)
         // A link's clickable area is an upright rect in the page's own space, so turned text goes without.
         val links = if (turning) emptyList() else LinkFinder.find(text)
         // Tagged, a word stops where a link starts or ends, so the link's text is an element of its own.
         fun linkAt(k: Int): Int = if (tagger == null) -1 else links.indexOfFirst { k >= it.start && k < it.end }
+        // A span's overrides resolve against the box's own style, and the PDF word runs draw with.
+        fun styleAt(k: Int): com.xnotes.core.text.CharStyle =
+            spans.lastOrNull { it.contains(k) }?.style ?: com.xnotes.core.text.CharStyle.DEFAULT
+        fun runFont(base: FontSpec, st: com.xnotes.core.text.CharStyle): FontSpec =
+            FontSpec(st.sizePt ?: base.pointSize, st.face ?: base.face, st.bold || base.bold, st.italic || base.italic)
+        fun runColor(st: com.xnotes.core.text.CharStyle): Rgba =
+            st.color ?: if (st.link != null) AndroidText.LINK_COLOR else color
         for (line in 0 until layout.lineCount) {
             val start = layout.getLineStart(line)
             var end = layout.getLineEnd(line)
             while (end > start && text[end - 1].isWhitespace()) end--
             val baseline = rect.top + layout.getLineBaseline(line)
+            // Highlight rects go in behind the words, one per span piece on this line.
+            if (!turning) for (span in spans) {
+                if (span.style.highlight == null) continue
+                val a = maxOf(span.start, start)
+                val b = minOf(span.endExclusive, end)
+                if (b <= a) continue
+                val x0 = minOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
+                val x1 = maxOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b))
+                val top = layout.getLineTop(line).toDouble()
+                fillRect(Rect(rect.left + x0, rect.top + top, (x1 - x0).toDouble(), layout.getLineBottom(line) - top), span.style.highlight)
+            }
             fun leftOf(a: Int, b: Int): Double =
                 rect.left + minOf(layout.getPrimaryHorizontal(a), layout.getPrimaryHorizontal(b)).toDouble()
             var i = start
@@ -359,10 +377,11 @@ internal class PdfBoxRenderer(
                     continue
                 }
                 val link = linkAt(i)
+                val st = styleAt(i)
                 var j = i
-                while (j < end && text[j] != ' ' && text[j] != '\t' && linkAt(j) == link) j++
+                while (j < end && text[j] != ' ' && text[j] != '\t' && linkAt(j) == link && styleAt(j) == st) j++
                 tagger?.boxLink = link
-                drawTextRun(text.substring(i, j), leftOf(i, j), baseline, font, color)
+                drawTextRun(text.substring(i, j), leftOf(i, j), baseline, runFont(font, st), runColor(st))
                 i = j
             }
             // A line broken at a space or a newline ends in one, so the words either side stay apart.

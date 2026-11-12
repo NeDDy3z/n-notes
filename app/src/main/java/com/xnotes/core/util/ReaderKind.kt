@@ -11,6 +11,7 @@ enum class ReaderKind(val label: String, vararg val extensions: String) {
     XLSX("XLSX", "xlsx"),
     CSV("CSV", "csv"),
     PDF("PDF", "pdf"),
+    SDOCX("SDOCX", "sdocx"),
     ;
 
     companion object {

@@ -102,6 +102,7 @@ import com.xnotes.core.text.InputRules
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.PlainMath
 import com.xnotes.core.text.SlashCommands
@@ -196,29 +197,61 @@ data class BrowseEntry(
 
 /**
  * How a picked file should be imported: as a PDF-backed note, an image note, a text note (extracted
- * from txt/csv/rtf/html/docx/xlsx/epub), or an existing `.xnote`/`.xcanvas` opened as-is.
+ * from txt/csv/rtf/html/docx/xlsx/epub), a Samsung Notes archive, or an existing `.xnote`/`.xcanvas`
+ * opened as-is.
+ *
+ * Each kind owns its extensions and MIME types: the picker's MIME allowlist, the extension hint and
+ * [classify] all derive from them, so a new import format is one enum entry here plus its branch in
+ * the two import `when`s (buildImportedDocument, createImportedNoteFile).
  */
-enum class ImportKind {
-    PDF, IMAGE, TEXT, OPEN;
+enum class ImportKind(
+    val extensions: List<String>,
+    val mimes: List<String>,
+    /** Whether the "Import file" picker offers this kind; OPEN is reached by opening, not importing. */
+    val pickable: Boolean = true,
+) {
+    PDF(
+        listOf("pdf"),
+        listOf("application/pdf"),
+    ),
+    IMAGE(
+        listOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic", "heif"),
+        listOf("image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/svg+xml", "image/heic", "image/heif"),
+    ),
+    TEXT(
+        listOf("txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx"),
+        listOf("text/plain", "text/markdown", "text/x-markdown", "text/csv", "text/comma-separated-values",
+            "application/csv", "text/html", "text/rtf", "application/rtf", "application/epub+zip",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ),
+    OPEN(
+        listOf("xnote", "xcanvas"),
+        emptyList(),
+        pickable = false,
+    ),
+    SDOCX(
+        listOf("sdocx"),
+        // octet-stream: providers that don't know the extension (the Downloads one does) report it
+        // so — without it the picker hides every .sdocx they serve.
+        listOf("application/x-samsungnotes", "application/zip", "application/octet-stream"),
+    );
 
     companion object {
         /** The document extensions the "Import file" action understands (for the picker + UI hint). */
-        val IMPORT_EXTENSIONS = listOf("pdf", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg",
-            "txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+        val IMPORT_EXTENSIONS: List<String> = entries.filter { it.pickable }.flatMap { it.extensions }
 
-        private val IMAGE_EXT = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic", "heif")
-        private val TEXT_EXT = setOf("txt", "md", "markdown", "csv", "rtf", "html", "htm", "epub", "docx", "xlsx")
+        /** The MIME types the "Import file" picker offers, derived from each kind's list. */
+        val PICKER_MIME_TYPES: Array<String> = entries.filter { it.pickable }.flatMap { it.mimes }.toTypedArray()
 
         /** Classify a picked file by extension (then mime) into the importer that should handle it. */
         fun classify(name: String, mime: String?): ImportKind {
             val ext = name.substringAfterLast('.', "").lowercase()
-            return when {
-                ext == "xnote" || ext == "xcanvas" -> OPEN
-                ext == "pdf" || mime == "application/pdf" -> PDF
-                ext in IMAGE_EXT || mime?.startsWith("image/") == true -> IMAGE
-                ext in TEXT_EXT || mime?.startsWith("text/") == true -> TEXT
-                else -> TEXT // best effort for unknown types
-            }
+            return entries.firstOrNull { kind -> ext in kind.extensions || (mime != null && mime in kind.mimes) }
+                ?: when {
+                    mime?.startsWith("image/") == true -> IMAGE
+                    else -> TEXT // best effort for unknown types
+                }
         }
     }
 }
@@ -1794,6 +1827,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // A canvas item with a hyperlink wins over everything under the same point (it sits on top).
             page.items.lastOrNull { it.link != null && it.contains(pageLocal) }
                 ?.link?.let { openUrl(it); return@onItemLinkTap true }
+            // A per-selection link inside a text box's own words, on the page or on a sheet.
+            (page.items.lastOrNull { it is TextItem && it.spans.isNotEmpty() && it.contains(pageLocal) } as? TextItem)?.let { item ->
+                val off = com.xnotes.platform.AndroidText.offsetAt(
+                    item.text, item.spans, item.font, item.flags(), item.width,
+                    pageLocal.x - item.pos.x, pageLocal.y - item.pos.y,
+                )
+                if (off != null) item.spans.lastOrNull { it.contains(off) }?.style?.link?.let { openUrl(it); return@onItemLinkTap true }
+            }
             false
         }
         controller.onAudioTap = { pageIndex, local -> tapAudio(pageIndex, local) }
@@ -3334,9 +3375,27 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun toggleTextUnderline() { controller.toggleTextUnderline(); refreshTextBar() }
     fun toggleTextStrike() { controller.toggleTextStrike(); refreshTextBar() }
     fun cycleTextAlign() { controller.cycleTextAlign(); refreshTextBar() }
+    fun cycleTextDir() { controller.cycleTextDir(); refreshTextBar() }
 
     override fun updateEditingText(text: String) {
         controller.updateEditingText(text)
+    }
+
+    override fun updateEditingSelection(start: Int, end: Int) {
+        controller.updateEditingSelection(start, end)
+        refreshTextBar() // the span buttons light and enable against the field's selection
+    }
+
+    /** Highlight the field's selection, or clear it with null. */
+    fun setTextHighlight(color: Rgba?) {
+        controller.setTextHighlight(color)
+        refreshTextBar()
+    }
+
+    /** Link the field's selection to [url], or strip its link with null. */
+    fun setTextCharLink(url: String?) {
+        controller.setTextCharLink(url)
+        refreshTextBar()
     }
 
     override fun commitText(text: String?) {
@@ -4860,6 +4919,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 try { com.xnotes.platform.PdfImporter.import(source, state.document.dpi) } finally { source.close() }
             }
             ImportKind.IMAGE -> imageDocument(keep(imageDir, "." + sourceName.substringAfterLast('.', "img")))
+            ImportKind.SDOCX -> com.xnotes.platform.SdocxReader.read(keep(imageDir, ".sdocx"), imageDir, textMeasurer, state.document.dpi)?.also { paginateFlow(it) }
             ImportKind.TEXT -> textDocument(staged, sourceName, mime)
             ImportKind.OPEN -> runCatching { java.io.FileInputStream(staged).use { codec.read(it, pdfDir, imageDir) } }.getOrNull()
         }
@@ -5173,9 +5233,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         when (item.kind) {
             ImportKind.PDF -> createPdfNoteFile(treeUri, parentDocId, rawName, staged)
             ImportKind.IMAGE -> createImageNoteFile(treeUri, parentDocId, rawName, staged)
+            ImportKind.SDOCX -> createSdocxNoteFile(treeUri, parentDocId, rawName, staged)
             ImportKind.TEXT -> createTextNoteFile(treeUri, parentDocId, rawName, staged, item.sourceName, item.mime)
             ImportKind.OPEN -> createNoteFileFromFile(treeUri, parentDocId, rawName, staged)
         }
+
+    /** A new note holding the ink, text and pictures of a Samsung Notes `.sdocx` file. IO. */
+    fun createSdocxNoteFile(treeUri: String, parentDocId: String, rawName: String, file: java.io.File): String? {
+        val doc = com.xnotes.platform.SdocxReader.read(file, imageDir, textMeasurer, state.document.dpi) ?: return null
+        paginateFlow(doc)
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+        return createNoteFile(treeUri, parentDocId, name) { codec.write(doc, it) { importCancelled.get() } }
+    }
 
     /** Commits the pending import off the main thread while driving the "Importing…" dialog via
      *  [importing]. Returns the new note's URI, or null on failure/cancel. On cancel [pendingImport]
@@ -8853,6 +8922,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flowParaOp { it.align = next }
     }
 
+    /** The direction the bar reports: the caret paragraph's, AUTO when there is none. */
+    fun flowCaretDir(): ParaDir = flowCaretParagraph()?.dir ?: ParaDir.AUTO
+
+    /** The direction the caret paragraph's lines actually take, AUTO read from the text. */
+    fun flowEffectiveDir(): ParaDir = flowCaretParagraph()?.effectiveDir() ?: ParaDir.LTR
+
+    /** Cycle the paragraph(s) through automatic, explicit left-to-right and explicit
+     *  right-to-left: auto reads each line's first strong letter, the other two pin it. */
+    fun flowToggleDir() {
+        val next = when (flowCaretDir()) {
+            ParaDir.AUTO -> ParaDir.LTR
+            ParaDir.LTR -> ParaDir.RTL
+            ParaDir.RTL -> ParaDir.AUTO
+        }
+        flowParaOp { it.dir = next }
+    }
+
     fun flowIndent(delta: Int) = flowParaOp { it.indent += delta }
 
     /** Tab inside a list item nests it (Shift un-nests) rather than typing a tab. */
@@ -9701,11 +9787,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (!sel.collapsed) flowText.replaceExternal(sel, "")
     }
 
+    /** The selected flow text, or null when nothing is selected (what the touch menu's copy asks for). */
+    private fun flowSelectedText(): String? {
+        val sel = flowText.selection.normalized()
+        if (sel.collapsed) return null
+        val flow = state.document.flow
+        return CellIndex(flow.paragraphs).textOf(flow.paragraphs, sel)
+    }
+
     private fun flowCopySelection(cut: Boolean) {
         val sel = flowText.selection.normalized()
         if (sel.collapsed) return
-        val flow = state.document.flow
-        val text = CellIndex(flow.paragraphs).textOf(flow.paragraphs, sel)
+        val text = flowSelectedText() ?: return
         val cm = appContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager ?: return
         cm.setPrimaryClip(android.content.ClipData.newPlainText("xnotes text", text))

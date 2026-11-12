@@ -10,6 +10,7 @@ import com.xnotes.core.text.CharStyle
 import com.xnotes.core.text.FlowMargins
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.Run
 import com.xnotes.core.text.TextFlow
@@ -103,6 +104,7 @@ class FlowXmlTest {
         val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("just words")))) }
         val xml = String(FlowXml.write(flow), Charsets.UTF_8)
         assertFalse(xml.contains("<text:span"))
+        // Automatic is the default and says nothing: no style, no style-name on the paragraph.
         assertFalse(xml.contains("<style:style"))
         assertTrue(xml.contains("<text:p>just words</text:p>"))
     }
@@ -251,6 +253,33 @@ class FlowXmlTest {
     fun ordinaryTextWritesNoMathAttributeAtAll() {
         val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("plain")))) }
         assertFalse("xnotes:math" in FlowXml.write(flow).decodeToString())
+    }
+
+    @Test
+    fun aRightToLeftParagraphKeepsItsDirection() {
+        val flow = TextFlow().apply {
+            paragraphs.add(Paragraph(mutableListOf(Run("سلام")), dir = ParaDir.RTL))
+            paragraphs.add(Paragraph(mutableListOf(Run("plain"))))
+        }
+        assertTrue("style:writing-mode=\"rl-tb\"" in String(FlowXml.write(flow)))
+        val back = roundTrip(flow)
+        assertEquals(ParaDir.RTL, back.paragraphs[0].dir)
+        assertEquals(ParaDir.AUTO, back.paragraphs[1].dir)
+    }
+
+    @Test
+    fun anAutomaticDirectionIsTheDefaultAndNeedsNoToken() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("سلام")))) }
+        val xml = String(FlowXml.write(flow))
+        assertFalse("xnotes:dir" in xml)
+        assertEquals(ParaDir.AUTO, roundTrip(flow).paragraphs[0].dir)
+    }
+
+    @Test
+    fun anExplicitLtrPinIsWrittenSoItSurvivesTheRoundTrip() {
+        val flow = TextFlow().apply { paragraphs.add(Paragraph(mutableListOf(Run("سلام")), dir = ParaDir.LTR)) }
+        assertTrue("xnotes:dir=\"ltr\"" in String(FlowXml.write(flow)))
+        assertEquals(ParaDir.LTR, roundTrip(flow).paragraphs[0].dir)
     }
 
     @Test

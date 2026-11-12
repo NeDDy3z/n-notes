@@ -10,6 +10,7 @@ import com.xnotes.core.text.FlowQuote
 import com.xnotes.core.text.FlowTable
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.text.Run
 import com.xnotes.core.text.TableBlock
@@ -140,6 +141,12 @@ object FlowXml {
         if (p.align != ParaAlign.LEFT) append(" fo:text-align=\"${p.align.id}\"")
         if (p.indent != 0) append(" fo:margin-left=\"${p.indent * INDENT_MM_PER_LEVEL}mm\" xnotes:indent=\"${p.indent}\"")
         if (p.breakBefore) append(" fo:break-before=\"page\"")
+        // ODF's paragraph writing mode: rl-tb is the right-to-left line direction.
+        if (p.dir == ParaDir.RTL) append(" style:writing-mode=\"rl-tb\"")
+        // ODF has no token for this app's own direction modes, so they ride a foreign
+        // attribute. A pinned LTR must still be written (its absence reads automatic);
+        // automatic itself is the default and may stay unwritten.
+        if (p.dir == ParaDir.LTR) append(" xnotes:dir=\"ltr\"")
         append("/>\n  </style:style>\n")
     }
 
@@ -155,12 +162,13 @@ object FlowXml {
         return ids
     }
 
-    /** What a paragraph's automatic style holds. */
-    private data class ParaProps(val align: ParaAlign, val indent: Int, val breakBefore: Boolean) {
+    /** What a paragraph's automatic style holds. [PLAIN] is the default paragraph, whose style
+     *  need not be written: an absent style reads back automatic, which is what it holds. */
+    private data class ParaProps(val align: ParaAlign, val indent: Int, val breakBefore: Boolean, val dir: ParaDir) {
         companion object {
-            val PLAIN = ParaProps(ParaAlign.LEFT, 0, false)
+            val PLAIN = ParaProps(ParaAlign.LEFT, 0, false, ParaDir.AUTO)
 
-            fun of(p: Paragraph) = ParaProps(p.align, p.indent, p.breakBefore)
+            fun of(p: Paragraph) = ParaProps(p.align, p.indent, p.breakBefore, p.dir)
         }
     }
 
@@ -530,7 +538,15 @@ object FlowXml {
             ?: attr(props, "margin-left")?.removeSuffix("mm")?.toDoubleOrNull()
                 ?.let { (it / INDENT_MM_PER_LEVEL).toInt() }
             ?: 0
-        return ParaProps(align, indent.coerceIn(0, Paragraph.MAX_INDENT), attr(props, "break-before") == "page")
+        // ODF writes a right-to-left paragraph as writing-mode rl-tb; this app's own modes
+        // ride xnotes:dir. Absence is automatic — the default, and all an older build ever
+        // wrote for what it then laid out left to right.
+        val dir = when {
+            attr(props, "dir") == "ltr" -> ParaDir.LTR
+            attr(props, "writing-mode") == "rl-tb" -> ParaDir.RTL
+            else -> ParaDir.AUTO
+        }
+        return ParaProps(align, indent.coerceIn(0, Paragraph.MAX_INDENT), attr(props, "break-before") == "page", dir)
     }
 
     private fun parseParagraph(
@@ -552,6 +568,7 @@ object FlowXml {
             listStart = (p.parentNode as? Element)
                 ?.takeIf { (it.localName ?: it.nodeName) == "list-item" }
                 ?.let { attr(it, "start-value")?.toIntOrNull() },
+            dir = props.dir,
         )
         if (para.list != ListKind.ORDERED) para.listStart = null
         collectRuns(p, CharStyle.DEFAULT, charStyles, para.runs)

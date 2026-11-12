@@ -69,6 +69,18 @@
                 <data android:mimeType="text/markdown" />
                 <data android:mimeType="text/x-markdown" />
             </intent-filter>
+            <!-- A Samsung Notes archive ("Open with"/Share): imported into a new note like a PDF. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/x-samsungnotes" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/x-samsungnotes" />
+            </intent-filter>
         </activity>
 
         <!-- The launcher entry under the old name, so shortcuts keep working. -->

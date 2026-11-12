@@ -66,6 +66,8 @@ class Marker(
     val text: String? = null,
     val textX: Double = 0.0,
     val font: FontSpec = FontSpec(TextFlow.DEFAULT_SIZE_PT),
+    /** True when the marker sits on the right of its text (a right-to-left paragraph). */
+    val rtl: Boolean = false,
 )
 
 /**
@@ -99,6 +101,8 @@ class PlacedLine(
     val quoteBar: Double = 0.0,
     /** The callout's kind, null for a plain quote. */
     val callout: CalloutKind? = null,
+    /** True when the line runs right to left, so its start side is the right edge. */
+    val rtl: Boolean = false,
 ) {
     val height: Double get() = bottom - top
 
@@ -419,7 +423,9 @@ class FlowFrame(
     /** The start or end of [pos]'s visual line. */
     fun lineEdge(pos: FlowPos, start: Boolean): FlowPos? {
         val (_, line) = placedLineFor(pos) ?: return null
-        return FlowPos(line.paraIndex, if (start) line.startChar else line.endChar)
+        // "Start" is the side the line begins at, which is its right edge when it runs RTL.
+        val atStart = if (line.rtl) !start else start
+        return FlowPos(line.paraIndex, if (atStart) line.startChar else line.endChar)
     }
 
     /** Resolve a text-tool tap at page-local [local] on page [pageIndex]. */
@@ -458,12 +464,14 @@ class FlowFrame(
     fun linkAt(pageIndex: Int, local: Pt): String? {
         val page = pages.getOrNull(pageIndex) ?: return null
         val line = page.lines.firstOrNull { local.y >= it.top && local.y < it.bottom } ?: return null
-        val leftX = line.xs.firstOrNull() ?: return null
-        val rightX = line.xs.lastOrNull() ?: return null
+        val leftX = line.xs.minOrNull() ?: return null
+        val rightX = line.xs.maxOrNull() ?: return null
         if (local.x < leftX || local.x > rightX) return null
-        for ((i, seg) in line.segs.withIndex()) {
-            val segRight = line.segs.getOrNull(i + 1)?.x ?: rightX
-            if (local.x >= seg.x && local.x <= segRight) return seg.style.link
+        // A right-to-left line puts its segments right to left, so each one carries its own extent.
+        for (seg in line.segs) {
+            val a = line.caretX(seg.start)
+            val b = line.caretX(seg.end)
+            if (local.x >= minOf(a, b) && local.x <= maxOf(a, b)) return seg.style.link
         }
         return null
     }
@@ -565,10 +573,20 @@ class FlowFrame(
                 val to = if (line.paraIndex == r.end.para) minOf(line.endChar, r.end.offset) else line.endChar
                 if (to < from) continue
                 val x0 = line.caretX(from)
-                var w = line.caretX(to) - x0
+                val x1 = line.caretX(to)
+                // A right-to-left span runs leftwards; its rect is the same either way.
+                var left = minOf(x0, x1)
+                var w = kotlin.math.abs(x1 - x0)
                 // Mark the paragraph break itself while the selection continues past it.
-                if (to == line.endChar && line.paraIndex < r.end.para) w += NEWLINE_TAIL
-                if (w > 0.0) out.add(pi to Rect(x0, line.top, w, line.height))
+                if (to == line.endChar && line.paraIndex < r.end.para) {
+                    if (line.rtl) {
+                        left -= NEWLINE_TAIL
+                        w += NEWLINE_TAIL
+                    } else {
+                        w += NEWLINE_TAIL
+                    }
+                }
+                if (w > 0.0) out.add(pi to Rect(left, line.top, w, line.height))
             }
         }
         return out

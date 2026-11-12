@@ -25,11 +25,17 @@ import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.FormatTextdirectionLToR
+import androidx.compose.material.icons.filled.FormatTextdirectionRToL
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -52,6 +58,7 @@ import com.xnotes.R
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
 import com.xnotes.core.pal.HAlign
+import com.xnotes.core.text.ParaDir
 import com.xnotes.platform.FontCatalog
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -159,6 +166,7 @@ fun TextBoxFormatBar(editor: Editor) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TextColorButton(editor, bar.rgba)
+        BarHighlightButton(editor, bar.selActive, bar.span?.highlight)
         BarSeparator()
         FacePicker(current = bar.face) { editor.setTextFace(it) }
         BarSeparator()
@@ -168,7 +176,22 @@ fun TextBoxFormatBar(editor: Editor) {
         StyleToggle(Icons.Filled.FormatItalic, stringResource(R.string.italic), bar.italic) { editor.toggleTextItalic() }
         StyleToggle(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), bar.underline) { editor.toggleTextUnderline() }
         StyleToggle(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), bar.strike) { editor.toggleTextStrike() }
+        BarLinkButton(editor, bar.selActive, bar.span?.link)
         StyleToggle(alignIcon(bar.align), stringResource(R.string.alignment), bar.align != HAlign.LEFT) { editor.cycleTextAlign() }
+        // The glyph names the mode, as on the flow bar: two opposing arrows for automatic —
+        // each paragraph takes its side from its first strong letter — and the pinned side
+        // otherwise, lit because a pin is the non-default the toggle can undo.
+        if (!bar.label) {
+            StyleToggle(
+                when (bar.dir) {
+                    ParaDir.AUTO -> XnotesIcons.dirAuto
+                    ParaDir.LTR -> Icons.Filled.FormatTextdirectionLToR
+                    ParaDir.RTL -> Icons.Filled.FormatTextdirectionRToL
+                },
+                stringResource(R.string.text_direction),
+                bar.dir != ParaDir.AUTO,
+            ) { editor.cycleTextDir() }
+        }
         BarSeparator()
         Box(
             modifier = Modifier.size(44.dp).clickable { editor.commitText() },
@@ -188,6 +211,106 @@ private fun alignIcon(align: HAlign): ImageVector = when (align) {
     HAlign.LEFT -> Icons.Filled.FormatAlignLeft
     HAlign.CENTER -> Icons.Filled.FormatAlignCenter
     HAlign.RIGHT -> Icons.Filled.FormatAlignRight
+}
+
+/**
+ * Highlight the field's selection: an "A" on a swatch, as the flow bar's does. A tap on
+ * an active one clears it, and with no selection there is nothing to hang the override
+ * on, so the button rests.
+ */
+@Composable
+private fun BarHighlightButton(editor: Editor, selActive: Boolean, current: Rgba?) {
+    val palette = LocalPalette.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Tooltip(stringResource(if (current != null) R.string.remove_highlight else R.string.markup_highlight)) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = selActive) { if (current != null) editor.setTextHighlight(null) else open = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background((current ?: palette.panel).toComposeColor())
+                        .border(1.dp, palette.border.toComposeColor(), RoundedCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "A",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = current?.let { swatchInk(it) } ?: palette.textDim.toComposeColor(),
+                    )
+                }
+            }
+        }
+        if (open) {
+            ColorPickerPopup(
+                initial = Rgba(255, 235, 59, 255),
+                recents = editor.recentColors,
+                onDismiss = { open = false },
+                onPick = { editor.setTextHighlight(it); open = false },
+            )
+        }
+    }
+}
+
+/** Black or white, whichever reads against the swatch colour. */
+private fun swatchInk(c: Rgba): androidx.compose.ui.graphics.Color =
+    if (0.299 * c.r + 0.587 * c.g + 0.114 * c.b > 150) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White
+
+/** Link the field's selection: a URL dialog over the span, or a Remove for an active link. */
+@Composable
+private fun BarLinkButton(editor: Editor, selActive: Boolean, current: String?) {
+    val palette = LocalPalette.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Tooltip("Link") {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = selActive) { open = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Link,
+                    contentDescription = "Link",
+                    tint = (if (current != null) palette.accent else palette.textDim).toComposeColor(),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        if (open) {
+            var text by remember { mutableStateOf(current ?: "") }
+            AlertDialog(
+                onDismissRequest = { open = false },
+                title = { Text("Link") },
+                text = {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        singleLine = true,
+                        placeholder = { Text("https://example.com") },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { editor.setTextCharLink(text.trim()); open = false }) { Text(stringResource(R.string.done)) }
+                },
+                dismissButton = {
+                    if (current != null) {
+                        TextButton(onClick = { editor.setTextCharLink(null); open = false }) { Text(stringResource(R.string.remove)) }
+                    } else {
+                        TextButton(onClick = { open = false }) { Text(stringResource(R.string.cancel)) }
+                    }
+                },
+            )
+        }
+    }
 }
 
 @Composable

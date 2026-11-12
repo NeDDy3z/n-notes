@@ -16,6 +16,47 @@ enum class ParaAlign(val id: String) {
     }
 }
 
+/**
+ * A paragraph's text direction: which end its lines start at. Typing order always
+ * follows the characters; this is the side the first character of a line sits on.
+ * [id] is the stable serialized token.
+ *
+ * [AUTO] is the default and decides nothing by itself: the direction each line takes
+ * is the first strong letter written on it — a Persian first letter lays the line out
+ * right to left, a Latin one left to right (see [Paragraph.effectiveDir]). LTR and
+ * RTL are the user's explicit overrides.
+ */
+enum class ParaDir(val id: String) {
+    AUTO("auto"),
+    LTR("ltr"),
+    RTL("rtl");
+
+    companion object {
+        fun fromId(id: String?): ParaDir = entries.firstOrNull { it.id == id } ?: AUTO
+
+        /** The direction [text]'s first strong letter takes; no strong letter, [fallback]. */
+        fun firstStrongOf(text: String, fallback: ParaDir = LTR): ParaDir {
+            for (c in text) {
+                if (c.isWhitespace() || c.isDigit()) continue
+                return when (Character.getDirectionality(c)) {
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE -> RTL
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT,
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING,
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE,
+                    Character.DIRECTIONALITY_LEFT_TO_RIGHT_ISOLATE,
+                    Character.DIRECTIONALITY_RIGHT_TO_LEFT_ISOLATE -> LTR
+                    // Punctuation and other neutrals say nothing; keep looking.
+                    else -> continue
+                }
+            }
+            return fallback
+        }
+    }
+}
+
 /** What kind of list item a paragraph is, if any. [id] is the stable serialized token. */
 enum class ListKind(val id: String) {
     NONE("none"),
@@ -104,6 +145,9 @@ class Paragraph(
     var cellStart: Boolean = false,
     /** 1..[MAX_HEADING] marks a heading, whose text takes its size from the level; 0 is body text. */
     var headingLevel: Int = 0,
+    /** Which end the lines start at: [ParaDir.AUTO] reads the line's first strong letter,
+     *  [ParaDir.RTL] lays the text out right to left, [ParaDir.LTR] left to right. */
+    var dir: ParaDir = ParaDir.AUTO,
     /** A horizontal rule: an empty line drawn as a hairline, which typing into turns back into text. */
     var rule: Boolean = false,
     /** A page break before this paragraph: it starts the next page. */
@@ -130,6 +174,11 @@ class Paragraph(
 
     fun plainText(): String = runs.joinToString("") { it.text }
 
+    /** The direction this paragraph's lines actually take: an explicit [dir], or — for
+     *  [ParaDir.AUTO] — the first strong letter of the text, LTR while there is none. */
+    fun effectiveDir(): ParaDir =
+        if (dir == ParaDir.AUTO) ParaDir.firstStrongOf(plainText()) else dir
+
     /** The size text with none of its own sets at here: the flow's base, scaled for a heading. */
     fun textSizePt(flow: TextFlow): Double =
         if (headingLevel > 0) headingSizePt(headingLevel, flow.defaultSizePt) else flow.defaultSizePt
@@ -137,13 +186,13 @@ class Paragraph(
     /** True when every paragraph-level property is at its default (runs not considered). */
     fun isDefaultStyle(): Boolean =
         align == ParaAlign.LEFT && indent == 0 && list == ListKind.NONE && !checked && codeLang == null &&
-            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null && quote == null
+            table == null && headingLevel == 0 && !rule && !breakBefore && listStart == null && quote == null && dir == ParaDir.AUTO
 
     /** A copy sharing [table] and [quote]; [TextFlow.deepCopy] remaps tables onto copies. */
     fun deepCopy(): Paragraph =
         Paragraph(
             runs.mapTo(mutableListOf()) { it.deepCopy() }, align, indent, list, checked, codeLang, table, cellStart, headingLevel,
-            rule = rule, breakBefore = breakBefore, breakToPage = breakToPage, listStart = listStart, quote = quote,
+            rule = rule, breakBefore = breakBefore, breakToPage = breakToPage, listStart = listStart, quote = quote, dir = dir,
         ).also { it.rev = rev }
 
     companion object {
@@ -330,4 +379,88 @@ data class FlowDefaults(
         private const val MIN_SCREEN_PT = 6.0
         private const val MAX_SCREEN_PT = 36.0
     }
+}
+
+/**
+ * A character-style override over one range of a text box's plain text. The box's
+ * own style is the base; every field [style] sets replaces it for that range, the
+ * rest inherit — the same nullable-override rule the flow's runs follow.
+ */
+data class RunSpan(val start: Int, val endExclusive: Int, val style: CharStyle) {
+    init {
+        require(start >= 0 && endExclusive >= start) { "bad span range $start..$endExclusive" }
+    }
+
+    val length: Int get() = endExclusive - start
+
+    fun contains(offset: Int): Boolean = offset in start until endExclusive
+
+    fun intersects(a: Int, b: Int): Boolean = start < b && a < endExclusive
+}
+
+/**
+ * Shift style spans through a text edit that replaced [removed] characters at [at]
+ * with [added] ones. A span's start at or before the edit's start holds; one inside
+ * the replaced stretch pins to it; one after slides by the edit's length difference.
+ * The end holds before the edit, grows past it, or clips when it fell inside. Spans
+ * the edit empties drop.
+ */
+fun shiftRunSpans(spans: List<RunSpan>, at: Int, removed: Int, added: Int): List<RunSpan> {
+    if (spans.isEmpty()) return spans
+    val delta = added - removed
+    val editEnd = at + removed
+    val out = ArrayList<RunSpan>(spans.size)
+    for (s in spans) {
+        val ns = when {
+            s.start <= at -> s.start
+            s.start < editEnd -> at
+            else -> s.start + delta
+        }
+        val ne = when {
+            s.endExclusive <= at -> s.endExclusive
+            s.endExclusive >= editEnd -> s.endExclusive + delta
+            else -> at
+        }
+        if (ne > ns) out += RunSpan(ns, ne, s.style)
+    }
+    return out
+}
+
+/**
+ * Restyle [a] until [b]: every span overlapping the range has [apply] applied to its
+ * covered piece (the rest of it keeps its style), and uncovered stretches of the range
+ * take [apply] on [CharStyle.DEFAULT] — so a highlight over plain text makes a span of
+ * its own. The result is sorted, non-overlapping, and merged where touching pieces end
+ * up styled alike.
+ */
+fun restyleRunSpans(spans: List<RunSpan>, a: Int, b: Int, apply: (CharStyle) -> CharStyle): List<RunSpan> {
+    if (b <= a) return spans
+    val kept = ArrayList<RunSpan>() // untouched stretches outside the range
+    val pieces = ArrayList<RunSpan>() // restyled stretches and uncovered gaps inside it
+    var cursor = a
+    for (s in spans.sortedBy { it.start }) {
+        if (!s.intersects(a, b)) {
+            kept += s
+            continue
+        }
+        val lo = maxOf(s.start, a)
+        val hi = minOf(s.endExclusive, b)
+        if (s.start < a) kept += RunSpan(s.start, a, s.style)
+        if (lo > cursor) pieces += RunSpan(cursor, lo, apply(CharStyle.DEFAULT))
+        pieces += RunSpan(lo, hi, apply(s.style))
+        cursor = hi
+        if (s.endExclusive > b) kept += RunSpan(b, s.endExclusive, s.style)
+    }
+    if (cursor < b) pieces += RunSpan(cursor, b, apply(CharStyle.DEFAULT))
+    val merged = (kept + pieces).sortedBy { it.start }
+    val out = ArrayList<RunSpan>(merged.size)
+    for (s in merged) {
+        val last = out.lastOrNull()
+        if (last != null && last.endExclusive == s.start && last.style == s.style) {
+            out[out.lastIndex] = RunSpan(last.start, s.endExclusive, s.style)
+        } else {
+            out += s
+        }
+    }
+    return out
 }

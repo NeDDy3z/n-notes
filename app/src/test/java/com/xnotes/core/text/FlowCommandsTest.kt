@@ -37,6 +37,20 @@ class FlowCommandsTest {
     }
 
     @Test
+    fun togglingDirectionCyclesThroughAutoAndBothPins() {
+        val flow = flowOf("dir")
+        val para = flow.paragraphs[0]
+        val cmd = FlowEditor(flow).setParaStyle(FlowRange.caret(FlowPos(0, 0))) {
+            it.dir = ParaDir.RTL
+        }!!
+        assertEquals(ParaDir.RTL, para.dir)
+        cmd.undo()
+        assertEquals(ParaDir.AUTO, para.dir)
+        cmd.redo()
+        assertEquals(ParaDir.RTL, para.dir)
+    }
+
+    @Test
     fun spliceUndoRestoresTheOriginalParagraphObjects() {
         val flow = flowOf("split me")
         val original = flow.paragraphs[0]

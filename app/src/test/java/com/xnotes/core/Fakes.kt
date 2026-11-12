@@ -101,7 +101,7 @@ class FakeRenderer : Renderer {
     /** Each [clipPolygon], in call order. */
     val polygonClips = mutableListOf<List<Pt>>()
     override fun clipPolygon(points: List<Pt>) { ops += "clipPolygon"; polygonClips += points }
-    override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) { ops += "drawText" }
+    override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags, spans: List<com.xnotes.core.text.RunSpan>) { ops += "drawText" }
     override fun drawTextTurned(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags, angle: Double) {
         ops += "drawTextTurned:$text@$angle"
         textRects += rect
@@ -162,7 +162,7 @@ class FakeSurfaceFactory : SurfaceFactory {
  * invariant.
  */
 class FakeTextMeasurer(private val perPointLineHeight: Double = 1.3) : TextMeasurer {
-    override fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags): Rect {
+    override fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags, spans: List<com.xnotes.core.text.RunSpan>): Rect {
         val lines = maxOf(1, text.split('\n').size)
         return Rect(0.0, 0.0, wrapWidth, lines * lineHeight(font))
     }
