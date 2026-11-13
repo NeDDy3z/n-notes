@@ -1448,6 +1448,8 @@
     <string name="sync_status_conflicts">", %1$d conflictos"</string>
     <string name="sync_status_errors">", %1$d errores"</string>
     <string name="sync_notification_title">Sincronizando notas</string>
+    <string name="sync_error_channel">Errores de sincronización en la nube</string>
+    <string name="sync_error_notification_title">Falló la sincronización en la nube</string>
     <string name="caption_select_kinds">Qué seleccionar</string>
     <string name="select_kind_lines">Líneas</string>
     <string name="select_kind_highlighter">Resaltador</string>

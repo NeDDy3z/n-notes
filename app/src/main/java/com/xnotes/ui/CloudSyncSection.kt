@@ -1,5 +1,11 @@
 package com.xnotes.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.xnotes.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.clickable
@@ -103,6 +109,8 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
     val status by SyncManager.status.collectAsState()
     val service = CloudServices.byId(prefs.cloudService)
     var account by remember(service) { mutableStateOf(service?.account(context)) }
+    // Asked at sign-in so the sync progress and error notifications can show; a refusal only hides them.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(R.string.pref_cloud_sync), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -121,7 +129,12 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
         ) { update(prefs.copy(cloudService = it)) }
         when {
             service == null -> Unit
-            account == null -> ServiceSignIn(service, onSignedIn = { account = service.account(context) })
+            account == null -> ServiceSignIn(service, onSignedIn = {
+                account = service.account(context)
+                if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            })
             else -> SignedIn(
                 service = service,
                 account = account!!,

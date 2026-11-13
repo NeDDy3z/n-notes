@@ -1470,6 +1470,8 @@
     <string name="sync_status_conflicts">", konflikty: %1$d"</string>
     <string name="sync_status_errors">", chyby: %1$d"</string>
     <string name="sync_notification_title">Synchronizace poznámek</string>
+    <string name="sync_error_channel">Chyby synchronizace s cloudem</string>
+    <string name="sync_error_notification_title">Synchronizace s cloudem selhala</string>
     <string name="caption_select_kinds">Co vybrat</string>
     <string name="select_kind_lines">Čáry</string>
     <string name="select_kind_highlighter">Zvýrazňovač</string>

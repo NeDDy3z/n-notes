@@ -149,6 +149,8 @@ object SyncManager {
             primeStatus(context)
             val service = activeService(context)
             _status.value = _status.value.copy(running = true, message = context.getString(R.string.sync_syncing), done = 0, total = 0)
+            SyncNotifications.showProgress(context, 0, 0)
+            var lastNotify = 0L
             val started = System.currentTimeMillis()
             val log = mutableListOf("${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(started))}  Started ($trigger)")
             fun flushLog() = synchronized(log) { SyncLog.append(context, log.toList()); log.clear() }
@@ -173,6 +175,11 @@ object SyncManager {
                     context, treeUri, storage, folderId, up, down,
                     onProgress = { done, total ->
                         _status.value = _status.value.copy(done = done, total = total)
+                        // Android drops notification updates that come faster than a few per second.
+                        if (System.currentTimeMillis() - lastNotify > 1_000) {
+                            lastNotify = System.currentTimeMillis()
+                            SyncNotifications.showProgress(context, done, total)
+                        }
                         // Saved as it goes, so a run cut short (app killed, network gone) does not redo or conflict with its own uploads.
                         if (System.currentTimeMillis() - lastSave > CHECKPOINT_MS) checkpoint()
                     },
@@ -215,6 +222,8 @@ object SyncManager {
                 ))
             }
             flushLog()
+            val failed = result.fold({ (s, _) -> s.errors.isNotEmpty() }, { true })
+            SyncNotifications.finish(context, if (failed) status.message else null)
             result.map { it.first }
         }
 
@@ -263,22 +272,8 @@ object SyncManager {
     val isRunning: Boolean get() = active.get() > 0
 
     /** The notification an expedited sync shows on Android 11 and older, where it runs as a foreground service. */
-    fun foregroundInfo(context: Context): androidx.work.ForegroundInfo {
-        val nm = context.getSystemService(android.app.NotificationManager::class.java)
-        if (nm.getNotificationChannel(NOTIFY_CHANNEL) == null) {
-            nm.createNotificationChannel(android.app.NotificationChannel(NOTIFY_CHANNEL, context.getString(R.string.pref_cloud_sync), android.app.NotificationManager.IMPORTANCE_LOW))
-        }
-        val n = androidx.core.app.NotificationCompat.Builder(context, NOTIFY_CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(context.getString(R.string.sync_notification_title))
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
-        return androidx.work.ForegroundInfo(NOTIFY_ID, n)
-    }
-
-    private const val NOTIFY_CHANNEL = "cloud_sync"
-    private const val NOTIFY_ID = 4711
+    fun foregroundInfo(context: Context): androidx.work.ForegroundInfo =
+        androidx.work.ForegroundInfo(SyncNotifications.PROGRESS_ID, SyncNotifications.progress(context, 0, 0))
 
     /** (Re)schedule or cancel the periodic job to match current preferences and the selected service. */
     fun reschedule(context: Context) {

@@ -1428,6 +1428,8 @@
     <string name="sync_status_conflicts">", %1$d conflicts"</string>
     <string name="sync_status_errors">", %1$d errors"</string>
     <string name="sync_notification_title">Syncing notes</string>
+    <string name="sync_error_channel">Cloud sync errors</string>
+    <string name="sync_error_notification_title">Cloud sync failed</string>
     <string name="caption_select_kinds">What to select</string>
     <string name="select_kind_lines">Lines</string>
     <string name="select_kind_highlighter">Highlighter</string>
