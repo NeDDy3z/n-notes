@@ -3036,7 +3036,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             thumbnailVersion++
         }
         controller.fingerDraws = p.fingerDraws
-        controller.zoomLockPan = p.zoomLockPan
         controller.detectShapes = p.detectShapes
         controller.snapRotation90 = p.snapRotation90
         flowText.markdownInput = p.markdownInput
@@ -7246,6 +7245,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override val hostHiddenShapes: Set<String> get() = settings.prefs.hiddenShapes
     override val hostShapeOrder: List<String> get() = settings.prefs.shapeOrder
+
+    override val hostZoomLocked: Boolean get() = zoomLocked
+    override fun toggleHostZoomLock() = toggleZoomLock()
 
     override fun updateToolConfig(tool: Tool, config: com.xnotes.core.tools.ToolConfig) {
         controller.setToolConfig(tool, config.copy(rgba = controller.inkColor))
