@@ -62,6 +62,7 @@ import com.xnotes.sync.filen.FilenService
 import com.xnotes.sync.nextcloud.NextcloudService
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
+import com.xnotes.ui.theme.WarningColor
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -111,7 +112,7 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
         )
         Text(
             stringResource(R.string.sync_new_warning),
-            color = com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor(), fontSize = 12.sp,
+            color = WarningColor, fontSize = 12.sp,
         )
         SyncLabel(stringResource(R.string.sync_cloud_service))
         OptionDropdown(
@@ -120,10 +121,7 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
         ) { update(prefs.copy(cloudService = it)) }
         when {
             service == null -> Unit
-            account == null -> ServiceSignIn(service, onSignedIn = {
-                account = service.account(context)
-                if (!BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
-            })
+            account == null -> ServiceSignIn(service, onSignedIn = { account = service.account(context) })
             else -> SignedIn(
                 service = service,
                 account = account!!,
@@ -241,11 +239,11 @@ private fun SignedIn(
         TextButton(onClick = onSignOut) { Text(stringResource(R.string.sync_sign_out), fontSize = 13.sp) }
     }
 
-    if (!rememberBatteryUnrestricted()) {
+    if (prefs.syncAuto && !rememberBatteryUnrestricted()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.sync_battery_restricted),
-                color = com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor(), fontSize = 12.sp, modifier = Modifier.weight(1f),
+                color = WarningColor, fontSize = 12.sp, modifier = Modifier.weight(1f),
             )
             TextButton(onClick = { BatteryRestriction.requestLift(context) }) { Text(stringResource(R.string.battery_allow), fontSize = 13.sp) }
         }
@@ -266,7 +264,10 @@ private fun SignedIn(
 
     SyncLabel(stringResource(R.string.sync_when))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CheckChip(stringResource(R.string.sync_automatically), prefs.syncAuto) { onUpdate(prefs.copy(syncAuto = !prefs.syncAuto)) }
+        CheckChip(stringResource(R.string.sync_automatically), prefs.syncAuto) {
+            onUpdate(prefs.copy(syncAuto = !prefs.syncAuto))
+            if (!prefs.syncAuto && !BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
+        }
         CheckChip(stringResource(R.string.sync_on_note_close), prefs.syncOnNoteExit) { onUpdate(prefs.copy(syncOnNoteExit = !prefs.syncOnNoteExit)) }
         CheckChip(stringResource(R.string.sync_on_app_open), prefs.syncOnAppOpen) { onUpdate(prefs.copy(syncOnAppOpen = !prefs.syncOnAppOpen)) }
     }
@@ -319,6 +320,8 @@ private fun SignedIn(
             onSelected = { id, path ->
                 showPicker = false
                 onUpdate(prefs.copy(cloudFolders = prefs.cloudFolders + (service.id to CloudFolder(id, path))))
+                // Picking the folder finishes the setup, so this is when automatic sync first needs the battery exemption.
+                if (prefs.syncAuto && !BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
             },
         )
     }
@@ -341,7 +344,7 @@ private fun syncRuns(lines: List<String>): List<SyncRun> {
 @Composable
 private fun syncLineColor(line: String) = when {
     line.startsWith("FAILED") || line.startsWith("Error") -> com.xnotes.core.model.Rgba(255, 92, 92, 255).toComposeColor()
-    line.startsWith("Conflict") || line.startsWith("Skipped") -> com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor()
+    line.startsWith("Conflict") || line.startsWith("Skipped") -> WarningColor
     line.startsWith("OK") -> LocalPalette.current.accent.toComposeColor()
     else -> LocalPalette.current.textDim.toComposeColor()
 }

@@ -28,14 +28,19 @@ object BatteryRestriction {
     }
 }
 
-/** Checked again on every resume, so the answer follows a change made in the system settings. */
 @Composable
 fun rememberBatteryUnrestricted(): Boolean {
     val context = LocalContext.current
-    var lifted by remember { mutableStateOf(BatteryRestriction.lifted(context)) }
+    return rememberOnResume { BatteryRestriction.lifted(context) }
+}
+
+/** [check] run again on every resume, so the answer follows a change made in the system settings. */
+@Composable
+fun <T> rememberOnResume(check: () -> T): T {
+    var value by remember { mutableStateOf(check()) }
     LifecycleResumeEffect(Unit) {
-        lifted = BatteryRestriction.lifted(context)
+        value = check()
         onPauseOrDispose {}
     }
-    return lifted
+    return value
 }

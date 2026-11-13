@@ -1,6 +1,12 @@
 package com.xnotes.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -109,7 +115,9 @@ import com.xnotes.settings.ToolbarSize
 import com.xnotes.settings.MaterialColourMode
 import com.xnotes.settings.SwatchRole
 import com.xnotes.ui.icons.XnotesIcons
+import com.xnotes.sync.CloudServices
 import com.xnotes.ui.theme.LocalPalette
+import com.xnotes.ui.theme.WarningColor
 import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -377,7 +385,7 @@ fun PreferencesPane(
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
                 LanguageSection()
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
-                Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_permissions))) { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { PermissionsSection() } }
+                Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_permissions))) { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { PermissionsSection(syncOn = CloudServices.byId(prefs.cloudService) != null) } }
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
                 Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_port))) { PortSection(editor) }
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
@@ -1156,18 +1164,13 @@ private fun LanguageSection() {
 }
 
 @Composable
-private fun PermissionsSection() {
+private fun PermissionsSection(syncOn: Boolean) {
     val palette = LocalPalette.current
     val context = LocalContext.current
-    fun granted(permission: String) = androidx.core.content.ContextCompat.checkSelfPermission(context, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    var microphone by remember { mutableStateOf(granted(android.Manifest.permission.RECORD_AUDIO)) }
+    fun granted(permission: String) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    val microphone = rememberOnResume { granted(Manifest.permission.RECORD_AUDIO) }
     // Before Android 13 notifications need no permission, so there is nothing to show.
-    var notifications by remember { mutableStateOf(if (Build.VERSION.SDK_INT >= 33) granted(android.Manifest.permission.POST_NOTIFICATIONS) else null) }
-    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
-        microphone = granted(android.Manifest.permission.RECORD_AUDIO)
-        if (Build.VERSION.SDK_INT >= 33) notifications = granted(android.Manifest.permission.POST_NOTIFICATIONS)
-        onPauseOrDispose {}
-    }
+    val notifications = rememberOnResume { if (Build.VERSION.SDK_INT >= 33) granted(Manifest.permission.POST_NOTIFICATIONS) else null }
     val battery = rememberBatteryUnrestricted()
 
     @Composable
@@ -1175,23 +1178,26 @@ private fun PermissionsSection() {
         Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(label, color = palette.text.toComposeColor(), fontSize = 14.sp, modifier = Modifier.searchAnchor(label))
-                Text(status, color = if (ok) palette.textDim.toComposeColor() else com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor(), fontSize = 12.sp)
+                Text(status, color = if (ok) palette.textDim.toComposeColor() else WarningColor, fontSize = 12.sp)
             }
             action?.invoke()
         }
     }
 
     SectionTitle(stringResource(R.string.pref_permissions))
-    PermissionRow(
-        stringResource(R.string.permission_battery), battery,
-        stringResource(if (battery) R.string.permission_battery_unrestricted else R.string.permission_battery_restricted),
-    ) {
-        if (!battery) TextButton(onClick = { BatteryRestriction.requestLift(context) }) { Text(stringResource(R.string.battery_allow), fontSize = 13.sp) }
+    // Battery limits only matter to background sync, so the row waits until a cloud service is picked.
+    if (syncOn) {
+        PermissionRow(
+            stringResource(R.string.permission_battery), battery,
+            stringResource(if (battery) R.string.permission_battery_unrestricted else R.string.permission_battery_restricted),
+        ) {
+            if (!battery) TextButton(onClick = { BatteryRestriction.requestLift(context) }) { Text(stringResource(R.string.battery_allow), fontSize = 13.sp) }
+        }
     }
     PermissionRow(stringResource(R.string.permission_microphone), microphone, stringResource(if (microphone) R.string.permission_granted else R.string.permission_not_granted))
     notifications?.let { PermissionRow(stringResource(R.string.permission_notifications), it, stringResource(if (it) R.string.permission_granted else R.string.permission_not_granted)) }
     TextButton(onClick = {
-        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
         runCatching { context.startActivity(intent) }
     }) { Text(stringResource(R.string.permission_open_app_settings), fontSize = 13.sp) }
 }
