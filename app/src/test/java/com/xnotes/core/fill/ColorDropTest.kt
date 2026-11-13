@@ -9,6 +9,7 @@ import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.TableItem
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
 import com.xnotes.core.model.TapeShape
@@ -87,6 +88,12 @@ class ColorDropTest {
         val box = rect(100.0, 100.0, 300.0, 300.0)
         val marker = stroke(Pt(150.0, 200.0), Pt(250.0, 200.0), tool = Tool.HIGHLIGHTER, width = 20.0)
         assertSame(box, expect<DropAction.FillShape>(drop(listOf(box, marker), Pt(200.0, 200.0))).shape)
+    }
+
+    @Test fun aDropOnATableLineRecoloursTheTable() {
+        val table = TableItem.create(Rect(100.0, 100.0, 200.0, 200.0), 2, 2, ink)
+        assertSame(table, expect<DropAction.Recolour>(drop(listOf(table), Pt(200.0, 150.0))).item)
+        assertSame(DropAction.NotClosed, drop(listOf(table), Pt(150.0, 150.0)))
     }
 
     @Test fun aDropOnTapeRecoloursIt() {

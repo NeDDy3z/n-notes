@@ -12,6 +12,7 @@ import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
+import com.xnotes.core.model.TableItem
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.shapes.ShapeKind
@@ -19,7 +20,7 @@ import com.xnotes.core.tools.Tool
 
 /** What a colour dropped at a point does, as [ColorDrop.decide] finds it. */
 sealed interface DropAction {
-    /** Recolour [item]: ink or a highlighter, a shape's outline, a connector, a text box's words, drawn text or a covered tape. */
+    /** Recolour [item]: ink or a highlighter, a shape's outline, a connector, a table's lines, a text box's words, drawn text or a covered tape. */
     class Recolour(val item: CanvasItem) : DropAction
 
     /** Give [shape] the colour as its own fill, keeping the opacity of any fill it has. */
@@ -177,7 +178,7 @@ object ColorDrop {
     private fun isLine(item: CanvasItem) = when (item) {
         is Stroke -> !item.isEmpty
         is ShapeItem -> !item.isFill
-        is ConnectorItem, is TextItem -> true
+        is ConnectorItem, is TextItem, is TableItem -> true
         // A peeled tape shows what is under it, so the drop goes through it.
         is TapeItem -> !item.peeled
         else -> false
@@ -188,6 +189,7 @@ object ColorDrop {
         is ShapeItem -> if (item.shape == ShapeKind.GLYPHS) item.contains(at) else item.onOutline(at, reach)
         is ConnectorItem -> item.touches(at, reach)
         is TextItem, is TapeItem -> item.contains(at)
+        is TableItem -> item.intersectsCircle(at.x, at.y, reach)
         else -> false
     }
 
