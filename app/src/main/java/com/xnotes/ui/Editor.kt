@@ -2522,7 +2522,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val oldPages = publishedPageList
         val (addedW, addedH) = doc.blankPageSize(doc.pages.lastOrNull())
         val frame = flowLayout.layout(
-            doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight) }, doc.dpi,
+            doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight, it.textMargins) }, doc.dpi,
             firstPage = flowStart(doc), addedPage = PageBox(addedW, addedH),
         )
         // What this frame actually shows, not what the caller meant it to: an edit
@@ -2891,7 +2891,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun flowExportHooks(doc: Document): com.xnotes.platform.PdfExporter.FlowExport {
         if (doc.flow.isEmpty) return com.xnotes.platform.PdfExporter.FlowExport.NONE
         val frame = themedFlowLayout(doc)
-            .layout(doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight) }, doc.dpi, firstPage = flowStart(doc))
+            .layout(doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight, it.textMargins) }, doc.dpi, firstPage = flowStart(doc))
         val index = HashMap<Page, Int>(doc.pages.size * 2)
         doc.pages.forEachIndexed { i, p -> index[p] = i }
         return com.xnotes.platform.PdfExporter.FlowExport(doc.flow, frame) { index[it] }
@@ -3046,6 +3046,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.penButtonHover = p.penButtonHover
         state.sideMargin = p.sideMargin
         state.pageBorders = !p.hidePageBorders
+        controller.showMargins = p.showMargins
         state.maxCachePx = p.maxCacheResolution.toDouble()
         state.minZoom = if (p.minZoomEnabled) p.minZoomPercent / 100.0 else CanvasState.MIN_ZOOM
         state.maxZoom = (if (p.maxZoomEnabled) p.maxZoomPercent / 100.0 else CanvasState.MAX_ZOOM)
@@ -3482,41 +3483,42 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         applyStyleChange(prev, style, listOf(page))
     }
 
-    // --- page margins (extra paper on any edge): document-wide ("All Pages") and per-page ---
+    // --- text margins (the toolbar's margins popup): the document's flow margins, in mm ---
 
-    /** The document-wide margin override; per-page margins layer on top (see [PageMargins]). */
-    val documentMargins: PageMargins get() = state.document.margins
+    val flowMargins: FlowMargins get() = state.document.flow.margins
 
-    /** The current page's own margin override (an empty [PageMargins] when there is no page). */
-    val currentPageMargins: PageMargins
-        get() = state.document.pages.getOrNull(state.currentPageIndex())?.margins ?: PageMargins()
+    fun setFlowMargins(m: FlowMargins) = setFlowConfig(flowConfigValue().copy(margins = m))
 
-    /** Replace the document-wide ("All Pages") margin override. */
-    fun setDocumentMargins(margins: PageMargins) {
-        if (state.document.margins == margins) return
-        state.document.margins = margins
-        applyMarginChange()
-    }
+    /** The current page's own text margins, or null when it follows the note's. */
+    val currentPageTextMargins: FlowMargins?
+        get() = state.document.pages.getOrNull(state.currentPageIndex())?.textMargins
 
-    /** Replace the current page's margin override. */
-    fun setCurrentPageMargins(margins: PageMargins) {
+    /** Give the current page its own text margins, or null to follow the note's again. */
+    fun setCurrentPageTextMargins(m: FlowMargins?) {
         val page = state.document.pages.getOrNull(state.currentPageIndex()) ?: return
-        if (page.margins == margins) return
-        page.margins = margins
-        applyMarginChange()
+        if (page.textMargins == m) return
+        page.textMargins = m
+        flowConfigChanged()
     }
 
-    /**
-     * Apply a margin change and persist it (dirty -> autosave) — deliberately **not** onto the undo
-     * stack, like a style change. A margin resizes the paper, so every cached surface is now the
-     * wrong shape: they are dropped rather than repaired, and the document is laid out again.
-     */
-    private fun applyMarginChange() {
-        state.invalidatePageGeometry()
-        state.relayout()
-        state.document.dirty = true
-        refreshContent()
+    /** Show the margin lines while the popup's slider is held, on top of the "Show margins" pref. */
+    fun setMarginPreview(on: Boolean) {
+        if (controller.marginPreview == on) return
+        controller.marginPreview = on
         view.requestRender()
+    }
+
+    var showMargins by mutableStateOf(settings.prefs.showMargins)
+        private set
+
+    fun setShowMarginsPref(on: Boolean) {
+        settings = settings.copy(prefs = settings.prefs.copy(showMargins = on))
+        settingsRepo.save(settings)
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.showMargins = on
+            editor.controller.showMargins = on
+            editor.view.requestRender()
+        }
     }
 
     /** The size pages added to the note take, or null when each takes the size of the page before it. */
@@ -4122,7 +4124,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         PageLayers.paint(itemsSnapshot(page), {
             if (!doc.flow.isEmpty) {
                 val frame = themedFlowLayout(doc)
-                    .layout(doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight) }, doc.dpi, throughPage = index, firstPage = flowStart(doc))
+                    .layout(doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight, it.textMargins) }, doc.dpi, throughPage = index, firstPage = flowStart(doc))
                 FlowPainter.paintPage(r, frame, index, Rect(0.0, 0.0, page.width, page.height))
             }
         }) { it.paint(r) }
@@ -4773,7 +4775,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             com.xnotes.core.text.MarkdownParser.parse(markdown, newTableDefaults.style, toolbarInk()),
         )
         val layout = themedFlowLayout(doc)
-        fun frame() = layout.layout(doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight) }, doc.dpi, firstPage = flowStart(doc))
+        fun frame() = layout.layout(doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight, it.textMargins) }, doc.dpi, firstPage = flowStart(doc))
         frame().pages.firstOrNull()?.contentRect?.w?.let { width ->
             for (b in CellIndex(doc.flow.paragraphs).tables) b.table.widths = layout.fitColumns(doc.flow, b.table, width)
         }
@@ -4845,7 +4847,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (doc.flow.isEmpty) return
         var guard = 0
         while (guard++ < 4000) {
-            val frame = flowLayout.layout(doc.flow, doc.pages.map { com.xnotes.core.text.PageBox(it.width, it.height) }, doc.dpi)
+            val frame = flowLayout.layout(doc.flow, doc.pages.map { com.xnotes.core.text.PageBox(it.width, it.height, it.textMargins) }, doc.dpi)
             val need = frame.extraPagesNeeded
             if (need <= 0) break
             val last = doc.pages.last()
@@ -5067,7 +5069,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val pad = ArrayList<com.xnotes.core.text.Paragraph>()
         var guard = 0
         while (guard++ < 400) {
-            val frame = flowLayout.layout(flow, target.pages.map { com.xnotes.core.text.PageBox(it.width, it.height) }, target.dpi)
+            val frame = flowLayout.layout(flow, target.pages.map { com.xnotes.core.text.PageBox(it.width, it.height, it.textMargins) }, target.dpi)
             val (page, caret) = frame.caretRect(FlowPos(index + pad.size, 0)) ?: break
             if (page >= firstPage) break
             val pageH = target.pages.getOrNull(page)?.height ?: break

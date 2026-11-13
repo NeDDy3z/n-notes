@@ -30,6 +30,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,6 +49,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,9 +90,9 @@ import com.xnotes.canvas.ViewingMode
 import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.Orientation
 import com.xnotes.core.model.PageEdge
-import com.xnotes.core.model.PageMargins
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.PageSizeChoice
+import com.xnotes.core.text.FlowMargins
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageTemplates
 import com.xnotes.core.model.PageStyle
@@ -598,33 +602,57 @@ private fun TemplateCustomizer(
 }
 
 /**
- * Page-margins popup: two tabs — "All Pages" (the document-wide override) and "Current Page" — and
- * within each, one tab per edge with a slider for how much paper to add there, as a percentage of
- * the page's own width (left/right) or height (top/bottom). The extra space is ordinary page: it
- * takes the paper colour and the ruling, and nothing on the page moves when it grows. Like
- * [StylesPopup] the popup holds the edited value locally and pushes each change to the [Editor]
- * (which persists, but never undoes); "Default" clears an edge so it inherits the level below.
+ * Text-margins popup: the margins text flows in and the select tool snaps to, for all pages (the
+ * note's) or just the current page (its own, which until set follows the note's). One chip per
+ * edge plus "All" for every edge at once, a slider in whole mm (0 to 50, or 0 to 100 with "Expand
+ * range"), and a "Show margins" checkbox.
+ * While the slider is held the margins show on the page as dashed lines.
  */
+private const val NARROW_MARGIN_MM = 50.0
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
     var tab by remember { mutableStateOf(0) } // 0 = All Pages, 1 = Current Page
-    var edge by remember { mutableStateOf(PageEdge.LEFT) }
-    var docMargins by remember { mutableStateOf(editor.documentMargins) }
-    var pageMargins by remember { mutableStateOf(editor.currentPageMargins) }
-    val margins = if (tab == 0) docMargins else pageMargins
-    fun apply(next: PageMargins) {
+    var edge by remember { mutableStateOf<PageEdge?>(null) } // null = all edges
+    var docMargins by remember { mutableStateOf(editor.flowMargins) }
+    var pageMargins by remember { mutableStateOf(editor.currentPageTextMargins) }
+    val margins = if (tab == 0) docMargins else pageMargins ?: docMargins
+    fun apply(next: FlowMargins?) {
         if (tab == 0) {
-            docMargins = next; editor.setDocumentMargins(next)
+            docMargins = next ?: FlowMargins(); editor.setFlowMargins(docMargins)
         } else {
-            pageMargins = next; editor.setCurrentPageMargins(next)
+            pageMargins = next; editor.setCurrentPageTextMargins(next)
         }
     }
+    fun FlowMargins.mm(e: PageEdge?) = when (e) {
+        null, PageEdge.LEFT -> leftMm
+        PageEdge.RIGHT -> rightMm
+        PageEdge.TOP -> topMm
+        PageEdge.BOTTOM -> bottomMm
+    }
+    fun FlowMargins.withMm(e: PageEdge?, v: Double) = when (e) {
+        null -> FlowMargins(v, v, v, v)
+        PageEdge.LEFT -> copy(leftMm = v)
+        PageEdge.RIGHT -> copy(rightMm = v)
+        PageEdge.TOP -> copy(topMm = v)
+        PageEdge.BOTTOM -> copy(bottomMm = v)
+    }
 
-    val own = margins.edge(edge)
-    // An unset edge inherits: the current page falls back to the document, the document to none.
-    val inherited = if (tab == 1) docMargins.edge(edge) else null
-    val percent = ((own ?: inherited ?: 0.0) * 100).toFloat().coerceIn(0f, 100f)
+    val held = remember { MutableInteractionSource() }
+    val pressed by held.collectIsPressedAsState()
+    val dragged by held.collectIsDraggedAsState()
+    LaunchedEffect(pressed || dragged) { editor.setMarginPreview(pressed || dragged) }
+    DisposableEffect(Unit) { onDispose { editor.setMarginPreview(false) } }
+
+    val mm = margins.mm(edge)
+    // Opens expanded when any edge already sits past the narrow range, so its slider never pins short.
+    var expanded by remember {
+        mutableStateOf(listOfNotNull(docMargins, pageMargins).any { maxOf(it.leftMm, it.topMm, it.rightMm, it.bottomMm) > NARROW_MARGIN_MM })
+    }
+    val maxMm = if (expanded) FlowMargins.MAX_MM else NARROW_MARGIN_MM
+    val px = PageSize.mmToPx(mm, editor.documentDpi).roundToInt()
+    val edgeLabel = edge?.let { stringResource(it.labelRes) } ?: stringResource(R.string.edge_all)
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -635,30 +663,40 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(12.dp))
+            StyleCaption(stringResource(R.string.caption_side))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                ModeChip(stringResource(R.string.edge_all), edge == null) { edge = null }
                 PageEdge.entries.forEach { e ->
                     ModeChip(stringResource(e.labelRes), edge == e) { edge = e }
                 }
             }
 
             Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.caption_value_percent, stringResource(edge.labelRes), percent.roundToInt()) + if (own == null) stringResource(R.string.default_suffix) else "")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip(stringResource(R.string.default_choice), own == null) { apply(margins.withEdge(edge, null)) }
-                Slider(
-                    value = percent,
-                    onValueChange = { apply(margins.withEdge(edge, it.toDouble() / 100.0)) },
-                    valueRange = 0f..100f,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            StyleCaption(
+                stringResource(R.string.caption_value_mm_px, edgeLabel, mm, px) +
+                    if (tab == 1 && pageMargins == null) stringResource(R.string.default_suffix) else "",
+            )
+            Slider(
+                value = mm.toFloat().coerceIn(FlowMargins.MIN_MM.toFloat(), maxMm.toFloat()),
+                onValueChange = { apply(margins.withMm(edge, it.roundToInt().toDouble())) }, // whole mm, without steps' tick dots
+                valueRange = FlowMargins.MIN_MM.toFloat()..maxMm.toFloat(),
+                interactionSource = held,
+            )
 
-            Spacer(Modifier.size(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
+                Checkbox(checked = expanded, onCheckedChange = { expanded = it })
+                Text(stringResource(R.string.expand_range), color = LocalPalette.current.text.toComposeColor(), fontSize = 13.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
+                Checkbox(checked = editor.showMargins, onCheckedChange = { editor.setShowMarginsPref(it) })
+                Text(stringResource(R.string.show_margins), color = LocalPalette.current.text.toComposeColor(), fontSize = 13.sp)
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ModeChip(stringResource(R.string.reset), false) { apply(PageMargins()) }
+                // On Current Page, Reset drops the page's own margins so it follows All Pages again.
+                ModeChip(stringResource(R.string.reset), false) { apply(null) }
             }
         }
     }
