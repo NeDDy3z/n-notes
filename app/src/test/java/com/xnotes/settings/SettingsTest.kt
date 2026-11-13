@@ -160,6 +160,21 @@ class SettingsTest {
         assertEquals("toggle_pan", back.stylusButtonTap)
     }
 
+    @Test fun theOldAutomaticallySwitchOffBecomesNever() {
+        assertEquals(0, Preferences.fromJson(JSONObject().put("sync_auto", false).put("sync_interval_minutes", 30)).syncIntervalMinutes)
+        assertEquals(0, Preferences.fromJson(JSONObject().put("filen_auto_sync", false)).syncIntervalMinutes)
+        assertEquals(0, Preferences.fromJson(JSONObject().put("sync_auto", true).put("sync_interval_minutes", 0)).syncIntervalMinutes)
+        assertEquals(30, Preferences.fromJson(JSONObject().put("sync_interval_minutes", 30)).syncIntervalMinutes)
+        assertEquals(60, Preferences.fromJson(JSONObject()).syncIntervalMinutes)
+    }
+
+    @Test fun neverRoundTripsAndKeepsOlderVersionsOff() {
+        val json = Settings(prefs = Preferences(syncIntervalMinutes = 0)).toJson()
+        assertFalse(json.getJSONObject("prefs").getBoolean("sync_auto"))
+        assertEquals(0, Settings.fromJson(json).prefs.syncIntervalMinutes)
+        assertEquals(120, Settings.fromJson(Settings(prefs = Preferences(syncIntervalMinutes = 120)).toJson()).prefs.syncIntervalMinutes)
+    }
+
     @Test fun frontBufferingIsOnUntilItIsTurnedOff() {
         // Settings written before the switch existed, which is every install that has one.
         assertFalse(Settings.fromJson(JSONObject()).prefs.disableFrontBuffering)

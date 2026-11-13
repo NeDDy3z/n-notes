@@ -241,6 +241,8 @@ data class Preferences(
             })
             put("sync_wifi_only", syncWifiOnly)
             put("sync_interval_minutes", syncIntervalMinutes)
+            // Older versions read "Never" (0) as 15 minutes; their off switch keeps them off.
+            put("sync_auto", syncIntervalMinutes != 0)
             put("sync_on_note_exit", syncOnNoteExit)
             put("sync_on_app_open", syncOnAppOpen)
             put("sync_on_app_close", syncOnAppClose)
