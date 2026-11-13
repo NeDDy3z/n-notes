@@ -153,6 +153,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.xnotes.core.model.sourcePoint
 import com.xnotes.core.model.displayRects
+import com.xnotes.core.model.displayMarkup
 
 /**
  * The app-side glue between the imperative canvas (CanvasView + CanvasState +
@@ -7077,9 +7078,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // the topmost one under the point is the fallback a drop finds when nothing drawn is
             // there. Their quads live in points; the test and its reach are folded into that space.
             val ptPerPx = 72.0 / state.document.dpi
-            val markup = page.markups.takeIf { it.isNotEmpty() }?.let {
-                MarkupPainter.markupAt(it, at.x * ptPerPx, at.y * ptPerPx, reach * ptPerPx)
-            }
+            // Markups lie on the page as it was before room was inserted, and room holds none.
+            val source = page.sourcePoint(at)
+            val markup = if (source == null || page.markups.isEmpty()) null
+            else MarkupPainter.markupAt(page.markups, source.x * ptPerPx, source.y * ptPerPx, reach * ptPerPx)
             return DropSpot(
                 frame = pi,
                 key = page,
@@ -7091,7 +7093,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 selection = dropSelection[pi]?.takeIf { it.isNotEmpty() }?.let { items -> items.map { it.bounds() }.reduce { a, b -> a.union(b) } },
                 markup = markup,
                 markupBox = markup?.let { m ->
-                    MarkupPainter.bounds(m)?.let { b ->
+                    MarkupPainter.bounds(page.displayMarkup(m, 1.0 / ptPerPx))?.let { b ->
                         Rect.ltrb(b.left / ptPerPx, b.top / ptPerPx, b.right / ptPerPx, b.bottom / ptPerPx)
                     }
                 },
