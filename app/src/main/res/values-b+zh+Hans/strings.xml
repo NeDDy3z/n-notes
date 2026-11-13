@@ -1072,6 +1072,7 @@
     <string name="sync_every_6_hours">每 6 小时</string>
     <string name="sync_every_12_hours">每 12 小时</string>
     <string name="sync_once_a_day">每天一次</string>
+    <string name="sync_never">从不</string>
     <string name="sync_both_ways">双向</string>
     <string name="sync_direction_up">N-Notes 到 %1$s</string>
     <string name="sync_direction_down">%1$s 到 N-Notes</string>
@@ -1096,9 +1097,10 @@
     <string name="sync_wifi_only">仅在 Wi-Fi 下</string>
     <string name="sync_keep_screen_on">同步时保持屏幕常亮</string>
     <string name="sync_when">同步时机</string>
-    <string name="sync_automatically">自动</string>
     <string name="sync_on_note_close">关闭笔记时</string>
     <string name="sync_on_app_open">打开应用时</string>
+    <string name="sync_on_app_close">关闭应用时</string>
+    <string name="sync_many_options_warning">同时开启多个同步选项可能会产生过多的同步请求，从而导致同步错误。</string>
     <string name="sync_direction">同步方向</string>
     <string name="sync_frequency">同步频率</string>
     <string name="sync_now">立即同步</string>

@@ -111,11 +111,12 @@ data class Preferences(
     val cloudService: String = "none",
     /** The chosen sync folder per service id, so switching services keeps each one's folder. */
     val cloudFolders: Map<String, CloudFolder> = emptyMap(),
-    val syncAuto: Boolean = true,
     val syncWifiOnly: Boolean = false,
+    /** Minutes between background syncs; 0 means never. */
     val syncIntervalMinutes: Int = 60,
     val syncOnNoteExit: Boolean = false,
     val syncOnAppOpen: Boolean = false,
+    val syncOnAppClose: Boolean = false,
     /** Which way notes flow: "both", "up" (local to cloud), "down" (cloud to local), "off". */
     val syncDirection: String = "both",
     /** Keep the screen from sleeping while a sync runs with the app open. */
@@ -239,11 +240,11 @@ data class Preferences(
             put("cloud_folders", JSONObject().apply {
                 cloudFolders.forEach { (service, f) -> put(service, JSONObject().put("id", f.id).put("name", f.name)) }
             })
-            put("sync_auto", syncAuto)
             put("sync_wifi_only", syncWifiOnly)
             put("sync_interval_minutes", syncIntervalMinutes)
             put("sync_on_note_exit", syncOnNoteExit)
             put("sync_on_app_open", syncOnAppOpen)
+            put("sync_on_app_close", syncOnAppClose)
             put("sync_direction", syncDirection)
             put("sync_keep_screen_on", syncKeepScreenOn)
             put("markdown_input", markdownInput)
@@ -384,11 +385,13 @@ data class Preferences(
                     f.keys().asSequence().mapNotNull { k -> f.optJSONObject(k)?.let { k to CloudFolder(it.optString("id"), it.optString("name")) } }.toMap()
                 } ?: o.optString("filen_folder_uuid").takeIf { it.isNotEmpty() }
                     ?.let { mapOf("filen" to CloudFolder(it, o.optString("filen_folder_name"))) }.orEmpty(),
-                syncAuto = o.optBoolean("sync_auto", o.optBoolean("filen_auto_sync", true)),
                 syncWifiOnly = o.optBoolean("sync_wifi_only", o.optBoolean("filen_wifi_only", false)),
-                syncIntervalMinutes = o.optInt("sync_interval_minutes", o.optInt("filen_sync_interval_minutes", 60)).coerceIn(15, 1440),
+                // The old "Automatically" switch turned off is now the "Never" interval.
+                syncIntervalMinutes = if (!o.optBoolean("sync_auto", o.optBoolean("filen_auto_sync", true))) 0
+                    else o.optInt("sync_interval_minutes", o.optInt("filen_sync_interval_minutes", 60)).let { if (it == 0) 0 else it.coerceIn(15, 1440) },
                 syncOnNoteExit = o.optBoolean("sync_on_note_exit", o.optBoolean("filen_sync_on_note_exit", false)),
                 syncOnAppOpen = o.optBoolean("sync_on_app_open", o.optBoolean("filen_sync_on_app_open", false)),
+                syncOnAppClose = o.optBoolean("sync_on_app_close", false),
                 syncDirection = o.optString("sync_direction", o.optString("filen_sync_direction", "both"))
                     .let { if (it == "up" || it == "down" || it == "off") it else "both" },
                 syncKeepScreenOn = o.optBoolean("sync_keep_screen_on", false),

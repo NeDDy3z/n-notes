@@ -354,6 +354,7 @@ class EditorActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         com.xnotes.ui.AudioPlayback.pause()
+        if (!isChangingConfigurations) SyncManager.syncOnAppClose(this)
     }
 
     @Suppress("DEPRECATION") // RUNNING_* still arrive below Android 14

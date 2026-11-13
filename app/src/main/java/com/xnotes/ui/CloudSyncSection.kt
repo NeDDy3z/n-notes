@@ -76,6 +76,7 @@ import java.util.Date
 import java.util.Locale
 
 private val SYNC_INTERVALS = listOf(
+    0 to R.string.sync_never,
     15 to R.string.sync_every_15_minutes,
     30 to R.string.sync_every_30_minutes,
     60 to R.string.sync_every_hour,
@@ -252,7 +253,7 @@ private fun SignedIn(
         TextButton(onClick = onSignOut) { Text(stringResource(R.string.sync_sign_out), fontSize = 13.sp) }
     }
 
-    if (prefs.syncAuto && !rememberBatteryUnrestricted()) {
+    if (prefs.syncIntervalMinutes > 0 && !rememberBatteryUnrestricted()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.sync_battery_restricted),
@@ -277,20 +278,20 @@ private fun SignedIn(
 
     SyncLabel(stringResource(R.string.sync_when))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CheckChip(stringResource(R.string.sync_automatically), prefs.syncAuto) {
-            onUpdate(prefs.copy(syncAuto = !prefs.syncAuto))
-            if (!prefs.syncAuto && !BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
-        }
         CheckChip(stringResource(R.string.sync_on_note_close), prefs.syncOnNoteExit) { onUpdate(prefs.copy(syncOnNoteExit = !prefs.syncOnNoteExit)) }
         CheckChip(stringResource(R.string.sync_on_app_open), prefs.syncOnAppOpen) { onUpdate(prefs.copy(syncOnAppOpen = !prefs.syncOnAppOpen)) }
+        CheckChip(stringResource(R.string.sync_on_app_close), prefs.syncOnAppClose) { onUpdate(prefs.copy(syncOnAppClose = !prefs.syncOnAppClose)) }
     }
+    Text(stringResource(R.string.sync_many_options_warning), color = WarningColor, fontSize = 12.sp)
 
     SyncLabel(stringResource(R.string.sync_direction))
     OptionDropdown(syncDirections(service.displayName), prefs.syncDirection) { onUpdate(prefs.copy(syncDirection = it)) }
 
     SyncLabel(stringResource(R.string.sync_frequency))
     OptionDropdown(SYNC_INTERVALS.map { it.first.toString() to stringResource(it.second) }, prefs.syncIntervalMinutes.toString()) {
-        onUpdate(prefs.copy(syncIntervalMinutes = it.toInt()))
+        val minutes = it.toInt()
+        onUpdate(prefs.copy(syncIntervalMinutes = minutes))
+        if (prefs.syncIntervalMinutes == 0 && minutes > 0 && !BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
     }
 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -334,7 +335,7 @@ private fun SignedIn(
                 showPicker = false
                 onUpdate(prefs.copy(cloudFolders = prefs.cloudFolders + (service.id to CloudFolder(id, path))))
                 // Picking the folder finishes the setup, so this is when automatic sync first needs the battery exemption.
-                if (prefs.syncAuto && !BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
+                if (prefs.syncIntervalMinutes > 0 && !BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
             },
         )
     }

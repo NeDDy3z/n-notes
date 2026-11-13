@@ -14,6 +14,7 @@ import androidx.work.workDataOf
 import androidx.work.WorkManager
 import com.xnotes.platform.AppStorageDocumentsProvider
 import com.xnotes.settings.LiveSettings
+import com.xnotes.settings.Preferences
 import com.xnotes.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -237,16 +238,21 @@ object SyncManager {
     }
 
     /** Fire-and-forget sync when the app comes to the foreground, if sync on app open is on. */
-    fun syncOnAppOpen(context: Context) {
+    fun syncOnAppOpen(context: Context) = syncOnAppSwitch(context, "app open") { it.syncOnAppOpen }
+
+    /** Fire-and-forget sync when the app goes to the background, if sync on app close is on. */
+    fun syncOnAppClose(context: Context) = syncOnAppSwitch(context, "app close") { it.syncOnAppClose }
+
+    private fun syncOnAppSwitch(context: Context, trigger: String, enabled: (Preferences) -> Boolean) {
         val appCtx = context.applicationContext
         // Off the main thread: on a cold start this is the first settings load and session decrypt.
         exitSyncScope.launch {
-            if (!settings(appCtx).prefs.syncOnAppOpen) return@launch
+            if (!enabled(settings(appCtx).prefs)) return@launch
             primeStatus(appCtx)
-            // Coming back from a file picker or share sheet also starts the activity; skip if we just synced.
+            // A file picker or share sheet also stops and starts the activity; skip if we just synced.
             if (System.currentTimeMillis() - _status.value.lastSyncMs < APP_OPEN_MIN_GAP_MS) return@launch
-            // A sync already running started moments ago and covers what app open would fetch, so this one is dropped.
-            requestSync(appCtx, "app open", rerunIfBusy = false)
+            // A sync already running started moments ago and covers what this one would do, so this one is dropped.
+            requestSync(appCtx, trigger, rerunIfBusy = false)
         }
     }
 
@@ -280,7 +286,7 @@ object SyncManager {
         val prefs = settings(context).prefs
         val wm = WorkManager.getInstance(context)
         wm.cancelUniqueWork(LEGACY_WORK_NAME)
-        if (prefs.syncDirection == "off" || !prefs.syncAuto || !isConfigured(context)) {
+        if (prefs.syncDirection == "off" || prefs.syncIntervalMinutes == 0 || !isConfigured(context)) {
             wm.cancelUniqueWork(WORK_NAME)
             return
         }

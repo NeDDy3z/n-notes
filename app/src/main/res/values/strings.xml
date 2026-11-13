@@ -1295,6 +1295,7 @@
     <string name="sync_every_6_hours">Every 6 hours</string>
     <string name="sync_every_12_hours">Every 12 hours</string>
     <string name="sync_once_a_day">Once a day</string>
+    <string name="sync_never">Never</string>
     <string name="sync_both_ways">Both ways</string>
     <string name="sync_direction_up">N-Notes to %1$s</string>
     <string name="sync_direction_down">%1$s to N-Notes</string>
@@ -1331,9 +1332,10 @@
     <string name="sync_wifi_only">Only on Wi-Fi</string>
     <string name="sync_keep_screen_on">Keep screen on while syncing</string>
     <string name="sync_when">When to sync</string>
-    <string name="sync_automatically">Automatically</string>
     <string name="sync_on_note_close">On note close</string>
     <string name="sync_on_app_open">On app open</string>
+    <string name="sync_on_app_close">On app close</string>
+    <string name="sync_many_options_warning">Turning on many sync options at once can cause too many sync requests, which may lead to sync errors.</string>
     <string name="sync_direction">Sync direction</string>
     <string name="sync_frequency">Sync frequency</string>
     <string name="sync_now">Sync now</string>

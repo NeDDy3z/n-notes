@@ -1335,6 +1335,7 @@
     <string name="sync_every_6_hours">Každých 6 hodin</string>
     <string name="sync_every_12_hours">Každých 12 hodin</string>
     <string name="sync_once_a_day">Jednou denně</string>
+    <string name="sync_never">Nikdy</string>
     <string name="sync_both_ways">Oběma směry</string>
     <string name="sync_direction_up">Z N-Notes do služby %1$s</string>
     <string name="sync_direction_down">Ze služby %1$s do N-Notes</string>
@@ -1371,9 +1372,10 @@
     <string name="sync_wifi_only">Jen přes Wi-Fi</string>
     <string name="sync_keep_screen_on">Nechat obrazovku zapnutou během synchronizace</string>
     <string name="sync_when">Kdy synchronizovat</string>
-    <string name="sync_automatically">Automaticky</string>
     <string name="sync_on_note_close">Při zavření poznámky</string>
     <string name="sync_on_app_open">Při otevření aplikace</string>
+    <string name="sync_on_app_close">Při zavření aplikace</string>
+    <string name="sync_many_options_warning">Zapnutí mnoha možností synchronizace najednou může způsobit příliš mnoho požadavků, což může vést k chybám synchronizace.</string>
     <string name="sync_direction">Směr synchronizace</string>
     <string name="sync_frequency">Frekvence synchronizace</string>
     <string name="sync_now">Synchronizovat teď</string>
