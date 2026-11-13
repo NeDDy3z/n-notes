@@ -2,6 +2,7 @@ package com.xnotes.core.shapes
 
 import com.xnotes.core.geometry.Flip
 import com.xnotes.core.geometry.Pt
+import com.xnotes.core.model.FunctionSpec
 
 /** A chip in the shape picker: a kind, with its own point count, knob values and heads. */
 class ShapePreset(
@@ -26,7 +27,7 @@ class ShapePage(val key: String, val presets: List<ShapePreset>)
 /** The chips the shape picker offers, page by page. */
 object ShapePresets {
 
-    const val ROWS = 4
+    const val ROWS = 5
     const val COLUMNS = 6
 
     /** The key of the chip that places a polygon corner by corner rather than by dragging a box. */
@@ -37,6 +38,7 @@ object ShapePresets {
         listOf(
             ShapePreset("line", ShapeKind.LINE),
             ShapePreset("arrow", ShapeKind.ARROW),
+            ShapePreset("spline", ShapeKind.SPLINE),
             ShapePreset("rectangle", ShapeKind.RECTANGLE),
             ShapePreset("rounded_rect", ShapeKind.ROUNDED_RECT),
             ShapePreset("square", ShapeKind.SQUARE),
@@ -153,7 +155,17 @@ object ShapePresets {
         ),
     )
 
-    val pages: List<ShapePage> = listOf(basic, flowchart, arrows, solidsMath)
+    /** What a function chip's key starts with; the rest is the expression it plots. */
+    const val FUNCTION_PREFIX = "fn:"
+
+    val functions = ShapePage(
+        "functions",
+        FunctionSpec.PRESETS.map { spec ->
+            ShapePreset(FUNCTION_PREFIX + spec.expr, ShapeKind.FUNCTION, iconPath = spec.normalizedRuns()?.map { FreePath.lines(it, false) })
+        },
+    )
+
+    val pages: List<ShapePage> = listOf(basic, flowchart, arrows, solidsMath, functions)
 
     val all: List<ShapePreset> = pages.flatMap { it.presets }
 
@@ -164,6 +176,29 @@ object ShapePresets {
     /** The chip a setting written before chips existed names by its bare kind. */
     fun forKind(kind: ShapeKind): ShapePreset = all.firstOrNull { it.kind == kind } ?: byKey.getValue("rectangle")
 
+    /** Every page and its chips in the [order] Preferences keeps, each by key. */
+    fun ordered(order: List<String>): List<ShapePage> =
+        if (order.isEmpty()) pages
+        else pages.inOrder(order) { it.key }.map { page -> ShapePage(page.key, page.presets.inOrder(order) { it.key }) }
+
+    /** The pages left once the [hidden] chips and pages (by key) are taken out, each without its hidden chips, in [order]. */
+    fun shown(hidden: Set<String>, order: List<String> = emptyList()): List<ShapePage> =
+        ordered(order).filter { it.key !in hidden }.map { page -> ShapePage(page.key, page.presets.filter { it.key !in hidden }) }.filter { it.presets.isNotEmpty() }
+
     /** The page [preset] sits on. */
     fun pageOf(preset: ShapePreset): Int = pages.indexOfFirst { preset in it.presets }.coerceAtLeast(0)
+}
+
+/** This list sorted by where each key stands in [order]; keys it does not name keep their place after those it does. */
+internal fun <T> List<T>.inOrder(order: List<String>, key: (T) -> String): List<T> {
+    val rank = order.withIndex().associate { it.value to it.index }
+    return sortedBy { rank[key(it)] ?: Int.MAX_VALUE }
+}
+
+/** [order] with [from] moved into insertion [slot] (0..size) of [keys], the list it belongs to as it shows now. */
+fun reorderedKeys(order: List<String>, keys: List<String>, from: String, slot: Int): List<String> {
+    val at = keys.indexOf(from)
+    if (at < 0) return order
+    val moved = keys.toMutableList().apply { removeAt(at); add((if (slot > at) slot - 1 else slot).coerceIn(0, size), from) }
+    return moved + order.filter { it !in moved }
 }

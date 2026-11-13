@@ -282,11 +282,12 @@ class PdfTextController(
             }
             return
         }
-        val accent = state.palette.accent
-        val tint = accent.withAlpha(70)
-        forEachQuad(sel) { page, q -> for (c in contentRects(page, q)) r.fillRect(c, tint) }
-        caret(sel, atEnd = false)?.let { handles.draw(r, handles.center(it.tip, isStart = true), isStart = true, accent) }
-        caret(sel, atEnd = true)?.let { handles.draw(r, handles.center(it.tip, isStart = false), isStart = false, accent) }
+        forEachQuad(sel) { page, q ->
+            val tint = state.selectionAccent(page).withAlpha(70)
+            for (c in contentRects(page, q)) r.fillRect(c, tint)
+        }
+        caret(sel, atEnd = false)?.let { handles.draw(r, handles.center(it.tip, isStart = true), isStart = true, state.selectionAccent(sel.start.page)) }
+        caret(sel, atEnd = true)?.let { handles.draw(r, handles.center(it.tip, isStart = false), isStart = false, state.selectionAccent(sel.end.page)) }
     }
 
     /** The viewport bounds of the selection's lines on screen, for its menu; null when none shows. */

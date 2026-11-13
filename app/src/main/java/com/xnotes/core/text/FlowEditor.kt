@@ -177,9 +177,11 @@ class FlowEditor(private val flow: TextFlow) {
     }
 
     /** Append [count] empty default paragraphs (the tap-below-the-text fill). */
-    fun appendEmptyLines(count: Int): Pair<Command, FlowPos> {
+    /** Appends [count] empty lines, replacing the paragraphs from [from] on (a blank tail no page shows). */
+    fun appendEmptyLines(count: Int, from: Int = flow.paragraphs.size): Pair<Command, FlowPos> {
         val paras = List(count.coerceAtLeast(1)) { Paragraph() }
-        val cmd = FlowSplice(flow, flow.paragraphs.size, emptyList(), paras).also { it.redo() }
+        val at = from.coerceIn(0, flow.paragraphs.size)
+        val cmd = FlowSplice(flow, at, flow.paragraphs.subList(at, flow.paragraphs.size).toList(), paras).also { it.redo() }
         return cmd to FlowPos(flow.paragraphs.size - 1, 0)
     }
 
@@ -187,6 +189,24 @@ class FlowEditor(private val flow: TextFlow) {
     fun charStyleAt(pos: FlowPos): CharStyle {
         val para = flow.paragraphs.getOrNull(pos.para) ?: return CharStyle.DEFAULT
         return styleForInsert(para, pos.offset.coerceIn(0, para.length))
+    }
+
+    /**
+     * The contiguous single-paragraph range around [pos] whose characters all carry the same
+     * hyperlink, or null when the caret is not on a link. Lets an "Edit link" action target the
+     * whole link even from a collapsed caret. The link probed is the one a caret there would type.
+     */
+    fun linkRangeAt(pos: FlowPos): FlowRange? {
+        val para = flow.paragraphs.getOrNull(pos.para) ?: return null
+        val len = para.length
+        if (len == 0) return null
+        val probe = (pos.offset.coerceIn(0, len).let { if (it > 0) it - 1 else 0 })
+        val link = styleOfCharAt(para, probe)?.link ?: return null
+        var start = probe
+        while (start > 0 && styleOfCharAt(para, start - 1)?.link == link) start--
+        var end = probe + 1
+        while (end < len && styleOfCharAt(para, end)?.link == link) end++
+        return FlowRange(FlowPos(pos.para, start), FlowPos(pos.para, end))
     }
 
     /** The style of the first character inside [range] (what a format bar reports for selections). */

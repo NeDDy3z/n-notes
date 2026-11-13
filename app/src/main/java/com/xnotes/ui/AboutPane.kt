@@ -49,7 +49,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
-import com.xnotes.platform.AppIcons
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
@@ -57,11 +56,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private const val REPO_URL = "https://github.com/shardulvs/xnotes-android"
+// n-notes: this fork. xnotes: the original project it's built on.
+private const val N_REPO_URL = "https://github.com/NeDDy3z/n-notes"
+private const val N_ISSUES_URL = "https://github.com/NeDDy3z/n-notes/issues/new"
 private const val SPONSOR_URL = "https://github.com/sponsors/shardulvs"
 private const val ISSUES_URL = "https://github.com/shardulvs/xnotes-android/issues/new"
-private const val FDROID_URL = "https://f-droid.org/en/packages/com.xnotes"
-private const val LICENSE_URL = "https://github.com/shardulvs/xnotes-android/blob/master/LICENSE"
 private const val MIN_FILL_MS = 120L
 
 /**
@@ -75,9 +74,6 @@ fun AboutPane() {
     val palette = LocalPalette.current
     val ctx = LocalContext.current
 
-    var icon by remember { mutableStateOf(AppIcons.current(ctx)) }
-    var picking by remember { mutableStateOf(false) }
-    val openPicker = remember { { picking = true } }
     val version = remember {
         runCatching {
             val pi = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
@@ -100,12 +96,13 @@ fun AboutPane() {
             Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(top = 16.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AppIconImage(icon, 72.dp, "xnotes", Modifier.holdForIconPicker(openPicker))
-            Spacer(Modifier.height(16.dp))
-            Text("xnotes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 24.sp)
+            // The angular "n" mark, drawn from the launcher-icon path so it matches the app icon.
+            NLogo(Modifier.size(72.dp), color = palette.accent.toComposeColor())
+            Spacer(Modifier.height(12.dp))
+            Text("n-notes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 24.sp)
             Spacer(Modifier.height(5.dp))
             Text(
-                stringResource(R.string.app_tagline),
+                stringResource(R.string.about_fork_tagline),
                 color = palette.textDim.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.Center,
             )
             if (version.isNotEmpty()) {
@@ -124,38 +121,42 @@ fun AboutPane() {
             }
 
             Spacer(Modifier.height(28.dp))
+            // The fork's own feedback channel: issues land on the n-notes repo.
+            Text(stringResource(R.string.help_make_n_notes_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.height(14.dp))
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AboutButton(XnotesIcons.bug, stringResource(R.string.report_bug)) { open(bugReportUrl(N_ISSUES_URL, version)) }
+                AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl(N_ISSUES_URL)) }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            // The upstream project: bugs/features/sponsorship for xnotes proper.
             Text(stringResource(R.string.help_make_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(14.dp))
-
             // Three buttons, side by side; each fills with the selection container while pressed.
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AboutButton(XnotesIcons.bug, stringResource(R.string.report_bug)) { open(bugReportUrl(version)) }
-                AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl()) }
+                AboutButton(XnotesIcons.bug, stringResource(R.string.report_bug)) { open(bugReportUrl(ISSUES_URL, version)) }
+                AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl(ISSUES_URL)) }
                 AboutButton(XnotesIcons.heart, stringResource(R.string.sponsor)) { open(SPONSOR_URL) }
             }
 
             Spacer(Modifier.height(26.dp))
             // Quiet, single-line growth nudge (a link, never a popup).
             Row(
-                Modifier.clickable { open(REPO_URL) },
+                Modifier.clickable { open(N_REPO_URL) },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(stringResource(R.string.enjoying_xnotes), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                Text(stringResource(R.string.enjoying_n_notes), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                 Text(stringResource(R.string.star_on_github), color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.mit_license), color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(LICENSE_URL) })
-                Text("   ·   ", color = palette.textDim.toComposeColor(), fontSize = 11.sp)
-                Text("F-Droid", color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(FDROID_URL) })
             }
         }
     }
-    if (picking) IconPicker(icon, onPick = { AppIcons.apply(ctx, it); icon = it }, onDismiss = { picking = false })
 }
 
 /** A link button: line glyph above a label. Fills with the selection container while pressed. */
@@ -214,13 +215,13 @@ private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -
 private fun copyVersion(ctx: Context, version: String) {
     runCatching {
         val clip = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clip.setPrimaryClip(ClipData.newPlainText("xnotes version", "xnotes $version"))
+        clip.setPrimaryClip(ClipData.newPlainText("n-notes version", "n-notes $version"))
         Toast.makeText(ctx, ctx.getString(R.string.version_copied), Toast.LENGTH_SHORT).show()
     }
 }
 
 /** GitHub new-issue link with a bug template and the reporter's version/device/OS pre-filled. */
-private fun bugReportUrl(version: String): String {
+private fun bugReportUrl(issuesUrl: String, version: String): String {
     val body = """
         **What happened?**
 
@@ -233,18 +234,18 @@ private fun bugReportUrl(version: String): String {
 
 
         ---
-        xnotes ${version.ifEmpty { "(unknown)" }}
+        n-notes ${version.ifEmpty { "(unknown)" }}
         ${Build.MANUFACTURER} ${Build.MODEL}
         Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})
     """.trimIndent()
-    return "$ISSUES_URL?title=${Uri.encode("[Bug] ")}&body=${Uri.encode(body)}"
+    return "$issuesUrl?title=${Uri.encode("[Bug] ")}&body=${Uri.encode(body)}"
 }
 
 /** GitHub new-issue link with a lightweight feature template. */
-private fun featureRequestUrl(): String {
+private fun featureRequestUrl(issuesUrl: String): String {
     val body = """
-        **What would you like xnotes to do?**
+        **What would you like to see added?**
 
     """.trimIndent()
-    return "$ISSUES_URL?title=${Uri.encode("[Feature] ")}&body=${Uri.encode(body)}"
+    return "$issuesUrl?title=${Uri.encode("[Feature] ")}&body=${Uri.encode(body)}"
 }

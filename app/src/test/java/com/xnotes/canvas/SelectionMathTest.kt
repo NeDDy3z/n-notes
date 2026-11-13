@@ -11,6 +11,7 @@ import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.stroke.Sample
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolDefaults
 import org.junit.Assert.assertEquals
@@ -50,6 +51,17 @@ class SelectionMathTest {
         val members = SelectionMath.lassoMembers(pages, rects, poly)
         assertEquals(1, members.size)
         assertSame(a, members[0].item)
+    }
+
+    @Test fun wholeTakesOnlyWhatLiesFullyInside() {
+        val inside = Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(10.0, 10.0, 1.0), Sample(20.0, 20.0, 1.0)))
+        val across = Stroke(Tool.PEN, ToolDefaults.configFor(Tool.PEN), mutableListOf(Sample(20.0, 10.0, 1.0), Sample(60.0, 10.0, 1.0)))
+        pages[0].items.addAll(listOf(inside, across))
+        val band = Rect(50.0, 50.0, 30.0, 30.0) // page 0 local (2,2)-(32,32)
+        assertEquals(2, SelectionMath.bandMembers(pages, rects, band).size)
+        assertEquals(listOf<CanvasItem>(inside), SelectionMath.bandMembers(pages, rects, band, whole = true).map { it.item })
+        val poly = listOf(Pt(50.0, 50.0), Pt(80.0, 50.0), Pt(80.0, 80.0), Pt(50.0, 80.0))
+        assertEquals(listOf<CanvasItem>(inside), SelectionMath.lassoMembers(pages, rects, poly, whole = true).map { it.item })
     }
 
     @Test fun bandSpansPages() {
@@ -123,6 +135,14 @@ class SelectionMathTest {
     @Test fun aBandInsideAHollowShapeLeavesTheShapeOut() {
         val box = box()
         assertEquals(listOf<CanvasItem>(word), SelectionMath.bandMembers(listOf(box, word), Rect(60.0, 30.0, 80.0, 40.0)))
+    }
+
+    @Test fun theKindFilterLeavesOutWhatItExcludes() {
+        val box = box()
+        val all = Rect(-10.0, -10.0, 300.0, 200.0)
+        assertEquals(listOf<CanvasItem>(box, word), SelectionMath.bandMembers(listOf(box, word), all))
+        assertEquals(listOf<CanvasItem>(word), SelectionMath.bandMembers(listOf(box, word), all, kinds = setOf(SelectKind.INK)))
+        assertEquals(listOf<CanvasItem>(box), SelectionMath.lassoMembers(listOf(box, word), loop(-10.0, -10.0, 210.0, 110.0), kinds = setOf(SelectKind.SHAPES)))
     }
 
     @Test fun aBandCrossingAShapesOutlineTakesIt() {

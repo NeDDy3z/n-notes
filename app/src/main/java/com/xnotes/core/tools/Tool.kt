@@ -16,6 +16,7 @@ enum class Tool(val id: String) {
     SHAPE("shape"),
     TEXT("text"),
     TEXT_BOX("text_box"),
+    TABLE("table"),
     IMAGE("image"),
 
     /** Marks a PDF's text: highlights and lines along it, or selects it ([MarkupMode]). */
@@ -39,7 +40,7 @@ enum class Tool(val id: String) {
      */
     val fingerPansWhenOff: Boolean get() = isStroke ||
         this == SELECT || this == LASSO || this == SCREENSHOT || this == SHAPE || this == ERASER || this == MARKUP || this == TAPE ||
-        this == INSERT_SPACE
+        this == TABLE || this == INSERT_SPACE
 
     /** Render-time ink alpha scale: the highlighter is translucent (spec 03 §3). */
     val alphaScale: Double get() = if (this == HIGHLIGHTER) 0.35 else 1.0
@@ -49,6 +50,12 @@ enum class Tool(val id: String) {
 
         /** Armed at startup. */
         val DEFAULT = PAN
+
+        /** The pen kinds the one toolbar pen switches between. */
+        val PENS = listOf(PEN, DASHED, CALLIGRAPHY, SPEED, TAPER)
+
+        /** The selection shapes the one toolbar select switches between. */
+        val SELECTIONS = listOf(SELECT, LASSO)
 
         /** Quick-tool-wheel order (spec 06 §11 / 10 §7). */
         val wheelOrder = listOf(PEN, DASHED, CALLIGRAPHY, SPEED, TAPER, HIGHLIGHTER, ERASER, SELECT, LASSO, INSERT_SPACE, SCREENSHOT, TAPE, SHAPE, TEXT, MARKUP, PAN)

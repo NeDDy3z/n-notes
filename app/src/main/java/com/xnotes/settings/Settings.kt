@@ -16,6 +16,7 @@ import com.xnotes.core.text.TableStyle
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.MarkupMode
+import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.tools.Tool
@@ -389,7 +390,12 @@ data class Settings(
             .put("switch_back_after_erase", c.switchBackAfterErase)
             .put("erase_markups", c.eraseMarkups)
             .put("scribble_erase", c.scribbleErase)
+            .put("erasable_kinds", JSONArray(c.erasableKinds.map { it.id }))
             .put("switch_back_after_select", c.switchBackAfterSelect)
+            .put("select_whole_items", c.selectWholeItems)
+            .put("select_kinds", JSONArray(c.selectKinds.map { it.id }))
+            .put("select_kinds_v2", true)
+            .put("snap_to_margins", c.snapToMargins)
             .put("straight_line", c.straightLine)
             .put("scale", c.scale)
             .put("highlighter_alpha", c.highlighterAlpha)
@@ -425,7 +431,15 @@ data class Settings(
                 switchBackAfterErase = o.optBoolean("switch_back_after_erase", d.switchBackAfterErase),
                 eraseMarkups = o.optBoolean("erase_markups", d.eraseMarkups),
                 scribbleErase = o.optBoolean("scribble_erase", d.scribbleErase),
+                erasableKinds = o.optJSONArray("erasable_kinds")?.let { a -> (0 until a.length()).mapNotNull { SelectKind.fromId(a.optString(it)) }.toSet() }?.takeIf { it.isNotEmpty() } ?: d.erasableKinds,
                 switchBackAfterSelect = o.optBoolean("switch_back_after_select", d.switchBackAfterSelect),
+                selectWholeItems = o.optBoolean("select_whole_items", d.selectWholeItems),
+                selectKinds = o.optJSONArray("select_kinds")?.let { a -> (0 until a.length()).mapNotNull { SelectKind.fromId(a.optString(it)) }.toSet() }
+                    // Saved before highlighter strokes had a kind of their own, they were lines.
+                    ?.let { if (!o.has("select_kinds_v2") && SelectKind.INK in it) it + SelectKind.HIGHLIGHTER else it }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: d.selectKinds,
+                snapToMargins = o.optBoolean("snap_to_margins", d.snapToMargins),
                 straightLine = o.optBoolean("straight_line", d.straightLine),
                 scale = o.optBoolean("scale", d.scale),
                 highlighterAlpha = o.optDouble("highlighter_alpha", d.highlighterAlpha),

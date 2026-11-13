@@ -35,12 +35,18 @@ import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.CheckBox
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.outlined.TableChart
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -64,8 +70,10 @@ import androidx.compose.ui.unit.sp
 import com.xnotes.R
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
+import com.xnotes.core.text.CalloutKind
 import com.xnotes.core.text.ListKind
 import com.xnotes.core.text.ParaAlign
+import com.xnotes.core.text.SlashCommands
 import com.xnotes.core.text.Paragraph
 import com.xnotes.core.tools.Tool
 import com.xnotes.platform.FontCatalog
@@ -78,10 +86,11 @@ import kotlin.math.roundToInt
  * The bottom text-format strip, shown while the inline text tool is armed (and no
  * legacy box edit is open). Sits as the last child of the editor column, so the
  * adjustResize window floats it directly above the soft keyboard. Controls, in
- * order: checkbox item, font colour, highlight, font face, size, bold/italic/
- * underline/strikethrough, heading level, ordered and unordered lists, code block
- * (tap toggles, long-press picks the language), table, alignment (cycles), indent,
- * outdent. Inside a table cell the heading, list, code, table and indent controls
+ * order, like Google Docs: heading level, font face, size, bold/italic/underline/
+ * strikethrough, font colour, highlight, insert menu (the "/" entries without a
+ * button of their own), link, code block (tap toggles, long-press picks the language),
+ * equation, table, alignment (cycles), ordered, unordered and checkbox lists,
+ * indent, outdent. Inside a table cell the heading, list, code, table and indent controls
  * disable. Centred when it fits, scrollable when it does not.
  */
 @Composable
@@ -106,13 +115,7 @@ fun TextFormatBar(editor: Editor) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK, enabled = !inCell) {
-                editor.flowToggleList(ListKind.CHECK)
-            }
-            BarDivider()
-            FontColorButton(editor, style.color)
-            HighlightButton(editor, style.highlight)
-            BarDivider()
+            HeadingButton(editor, para?.headingLevel ?: 0, enabled = !inCell)
             FontFaceButton(editor, style.face)
             SizeStepper(editor.flowShownSizePt()) { editor.flowAdjustSize(it) }
             BarDivider()
@@ -120,14 +123,11 @@ fun TextFormatBar(editor: Editor) {
             BarIcon(Icons.Filled.FormatItalic, stringResource(R.string.italic), active = style.italic, shortcut = Keys.ITALIC) { editor.flowToggleItalic() }
             BarIcon(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), active = style.underline, shortcut = Keys.UNDERLINE) { editor.flowToggleUnderline() }
             BarIcon(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), active = style.strike, shortcut = Keys.STRIKE) { editor.flowToggleStrike() }
+            FontColorButton(editor, style.color)
+            HighlightButton(editor, style.highlight)
             BarDivider()
-            HeadingButton(editor, para?.headingLevel ?: 0, enabled = !inCell)
-            BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED, enabled = !inCell) {
-                editor.flowToggleList(ListKind.ORDERED)
-            }
-            BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET, enabled = !inCell) {
-                editor.flowToggleList(ListKind.BULLET)
-            }
+            InsertButton(editor, enabled = editor.flowEditingActive && !inCell)
+            LinkButton(editor, style.link)
             CodeBlockButton(editor, para?.codeLang, enabled = !inCell)
             BarIcon(Icons.Filled.Functions, stringResource(R.string.equation), active = style.math, enabled = editor.flowEditingActive) {
                 editor.flowToggleMath()
@@ -138,6 +138,15 @@ fun TextFormatBar(editor: Editor) {
             BarDivider()
             BarIcon(alignIcon(para?.align ?: ParaAlign.LEFT), stringResource(R.string.alignment), active = para != null && para.align != ParaAlign.LEFT) {
                 editor.flowCycleAlign()
+            }
+            BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED, enabled = !inCell) {
+                editor.flowToggleList(ListKind.ORDERED)
+            }
+            BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET, enabled = !inCell) {
+                editor.flowToggleList(ListKind.BULLET)
+            }
+            BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK, enabled = !inCell) {
+                editor.flowToggleList(ListKind.CHECK)
             }
             BarIcon(Icons.AutoMirrored.Filled.FormatIndentIncrease, stringResource(R.string.indent), enabled = !inCell, shortcut = Keys.INDENT) { editor.flowIndent(1) }
             BarIcon(Icons.AutoMirrored.Filled.FormatIndentDecrease, stringResource(R.string.outdent), enabled = (para?.indent ?: 0) > 0, shortcut = Keys.OUTDENT) {
@@ -236,6 +245,56 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
     }
 }
 
+/** The "/" menu's entries the bar has no own button for. */
+private val INSERT_KINDS = setOf(
+    SlashCommands.Kind.QUOTE, SlashCommands.Kind.CALLOUT,
+    SlashCommands.Kind.PAGE_BREAK, SlashCommands.Kind.DATE, SlashCommands.Kind.TIME,
+)
+
+@Composable
+private fun InsertButton(editor: Editor, enabled: Boolean) {
+    val palette = LocalPalette.current
+    var menuOpen by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.insert)
+    Box {
+        Tooltip(label) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = enabled) { menuOpen = true }
+                    .semantics { contentDescription = label },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "/",
+                    color = (if (enabled) palette.textDim else palette.disabled).toComposeColor(),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            for (entry in SlashCommands.entries().filter { it.kind in INSERT_KINDS }) {
+                ChoiceMenuItem(
+                    false,
+                    text = { fg -> Text(slashLabel(entry), color = fg, fontSize = 14.sp) },
+                    trailingIcon = entry.markdown?.takeIf { editor.markdownInput }?.let { md ->
+                        { fg -> Text(md, color = fg.copy(alpha = 0.72f), fontSize = 12.sp) }
+                    },
+                    onClick = {
+                        editor.runInsertEntry(entry)
+                        menuOpen = false
+                    },
+                )
+                val groupEnds = entry.kind == SlashCommands.Kind.PAGE_BREAK ||
+                    (entry.kind == SlashCommands.Kind.CALLOUT && entry.level == CalloutKind.entries.lastIndex)
+                if (groupEnds) HorizontalDivider(Modifier.padding(vertical = 4.dp), color = palette.border.toComposeColor())
+            }
+        }
+    }
+}
+
 /** Code block: tap toggles it like a list, long-press picks the block's language.
  *  While on, the icon gives way to the active language's short form. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -296,6 +355,39 @@ private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
                 )
             }
         }
+    }
+}
+
+/** Hyperlink: applies a URL to the selection, or edits/removes the link the caret sits on.
+ *  With no selection and no existing link it inserts the URL itself as linked text. */
+@Composable
+private fun LinkButton(editor: Editor, current: String?) {
+    var open by remember { mutableStateOf(false) }
+    BarIcon(Icons.Filled.Link, stringResource(R.string.insert_group_link), active = current != null) { open = true }
+    if (open) {
+        var text by remember { mutableStateOf(current ?: "") }
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text(stringResource(R.string.insert_group_link)) },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    placeholder = { Text("https://example.com") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { editor.flowSetCharLink(text.trim()); open = false }) { Text(stringResource(R.string.save)) }
+            },
+            dismissButton = {
+                if (current != null) {
+                    TextButton(onClick = { editor.flowSetCharLink(null); open = false }) { Text(stringResource(R.string.remove)) }
+                } else {
+                    TextButton(onClick = { open = false }) { Text(stringResource(R.string.cancel)) }
+                }
+            },
+        )
     }
 }
 
