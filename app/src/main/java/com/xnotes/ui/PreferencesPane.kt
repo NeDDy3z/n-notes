@@ -176,6 +176,7 @@ fun PreferencesPane(
     onBackup: (export: Boolean) -> Unit = {},
     syncLogOpen: Boolean = false,
     onSyncLog: (Boolean) -> Unit = {},
+    onOpenAbout: () -> Unit = {},
 ) {
     val palette = LocalPalette.current
     val focusManager = LocalFocusManager.current
@@ -392,6 +393,7 @@ fun PreferencesPane(
                 Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_update)).sectionAnchor(stringResource(R.string.pref_updates))) {
                     UpdateSection(prefs.checkUpdatesOnStartup) { updateHome(prefs.copy(checkUpdatesOnStartup = it)) }
                 }
+                TextButton(onClick = onOpenAbout) { Text(stringResource(R.string.about), fontSize = 13.sp) }
             }
             if (shown(PrefCategory.APPEARANCE)) {
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
@@ -592,7 +594,6 @@ fun PreferencesPane(
                     if (prefs.trashDays != 0) section(stringResource(R.string.trash), prefs.sidebarTrash) { prefs.copy(sidebarTrash = !prefs.sidebarTrash) }
                     section(stringResource(R.string.sidebar_files), prefs.sidebarFiles) { prefs.copy(sidebarFiles = !prefs.sidebarFiles) }
                     section(stringResource(R.string.sync_now), prefs.sidebarSync) { prefs.copy(sidebarSync = !prefs.sidebarSync) }
-                    section(stringResource(R.string.about), prefs.sidebarAbout) { prefs.copy(sidebarAbout = !prefs.sidebarAbout) }
                 }
                 FieldLabel(stringResource(R.string.pref_home_opens_to))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
