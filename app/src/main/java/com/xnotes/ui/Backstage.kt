@@ -1402,6 +1402,10 @@ private fun ExplorerSection(
             editor.requestImport(ImportKind.PDF, name, e.documentUri, e.name, "application/pdf", e.parentDocId, title)
             return
         }
+        if (ReaderKind.ofName(e.name) == ReaderKind.IMAGE) {
+            editor.requestImport(ImportKind.IMAGE, name, e.documentUri, e.name, "", e.parentDocId, title)
+            return
+        }
         converting?.cancel()
         converting = scope.launch {
             val pdf = readerFileToPdf(context, editor, ReaderFile(e.documentUri, e.name))
