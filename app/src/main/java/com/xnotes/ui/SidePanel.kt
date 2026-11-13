@@ -94,7 +94,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /** The side panel's tabs. */
-enum class SidePanelTab { PAGES, CONTENTS, BOOKMARKS, SEARCH }
+enum class SidePanelTab { PAGES, CONTENTS, BOOKMARKS, ITEMS, SEARCH }
 
 /**
  * The side panel. The Pages tab shows page thumbnails with a per-page three-dot menu (add / copy /
@@ -142,6 +142,7 @@ fun SidePanel(
             SegIcon(XnotesIcons.thumbnails, stringResource(R.string.pages), tab == SidePanelTab.PAGES) { editor.sidePanelTab = SidePanelTab.PAGES }
             SegIcon(XnotesIcons.contents, stringResource(R.string.contents), tab == SidePanelTab.CONTENTS) { editor.sidePanelTab = SidePanelTab.CONTENTS }
             SegIcon(XnotesIcons.bookmark, stringResource(R.string.bookmarks), tab == SidePanelTab.BOOKMARKS) { editor.sidePanelTab = SidePanelTab.BOOKMARKS }
+            SegIcon(XnotesIcons.layers, stringResource(R.string.items), tab == SidePanelTab.ITEMS) { editor.sidePanelTab = SidePanelTab.ITEMS }
             SegIcon(XnotesIcons.search, stringResource(R.string.search), tab == SidePanelTab.SEARCH, shortcut = Keys.SEARCH) { editor.sidePanelTab = SidePanelTab.SEARCH }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -149,6 +150,7 @@ fun SidePanel(
                 SidePanelTab.PAGES -> PagesTab(editor, onSharePages, onSavePagesAsPdf, onSavePagesAsImages, onInsertPages) { pickingCover = true }
                 SidePanelTab.CONTENTS -> ContentsTab(editor)
                 SidePanelTab.BOOKMARKS -> BookmarksTab(editor)
+                SidePanelTab.ITEMS -> ItemsTab(editor)
                 SidePanelTab.SEARCH -> SearchTab(editor)
             }
         }
@@ -162,7 +164,9 @@ fun SidePanel(
 private fun SegIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, selected: Boolean, shortcut: String? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Tooltip(desc, shortcut = shortcut) {
-        IconButton(onClick = onClick) {
+        // Five tabs share the panel's width, so each takes the icon button's 40dp body rather than
+        // the 48dp touch target it would otherwise claim.
+        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
             Icon(
                 icon,
                 contentDescription = desc,

@@ -319,6 +319,9 @@ private const val NOTE_PEEK_GAP_DP = 10.0
 /** How far in from the view's edges a markup's note window opens, at least. */
 private const val NOTE_PEEK_MARGIN_DP = 8.0
 
+/** Room kept between an item brought into view from the side panel and the view's edges. */
+private const val ITEM_REVEAL_MARGIN_DP = 40.0
+
 /** The one thread every pane's search scans on, at background priority. */
 private val searchWorker: java.util.concurrent.Executor by lazy {
     java.util.concurrent.Executors.newSingleThreadExecutor { r ->
@@ -7384,6 +7387,30 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun prevPage() { state.goToPage(state.prevPageIndex(state.currentPageIndex())); afterView() }
     fun nextPage() { state.goToPage(state.nextPageIndex(state.currentPageIndex())); afterView() }
     fun goToPage(index: Int) { state.goToPage(index); afterView() }
+
+    /** Shows [pageIndex] and scrolls [item] into view (its page turned to when it is not on screen). */
+    fun goToItem(pageIndex: Int, item: CanvasItem) {
+        val page = state.document.pages.getOrNull(pageIndex) ?: return
+        if (page.items.none { it === item }) return
+        revealItem(pageIndex, item.paintBounds())
+    }
+
+    /** Shows [pageIndex] and scrolls [markup], a mark on its PDF text, into view. */
+    fun goToMarkup(pageIndex: Int, markup: TextMarkup) {
+        val page = state.document.pages.getOrNull(pageIndex) ?: return
+        if (page.markups.none { it === markup }) return
+        val b = MarkupPainter.bounds(markup) ?: return
+        val s = state.document.dpi / 72.0
+        revealItem(pageIndex, Rect(b.x * s, b.y * s, b.w * s, b.h * s))
+    }
+
+    /** Turns to [pageIndex] when it is off screen, then scrolls page-space [bounds] into view. */
+    private fun revealItem(pageIndex: Int, bounds: Rect) {
+        if (pageIndex !in state.document.pages.indices) return
+        if (pageIndex !in state.drawablePageRange()) state.goToPage(pageIndex)
+        state.scrollIntoView(state.fromPageSpaceRect(pageIndex, bounds), ITEM_REVEAL_MARGIN_DP * state.devicePxPerDp)
+        afterView()
+    }
 
     fun toggleZoomLock() {
         zoomLocked = !zoomLocked
