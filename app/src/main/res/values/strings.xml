@@ -894,6 +894,7 @@
     <string name="ordered_list">Ordered list</string>
     <string name="bullet_list">Bullet list</string>
     <string name="alignment">Alignment</string>
+    <string name="text_direction">Text direction</string>
     <string name="indent">Indent</string>
     <string name="outdent">Outdent</string>
     <string name="code_block">Code block</string>

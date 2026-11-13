@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -30,15 +31,24 @@ import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
 import com.xnotes.canvas.EditingField
 import com.xnotes.core.model.Rgba
 import com.xnotes.core.pal.FontFace
@@ -59,6 +69,40 @@ private fun textDecorationOf(underline: Boolean, strike: Boolean): TextDecoratio
 
 /** Drop memoized Compose families after a font import/removal changed resolution. */
 internal fun invalidateComposeFamilies() = composeFamilies.clear()
+
+/**
+ * [text] with the field's per-selection styles laid over the box's own look — the same
+ * overrides [com.xnotes.platform.AndroidText.spanned] bakes with, so what is typed is
+ * what the box will show. Built from the transformation's LIVE input, never the field's
+ * last snapshot: a keystroke reaches the transformation a frame before the model's new
+ * text does, and a styled string of the old length under an identity offset mapping
+ * would throw. A run's own size converts straight from points, so the field re-flows
+ * when a selection is resized.
+ */
+private fun annotatedField(text: String, spans: List<com.xnotes.core.text.RunSpan>, density: Density): AnnotatedString = buildAnnotatedString {
+    append(text)
+    for (span in spans) {
+        val st = span.style
+        val a = span.start.coerceIn(0, text.length)
+        val b = span.endExclusive.coerceIn(a, text.length)
+        if (b <= a) continue
+        val color = st.color ?: if (st.link != null) com.xnotes.platform.AndroidText.LINK_COLOR else null
+        // A run's own size converts straight from points, the same px the baked paint uses.
+        val sizeSp = st.sizePt?.let { pt -> with(density) { (pt * com.xnotes.platform.AndroidText.POINTS_TO_PX).toFloat().toSp() } }
+        addStyle(
+            SpanStyle(
+                background = st.highlight?.toComposeColor() ?: Color.Unspecified,
+                color = color?.toComposeColor() ?: Color.Unspecified,
+                fontWeight = if (st.bold) FontWeight.Bold else null,
+                fontStyle = if (st.italic) FontStyle.Italic else null,
+                textDecoration = textDecorationOf(st.underline || st.link != null, st.strike),
+                fontSize = sizeSp ?: TextUnit.Unspecified,
+                fontFamily = st.face?.toComposeFamily(),
+            ),
+            a, b,
+        )
+    }
+}
 
 /** Maps a [FontFace] to a Compose family: generic tokens directly, the rest via the catalog. */
 internal fun FontFace.toComposeFamily(): FontFamily = when (this) {
@@ -100,6 +144,9 @@ interface TextEditHost {
 
     /** Mirror the field's text back to the model. */
     fun updateEditingText(text: String)
+
+    /** Mirror the field's selection back to the model, which the span edits read. */
+    fun updateEditingSelection(start: Int, end: Int) {}
 
     /** A one-finger drag over the field: scroll the view and keep the edit open. */
     fun panWhileEditing(dxFinger: Float, dyFinger: Float)
@@ -159,6 +206,12 @@ fun TextEditorOverlay(editor: TextEditHost, field: EditingField) {
             onValueChange = {
                 value = it
                 editor.updateEditingText(it.text)
+                editor.updateEditingSelection(it.selection.min, it.selection.max)
+            },
+            visualTransformation = remember(field.spans, density) {
+                VisualTransformation { input ->
+                    TransformedText(annotatedField(input.text, field.spans, density), OffsetMapping.Identity)
+                }
             },
             modifier = Modifier
                 .then(NoBringIntoViewElement)
@@ -224,8 +277,22 @@ fun TextEditorOverlay(editor: TextEditHost, field: EditingField) {
                 textDecoration = textDecorationOf(field.underline, field.strike),
                 textAlign = when {
                     field.centred || field.align == com.xnotes.core.pal.HAlign.CENTER -> TextAlign.Center
-                    field.align == com.xnotes.core.pal.HAlign.RIGHT -> TextAlign.End
+                    // LEFT and RIGHT name the box's absolute edges, but Start and End follow the
+                    // paragraph's own side — which a right-to-left paragraph swaps. So the box's
+                    // side decides the mapping, the same rule AndroidText.layout draws the baked
+                    // text with, and the field hugs the edge the align button names.
+                    (if (com.xnotes.platform.AndroidText.rtlSide(field.text, field.dir))
+                        field.align == com.xnotes.core.pal.HAlign.LEFT
+                    else
+                        field.align == com.xnotes.core.pal.HAlign.RIGHT) -> TextAlign.End
                     else -> TextAlign.Start
+                },
+                // The same heuristics the baked painter resolves the paragraph's side with
+                // (AndroidText.layout), so the field lays out exactly what the box will show.
+                textDirection = when (field.dir) {
+                    com.xnotes.core.text.ParaDir.RTL -> TextDirection.Rtl
+                    com.xnotes.core.text.ParaDir.LTR -> TextDirection.Ltr
+                    com.xnotes.core.text.ParaDir.AUTO -> TextDirection.ContentOrLtr
                 },
             ),
             cursorBrush = SolidColor(Rgba.CARET.toComposeColor()),

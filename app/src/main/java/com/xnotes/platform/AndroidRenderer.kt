@@ -414,12 +414,12 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         return true
     }
 
-    override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags) {
+    override fun drawText(text: String, rect: Rect, font: FontSpec, color: Rgba, flags: TextFlags, spans: List<com.xnotes.core.text.RunSpan>) {
         if (text.isEmpty()) return
         val paint = AndroidText.textPaint(font, color.toArgb())
         paint.isUnderlineText = flags.underline
         paint.isStrikeThruText = flags.strike
-        val layout = AndroidText.layout(text, rect.w.toInt(), paint, flags)
+        val layout = AndroidText.layout(text, rect.w.toInt(), paint, flags, spans, font)
         canvas.save()
         canvas.translate(rect.left.toFloat(), rect.top.toFloat())
         layout.draw(canvas)

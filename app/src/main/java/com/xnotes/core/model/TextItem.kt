@@ -34,6 +34,18 @@ class TextItem(
     var underline: Boolean = false,
     var strike: Boolean = false,
     var align: HAlign = HAlign.LEFT,
+    /**
+     * The box's text direction. [ParaDir.AUTO] (the default) lays each paragraph out by
+     * its first strong letter — a Persian first letter runs the line right to left —
+     * while [ParaDir.LTR] and [ParaDir.RTL] pin every line to one side.
+     */
+    var dir: com.xnotes.core.text.ParaDir = com.xnotes.core.text.ParaDir.AUTO,
+    /**
+     * Per-selection character-style overrides over [text] (highlight, link, colour…),
+     * each replacing the box's own style on its range and inheriting elsewhere — the
+     * same rule the flow's runs follow. Kept sorted and non-overlapping; empty = plain.
+     */
+    var spans: List<com.xnotes.core.text.RunSpan> = emptyList(),
     /** [text] is LaTeX, drawn as a formula (the handwritten-maths add-on makes these). */
     var math: Boolean = false,
 ) : CanvasItem, Resizable {
@@ -48,15 +60,16 @@ class TextItem(
 
     val font get() = FontSpec(pointSize, face, bold, italic)
 
-    /** Layout flags carrying this box's decorations and alignment. */
-    private fun flags(): TextFlags =
-        TextFlags(wordWrap = true, alignLeft = true, alignTop = true, underline = underline, strike = strike, hAlign = align)
+    /** Layout flags carrying this box's decorations, alignment and direction. */
+    fun flags(): TextFlags =
+        TextFlags(wordWrap = true, alignLeft = true, alignTop = true, underline = underline, strike = strike, hAlign = align, paraDir = dir)
 
     /** A link to a stored document draws a paperclip before its text, this wide. */
     private val inset: Double get() = if (link?.startsWith(DOCUMENT_LINK) == true) docLinkInset(pointSize) else 0.0
 
     /** Height the current text needs at the current width (empty ⇒ one line). */
-    fun contentHeight(): Double = measurer.measure(text.ifEmpty { " " }, font, width - inset, flags()).h
+    fun contentHeight(): Double =
+        measurer.measure(text.ifEmpty { " " }, font, width, flags(), spans).h
 
     /** The formula's size, or null when this is not maths or the LaTeX cannot be set (then it shows as text). */
     fun mathBox(): MathBox? = if (math && text.isNotEmpty()) mathTypesetter?.measure(text, pointSize, display = true) else null
@@ -165,6 +178,8 @@ data class TextStyle(
     val underline: Boolean = false,
     val strike: Boolean = false,
     val align: HAlign = HAlign.LEFT,
+    val dir: com.xnotes.core.text.ParaDir = com.xnotes.core.text.ParaDir.AUTO,
+    val spans: List<com.xnotes.core.text.RunSpan> = emptyList(),
 ) {
     fun applyTo(t: TextItem) {
         t.rgba = rgba
@@ -175,10 +190,12 @@ data class TextStyle(
         t.underline = underline
         t.strike = strike
         t.align = align
+        t.dir = dir
+        t.spans = spans
     }
 
     companion object {
-        fun of(t: TextItem) = TextStyle(t.rgba, t.pointSize, t.face, t.bold, t.italic, t.underline, t.strike, t.align)
+        fun of(t: TextItem) = TextStyle(t.rgba, t.pointSize, t.face, t.bold, t.italic, t.underline, t.strike, t.align, t.dir, t.spans)
     }
 }
 

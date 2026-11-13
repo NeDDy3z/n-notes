@@ -1,6 +1,7 @@
 package com.xnotes.core.pal
 
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.text.RunSpan
 import com.xnotes.core.vector.VectorContour
 
 /** Font vertical metrics in content px; both values are positive distances from the baseline. */
@@ -17,9 +18,10 @@ interface TextMeasurer {
     /**
      * The wrapped bounding box of [text] at [wrapWidth]. The width is fixed to
      * [wrapWidth]; the height follows the text. An empty string measures as one
-     * line tall (the spec's one-space probe).
+     * line tall (the spec's one-space probe). [spans] carry the per-selection
+     * style overrides a box's text may set, whose sizes the height must follow.
      */
-    fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags = TextFlags()): Rect
+    fun measure(text: String, font: FontSpec, wrapWidth: Double, flags: TextFlags = TextFlags(), spans: List<RunSpan> = emptyList()): Rect
 
     fun lineHeight(font: FontSpec): Double
 
