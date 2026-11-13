@@ -284,26 +284,29 @@ fun SelectionMenu(
     val size = host.selectionSize()
     val mirrors = host.canMirrorSelection()
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { ((7 + (if (audio != null) 1 else 0) + (if (crops) 1 else 0) + (if (size != null) 1 else 0) + (if (mirrors) 1 else 0)) * 46).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
-    val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
     val barAbove = rect.top.toFloat() - barHeightPx - gap > 0f
     val yPx = if (barAbove) {
         rect.top.toFloat() - barHeightPx - gap
     } else {
         rect.bottom.toFloat() + gap
     }
-    val xDp = with(density) { xPx.toDp() }
-    val yDp = with(density) { yPx.toDp() }
 
     CompositionLocalProvider(LocalTipSide provides tipSideFor(barAbove)) {
         Row(
             modifier = Modifier
-                .offset(xDp, yDp)
+                // Kept inside the pane; on a narrow one the icons scroll.
+                .layout { measurable, constraints ->
+                    val margin = 8.dp.roundToPx()
+                    val bar = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0, maxWidth = (constraints.maxWidth - 2 * margin).coerceAtLeast(0)))
+                    val x = (centerX - bar.width / 2f).roundToInt().coerceIn(margin, (constraints.maxWidth - bar.width - margin).coerceAtLeast(margin))
+                    layout(bar.width, bar.height) { bar.place(x, yPx.roundToInt()) }
+                }
                 .clip(MaterialTheme.shapes.medium)
                 .background(palette.menuBg.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium)
+                .horizontalScroll(rememberScrollState()),
         ) {
             ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), shortcut = Keys.DELETE, tint = palette.danger.toComposeColor()) { host.deleteSelection() }
             ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
