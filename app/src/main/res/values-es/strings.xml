@@ -124,6 +124,7 @@
     <string name="caption_vertical_scrolling">Desplazamiento vertical</string>
     <string name="caption_free_movement">Movimiento libre de páginas</string>
     <string name="caption_pdf_filters">Filtros de color del PDF</string>
+    <string name="adjust">Ajustar</string>
     <string name="filter_contrast">Contraste</string>
     <string name="filter_invert">Invertir</string>
     <string name="filter_brightness">Brillo</string>
