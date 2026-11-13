@@ -649,6 +649,10 @@ class InteractionController(
     /** The selected items, in the order they were picked. */
     fun selectedItems(): List<CanvasItem> = selection.map { it.item }
 
+    /** The selected items grouped by the page each sits on, so a colour drop can tell where they live. */
+    fun selectionByPage(): Map<Int, List<CanvasItem>> =
+        selection.groupBy({ it.pageIndex }, { it.item })
+
     fun configFor(t: Tool): ToolConfig = toolConfigs[t] ?: ToolDefaults.configFor(t)
 
     fun setToolConfig(t: Tool, config: ToolConfig) {
