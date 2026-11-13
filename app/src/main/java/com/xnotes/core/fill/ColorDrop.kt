@@ -164,7 +164,7 @@ object ColorDrop {
     private fun fillable(s: ShapeItem) = s.shape.isClosed && !s.isFill && s.shape != ShapeKind.GLYPHS
 
     /** The topmost fill at [at] that a drop may recolour. */
-    private fun fillAt(items: List<CanvasItem>, at: Pt): ShapeItem? {
+    fun fillAt(items: List<CanvasItem>, at: Pt): ShapeItem? {
         for (i in items.indices.reversed()) {
             val f = items[i] as? ShapeItem ?: continue
             if (f.isFill && !f.locked && f.contains(at)) return f
