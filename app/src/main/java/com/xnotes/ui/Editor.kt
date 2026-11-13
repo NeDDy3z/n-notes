@@ -7145,7 +7145,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val page = state.document.pages.getOrNull(spot.frame)?.takeIf { it === spot.key } ?: return
         fun onPage(item: CanvasItem) = page.items.any { it === item }
         // Nothing drawn to take the colour and the point sits on a PDF text markup: recolour it
-        // the way its menu does — one undo step, the page's background rebaked after.
+        // the way its menu does: one undo step, the page's background rebaked after.
         if (action === DropAction.RecolourMarkup) {
             val m = spot.markup?.takeIf { mark -> page.markups.any { it === mark } } ?: return
             applyMarkupEdit(ReplaceMarkup(page, m, m.copy(color = color.withAlpha(255), modified = System.currentTimeMillis())))

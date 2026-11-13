@@ -1217,7 +1217,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private val colorDropper = ColorDropper(object : DropSurface {
         override fun beginDrop() {
             if (editingLabel != null) commitText()
-            // A selection stays out through the drag — the canvas is never touched — so dropping the
+            // A selection stays out through the drag (the canvas is never touched), so dropping the
             // colour back on it recolours all of it. Only a drag without one clears what was there.
             if (selection.isEmpty) interaction.clearSelection()
             dropSelection = selection.items.toList()
