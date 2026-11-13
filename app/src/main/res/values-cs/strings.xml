@@ -124,6 +124,7 @@
     <string name="caption_vertical_scrolling">Svislé posouvání</string>
     <string name="caption_free_movement">Volný pohyb stránky</string>
     <string name="caption_pdf_filters">Barevné filtry PDF</string>
+    <string name="adjust">Upravit</string>
     <string name="filter_contrast">Kontrast</string>
     <string name="filter_invert">Invertovat</string>
     <string name="filter_brightness">Jas</string>

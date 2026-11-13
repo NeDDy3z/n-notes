@@ -94,6 +94,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.IntentCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import com.xnotes.R
 import com.xnotes.platform.PdfOpenError
 import com.xnotes.sync.SyncManager
@@ -168,6 +169,22 @@ class EditorActivity : ComponentActivity() {
         // or from Recents after the process died or the app was updated; it was handled the first time.
         val rebuilt = savedInstanceState != null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
         if (!rebuilt) pendingImport = importUri(intent)
+        // An editor that a destroyed activity left behind may still be saving. This activity's is
+        // built once that is done; on a cold start nothing is pending and the content is set at once.
+        lifecycleScope.launch {
+            com.xnotes.ui.RetiredEditors.inProcess.await()
+            compose(rebuilt)
+        }
+        val content = findViewById<View>(android.R.id.content)
+        content.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (launched) content.viewTreeObserver.removeOnPreDrawListener(this)
+                return launched
+            }
+        })
+    }
+
+    private fun compose(rebuilt: Boolean) {
         setContent {
             val context = LocalContext.current
             val ed = remember { Editor(context).also { editor = it } }
@@ -228,13 +245,6 @@ class EditorActivity : ComponentActivity() {
                 }
             }
         }
-        val content = findViewById<View>(android.R.id.content)
-        content.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
-            override fun onPreDraw(): Boolean {
-                if (launched) content.viewTreeObserver.removeOnPreDrawListener(this)
-                return launched
-            }
-        })
     }
 
     // Stylus side-button keys (Bluetooth/USI pens report the button only this way) are caught here,
@@ -310,6 +320,11 @@ class EditorActivity : ComponentActivity() {
         editor?.persist()
     }
 
+    override fun onDestroy() {
+        editor?.retire() // the next activity waits for the saves this one began on pause
+        super.onDestroy()
+    }
+
     // Playback never goes on with xnotes off screen; a split window that only lost focus is still on it.
     override fun onStop() {
         super.onStop()
@@ -319,10 +334,11 @@ class EditorActivity : ComponentActivity() {
     @Suppress("DEPRECATION") // RUNNING_* still arrive below Android 14
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        // The canvas keeps its rendered pages, so PDFium's pages and glyph caches can go while the
-        // UI is hidden; they load again when something new is drawn.
+        // The canvas keeps its rendered pages, so PDFium's pages and glyph caches and the decoded
+        // images can go while the UI is hidden; they load again when something new is drawn.
         if (level >= TRIM_MEMORY_UI_HIDDEN || level == TRIM_MEMORY_RUNNING_LOW || level == TRIM_MEMORY_RUNNING_CRITICAL) {
             com.xnotes.platform.PdfiumDocument.trimAll()
+            com.xnotes.platform.ImageDecoder.trim()
         }
     }
 
