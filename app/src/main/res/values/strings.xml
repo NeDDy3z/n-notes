@@ -1171,7 +1171,7 @@
     <string name="pref_ocr" translatable="false">OCR</string>
     <string name="pref_export_import">Export &amp; import</string>
     <string name="pref_cloud_sync">Cloud sync</string>
-    <string name="pref_general_summary">Screen, Language, Updates</string>
+    <string name="pref_general_summary">Screen, Language, Permissions, Updates</string>
     <string name="pref_appearance_summary">Theme, Code highlighting, Fonts</string>
     <string name="pref_input_summary">Touch, Stylus, Gestures</string>
     <string name="pref_ocr_summary">Handwriting, Math</string>
@@ -1303,6 +1303,16 @@
     <string name="sync_new_warning">Cloud sync is new and still being tested. Before you set it up, copy your notes folder somewhere safe, so a sync problem can\'t cost you any notes.</string>
     <string name="sync_battery_restricted">Android limits this app\'s battery use, so automatic sync may not run in the background. Allow unrestricted battery use to keep it running.</string>
     <string name="battery_allow">Allow</string>
+    <string name="pref_permissions">Permissions</string>
+    <string name="permission_battery">Battery use</string>
+    <string name="permission_battery_unrestricted">Unrestricted, background sync can run</string>
+    <string name="permission_battery_restricted">Restricted, background sync may not run</string>
+    <string name="permission_microphone">Microphone</string>
+    <string name="permission_notifications">Notifications</string>
+    <string name="permission_granted">Granted</string>
+    <string name="permission_not_granted">Not granted</string>
+    <string name="permission_open_app_settings">Open app settings</string>
+    <string name="search_keywords_permissions">Permissions battery unrestricted optimization background microphone notifications</string>
     <string name="sync_cloud_service">Cloud service</string>
     <string name="sync_server_address">Server address</string>
     <string name="sync_user_name">User name</string>

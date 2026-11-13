@@ -1190,7 +1190,7 @@
     <string name="pref_home_explorer">Inicio y explorador</string>
     <string name="pref_export_import">Exportar e importar</string>
     <string name="pref_cloud_sync">Sincronización en la nube</string>
-    <string name="pref_general_summary">Pantalla, idioma, actualizaciones</string>
+    <string name="pref_general_summary">Pantalla, idioma, permisos, actualizaciones</string>
     <string name="pref_appearance_summary">Tema, resaltado de código, fuentes</string>
     <string name="pref_input_summary">Táctil, lápiz, gestos</string>
     <string name="pref_ocr_summary">Escritura a mano, matemáticas</string>
@@ -1322,6 +1322,16 @@
     <string name="sync_new_warning">La sincronización en la nube es nueva y aún se está probando. Antes de configurarla, copia tu carpeta de notas a un lugar seguro, para que un problema de sincronización no te haga perder ninguna nota.</string>
     <string name="sync_battery_restricted">Android limita el uso de batería de esta app, así que la sincronización automática puede no ejecutarse en segundo plano. Permite el uso de batería sin restricciones para que siga funcionando.</string>
     <string name="battery_allow">Permitir</string>
+    <string name="pref_permissions">Permisos</string>
+    <string name="permission_battery">Uso de batería</string>
+    <string name="permission_battery_unrestricted">Sin restricciones, la sincronización en segundo plano puede ejecutarse</string>
+    <string name="permission_battery_restricted">Restringido, la sincronización en segundo plano puede no ejecutarse</string>
+    <string name="permission_microphone">Micrófono</string>
+    <string name="permission_notifications">Notificaciones</string>
+    <string name="permission_granted">Concedido</string>
+    <string name="permission_not_granted">No concedido</string>
+    <string name="permission_open_app_settings">Abrir ajustes de la app</string>
+    <string name="search_keywords_permissions">Permisos batería sin restricciones optimización segundo plano micrófono notificaciones</string>
     <string name="sync_cloud_service">Servicio en la nube</string>
     <string name="sync_server_address">Dirección del servidor</string>
     <string name="sync_user_name">Nombre de usuario</string>

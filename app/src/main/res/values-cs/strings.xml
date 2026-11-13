@@ -1211,7 +1211,7 @@
     <string name="pref_home_explorer">Domů a průzkumník</string>
     <string name="pref_export_import">Export a import</string>
     <string name="pref_cloud_sync">Synchronizace s cloudem</string>
-    <string name="pref_general_summary">Obrazovka, jazyk, aktualizace</string>
+    <string name="pref_general_summary">Obrazovka, jazyk, oprávnění, aktualizace</string>
     <string name="pref_appearance_summary">Motiv, zvýrazňování kódu, písma</string>
     <string name="pref_input_summary">Dotyk, stylus, gesta</string>
     <string name="pref_ocr_summary">Rukopis, matematika</string>
@@ -1343,6 +1343,16 @@
     <string name="sync_new_warning">Synchronizace s cloudem je nová a pořád se testuje. Než ji nastavíš, zkopíruj složku s poznámkami na bezpečné místo, aby tě případná chyba synchronizace nepřipravila o žádné poznámky.</string>
     <string name="sync_battery_restricted">Android omezuje této aplikaci spotřebu baterie, takže automatická synchronizace nemusí běžet na pozadí. Povol neomezené používání baterie, aby běžela dál.</string>
     <string name="battery_allow">Povolit</string>
+    <string name="pref_permissions">Oprávnění</string>
+    <string name="permission_battery">Využití baterie</string>
+    <string name="permission_battery_unrestricted">Neomezeno, synchronizace na pozadí může běžet</string>
+    <string name="permission_battery_restricted">Omezeno, synchronizace na pozadí nemusí běžet</string>
+    <string name="permission_microphone">Mikrofon</string>
+    <string name="permission_notifications">Oznámení</string>
+    <string name="permission_granted">Uděleno</string>
+    <string name="permission_not_granted">Neuděleno</string>
+    <string name="permission_open_app_settings">Otevřít nastavení aplikace</string>
+    <string name="search_keywords_permissions">Oprávnění baterie neomezeno optimalizace pozadí mikrofon oznámení</string>
     <string name="sync_cloud_service">Cloudová služba</string>
     <string name="sync_server_address">Adresa serveru</string>
     <string name="sync_user_name">Uživatelské jméno</string>
