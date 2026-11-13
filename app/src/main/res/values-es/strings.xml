@@ -123,6 +123,7 @@
     <string name="view_cover">Portada</string>
     <string name="caption_vertical_scrolling">Desplazamiento vertical</string>
     <string name="caption_free_movement">Movimiento libre de páginas</string>
+    <string name="caption_free_horizontal_scroll">Desplazamiento horizontal libre</string>
     <string name="caption_pdf_filters">Filtros de color del PDF</string>
     <string name="adjust">Ajustar</string>
     <string name="filter_contrast">Contraste</string>
