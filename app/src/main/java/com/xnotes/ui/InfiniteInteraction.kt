@@ -91,6 +91,8 @@ class InfiniteInteraction(
     private val onPendingShape: (CanvasItem?) -> Unit = {},
     /** A finished shape or connector: add it to the document and push the undo command. */
     private val onCommitShape: (CanvasItem) -> Unit = {},
+    /** A finished shape or connector the wand claimed instead: hold it on screen to melt, never file it. */
+    private val onHoldItem: (CanvasItem) -> Unit = {},
     /** The shape tool's style, and the active ink colour it draws in. */
     private val shapeConfig: () -> ShapeConfig = { ShapeConfig() },
     private val inkColor: () -> Rgba = { InkPalette.DEFAULT },
@@ -1645,9 +1647,17 @@ class InfiniteInteraction(
         // A tap makes no shape; only a real drag commits one. A new shape stays selected, so it can
         // be resized, turned or reshaped straight away; a tap picks up the shape under it instead.
         if (shape != null && shape.start.distanceTo(shape.end) > InteractionController.SHAPE_MIN_DRAG) {
-            onCommitShape(shape)
-            selection()?.select(listOf(shape))
-            onSelectionChanged()
+            // The wand holds a shape the way it holds ink, whichever tool drew it: on screen, out of the
+            // document and out of undo, and so never selected -- an item that is melting is not yet
+            // part of the note.
+            if (wandEnabled) {
+                onHoldItem(shape)
+            } else {
+                onCommitShape(shape)
+                // Left selected so it can be moved or resized straight away, as a snapped shape is.
+                selection()?.select(listOf(shape))
+                onSelectionChanged()
+            }
         } else if (shape != null) {
             shapeTap(shape.start)
         }
@@ -1826,8 +1836,14 @@ class InfiniteInteraction(
         connectHot = emptyList()
         onPendingShape(null)
         if (draft.worthKeeping(InteractionController.SHAPE_MIN_DRAG)) {
-            onCommitShape(draft.connector)
-            selection()?.select(listOf(draft.connector))
+            // The wand is a mode over everything drawn on the canvas, so a connector melts with the
+            // ink and the shapes around it rather than being the one mark that stays.
+            if (wandEnabled) {
+                onHoldItem(draft.connector)
+            } else {
+                onCommitShape(draft.connector)
+                selection()?.select(listOf(draft.connector))
+            }
         } else {
             selectShapeAt(draft.connector.start.at)
         }

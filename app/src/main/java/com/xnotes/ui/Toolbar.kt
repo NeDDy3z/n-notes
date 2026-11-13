@@ -250,8 +250,23 @@ private fun ToolbarItemView(
         ToolbarItem.MARKUP ->
             if (editor.hasPdf) ToolButton(editor, Tool.MARKUP, toolIcons[Tool.MARKUP], configForTool, setConfigForTool)
 
-        ToolbarItem.WAND ->
-            ToolbarIcon(XnotesIcons.magicWand, stringResource(R.string.tool_wand), active = editor.wandEnabled) { editor.toggleWand() }
+        ToolbarItem.WAND -> {
+            // A mode over everything drawn rather than a tool, so it reads like the shape button's:
+            // a tap turns it on and off, and a hold opens how its ink goes.
+            var wandOpen by remember { mutableStateOf(false) }
+            Box {
+                ToolbarIcon(
+                    XnotesIcons.magicWand,
+                    stringResource(R.string.tool_wand),
+                    active = editor.wandEnabled,
+                    onLongClick = { wandOpen = true },
+                ) {
+                    editor.toggleWand()
+                    wandOpen = false
+                }
+                if (wandOpen) WandConfigPopup(editor) { wandOpen = false }
+            }
+        }
         ToolbarItem.RULER ->
             ToolbarIcon(XnotesIcons.ruler, stringResource(R.string.tool_ruler), active = editor.rulerVisible) { editor.toggleRuler() }
 
@@ -547,6 +562,7 @@ internal fun ToolbarIcon(
     glideKey: Any? = null,
     hint: String? = null,
     shortcut: String? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -570,7 +586,10 @@ internal fun ToolbarIcon(
     val press by animateFloatAsState(if (pressed) 0.85f else 1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium), label = "toolPress")
     Tooltip(contentDescription, hint = hint, shortcut = shortcut) {
         Box(
-            Modifier.size(bar.button).clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
+            Modifier.size(bar.button).let { m ->
+                if (onLongClick == null) m
+                else @OptIn(ExperimentalFoundationApi::class) { m.combinedClickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onLongClick = onLongClick, onClick = onClick) }
+            },
             contentAlignment = Alignment.Center,
         ) {
             Box(

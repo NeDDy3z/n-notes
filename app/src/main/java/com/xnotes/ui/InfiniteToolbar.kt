@@ -126,11 +126,19 @@ fun InfiniteToolbar(
                         }
                     }
 
-                    ToolbarItem.WAND -> ToolbarIcon(
-                        XnotesIcons.magicWand,
-                        stringResource(R.string.tool_wand),
-                        active = editor.wandEnabled,
-                    ) { editor.toggleWand() }
+                    ToolbarItem.WAND -> Box {
+                        var wandOpen by remember { mutableStateOf(false) }
+                        ToolbarIcon(
+                            XnotesIcons.magicWand,
+                            stringResource(R.string.tool_wand),
+                            active = editor.wandEnabled,
+                            onLongClick = { wandOpen = true },
+                        ) {
+                            editor.toggleWand()
+                            wandOpen = false
+                        }
+                        if (wandOpen) WandConfigPopup(editor) { wandOpen = false }
+                    }
 
                     ToolbarItem.IMAGE -> InsertButton(
                         owner = editor,

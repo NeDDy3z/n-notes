@@ -396,14 +396,61 @@ class InteractionController(
 
     // MAGIC WAND (ephemeral "disappearing ink"; no model/undo/cache/save state)
     private var wandMode = false
-    private val fadingStrokes = mutableListOf<FadingStroke>()
-    private var fadeAlpha = 1.0                       // shared multiplier, 1 = solid, 0 = gone
+    private val fadingItems = mutableListOf<FadingItem>()
     private var fading = false                        // true while the fade loop runs
-    private var fadeStartMs = 0L
-    private val fadeFrame = Choreographer.FrameCallback { t -> stepFade(t) }
-    private var fadeTimerRunnable: Runnable? = null
+    private var fadeTimerRunnable: Runnable? = null   // one timer, for the next fade due
 
-    private class FadingStroke(val stroke: Stroke, val pageIndex: Int)
+    /**
+     * One held item's own clock.
+     *
+     * [fadeStartMs] is when *this* item begins to go — set once, when it is first held, and never
+     * moved again. Nothing a later stroke does touches it: the batch has no shared timeline, so a
+     * stroke landing on the page cannot push back a stroke that was already melting, and two strokes
+     * drawn a second apart fade a second apart rather than together.
+     */
+    private class FadingItem(val item: CanvasItem, val pageIndex: Int, val fadeStartMs: Long)
+
+    private val fadeFrame = Choreographer.FrameCallback { t -> stepFade(t) }
+
+    /**
+     * Hold [item] on screen and let it go on its own clock.
+     *
+     * The hold delay needs no per-item timer: an item is only ever held once its own stroke has
+     * finished, so [FadingItem.fadeStartMs] is simply now plus the delay. What this has to do is
+     * make sure something is awake to fade it — either the frame loop, if an older item is already
+     * melting, or one timer for the next fade due.
+     */
+    private fun holdFading(item: CanvasItem, pageIndex: Int) {
+        fadingItems.add(FadingItem(item, pageIndex, nowMs() + wandHoldMs))
+        if (!fading) armNextFade()
+    }
+
+    /** Wall-clock in the units [FadingItem.fadeStartMs] and the fade loop both use. */
+    private fun nowMs(): Long = System.nanoTime() / 1_000_000L
+
+    /**
+     * Wake up for whichever held item is due to start melting first.
+     *
+     * One timer rather than one per item: the items are held in the order they were drawn, so the
+     * earliest start is the first one that has not begun, and re-arming on each stroke keeps it
+     * pointing at the right one. Idle time costs nothing, because until an item's own start arrives
+     * it is simply drawn solid.
+     */
+    private fun armNextFade() {
+        cancelFadeTimer()
+        val next = fadingItems.minOfOrNull { it.fadeStartMs } ?: return
+        val delay = (next - nowMs()).coerceAtLeast(0L)
+        val r = Runnable { startFading() }
+        fadeTimerRunnable = r
+        handler.postDelayed(r, delay)
+    }
+
+    private fun startFading() {
+        fadeTimerRunnable = null
+        if (fadingItems.isEmpty()) return
+        fading = true
+        choreographer.postFrameCallback(fadeFrame)
+    }
 
     // SELECTION
     private val selection = mutableListOf<Selected>()
@@ -703,6 +750,22 @@ class InteractionController(
             dirty?.let { repairRegion(page, it) }
         }
         requestRender()
+    }
+
+    /**
+     * The wand's two timings, read live rather than baked in.
+     *
+     * The popup writes straight here, so a fade already running when the hold is moved takes the
+     * new one from its next frame instead of finishing out the old — which is what makes the slider
+     * feel like it is turning the thing it names rather than the next batch of it.
+     */
+    var wandHoldMs: Long = WAND_HOLD_MS
+    var wandFadeMs: Double = WAND_FADE_MS
+
+    /** Put [config]'s timings in force, which is how the settings file reaches the wand. */
+    fun setWandConfig(config: com.xnotes.core.tools.WandConfig) {
+        wandHoldMs = config.holdMs
+        wandFadeMs = config.fadeMs
     }
 
     /** Toggle disappearing-ink mode; turning it off vanishes anything currently held or fading. */
@@ -1308,12 +1371,8 @@ class InteractionController(
         // Live until pen-up, so lift-time rules (the calligraphy dot swell) can't fire mid-draw.
         stroke.finished = false
         strokeStartTimeMs = timeMs
-        // Pen back down: re-solidify the held batch, so a long stroke can't outlive the previous fade.
-        if (wandMode && drawTool.isStroke) {
-            stopFade()
-            fadeAlpha = 1.0
-            scheduleFade()
-        }
+        // Pen back down: nothing is held back. Each held item melts on the clock that started when
+        // it was drawn, so a stroke landing now does not disturb one that is already going.
         // Ruler magnet: reset per-stroke engagement, then snap the first sample if it lands in the zone.
         snapEngaged = false
         snapRunStartEdge = null
@@ -1481,7 +1540,7 @@ class InteractionController(
         val fading = wandMode && stroke.tool.isStroke
         crossedPieces.add(Triple(stroke, pageIndex, fading))
         if (fading) {
-            fadingStrokes.add(FadingStroke(stroke, pageIndex))
+            holdFading(stroke, pageIndex)
             frontInk?.holdFading(stroke)
             return
         }
@@ -1550,12 +1609,9 @@ class InteractionController(
                 tapCandidate && e.eventTime - tapDownTime < LONG_PRESS_MS && peelTapeAt(pi, Pt(stroke.xAt(0), stroke.yAt(0))) -> Unit
                 wandMode && stroke.tool.isStroke -> {
                     // Disappearing ink: held ephemerally, never committed to the model/undo/cache/save.
-                    // A stroke drawn mid-fade cancels the fade and re-solidifies the whole held batch.
-                    fadingStrokes.add(FadingStroke(stroke, pi))
+                    // Its own fade clock, so a stroke drawn now leaves an already-melting one alone.
+                    holdFading(stroke, pi)
                     frontInk?.holdFading(stroke)
-                    stopFade()
-                    fadeAlpha = 1.0
-                    scheduleFade()
                 }
                 scribbleErase(stroke, pi) -> Unit
                 else -> pushStrokeEdit(fileStroke(stroke, pi))
@@ -2935,13 +2991,36 @@ class InteractionController(
         requestRender()
     }
 
+    /** Snap a line/arrow's dragged endpoint to an exactly horizontal or vertical run from [anchor]
+     *  when it lands within [SHAPE_AXIS_SNAP_DEG] of one (mirrors the recognizer's axis snap). */
+    private fun snapAxisEndpoint(anchor: Pt, p: Pt): Pt {
+        val dx = p.x - anchor.x
+        val dy = p.y - anchor.y
+        if (dx == 0.0 && dy == 0.0) return p
+        val snap = Math.toRadians(SHAPE_AXIS_SNAP_DEG)
+        val fromHoriz = atan2(abs(dy), abs(dx)) // 0 = horizontal, PI/2 = vertical
+        return when {
+            fromHoriz <= snap -> Pt(p.x, anchor.y)
+            fromHoriz >= Math.PI / 2.0 - snap -> Pt(anchor.x, p.y)
+            else -> p
+        }
+    }
+
     private fun endShape() {
         val shape = pendingShape
         val pi = shapePageIndex
         pendingShape = null
         shapePageIndex = null
         mode = PointerMode.IDLE
-        if (shape != null && pi != null && shape.start.distanceTo(shape.end) > SHAPE_MIN_DRAG) {
+        val drawn = shape != null && pi != null && shape.start.distanceTo(shape.end) > SHAPE_MIN_DRAG
+        if (drawn && wandMode) {
+            // The wand holds a shape the way it holds ink, whichever tool drew it: on screen, out of
+            // the document, out of undo, out of the cache and off disk. So it is never selected --
+            // an item that is melting is not yet part of the note, and selection would have to
+            // either commit it or invent a way to select something that is not there.
+            holdFading(shape, pi)
+            frontInk?.holdFading(shape)
+        } else if (drawn) {
             val page = state.document.pages[pi]
             page.items.add(shape)
             state.appendToCache(page, shape)
@@ -3124,13 +3203,20 @@ class InteractionController(
         val page = state.document.pages.getOrNull(pi)
         if (page != null && draft.worthKeeping(SHAPE_MIN_DRAG)) {
             val c = draft.connector
-            page.items.add(c)
-            state.appendToCache(page, c)
-            history.push(AddItem(page, c))
-            state.document.dirty = true
-            onContentChanged()
-            setSelection(listOf(Selected(pi, c)))
-            refreshSelectionMenu()
+            if (wandMode) {
+                // The wand is a mode over everything drawn on the page, so a connector melts with
+                // the ink and the shapes around it rather than being the one mark that stays.
+                holdFading(c, pi)
+                frontInk?.holdFading(c)
+            } else {
+                page.items.add(c)
+                state.appendToCache(page, c)
+                history.push(AddItem(page, c))
+                state.document.dirty = true
+                onContentChanged()
+                setSelection(listOf(Selected(pi, c)))
+                refreshSelectionMenu()
+            }
         } else if (page != null) {
             selectShapeAt(pi, draft.connector.start.at)
         }
@@ -5014,20 +5100,11 @@ class InteractionController(
 
     // --- disappearing ink (magic wand) ---
 
-    /** Drop all held ephemeral strokes and stop any pending or running fade. */
+    /** Drop all held ephemeral strokes and stop the fade loop and its timer. */
     private fun clearFading() {
         cancelFadeTimer()
-        stopFade()
-        fadingStrokes.clear()
-        fadeAlpha = 1.0
-    }
-
-    /** (Re)start the debounce so the held batch fades only once drawing has paused. */
-    private fun scheduleFade() {
-        cancelFadeTimer()
-        val r = Runnable { startFade() }
-        fadeTimerRunnable = r
-        handler.postDelayed(r, WAND_HOLD_MS)
+        fading = false
+        fadingItems.clear()
     }
 
     private fun cancelFadeTimer() {
@@ -5035,36 +5112,29 @@ class InteractionController(
         fadeTimerRunnable = null
     }
 
-    private fun startFade() {
-        fadeTimerRunnable = null
-        if (fadingStrokes.isEmpty()) return
-        // Still drawing: the batch only fades once the pen has been up for the whole hold.
-        if (liveStroke != null) {
-            scheduleFade()
-            return
-        }
-        fading = true
-        fadeAlpha = 1.0
-        fadeStartMs = System.nanoTime() / 1_000_000L
-        choreographer.postFrameCallback(fadeFrame)
-    }
-
-    private fun stopFade() {
-        fading = false
-    }
-
+    /**
+     * Advance every held item on its own clock, and take away the ones that are gone.
+     *
+     * Each item's alpha is read off its own [FadingItem.fadeStartMs], so items melt independently:
+     * one reaching the end takes only itself off the page and leaves the rest exactly where they
+     * were. Once nothing is mid-melt the loop stops and one timer waits for the next item due, so
+     * the delay before a stroke starts fading costs no frames.
+     */
     private fun stepFade(frameTimeNanos: Long) {
         if (!fading) return
         val now = frameTimeNanos / 1_000_000L
-        val t = ((now - fadeStartMs).toDouble() / WAND_FADE_MS).coerceIn(0.0, 1.0)
-        fadeAlpha = (1.0 - t) * (1.0 - t) // ease-out so the batch melts away rather than blinking off
+        val kept = fadingItems.filter { now - it.fadeStartMs < wandFadeMs }
+        fadingItems.clear()
+        fadingItems.addAll(kept)
         requestRender()
-        if (t >= 1.0) {
-            fadingStrokes.clear()
-            fadeAlpha = 1.0
+        // An item still inside its hold has not started melting yet; wait for it rather than spin.
+        if (fadingItems.isEmpty()) {
             fading = false
-        } else {
+        } else if (kept.any { now - it.fadeStartMs >= 0L }) {
             choreographer.postFrameCallback(fadeFrame)
+        } else {
+            fading = false
+            armNextFade()
         }
     }
 
@@ -5353,14 +5423,21 @@ class InteractionController(
             connectorDraft?.let { d -> paintClippedToPage(r, connectorPage) { d.connector.paint(r) } }
             pendingTable?.let { table -> paintClippedToPage(r, tableDrawPageIndex) { table.paint(r) } }
 
-            // Disappearing ink (magic wand): ephemeral strokes drawn live at the shared fade alpha,
+            // Disappearing ink (magic wand): ephemeral strokes drawn live at their own fade alpha,
             // without mutating their stored colour. Highlighters keep their MULTIPLY look while fading.
-            for (fs in fadingStrokes) {
+            val now = nowMs()
+            for (fs in fadingItems) {
                 // Still on the front buffer, which would otherwise draw it a second time.
-                if (frontInk?.holding(fs.stroke) == true) continue
+                if (frontInk?.holding(fs.item) == true) continue
+                // Solid until this item's own start arrives, so the hold costs no layer at all.
+                val alpha = com.xnotes.core.tools.wandAlphaAt(now, fs.fadeStartMs, wandFadeMs)
+                if (alpha >= 1.0) {
+                    paintClippedToPage(r, fs.pageIndex) { fs.item.paint(r) }
+                    continue
+                }
                 paintClippedToPage(r, fs.pageIndex) {
-                    r.saveLayerBlended(fs.stroke.paintBounds(), fadeAlpha, fs.stroke.blendMode)
-                    fs.stroke.paint(r)
+                    r.saveLayerBlended(fs.item.paintBounds(), alpha, fs.item.blendMode)
+                    fs.item.paint(r)
                     r.restore()
                 }
             }

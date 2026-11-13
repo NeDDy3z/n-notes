@@ -336,7 +336,7 @@ class FrontInk(
     fun hold(item: CanvasItem, page: Page): Boolean = take(Held(item, page))
 
     /** [hold] for disappearing ink, which the caller's overlay paints once the pad lets go. */
-    fun holdFading(stroke: Stroke): Boolean = take(Held(stroke, null))
+    fun holdFading(item: CanvasItem): Boolean = take(Held(item, null))
 
     private fun take(held: Held): Boolean {
         if (!live) return false

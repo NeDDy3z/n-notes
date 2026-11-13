@@ -17,6 +17,10 @@
     <string name="tool_wand">Disappearing ink</string>
     <string name="tool_tape">Tape</string>
     <string name="tool_insert_space">Insert space</string>
+    <string name="wand_hold">Fade delay</string>
+    <string name="wand_hold_ms">Fade delay  %1$d ms</string>
+    <string name="wand_fade">Fade duration</string>
+    <string name="wand_fade_ms">Fade duration  %1$d ms</string>
     <string name="tool_shape">Shape</string>
     <string name="tool_ruler">Ruler</string>
     <string name="tool_text">Text</string>
