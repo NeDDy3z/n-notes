@@ -32,6 +32,18 @@ Releases are named `{xnotes version}-{n-notes version}`, for example `0.9.7-0.48
 |---|---|
 | [GitHub Releases](https://github.com/NeDDy3z/n-notes/releases/latest) | Signed APK |
 
+### Build it yourself
+
+Requires **JDK 17** (the project pins Java 17):
+
+```bash
+git clone https://github.com/NeDDy3z/n-notes.git
+cd n-notes
+JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
+```
+
+Output: `app/build/outputs/apk/debug/app-debug.apk`
+
 ## Reporting issues
 
 When reporting bugs, issues or ideas, please split them into multiple smaller issues instead of one big one. That way they're easier for me to track and I won't miss any bug or requested feature.
