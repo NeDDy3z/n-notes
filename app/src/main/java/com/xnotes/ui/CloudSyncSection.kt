@@ -120,7 +120,10 @@ fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
         ) { update(prefs.copy(cloudService = it)) }
         when {
             service == null -> Unit
-            account == null -> ServiceSignIn(service, onSignedIn = { account = service.account(context) })
+            account == null -> ServiceSignIn(service, onSignedIn = {
+                account = service.account(context)
+                if (!BatteryRestriction.lifted(context)) BatteryRestriction.requestLift(context)
+            })
             else -> SignedIn(
                 service = service,
                 account = account!!,
@@ -236,6 +239,16 @@ private fun SignedIn(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.sync_signed_in_as, account), color = palette.text.toComposeColor(), fontSize = 13.sp, modifier = Modifier.weight(1f))
         TextButton(onClick = onSignOut) { Text(stringResource(R.string.sync_sign_out), fontSize = 13.sp) }
+    }
+
+    if (!rememberBatteryUnrestricted()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.sync_battery_restricted),
+                color = com.xnotes.core.model.Rgba(255, 145, 60, 255).toComposeColor(), fontSize = 12.sp, modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { BatteryRestriction.requestLift(context) }) { Text(stringResource(R.string.battery_allow), fontSize = 13.sp) }
+        }
     }
 
     SyncLabel(stringResource(R.string.sync_backup_folder))

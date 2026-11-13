@@ -1341,6 +1341,8 @@
     <string name="sync_none_off">Žádná - vypnuto</string>
     <string name="sync_intro">Zálohuj a synchronizuj poznámky s cloudovou službou. Synchronizuje se jen vybraná služba.</string>
     <string name="sync_new_warning">Synchronizace s cloudem je nová a pořád se testuje. Než ji nastavíš, zkopíruj složku s poznámkami na bezpečné místo, aby tě případná chyba synchronizace nepřipravila o žádné poznámky.</string>
+    <string name="sync_battery_restricted">Android omezuje této aplikaci spotřebu baterie, takže automatická synchronizace nemusí běžet na pozadí. Povol neomezené používání baterie, aby běžela dál.</string>
+    <string name="battery_allow">Povolit</string>
     <string name="sync_cloud_service">Cloudová služba</string>
     <string name="sync_server_address">Adresa serveru</string>
     <string name="sync_user_name">Uživatelské jméno</string>

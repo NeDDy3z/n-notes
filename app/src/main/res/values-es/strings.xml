@@ -1320,6 +1320,8 @@
     <string name="sync_none_off">Ninguno - desactivado</string>
     <string name="sync_intro">Haz copia de seguridad de tus notas y sincronízalas con un servicio en la nube. Solo se sincroniza el servicio seleccionado.</string>
     <string name="sync_new_warning">La sincronización en la nube es nueva y aún se está probando. Antes de configurarla, copia tu carpeta de notas a un lugar seguro, para que un problema de sincronización no te haga perder ninguna nota.</string>
+    <string name="sync_battery_restricted">Android limita el uso de batería de esta app, así que la sincronización automática puede no ejecutarse en segundo plano. Permite el uso de batería sin restricciones para que siga funcionando.</string>
+    <string name="battery_allow">Permitir</string>
     <string name="sync_cloud_service">Servicio en la nube</string>
     <string name="sync_server_address">Dirección del servidor</string>
     <string name="sync_user_name">Nombre de usuario</string>

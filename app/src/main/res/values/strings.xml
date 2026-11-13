@@ -1301,6 +1301,8 @@
     <string name="sync_none_off">None - off</string>
     <string name="sync_intro">Back up and sync your notes to a cloud service. Only the selected service syncs.</string>
     <string name="sync_new_warning">Cloud sync is new and still being tested. Before you set it up, copy your notes folder somewhere safe, so a sync problem can\'t cost you any notes.</string>
+    <string name="sync_battery_restricted">Android limits this app\'s battery use, so automatic sync may not run in the background. Allow unrestricted battery use to keep it running.</string>
+    <string name="battery_allow">Allow</string>
     <string name="sync_cloud_service">Cloud service</string>
     <string name="sync_server_address">Server address</string>
     <string name="sync_user_name">User name</string>
