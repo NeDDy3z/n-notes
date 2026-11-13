@@ -7063,7 +7063,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             // A selection stays out through the drag: the swatch travels from the bar, the canvas is
             // never touched, and dropping the colour back on the selection recolours all of it.
             dropSelection = controller.selectionByPage()
-            if (dropSelection.isEmpty()) controller.escape() else controller.commitTextEdit()
+            if (dropSelection.isEmpty()) return controller.escape()
+            controller.flowText?.endSession()
+            controller.commitTextEdit()
         }
 
         override fun spotAt(view: Pt): DropSpot? {
