@@ -120,6 +120,9 @@ internal class DropSpot(
     val markupBox: Rect? = null,
 )
 
+/** The bounds round [items], or null for none: the box a selection drop is aimed at. */
+internal fun boundsOf(items: List<CanvasItem>): Rect? = items.map { it.bounds() }.reduceOrNull { a, b -> a.union(b) }
+
 /** Where a colour drag lands on one editor's canvas, and what dropping there does. */
 internal interface DropSurface {
     /** Get ready for a drag: nothing selected, nothing being typed. */

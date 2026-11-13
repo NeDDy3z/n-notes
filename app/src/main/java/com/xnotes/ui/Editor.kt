@@ -7090,7 +7090,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 grid = grid,
                 reach = reach,
                 smallHole = (dropSmallHolePx() / state.zoom * grid.scale).toInt(),
-                selection = dropSelection[pi]?.takeIf { it.isNotEmpty() }?.let { items -> items.map { it.bounds() }.reduce { a, b -> a.union(b) } },
+                selection = dropSelection[pi]?.let(::boundsOf),
                 markup = markup,
                 markupBox = markup?.let { m ->
                     MarkupPainter.bounds(page.displayMarkup(m, 1.0 / ptPerPx))?.let { b ->
@@ -7149,17 +7149,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             applyMarkupEdit(ReplaceMarkup(page, m, m.copy(color = color.withAlpha(255), modified = System.currentTimeMillis())))
             return
         }
-        // A drop inside the live selection's bounds recolours everything the user had picked, as
-        // one undo step — the selection never left, so its restyle path applies directly.
-        val selected = dropSelection[spot.frame].orEmpty().filter(::onPage)
-        if (selected.isNotEmpty()) {
-            val box = selected.map { it.bounds() }.reduce { a, b -> a.union(b) }
-            if (box.outset(spot.reach).contains(spot.at)) {
-                controller.restyleSelection(color, null)
-                return
-            }
-        }
-        val command: Command = when (action) {
+        // A drop on the selection recolours what is still selected on this page, as one undo step.
+        val live = controller.selectedItems()
+        val selected = dropSelection[spot.frame].orEmpty().filter { item -> onPage(item) && live.any { it === item } }
+        val onSelection = boundsOf(selected)?.outset(spot.reach)?.contains(spot.at) == true
+        val command: Command = if (onSelection) {
+            val entries = selected.mapNotNull { item -> DrawStyle.of(item)?.let { RestyleItems.Entry(item, it, it.copy(color = color)) } }
+            RestyleItems(entries.ifEmpty { return })
+        } else when (action) {
             is DropAction.Recolour -> {
                 val item = action.item.takeIf(::onPage) ?: return
                 if (item is TextItem) {

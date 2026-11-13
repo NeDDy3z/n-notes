@@ -1211,8 +1211,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     private var dropWindow: Rect? = null
     private var dropItems: List<CanvasItem> = emptyList()
 
-    /** The selection's bounds as the drag began: a drop on it recolours the selection whole. */
-    private var dropSelection: Rect? = null
+    /** The selection as the drag began: a drop on it recolours the selection whole. */
+    private var dropSelection: List<CanvasItem> = emptyList()
 
     private val colorDropper = ColorDropper(object : DropSurface {
         override fun beginDrop() {
@@ -1220,8 +1220,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             // A selection stays out through the drag — the canvas is never touched — so dropping the
             // colour back on it recolours all of it. Only a drag without one clears what was there.
             if (selection.isEmpty) interaction.clearSelection()
-            dropSelection = selection.items.takeIf { it.isNotEmpty() }
-                ?.map { it.bounds() }?.reduce { a, b -> a.union(b) }
+            dropSelection = selection.items.toList()
             val seen = viewport.visibleContentRect()
             val window = seen.outset(maxOf(seen.w, seen.h) * DROP_MARGIN)
             dropWindow = window
@@ -1241,7 +1240,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
                 grid = grid,
                 reach = DROP_REACH_DP * devicePxPerDp / zoom,
                 smallHole = (DROP_SMALL_HOLE_MM / 25.4 * appContext.resources.displayMetrics.xdpi / zoom * grid.scale).toInt(),
-                selection = dropSelection,
+                selection = boundsOf(dropSelection),
             )
         }
 
@@ -1280,10 +1279,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** Carry out a colour drop as one undo step, or say why nothing happened. */
     private fun applyColorDrop(spot: DropSpot, action: DropAction, color: Rgba) {
-        // A drop inside the live selection's bounds recolours everything the user had picked, as
-        // one undo step — the selection never left, so its restyle path applies directly.
-        val sel = spot.selection
-        if (sel != null && sel.outset(spot.reach).contains(spot.at)) {
+        // A drop inside the selection's bounds recolours all of it as one undo step, but only while
+        // the selection is still the one the drag began with: undo or a sync may have changed it.
+        val unchanged = selection.items.size == dropSelection.size && dropSelection.all { d -> selection.items.any { it === d } }
+        if (unchanged && spot.selection?.outset(spot.reach)?.contains(spot.at) == true) {
             restyleSelection(color, null)
             return
         }
