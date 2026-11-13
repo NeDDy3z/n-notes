@@ -1389,6 +1389,8 @@
     <string name="update_up_to_date">You\'re on the latest version (%1$s).</string>
     <string name="update_available_version">"Update available: %1$s  (you have %2$s)"</string>
     <string name="update_download_apk">Download APK</string>
+    <string name="update_downloading">Downloading update... %1$d%%</string>
+    <string name="update_download_failed">Download failed</string>
     <string name="update_view_release">View release</string>
     <string name="update_available">Update available</string>
     <string name="update_is_out">n-notes %1$s is out.</string>

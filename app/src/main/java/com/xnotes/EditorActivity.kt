@@ -221,15 +221,40 @@ class EditorActivity : ComponentActivity() {
                         SyncStrip(ed)
                     }
                     update?.let { u ->
+                        var downloadProgress by remember { mutableStateOf<Float?>(null) }
+                        var downloadFailed by remember { mutableStateOf(false) }
                         com.xnotes.ui.AlertDialog(
                             onDismissRequest = { update = null },
                             title = { androidx.compose.material3.Text(stringResource(R.string.update_available)) },
-                            text = { androidx.compose.material3.Text(stringResource(R.string.update_is_out, u.version)) },
+                            text = {
+                                val progress = downloadProgress
+                                androidx.compose.material3.Text(
+                                    when {
+                                        progress != null -> stringResource(R.string.update_downloading, (progress * 100).toInt())
+                                        downloadFailed -> stringResource(R.string.update_download_failed)
+                                        else -> stringResource(R.string.update_is_out, u.version)
+                                    }
+                                )
+                            },
                             confirmButton = {
-                                androidx.compose.material3.TextButton(onClick = {
-                                    update = null
-                                    runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u.apkUrl ?: u.releaseUrl))) }
-                                }) { androidx.compose.material3.Text(stringResource(R.string.download)) }
+                                androidx.compose.material3.TextButton(
+                                    onClick = {
+                                        val apkUrl = u.apkUrl
+                                        if (apkUrl == null) {
+                                            update = null
+                                            runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u.releaseUrl))) }
+                                            return@TextButton
+                                        }
+                                        downloadFailed = false
+                                        downloadProgress = 0f
+                                        lifecycleScope.launch {
+                                            val result = com.xnotes.update.UpdateInstaller.downloadAndInstall(this@EditorActivity, apkUrl) { downloadProgress = it }
+                                            downloadProgress = null
+                                            if (result.isSuccess) update = null else downloadFailed = true
+                                        }
+                                    },
+                                    enabled = downloadProgress == null,
+                                ) { androidx.compose.material3.Text(stringResource(R.string.download)) }
                             },
                             dismissButton = {
                                 androidx.compose.foundation.layout.Row {

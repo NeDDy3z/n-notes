@@ -1408,6 +1408,8 @@
     <string name="update_up_to_date">Tienes la versión más reciente (%1$s).</string>
     <string name="update_available_version">"Actualización disponible: %1$s  (tienes %2$s)"</string>
     <string name="update_download_apk">Descargar APK</string>
+    <string name="update_downloading">Descargando actualización... %1$d%%</string>
+    <string name="update_download_failed">La descarga falló</string>
     <string name="update_view_release">Ver versión</string>
     <string name="update_available">Actualización disponible</string>
     <string name="update_is_out">Ya está disponible n-notes %1$s.</string>

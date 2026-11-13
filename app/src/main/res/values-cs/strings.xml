@@ -1429,6 +1429,8 @@
     <string name="update_up_to_date">Máš nejnovější verzi (%1$s).</string>
     <string name="update_available_version">"Dostupná aktualizace: %1$s  (máš %2$s)"</string>
     <string name="update_download_apk">Stáhnout APK</string>
+    <string name="update_downloading">Stahování aktualizace... %1$d%%</string>
+    <string name="update_download_failed">Stažení se nezdařilo</string>
     <string name="update_view_release">Zobrazit vydání</string>
     <string name="update_available">Dostupná aktualizace</string>
     <string name="update_is_out">Vyšlo n-notes %1$s.</string>
