@@ -96,8 +96,9 @@ object ColorDrop {
      * along with the area around them.
      */
     fun decide(items: List<CanvasItem>, map: FillMap, at: Pt, color: Rgba, reach: Double, smallHole: Int): DropAction {
-        lineAt(items, at, reach)?.let { return DropAction.Recolour(it) }
-        return when (val probe = map.probe(at)) {
+        val probe = map.probe(at)
+        lineAt(items, at, reach, skipHighlighters = probe is Probe.Enclosed)?.let { return DropAction.Recolour(it) }
+        return when (probe) {
             Probe.Open -> fillAt(items, at)?.let { DropAction.Refill(it) } ?: DropAction.NotClosed
             Probe.Blocked -> DropAction.None
             is Probe.Enclosed -> enclosed(items, map, probe, at, color, smallHole)
@@ -110,11 +111,15 @@ object ColorDrop {
         return RefillShapes.Entry(shape, before, before?.let { color.copy(a = it.a) } ?: color.withAlpha(255))
     }
 
-    /** The line a drop at [at] lands on, the topmost within [reach]; null for none, a locked one, or one something covers there. */
-    fun lineAt(items: List<CanvasItem>, at: Pt, reach: Double): CanvasItem? {
+    /**
+     * The line a drop at [at] lands on, the topmost within [reach]; null for none, a locked one, or one something covers there.
+     * [skipHighlighters] is for a point inside a closed area, where the area's fill wins over a highlighter band.
+     */
+    fun lineAt(items: List<CanvasItem>, at: Pt, reach: Double, skipHighlighters: Boolean = false): CanvasItem? {
         for (i in items.indices.reversed()) {
             val item = items[i]
             if (!item.bounds().outset(reach).contains(at)) continue
+            if (skipHighlighters && item is Stroke && item.tool == Tool.HIGHLIGHTER) continue
             if (isLine(item) && onLine(item, at, reach)) return item.takeUnless { it.locked }
             if (hides(item, at)) return null
         }

@@ -252,7 +252,8 @@ internal class ColorDropper(private val surface: DropSurface) {
     /** What a drop at [spot] would do: recolour the whole selection, the line it lands on, fill the area round it, or nothing. */
     private fun previewAt(spot: DropSpot, map: FillMap): DropPreview? {
         spot.selection?.takeIf { it.outset(spot.reach).contains(spot.at) }?.let { return DropPreview.Box(spot.frame, it) }
-        ColorDrop.lineAt(spot.items, spot.at, spot.reach)?.let { return DropPreview.Line(spot.frame, it) }
+        ColorDrop.lineAt(spot.items, spot.at, spot.reach, skipHighlighters = map.probe(spot.at) is Probe.Enclosed)
+            ?.let { return DropPreview.Line(spot.frame, it) }
         val last = lastArea
         if (last != null && lastKey == spot.key && last.holds(map.cellX(spot.at), map.cellY(spot.at))) return lastPreview
         val area = map.probe(spot.at) as? Probe.Enclosed

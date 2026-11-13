@@ -83,6 +83,12 @@ class ColorDropTest {
         assertSame(DropAction.NotClosed, drop(listOf(marker), Pt(200.0, 200.0)))
     }
 
+    @Test fun aHighlighterInsideAClosedAreaLetsTheAreaFill() {
+        val box = rect(100.0, 100.0, 300.0, 300.0)
+        val marker = stroke(Pt(150.0, 200.0), Pt(250.0, 200.0), tool = Tool.HIGHLIGHTER, width = 20.0)
+        assertSame(box, expect<DropAction.FillShape>(drop(listOf(box, marker), Pt(200.0, 200.0))).shape)
+    }
+
     @Test fun aDropOnTapeRecoloursIt() {
         val tape = TapeItem(TapeShape(TapeMode.STRAIGHT, listOf(Pt(100.0, 200.0), Pt(300.0, 200.0)), 30.0), Rgba(240, 200, 90, 255))
         assertSame(tape, expect<DropAction.Recolour>(drop(listOf(tape), Pt(200.0, 200.0))).item)
